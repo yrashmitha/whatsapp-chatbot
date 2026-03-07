@@ -289,6 +289,7 @@
 <div class="topbar">
   <h1>🔮 Admin Panel — පුරාණ ජෝතීර්වේදය</h1>
   <span class="meta" id="topMeta">Loading...</span>
+  <span class="meta" style="margin-left:auto;">AI cost: <b id="adminCost">$0.000000</b></span>
 </div>
 
 <div class="layout">
@@ -608,12 +609,20 @@
         input.value = data.message;
         input.focus();
       }
+      if (data.costUSD) addAdminCost(data.costUSD);
       toast('AI draft ready — review and send ✓');
     } catch (e) {
       if (e.message !== 'Unauthorized') toast('Follow-up generation failed');
     } finally {
       if (btn) btn.disabled = false;
     }
+  }
+
+  // ── AI cost tracker ───────────────────────────────────────────────────────
+  let totalAdminCost = 0;
+  function addAdminCost(usd) {
+    totalAdminCost += usd;
+    document.getElementById('adminCost').textContent = `$${totalAdminCost.toFixed(6)}`;
   }
 
   // ── Init ──────────────────────────────────────────────────────────────────

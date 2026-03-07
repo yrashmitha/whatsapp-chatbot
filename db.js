@@ -62,6 +62,18 @@ async function init() {
       );
     `);
 
+    // Migrate: add cost_usd column if missing
+    await pool.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'messages' AND column_name = 'cost_usd'
+        ) THEN
+          ALTER TABLE messages ADD COLUMN cost_usd NUMERIC(12,8);
+        END IF;
+      END $$;
+    `);
+
     // Migrate existing deployments: backfill missing customers, then add FK constraints
     await pool.query(`
       -- Insert a customer row for any phone that has messages/orders but no customer record
@@ -107,6 +119,7 @@ async function init() {
         phone_number TEXT NOT NULL REFERENCES customers(phone_number) ON DELETE CASCADE,
         message_text TEXT NOT NULL,
         sender_type  TEXT NOT NULL CHECK(sender_type IN ('user','bot')),
+        cost_usd     REAL,
         created_at   TEXT NOT NULL DEFAULT (datetime('now'))
       );
       CREATE TABLE IF NOT EXISTS orders (
@@ -122,6 +135,8 @@ async function init() {
         created_at   TEXT NOT NULL DEFAULT (datetime('now'))
       );
     `);
+    // Migrate: add cost_usd column if missing (existing DBs)
+    try { db.exec(`ALTER TABLE messages ADD COLUMN cost_usd REAL`); } catch (_) {}
   }
 }
 

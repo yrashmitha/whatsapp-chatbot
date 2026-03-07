@@ -534,8 +534,10 @@ app.post('/admin/followup', adminAuth, async (req, res) => {
       `You are a warm assistant for a professional astrology service. Below is a conversation with a potential customer who has NOT placed an order yet.\n\nConversation:\n${historyText}\n\nWrite a single short, warm, natural follow-up WhatsApp message to re-engage this customer. Use the same language they were using. Be genuine — not pushy. Do not list packages or prices unless they previously asked. Just warmly re-open the conversation.`
     );
     const followupText = result.response.text().trim();
-    console.log(`[ADMIN] Follow-up generated for ${phone}: "${followupText.substring(0, 80)}"`);
-    res.json({ ok: true, message: followupText });
+    const usage = result.response.usageMetadata || {};
+    const cost  = calcCost(usage.promptTokenCount || 0, usage.candidatesTokenCount || 0);
+    console.log(`[ADMIN] Follow-up generated for ${phone}: "${followupText.substring(0, 80)}" cost=$${cost.toFixed(6)}`);
+    res.json({ ok: true, message: followupText, costUSD: +cost.toFixed(6) });
   } catch (err) {
     console.error(`[ADMIN] followup error:`, err.message);
     res.status(500).json({ error: err.message });

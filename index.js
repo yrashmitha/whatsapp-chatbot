@@ -151,15 +151,55 @@ async function handleMessage(phoneNumber, userMessage, chatSession) {
   return { botReply, orderId, callCostUSD, inputTokens, outputTokens, imagesToSend };
 }
 
+// ─── Template image media ID cache (uploaded once at startup) ─────────────────
+const TEMPLATES_DIR    = path.join(__dirname, 'public', 'templates');
+const templateMediaIds = new Map(); // filename → WhatsApp media_id
+
+async function uploadTemplateImages() {
+  if (!fs.existsSync(TEMPLATES_DIR)) return;
+  const files = fs.readdirSync(TEMPLATES_DIR)
+    .filter(f => /\.(jpg|jpeg|png|webp)$/i.test(f));
+  if (files.length === 0) return;
+
+  for (const filename of files) {
+    try {
+      const buffer = fs.readFileSync(path.join(TEMPLATES_DIR, filename));
+      const ext    = filename.split('.').pop().toLowerCase();
+      const mime   = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+
+      const form = new FormData();
+      form.append('messaging_product', 'whatsapp');
+      form.append('type', mime);
+      form.append('file', new Blob([buffer], { type: mime }), filename);
+
+      const res  = await fetch(`https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/media`,
+        { method: 'POST', headers: { Authorization: `Bearer ${META_ACCESS_TOKEN}` }, body: form });
+      const data = await res.json();
+
+      if (data.id) {
+        templateMediaIds.set(filename, data.id);
+        console.log(`[TEMPLATES] Uploaded "${filename}" → media_id=${data.id}`);
+      } else {
+        console.warn(`[TEMPLATES] Upload failed for "${filename}":`, JSON.stringify(data));
+      }
+    } catch (err) {
+      console.error(`[TEMPLATES] Error uploading "${filename}":`, err.message);
+    }
+  }
+}
+
 // ─── WhatsApp image send helper ───────────────────────────────────────────────
 async function sendWhatsAppImage(to, filename, caption) {
-  const base = process.env.PUBLIC_URL || 'https://whatsapp-chatbot-production-038d.up.railway.app';
-  const link = `${base}/templates/${encodeURIComponent(filename)}`;
-  console.log(`[WA-IMG] Sending image ${filename} to ${to}`);
+  const mediaId = templateMediaIds.get(filename);
+  const image   = mediaId
+    ? { id: mediaId, caption }
+    : { link: `${process.env.PUBLIC_URL || 'https://whatsapp-chatbot-production-038d.up.railway.app'}/templates/${encodeURIComponent(filename)}`, caption };
+
+  console.log(`[WA-IMG] Sending "${filename}" to ${to} via ${mediaId ? 'media_id' : 'link'}`);
   try {
     await axios.post(
       `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
-      { messaging_product: 'whatsapp', to, type: 'image', image: { link, caption } },
+      { messaging_product: 'whatsapp', to, type: 'image', image },
       { headers: { Authorization: `Bearer ${META_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } }
     );
     console.log(`[WA-IMG] Image sent successfully to ${to}`);
@@ -325,7 +365,6 @@ function adminAuth(req, res, next) {
 }
 
 // GET /admin/templates — list images in public/templates/
-const TEMPLATES_DIR = path.join(__dirname, 'public', 'templates');
 app.get('/admin/templates', adminAuth, (_req, res) => {
   if (!fs.existsSync(TEMPLATES_DIR)) return res.json([]);
   const files = fs.readdirSync(TEMPLATES_DIR)
@@ -447,9 +486,10 @@ app.listen(PORT, () => {
   console.log(`[STARTUP] Database: ${db.IS_PG ? 'PostgreSQL' : 'SQLite (local)'}`);
 });
 
-// Init DB in background
-db.init().then(() => {
+// Init DB in background, then upload template images
+db.init().then(async () => {
   console.log(`[DB] Initialized successfully`);
+  await uploadTemplateImages();
 }).catch(err => {
   console.error(`[STARTUP] DB init FAILED:`, err.message || err);
   console.error(`[STARTUP] Full error:`, JSON.stringify(err, Object.getOwnPropertyNames(err)));

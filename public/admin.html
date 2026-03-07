@@ -136,6 +136,10 @@
     }
     .btn-followup:hover { background: #f57c00; }
     .btn-followup:disabled { background: #ccc; cursor: default; }
+    .btn-danger { background: #e53935; color: #fff; border: none; border-radius: 8px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+    .btn-danger:hover { background: #b71c1c; }
+    .btn-warn { background: #ff9800; color: #fff; border: none; border-radius: 8px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+    .btn-warn:hover { background: #e65100; }
 
     .order-banner {
       background: #e8f5e9;
@@ -168,6 +172,7 @@
     .bubble.user { align-self: flex-end; background: #dcf8c6; border-bottom-right-radius: 2px; }
     .bubble.bot  { align-self: flex-start; background: #fff; border-bottom-left-radius: 2px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
     .bubble-time { font-size: 10px; color: #aaa; margin-top: 3px; text-align: right; }
+    .msg-cost { margin-left: 6px; color: #81c784; font-size: 10px; }
 
     .order-card {
       align-self: center;
@@ -181,6 +186,10 @@
     }
     .order-card .order-id { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
     .order-card .order-detail { font-size: 12px; opacity: 0.85; }
+    .order-card .flag-row { display:flex; gap:6px; margin-top:6px; justify-content:center; flex-wrap:wrap; }
+    .flag-badge { font-size:11px; opacity:0.9; }
+    .btn-flag { font-size:10px; background:rgba(255,255,255,0.2); color:#fff; border:1px solid rgba(255,255,255,0.4); border-radius:6px; padding:2px 8px; cursor:pointer; }
+    .btn-flag:hover { background:rgba(255,255,255,0.35); }
     .order-card .status-row { display:flex; align-items:center; gap:6px; margin-top:8px; justify-content:center; }
     .order-card select.status-select { font-size:12px; border-radius:6px; border:none; padding:3px 6px; cursor:pointer; }
     .order-card .btn-status { font-size:11px; background:#25d366; color:#fff; border:none; border-radius:6px; padding:3px 10px; cursor:pointer; }
@@ -366,8 +375,16 @@
 
   // ── WhatsApp markdown → HTML ──────────────────────────────────────────────
   function parseWA(text) {
-    return (text || '')
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    // Render [Photo:MEDIA_ID] as a clickable thumbnail
+    const photoRe = /\[Photo:(\d+)\](.*?)(?=<|$)/;
+    const escaped = (text || '')
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    // re-apply on escaped string — media IDs are numeric so no HTML injection risk
+    return escaped
+      .replace(/\[Photo:(\d+)\]([^\n]*)/g, (_, id, rest) => {
+        const caption = rest.trim();
+        return `<a href="/admin/media/${id}" target="_blank"><img src="/admin/media/${id}" style="max-width:220px;max-height:220px;border-radius:8px;display:block;margin:4px 0" loading="lazy"></a>${caption ? `<br><em>${caption}</em>` : ''}`;
+      })
       .replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>')
       .replace(/_([^_\n]+)_/g, '<em>$1</em>')
       .replace(/\n/g, '<br>');
@@ -458,25 +475,40 @@
       const opts = statusOptions.map(s =>
         `<option value="${s}" ${s === o.status ? 'selected' : ''}>${s}</option>`
       ).join('');
+      const horo = o.horoscope_received ? '📜 Horoscope ✅' : '📜 Horoscope ❌';
+      const rcpt = o.receipt_received   ? '💳 Receipt ✅'   : '💳 Receipt ❌';
+      const horoBtn = o.horoscope_received
+        ? `<button class="btn-flag" onclick="toggleFlag('${o.order_id}','horoscope_received',false)">Unmark Horoscope</button>`
+        : `<button class="btn-flag" onclick="toggleFlag('${o.order_id}','horoscope_received',true)">Mark Horoscope ✅</button>`;
+      const rcptBtn = o.receipt_received
+        ? `<button class="btn-flag" onclick="toggleFlag('${o.order_id}','receipt_received',false)">Unmark Receipt</button>`
+        : `<button class="btn-flag" onclick="toggleFlag('${o.order_id}','receipt_received',true)">Mark Receipt ✅</button>`;
       return `
       <div class="order-card" id="card-${o.order_id}">
         <div class="order-id">✅ ${o.order_id}</div>
         <div class="order-detail">
           ${o.package || ''} · ${o.birth_date || ''} · ${o.birth_city || ''}
         </div>
+        <div class="flag-row">
+          <span class="flag-badge">${horo}</span>
+          <span class="flag-badge">${rcpt}</span>
+        </div>
+        <div class="flag-row">${horoBtn}${rcptBtn}</div>
         <div class="status-row">
-          <span class="status-badge status-${o.status}">${o.status}</span>
+          <span class="status-badge status-${o.status}" id="sbadge-${o.order_id}">${o.status}</span>
           <select class="status-select" id="sel-${o.order_id}">${opts}</select>
           <button class="btn-status" onclick="updateOrderStatus('${o.order_id}')">Save</button>
         </div>
       </div>`;
     }).join('');
 
+    const totalCost = messages.reduce((s, m) => s + (parseFloat(m.cost_usd) || 0), 0);
     const bubbles = messages.map(m => {
       const cls = m.sender_type === 'user' ? 'user' : 'bot';
+      const costTag = m.cost_usd ? `<span class="msg-cost">$${parseFloat(m.cost_usd).toFixed(6)}</span>` : '';
       return `<div class="bubble ${cls}">
         ${parseWA(m.message_text)}
-        <div class="bubble-time">${fmtFull(m.created_at)}</div>
+        <div class="bubble-time">${fmtFull(m.created_at)}${costTag}</div>
       </div>`;
     }).join('');
 
@@ -485,8 +517,11 @@
         <div class="contact">
           ${customer.name || 'Unknown'}
           <small>${phone}</small>
+          <small style="color:#a5d6a7;">AI cost: $${totalCost.toFixed(6)}</small>
         </div>
         ${followupBtn}
+        <button class="btn-warn" onclick="deleteChat('${phone}')" title="Delete chat history only">🗑 Chat</button>
+        <button class="btn-danger" onclick="deleteCustomer('${phone}')" title="Delete customer + all data">❌ Customer</button>
       </div>
       ${orderBannerHtml}
       <div class="messages" id="msgArea">
@@ -539,6 +574,19 @@
     document.getElementById('fileInput').value = '';
     document.getElementById('imgPreview').style.display = 'none';
     document.getElementById('imgThumb').src = '';
+  }
+
+  async function toggleFlag(orderId, field, value) {
+    try {
+      await apiFetch(`/admin/order/${encodeURIComponent(orderId)}/flags`, {
+        method: 'PATCH',
+        body: JSON.stringify({ [field]: value }),
+      });
+      toast(`${field} → ${value ? '✅' : '❌'}`);
+      await selectCustomer(activePhone);
+    } catch (e) {
+      if (e.message !== 'Unauthorized') toast('Update failed: ' + e.message);
+    }
   }
 
   async function updateOrderStatus(orderId) {
@@ -615,6 +663,31 @@
       if (e.message !== 'Unauthorized') toast('Follow-up generation failed');
     } finally {
       if (btn) btn.disabled = false;
+    }
+  }
+
+  // ── Delete actions ────────────────────────────────────────────────────────
+  async function deleteChat(phone) {
+    if (!confirm(`Delete all chat messages for ${phone}?\n(Customer and orders are kept)`)) return;
+    try {
+      await apiFetch(`/admin/customer/${encodeURIComponent(phone)}/messages`, { method: 'DELETE' });
+      toast('Chat history deleted ✓');
+      await selectCustomer(phone);
+    } catch (e) {
+      if (e.message !== 'Unauthorized') toast('Delete failed: ' + e.message);
+    }
+  }
+
+  async function deleteCustomer(phone) {
+    if (!confirm(`DELETE customer ${phone} and ALL their messages + orders?\nThis cannot be undone.`)) return;
+    try {
+      await apiFetch(`/admin/customer/${encodeURIComponent(phone)}`, { method: 'DELETE' });
+      toast('Customer deleted ✓');
+      activePhone = null;
+      document.getElementById('chatPanel').innerHTML = '<div class="empty-state">Select a customer</div>';
+      await loadCustomers();
+    } catch (e) {
+      if (e.message !== 'Unauthorized') toast('Delete failed: ' + e.message);
     }
   }
 

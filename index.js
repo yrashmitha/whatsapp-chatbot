@@ -37,8 +37,9 @@ const PRICE_OUTPUT = 0.30  / 1_000_000;
 function calcCost(i, o) { return i * PRICE_INPUT + o * PRICE_OUTPUT; }
 
 // ─── Order ID generation ──────────────────────────────────────────────────────
-const ORDER_MARKER   = '[[ORDER_COMPLETE]]';
-const PAYMENT_MARKER = '[[PAYMENT_CHECK]]';
+const ORDER_MARKER      = '[[ORDER_COMPLETE]]';
+const PAYMENT_MARKER    = '[[PAYMENT_CHECK]]';
+const HOROSCOPE_MARKER  = '[[HOROSCOPE_RECEIVED]]';
 
 async function generateOrderId() {
   const year = new Date().getFullYear();
@@ -85,12 +86,12 @@ async function buildChatSession(phoneNumber) {
 
   if (existingOrders.length > 0) {
     const orderList = existingOrders
-      .map(o => `Order ID: ${o.order_id} | Package: ${o.package || '?'} | Status: ${o.status} | Date: ${String(o.created_at).split('T')[0]}`)
+      .map(o => `Order ID: ${o.order_id} | Package: ${o.package || '?'} | Status: ${o.status} | horoscope_received: ${!!o.horoscope_received} | receipt_received: ${!!o.receipt_received} | Date: ${String(o.created_at).split('T')[0]}`)
       .join('\n');
 
     initialHistory = [
       { role: 'user',  parts: [{ text: `[SYSTEM NOTE — not from customer]: This customer already has the following orders:\n${orderList}\nIf they ask about an order, refer to this list. If they are placing a new order, proceed normally.` }] },
-      { role: 'model', parts: [{ text: "[Noted. I have the customer's order history on file.]" }] },
+      { role: 'model', parts: [{ text: "[Noted. I have the customer's order history and document submission status on file.]" }] },
     ];
     console.log(`[SESSION] Injected order history into initial context`);
   }
@@ -98,16 +99,28 @@ async function buildChatSession(phoneNumber) {
   return model.startChat({ history: initialHistory });
 }
 
+async function buildOrderStatusNote(phoneNumber) {
+  const order = await db.getLatestOrder(phoneNumber);
+  if (!order) return null;
+  return `[ORDER STATUS — ${order.order_id}: horoscope_received=${!!order.horoscope_received}, receipt_received=${!!order.receipt_received}, status=${order.status}]`;
+}
+
 // ─── Handle incoming message ──────────────────────────────────────────────────
-async function handleMessage(phoneNumber, userMessage, chatSession) {
+async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserInsert = false } = {}) {
   console.log(`[MSG] Handling message from ${phoneNumber}: "${userMessage.substring(0, 80)}"`);
 
   await db.upsertCustomer(phoneNumber, null);
-  await db.insertMessage(phoneNumber, userMessage, 'user');
-  console.log(`[DB] Saved user message for ${phoneNumber}`);
+  if (!skipUserInsert) {
+    await db.insertMessage(phoneNumber, userMessage, 'user');
+    console.log(`[DB] Saved user message for ${phoneNumber}`);
+  }
+
+  // Inject current order status so AI knows what documents are already received
+  const statusNote = await buildOrderStatusNote(phoneNumber);
+  const messageToSend = statusNote ? `${statusNote}\n\n${userMessage}` : userMessage;
 
   console.log(`[GEMINI] Sending message to Gemini...`);
-  const result  = await chatSession.sendMessage(userMessage);
+  const result  = await chatSession.sendMessage(messageToSend);
   let botReply  = result.response.text()
     .replace(/\*\*([^*\n]+)\*\*/g, '*$1*'); // convert markdown **bold** → WhatsApp *bold*
 
@@ -157,20 +170,31 @@ async function handleMessage(phoneNumber, userMessage, chatSession) {
     }
   }
 
+  if (botReply.includes(HOROSCOPE_MARKER)) {
+    botReply = botReply.replace(HOROSCOPE_MARKER, '').replace(/\n{3,}/g, '\n\n').trim();
+    try {
+      await db.updateOrderFlags(phoneNumber, { horoscope_received: true });
+      console.log(`[HOROSCOPE] horoscope_received=true for ${phoneNumber}`);
+    } catch (err) {
+      console.error(`[HOROSCOPE] Failed to update flag:`, err.message);
+    }
+  }
+
   let paymentReceived = false;
   if (botReply.includes(PAYMENT_MARKER)) {
     botReply = botReply.replace(PAYMENT_MARKER, '').replace(/\n{3,}/g, '\n\n').trim();
     try {
       await db.updateLatestOrderStatus(phoneNumber, 'payment_received');
-      console.log(`[PAYMENT] Status updated to payment_received for ${phoneNumber}`);
+      await db.updateOrderFlags(phoneNumber, { receipt_received: true });
+      console.log(`[PAYMENT] Status=payment_received, receipt_received=true for ${phoneNumber}`);
     } catch (err) {
-      console.error(`[PAYMENT] Failed to update order status:`, err.message);
+      console.error(`[PAYMENT] Failed to update order:`, err.message);
     }
     paymentReceived = true;
   }
 
-  await db.insertMessage(phoneNumber, botReply, 'bot');
-  console.log(`[DB] Saved bot reply for ${phoneNumber}`);
+  await db.insertMessage(phoneNumber, botReply, 'bot', callCostUSD);
+  console.log(`[DB] Saved bot reply for ${phoneNumber} cost=$${callCostUSD.toFixed(6)}`);
   return { botReply, orderId, paymentReceived, callCostUSD, inputTokens, outputTokens, imagesToSend };
 }
 
@@ -350,28 +374,31 @@ app.post('/webhook', (req, res) => {
         console.log(`[WEBHOOK-POST] Image from ${from} | caption="${caption}"`);
 
         await db.upsertCustomer(from, null);
-
         if (!chatSessions.has(from)) {
           chatSessions.set(from, { chat: await buildChatSession(from), phoneNumber: from });
         }
         const imgSession = chatSessions.get(from);
 
-        if (!caption) {
-          // Image only — no text to process
-          const reply = 'ඔබේ photo ලැබුණා 🙏 mata images / photos directly kiyawanna baha. ape team member ata ata mewa balala oba sambanda karaganawa. 😊';
-          await db.insertMessage(from, '[Image]', 'user');
-          await db.insertMessage(from, reply, 'bot');
-          await sendWhatsAppMessage(from, reply);
-        } else {
-          // Image with caption — process caption through AI, append image note
-          await db.insertMessage(from, `[Image: ${caption}]`, 'user');
-          const result  = await imgSession.chat.sendMessage(caption);
-          let aiReply   = result.response.text()
-            .replace(/\*\*([^*\n]+)\*\*/g, '*$1*')
-            .replace(/\[\[SEND_IMAGE:[^\]]+\]\]/g, '').replace(/\n{3,}/g, '\n\n').trim();
-          aiReply += '\n\n_(📷 ඔබේ photo ගැන: mata images directly kiyawanna baha. ape team member mewa balala oba sambanda karaganawa 🙏)_';
-          await db.insertMessage(from, aiReply, 'bot');
-          await sendWhatsAppMessage(from, aiReply);
+        // Tell the AI an image was received — it decides based on conversation context
+        // whether it's a horoscope photo or payment receipt and responds + fires the right marker
+        const imageNote = caption
+          ? `[Customer sent a photo with caption: "${caption}". You cannot see the image itself. Respond based on context — if this is likely their horoscope chart, acknowledge it and add [[HOROSCOPE_RECEIVED]]. If it looks like a payment receipt, acknowledge and add [[PAYMENT_CHECK]]. Also add a short note that you cannot view images directly but the team will review it.]`
+          : `[Customer sent a photo (no caption). You cannot see the image. Based on the current conversation stage — if a horoscope photo was expected, acknowledge it as the horoscope and add [[HOROSCOPE_RECEIVED]]. If payment was pending and a receipt was expected, acknowledge it as the receipt and add [[PAYMENT_CHECK]]. Add a short note that you cannot view images but the team will review it.]`;
+
+        const mediaId = msg.image?.id || '';
+        const userLabel = `[Photo:${mediaId}]${caption ? ` ${caption}` : ''}`;
+        await db.insertMessage(from, userLabel, 'user');
+
+        const { botReply, imagesToSend } = await handleMessage(from, imageNote, imgSession.chat, { skipUserInsert: true });
+        console.log(`[OUT] ${from}: ${botReply.substring(0, 120)}`);
+        await sendWhatsAppMessage(from, botReply);
+
+        for (const filename of imagesToSend) {
+          const imgCaption = filename.toLowerCase().startsWith('horoscope')
+            ? 'ලග්න කොටු 12 සහ නවාංශ කොටු 12 දෙකම පෙනෙන ලෙස photo send කරන්න 🙏'
+            : 'මේවා මම ඉක්මනින්ම හොයාගත්ත කීප දෙනෙකුගේ screenshots 🙏';
+          await sendWhatsAppImage(from, filename, imgCaption);
+          await db.insertMessage(from, `[Image: ${filename}]`, 'bot');
         }
         return;
       }
@@ -510,6 +537,48 @@ app.post('/admin/send', adminAuth, async (req, res) => {
   }
 });
 
+// DELETE /admin/customer/:phone — delete customer + all messages + orders (CASCADE)
+app.delete('/admin/customer/:phone', adminAuth, async (req, res) => {
+  const phone = decodeURIComponent(req.params.phone);
+  console.log(`[ADMIN] DELETE customer ${phone}`);
+  try {
+    chatSessions.delete(phone);
+    await db.deleteCustomer(phone);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(`[ADMIN] delete customer error:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /admin/customer/:phone/messages — delete chat history only
+app.delete('/admin/customer/:phone/messages', adminAuth, async (req, res) => {
+  const phone = decodeURIComponent(req.params.phone);
+  console.log(`[ADMIN] DELETE messages for ${phone}`);
+  try {
+    chatSessions.delete(phone);
+    await db.deleteMessages(phone);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(`[ADMIN] delete messages error:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /admin/order/:orderId/flags — toggle horoscope_received / receipt_received
+app.patch('/admin/order/:orderId/flags', adminAuth, async (req, res) => {
+  const { orderId } = req.params;
+  const { horoscope_received, receipt_received } = req.body;
+  console.log(`[ADMIN] PATCH /admin/order/${orderId}/flags`, req.body);
+  try {
+    await db.updateOrderFlagsById(orderId, { horoscope_received, receipt_received });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(`[ADMIN] flags update error:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // PATCH /admin/order/:orderId/status
 app.patch('/admin/order/:orderId/status', adminAuth, async (req, res) => {
   const { orderId } = req.params;
@@ -524,6 +593,32 @@ app.patch('/admin/order/:orderId/status', adminAuth, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error(`[ADMIN] order status update error:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /admin/media/:mediaId — proxy WhatsApp media (fetches fresh URL on demand)
+app.get('/admin/media/:mediaId', adminAuth, async (req, res) => {
+  const { mediaId } = req.params;
+  try {
+    // Step 1: get the temporary media URL from WhatsApp
+    const metaRes = await axios.get(
+      `https://graph.facebook.com/v18.0/${mediaId}`,
+      { headers: { Authorization: `Bearer ${META_ACCESS_TOKEN}` } }
+    );
+    const mediaUrl = metaRes.data.url;
+    if (!mediaUrl) return res.status(404).json({ error: 'media URL not found' });
+
+    // Step 2: fetch the binary and stream it back
+    const imgRes = await axios.get(mediaUrl, {
+      headers: { Authorization: `Bearer ${META_ACCESS_TOKEN}` },
+      responseType: 'stream',
+    });
+    res.setHeader('Content-Type', imgRes.headers['content-type'] || 'image/jpeg');
+    res.setHeader('Cache-Control', 'no-store');
+    imgRes.data.pipe(res);
+  } catch (err) {
+    console.error(`[ADMIN] media proxy error for ${mediaId}:`, err.message);
     res.status(500).json({ error: err.message });
   }
 });

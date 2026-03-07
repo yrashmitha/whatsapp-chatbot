@@ -49,27 +49,32 @@ async function init() {
         created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
       CREATE TABLE IF NOT EXISTS orders (
-        id           SERIAL PRIMARY KEY,
-        order_id     TEXT UNIQUE NOT NULL,
-        phone_number TEXT NOT NULL REFERENCES customers(phone_number) ON DELETE CASCADE,
-        package      TEXT,
-        birth_date   TEXT,
-        birth_time   TEXT,
-        birth_city   TEXT,
-        problems     TEXT,
-        status       TEXT NOT NULL DEFAULT 'pending',
-        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        id                  SERIAL PRIMARY KEY,
+        order_id            TEXT UNIQUE NOT NULL,
+        phone_number        TEXT NOT NULL REFERENCES customers(phone_number) ON DELETE CASCADE,
+        package             TEXT,
+        birth_date          TEXT,
+        birth_time          TEXT,
+        birth_city          TEXT,
+        problems            TEXT,
+        status              TEXT NOT NULL DEFAULT 'pending',
+        horoscope_received  BOOLEAN NOT NULL DEFAULT FALSE,
+        receipt_received    BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
     `);
 
-    // Migrate: add cost_usd column if missing
+    // Migrate: add missing columns
     await pool.query(`
       DO $$ BEGIN
-        IF NOT EXISTS (
-          SELECT 1 FROM information_schema.columns
-          WHERE table_name = 'messages' AND column_name = 'cost_usd'
-        ) THEN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='messages' AND column_name='cost_usd') THEN
           ALTER TABLE messages ADD COLUMN cost_usd NUMERIC(12,8);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='horoscope_received') THEN
+          ALTER TABLE orders ADD COLUMN horoscope_received BOOLEAN NOT NULL DEFAULT FALSE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='receipt_received') THEN
+          ALTER TABLE orders ADD COLUMN receipt_received BOOLEAN NOT NULL DEFAULT FALSE;
         END IF;
       END $$;
     `);
@@ -123,32 +128,36 @@ async function init() {
         created_at   TEXT NOT NULL DEFAULT (datetime('now'))
       );
       CREATE TABLE IF NOT EXISTS orders (
-        id           INTEGER PRIMARY KEY AUTOINCREMENT,
-        order_id     TEXT UNIQUE NOT NULL,
-        phone_number TEXT NOT NULL REFERENCES customers(phone_number) ON DELETE CASCADE,
-        package      TEXT,
-        birth_date   TEXT,
-        birth_time   TEXT,
-        birth_city   TEXT,
-        problems     TEXT,
-        status       TEXT NOT NULL DEFAULT 'pending',
-        created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id            TEXT UNIQUE NOT NULL,
+        phone_number        TEXT NOT NULL REFERENCES customers(phone_number) ON DELETE CASCADE,
+        package             TEXT,
+        birth_date          TEXT,
+        birth_time          TEXT,
+        birth_city          TEXT,
+        problems            TEXT,
+        status              TEXT NOT NULL DEFAULT 'pending',
+        horoscope_received  INTEGER NOT NULL DEFAULT 0,
+        receipt_received    INTEGER NOT NULL DEFAULT 0,
+        created_at          TEXT NOT NULL DEFAULT (datetime('now'))
       );
     `);
-    // Migrate: add cost_usd column if missing (existing DBs)
+    // Migrate: add missing columns (existing DBs)
     try { db.exec(`ALTER TABLE messages ADD COLUMN cost_usd REAL`); } catch (_) {}
+    try { db.exec(`ALTER TABLE orders ADD COLUMN horoscope_received INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
+    try { db.exec(`ALTER TABLE orders ADD COLUMN receipt_received INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
   }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-async function insertMessage(phoneNumber, text, senderType) {
+async function insertMessage(phoneNumber, text, senderType, costUsd = null) {
   if (IS_PG) {
     await pool.query(
-      'INSERT INTO messages (phone_number, message_text, sender_type) VALUES ($1, $2, $3)',
-      [phoneNumber, text, senderType]
+      'INSERT INTO messages (phone_number, message_text, sender_type, cost_usd) VALUES ($1, $2, $3, $4)',
+      [phoneNumber, text, senderType, costUsd]
     );
   } else {
-    db.prepare('INSERT INTO messages (phone_number, message_text, sender_type) VALUES (?, ?, ?)').run(phoneNumber, text, senderType);
+    db.prepare('INSERT INTO messages (phone_number, message_text, sender_type, cost_usd) VALUES (?, ?, ?, ?)').run(phoneNumber, text, senderType, costUsd);
   }
 }
 
@@ -238,6 +247,75 @@ async function getMessagesByPhone(phoneNumber) {
   }
 }
 
+async function getLatestOrder(phoneNumber) {
+  if (IS_PG) {
+    const res = await pool.query(
+      'SELECT * FROM orders WHERE phone_number = $1 ORDER BY created_at DESC LIMIT 1',
+      [phoneNumber]
+    );
+    return res.rows[0] || null;
+  } else {
+    return db.prepare('SELECT * FROM orders WHERE phone_number = ? ORDER BY created_at DESC LIMIT 1').get(phoneNumber) || null;
+  }
+}
+
+async function updateOrderFlags(phoneNumber, flags) {
+  // flags: { horoscope_received?, receipt_received? }
+  const sets  = [];
+  const vals  = [];
+  if (flags.horoscope_received !== undefined) { sets.push(IS_PG ? `horoscope_received=$${sets.length+1}` : 'horoscope_received=?'); vals.push(flags.horoscope_received ? (IS_PG ? true : 1) : (IS_PG ? false : 0)); }
+  if (flags.receipt_received   !== undefined) { sets.push(IS_PG ? `receipt_received=$${sets.length+1}`   : 'receipt_received=?');   vals.push(flags.receipt_received   ? (IS_PG ? true : 1) : (IS_PG ? false : 0)); }
+  if (sets.length === 0) return;
+  if (IS_PG) {
+    vals.push(phoneNumber);
+    await pool.query(
+      `UPDATE orders SET ${sets.join(',')} WHERE id=(SELECT id FROM orders WHERE phone_number=$${vals.length} ORDER BY created_at DESC LIMIT 1)`,
+      vals
+    );
+  } else {
+    vals.push(phoneNumber);
+    db.prepare(
+      `UPDATE orders SET ${sets.join(',')} WHERE id=(SELECT id FROM orders WHERE phone_number=? ORDER BY created_at DESC LIMIT 1)`
+    ).run(...vals);
+  }
+}
+
+async function deleteCustomer(phoneNumber) {
+  // CASCADE deletes messages + orders automatically
+  if (IS_PG) {
+    await pool.query('DELETE FROM customers WHERE phone_number = $1', [phoneNumber]);
+  } else {
+    db.prepare('DELETE FROM customers WHERE phone_number = ?').run(phoneNumber);
+  }
+}
+
+async function deleteMessages(phoneNumber) {
+  if (IS_PG) {
+    await pool.query('DELETE FROM messages WHERE phone_number = $1', [phoneNumber]);
+  } else {
+    db.prepare('DELETE FROM messages WHERE phone_number = ?').run(phoneNumber);
+  }
+}
+
+async function updateOrderFlagsById(orderId, flags) {
+  const sets = [], vals = [];
+  if (flags.horoscope_received !== undefined) {
+    sets.push(IS_PG ? `horoscope_received=$${sets.length+1}` : 'horoscope_received=?');
+    vals.push(flags.horoscope_received ? (IS_PG ? true : 1) : (IS_PG ? false : 0));
+  }
+  if (flags.receipt_received !== undefined) {
+    sets.push(IS_PG ? `receipt_received=$${sets.length+1}` : 'receipt_received=?');
+    vals.push(flags.receipt_received ? (IS_PG ? true : 1) : (IS_PG ? false : 0));
+  }
+  if (sets.length === 0) return;
+  vals.push(orderId);
+  if (IS_PG) {
+    await pool.query(`UPDATE orders SET ${sets.join(',')} WHERE order_id=$${vals.length}`, vals);
+  } else {
+    db.prepare(`UPDATE orders SET ${sets.join(',')} WHERE order_id=?`).run(...vals);
+  }
+}
+
 async function updateOrderStatusById(orderId, status) {
   if (IS_PG) {
     await pool.query('UPDATE orders SET status = $1 WHERE order_id = $2', [status, orderId]);
@@ -274,4 +352,4 @@ async function countOrdersByYear(pattern) {
   }
 }
 
-module.exports = { init, insertMessage, upsertCustomer, insertOrder, getOrdersByPhone, countOrdersByYear, getAllCustomers, getMessagesByPhone, updateLatestOrderStatus, updateOrderStatusById, IS_PG };
+module.exports = { init, insertMessage, upsertCustomer, insertOrder, getOrdersByPhone, getLatestOrder, countOrdersByYear, getAllCustomers, getMessagesByPhone, updateLatestOrderStatus, updateOrderStatusById, updateOrderFlags, updateOrderFlagsById, deleteCustomer, deleteMessages, IS_PG };

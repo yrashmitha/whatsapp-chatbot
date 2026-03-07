@@ -287,6 +287,7 @@ db.init().then(() => {
     console.log(`[STARTUP] Database: ${db.IS_PG ? 'PostgreSQL' : 'SQLite (local)'}`);
   });
 }).catch(err => {
-  console.error(`[STARTUP] DB init FAILED:`, err.message);
+  console.error(`[STARTUP] DB init FAILED:`, err.message || err);
+  console.error(`[STARTUP] Full error:`, JSON.stringify(err, Object.getOwnPropertyNames(err)));
   process.exit(1);
 });

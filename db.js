@@ -15,13 +15,15 @@ let db;   // SQLite (local)
 
 if (IS_PG) {
   const { Pool } = require('pg');
+  // Railway internal URLs don't need SSL; external ones do
+  const needsSsl = rawDbUrl.includes('railway.app') || rawDbUrl.includes('railway.com');
   pool = new Pool({
     connectionString: rawDbUrl,
-    ssl: { rejectUnauthorized: false },
-    connectionTimeoutMillis: 5000,
+    ssl: needsSsl ? { rejectUnauthorized: false } : false,
+    connectionTimeoutMillis: 8000,
     idleTimeoutMillis: 10000,
   });
-  console.log(`[DB] PostgreSQL pool created`);
+  console.log(`[DB] PostgreSQL pool created | SSL: ${needsSsl}`);
 } else {
   const { DatabaseSync } = require('node:sqlite');
   const dataDir = path.join(__dirname, 'data');

@@ -154,7 +154,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession) {
 // ─── WhatsApp image send helper ───────────────────────────────────────────────
 async function sendWhatsAppImage(to, filename, caption) {
   const base = process.env.PUBLIC_URL || 'https://whatsapp-chatbot-production-038d.up.railway.app';
-  const link = `${base}/templates/${filename}`;
+  const link = `${base}/templates/${encodeURIComponent(filename)}`;
   console.log(`[WA-IMG] Sending image ${filename} to ${to}`);
   try {
     await axios.post(

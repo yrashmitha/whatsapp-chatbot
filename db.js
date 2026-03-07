@@ -16,7 +16,7 @@ let db;   // SQLite (local)
 if (IS_PG) {
   const { Pool } = require('pg');
   // Railway internal URLs don't need SSL; external ones do
-  const needsSsl = rawDbUrl.includes('railway.app') || rawDbUrl.includes('railway.com');
+  const needsSsl = rawDbUrl.includes('railway.app') || rawDbUrl.includes('railway.com') || rawDbUrl.includes('rlwy.net');
   pool = new Pool({
     connectionString: rawDbUrl,
     ssl: needsSsl ? { rejectUnauthorized: false } : false,

@@ -20,7 +20,16 @@ console.log(`[STARTUP] GEMINI_API_KEY set: ${!!process.env.GEMINI_API_KEY}`);
 const systemInstruction = buildSystemInstruction();
 console.log(`[STARTUP] System instruction loaded (${systemInstruction.length} chars)`);
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash', systemInstruction });
+const model = genAI.getGenerativeModel({ 
+  model: 'gemini-2.5-flash', // මෙතන 2.0 හෝ ඔයා පාවිච්චි කරන version එක දාන්න
+  systemInstruction,
+  generationConfig: {
+    temperature: 0.7,
+    topP: 0.95,
+    topK: 64,
+    maxOutputTokens: 1024,
+  }
+});
 
 // ─── Cost calculation (Gemini 2.5 Flash pricing) ─────────────────────────────
 const PRICE_INPUT  = 0.075 / 1_000_000;

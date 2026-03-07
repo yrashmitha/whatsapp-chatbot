@@ -7,6 +7,12 @@ const path    = require('path');
 const buildSystemInstruction = require('./buildInstruction');
 const db      = require('./db');
 
+// ─── WhatsApp credentials (test vs prod) ─────────────────────────────────────
+const IS_TEST = (process.env.WHATSAPP_MODE || 'test') !== 'prod';
+const META_ACCESS_TOKEN = IS_TEST ? process.env.TEST_META_ACCESS_TOKEN : process.env.PROD_META_ACCESS_TOKEN;
+const PHONE_NUMBER_ID   = IS_TEST ? process.env.TEST_PHONE_NUMBER_ID   : process.env.PROD_PHONE_NUMBER_ID;
+console.log(`WhatsApp mode: ${IS_TEST ? 'TEST' : 'PROD'} | Phone Number ID: ${PHONE_NUMBER_ID}`);
+
 // ─── Gemini client ────────────────────────────────────────────────────────────
 const systemInstruction = buildSystemInstruction();
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -108,9 +114,9 @@ async function handleMessage(phoneNumber, userMessage, chatSession) {
 // ─── WhatsApp send helper ─────────────────────────────────────────────────────
 async function sendWhatsAppMessage(to, text) {
   await axios.post(
-    `https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`,
+    `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
     { messaging_product: 'whatsapp', to, type: 'text', text: { body: text } },
-    { headers: { Authorization: `Bearer ${process.env.META_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } }
+    { headers: { Authorization: `Bearer ${META_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } }
   );
 }
 

@@ -1,7 +1,14 @@
 const fs   = require('fs');
 const path = require('path');
 
-const IS_PG = !!process.env.DATABASE_URL;
+const rawDbUrl = process.env.DATABASE_URL || '';
+// Treat unresolved Railway template variables as no DB URL
+const IS_PG = rawDbUrl.length > 0 && !rawDbUrl.includes('${{');
+
+console.log(`[DB] DATABASE_URL set: ${!!rawDbUrl} | IS_PG: ${IS_PG}`);
+if (rawDbUrl && rawDbUrl.includes('${{')) {
+  console.warn(`[DB] DATABASE_URL contains unresolved Railway template vars — falling back to SQLite`);
+}
 
 let pool; // pg (Railway)
 let db;   // SQLite (local)
@@ -9,9 +16,12 @@ let db;   // SQLite (local)
 if (IS_PG) {
   const { Pool } = require('pg');
   pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
+    connectionString: rawDbUrl,
     ssl: { rejectUnauthorized: false },
+    connectionTimeoutMillis: 5000,
+    idleTimeoutMillis: 10000,
   });
+  console.log(`[DB] PostgreSQL pool created`);
 } else {
   const { DatabaseSync } = require('node:sqlite');
   const dataDir = path.join(__dirname, 'data');

@@ -323,7 +323,9 @@
       alert('Wrong password. Reload and try again.');
       throw new Error('Unauthorized');
     }
-    return res.json();
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
   }
 
   // ── Toast ─────────────────────────────────────────────────────────────────
@@ -374,7 +376,11 @@
       document.getElementById('topMeta').textContent =
         `${total} customers · ${orders} orders · ${leads} leads`;
     } catch (e) {
-      if (e.message !== 'Unauthorized') toast('Failed to load customers');
+      if (e.message !== 'Unauthorized') {
+        toast('Failed to load customers: ' + e.message);
+        document.getElementById('customerList').innerHTML =
+          `<div style="padding:20px;color:#f66;font-size:13px;">Error: ${e.message}</div>`;
+      }
     }
   }
 

@@ -98,7 +98,8 @@ async function handleMessage(phoneNumber, userMessage, chatSession) {
 
   console.log(`[GEMINI] Sending message to Gemini...`);
   const result  = await chatSession.sendMessage(userMessage);
-  let botReply  = result.response.text();
+  let botReply  = result.response.text()
+    .replace(/\*\*([^*\n]+)\*\*/g, '*$1*'); // convert markdown **bold** → WhatsApp *bold*
 
   // Extract [[SEND_IMAGE:filename]] markers
   const IMAGE_RE = /\[\[SEND_IMAGE:([^\]]+)\]\]/g;
@@ -316,14 +317,47 @@ app.post('/webhook', (req, res) => {
         return;
       }
 
-      const msg         = value.messages[0];
-      const from        = msg.from;
-      const userMessage = msg.text?.body;
+      const msg  = value.messages[0];
+      const from = msg.from;
 
       console.log(`[WEBHOOK-POST] msg type=${msg.type} from=${from}`);
 
+      // ── Image messages ──────────────────────────────────────────────────────
+      if (msg.type === 'image') {
+        const caption = msg.image?.caption?.trim() || '';
+        console.log(`[WEBHOOK-POST] Image from ${from} | caption="${caption}"`);
+
+        await db.upsertCustomer(from, null);
+
+        if (!chatSessions.has(from)) {
+          chatSessions.set(from, { chat: await buildChatSession(from), phoneNumber: from });
+        }
+        const imgSession = chatSessions.get(from);
+
+        if (!caption) {
+          // Image only — no text to process
+          const reply = 'ඔබේ photo ලැබුණා 🙏 mata images / photos directly kiyawanna baha. ape team member ata ata mewa balala oba sambanda karaganawa. 😊';
+          await db.insertMessage(from, '[Image]', 'user');
+          await db.insertMessage(from, reply, 'bot');
+          await sendWhatsAppMessage(from, reply);
+        } else {
+          // Image with caption — process caption through AI, append image note
+          await db.insertMessage(from, `[Image: ${caption}]`, 'user');
+          const result  = await imgSession.chat.sendMessage(caption);
+          let aiReply   = result.response.text()
+            .replace(/\*\*([^*\n]+)\*\*/g, '*$1*')
+            .replace(/\[\[SEND_IMAGE:[^\]]+\]\]/g, '').replace(/\n{3,}/g, '\n\n').trim();
+          aiReply += '\n\n_(📷 ඔබේ photo ගැන: mata images directly kiyawanna baha. ape team member mewa balala oba sambanda karaganawa 🙏)_';
+          await db.insertMessage(from, aiReply, 'bot');
+          await sendWhatsAppMessage(from, aiReply);
+        }
+        return;
+      }
+
+      // ── Text messages ───────────────────────────────────────────────────────
+      const userMessage = msg.text?.body;
       if (!userMessage) {
-        console.log(`[WEBHOOK-POST] Non-text message from ${from} — skipping`);
+        console.log(`[WEBHOOK-POST] Unsupported message type "${msg.type}" from ${from} — skipping`);
         return;
       }
 
@@ -344,7 +378,7 @@ app.post('/webhook', (req, res) => {
 
       for (const filename of imagesToSend) {
         const caption = filename.toLowerCase().startsWith('horoscope')
-          ? 'ලග්න කෝෂ්ඨ 12 සහ නවාංශ කෝෂ්ඨ 12 දෙකම පෙනෙන ලෙස photos 2ක් or 1ක් send කරන්න 🙏'
+          ? 'ලග්න කොටු 12 සහ නවාංශ කොටු 12 දෙකම පෙනෙන ලෙස photo send කරන්න 🙏'
           : 'මේවා මම ඉක්මනින්ම හොයාගත්ත කීප දෙනෙකුගේ screenshots 🙏';
         await sendWhatsAppImage(from, filename, caption);
         await db.insertMessage(from, `[Image: ${filename}]`, 'bot');

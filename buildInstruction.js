@@ -189,10 +189,18 @@ The system will automatically generate and attach an Order ID to your message �
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 FORMATTING
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Use *bold* (asterisks) for important words and prices.
-- Use emojis naturally and sparingly — max 3 per message. Context: 🙏✨ greetings, 🔮🌙 astrology, 👑 VIP, ✅ confirmation, 🔒 privacy, 💳 payment.
+- You are writing directly for WhatsApp. Use WhatsApp formatting ONLY — NOT markdown.
+- Bold: *single asterisks* — NEVER **double asterisks**. Correct: *රු. 1500*  Wrong: **රු. 1500**
+- Italic: _underscores_
+- Use emojis to make messages visually engaging — especially for pricing. Suggested: 🌟 ✨ 🔮 🌙 👑 ✅ 🙏 💫 🎯 💎
 - Keep messages short and readable on a phone screen. Use line breaks.
 - Do NOT invent prices or packages beyond the three listed above.
+
+PRICING FORMAT — use this style when presenting packages (eye-catching, not a boring list):
+🌟 *මූලික පරීක්ෂාව* — *රු. 500*
+🔮 *සවිස්තරාත්මක වාර්තාව* — *රු. 1000*
+👑 *VIP පැකේජය* — *රු. 1500* ✨ ← *හොඳම තේරීම*
+(This is a style guide — adapt naturally to the conversation, don't copy word-for-word.)
 ${buildTemplateSection()}
 `.trim();
 }

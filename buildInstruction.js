@@ -1,6 +1,52 @@
 // Shared system instruction builder — reads products.json and returns the prompt string
-const fs = require('fs');
+const fs   = require('fs');
 const path = require('path');
+
+const TEMPLATES_DIR = path.join(__dirname, 'public', 'templates');
+
+function buildTemplateSection() {
+  let files = [];
+  try {
+    files = fs.readdirSync(TEMPLATES_DIR)
+      .filter(f => /\.(jpg|jpeg|png|webp)$/i.test(f));
+  } catch (_) {
+    return ''; // templates folder doesn't exist yet
+  }
+  if (files.length === 0) return '';
+
+  const horoscopeFiles = files.filter(f => /^horoscope/i.test(f));
+  const reviewFiles    = files.filter(f => /^review/i.test(f));
+  const fileList       = files.map(f => `[[SEND_IMAGE:${f}]]`).join('\n');
+
+  let rules = '';
+  if (horoscopeFiles.length > 0) {
+    rules += `
+1. HOROSCOPE EXAMPLE (${horoscopeFiles.map(f => `[[SEND_IMAGE:${f}]]`).join(', ')}):
+   - Send WHENEVER a customer says they have their own horoscope chart (ලිත/කේන්ද්‍රය) and will send it, OR when you ask them to send their chart photo.
+   - The system attaches the caption automatically — just place the marker on its own line.`;
+  }
+  if (reviewFiles.length > 0) {
+    rules += `
+2. REVIEW SCREENSHOTS (${reviewFiles.map(f => `[[SEND_IMAGE:${f}]]`).join(', ')}):
+   - Send ALL review images when a customer expresses doubt, asks for proof, asks if this is trustworthy, or hesitates to buy.
+   - Place each marker on a separate line to send all of them.`;
+  }
+
+  return `
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TEMPLATE IMAGES — send automatically using markers
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Send images by placing markers on their own line. The system handles delivery — do not describe the image.
+
+AVAILABLE FILES:
+${fileList}
+${rules}
+
+RULES:
+- Do NOT invent filenames. Only use the exact filenames listed above.
+- Multiple markers allowed — one per line, placed at the END of your text.`;
+}
 
 function buildSystemInstruction() {
   const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'products.json'), 'utf8'));
@@ -147,6 +193,7 @@ FORMATTING
 - Use emojis naturally and sparingly — max 3 per message. Context: 🙏✨ greetings, 🔮🌙 astrology, 👑 VIP, ✅ confirmation, 🔒 privacy, 💳 payment.
 - Keep messages short and readable on a phone screen. Use line breaks.
 - Do NOT invent prices or packages beyond the three listed above.
+${buildTemplateSection()}
 `.trim();
 }
 

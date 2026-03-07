@@ -4,6 +4,7 @@ const express = require('express');
 const axios   = require('axios');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const path    = require('path');
+const fs      = require('fs');
 const buildSystemInstruction = require('./buildInstruction');
 const db      = require('./db');
 
@@ -99,6 +100,16 @@ async function handleMessage(phoneNumber, userMessage, chatSession) {
   const result  = await chatSession.sendMessage(userMessage);
   let botReply  = result.response.text();
 
+  // Extract [[SEND_IMAGE:filename]] markers
+  const IMAGE_RE = /\[\[SEND_IMAGE:([^\]]+)\]\]/g;
+  const imagesToSend = [];
+  let m;
+  while ((m = IMAGE_RE.exec(botReply)) !== null) imagesToSend.push(m[1].trim());
+  if (imagesToSend.length > 0) {
+    botReply = botReply.replace(/\[\[SEND_IMAGE:[^\]]+\]\]/g, '').replace(/\n{3,}/g, '\n\n').trim();
+    console.log(`[MSG] Image markers found: ${imagesToSend.join(', ')}`);
+  }
+
   const usage        = result.response.usageMetadata || {};
   const inputTokens  = usage.promptTokenCount     || 0;
   const outputTokens = usage.candidatesTokenCount || 0;
@@ -137,7 +148,24 @@ async function handleMessage(phoneNumber, userMessage, chatSession) {
 
   await db.insertMessage(phoneNumber, botReply, 'bot');
   console.log(`[DB] Saved bot reply for ${phoneNumber}`);
-  return { botReply, orderId, callCostUSD, inputTokens, outputTokens };
+  return { botReply, orderId, callCostUSD, inputTokens, outputTokens, imagesToSend };
+}
+
+// ─── WhatsApp image send helper ───────────────────────────────────────────────
+async function sendWhatsAppImage(to, filename, caption) {
+  const base = process.env.PUBLIC_URL || 'https://whatsapp-chatbot-production-038d.up.railway.app';
+  const link = `${base}/templates/${filename}`;
+  console.log(`[WA-IMG] Sending image ${filename} to ${to}`);
+  try {
+    await axios.post(
+      `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
+      { messaging_product: 'whatsapp', to, type: 'image', image: { link, caption } },
+      { headers: { Authorization: `Bearer ${META_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } }
+    );
+    console.log(`[WA-IMG] Image sent successfully to ${to}`);
+  } catch (err) {
+    console.error(`[WA-IMG] Send failed to ${to}:`, err?.response?.data ?? err.message);
+  }
 }
 
 // ─── WhatsApp send helper ─────────────────────────────────────────────────────
@@ -193,7 +221,7 @@ app.post('/chat', async (req, res) => {
   const session = chatSessions.get(sessionId);
 
   try {
-    const { botReply, orderId, callCostUSD, inputTokens, outputTokens } =
+    const { botReply, orderId, callCostUSD, inputTokens, outputTokens, imagesToSend } =
       await handleMessage(phoneNumber, userMessage, session.chat);
 
     session.totalCostUSD      += callCostUSD;
@@ -202,9 +230,11 @@ app.post('/chat', async (req, res) => {
 
     console.log(`[/chat] Response sent | orderId=${orderId} | sessionTotal=$${session.totalCostUSD.toFixed(6)}`);
 
+    const base = process.env.PUBLIC_URL || 'https://whatsapp-chatbot-production-038d.up.railway.app';
     res.json({
       reply: botReply,
       orderId,
+      images: imagesToSend.map(f => ({ filename: f, url: `${base}/templates/${f}` })),
       usage: {
         callCostUSD:       +callCostUSD.toFixed(6),
         totalCostUSD:      +session.totalCostUSD.toFixed(6),
@@ -268,13 +298,144 @@ app.post('/webhook', (req, res) => {
       }
       const session = chatSessions.get(from);
 
-      const { botReply } = await handleMessage(from, userMessage, session.chat);
+      const { botReply, imagesToSend } = await handleMessage(from, userMessage, session.chat);
       console.log(`[OUT] ${from}: ${botReply.substring(0, 120)}`);
       await sendWhatsAppMessage(from, botReply);
+
+      for (const filename of imagesToSend) {
+        const caption = filename.toLowerCase().startsWith('horoscope')
+          ? 'ලග්න කෝෂ්ඨ 12 සහ නවාංශ කෝෂ්ඨ 12 දෙකම පෙනෙන ලෙස photos 2ක් or 1ක් send කරන්න 🙏'
+          : 'මේවා මම ඉක්මනින්ම හොයාගත්ත කීප දෙනෙකුගේ screenshots 🙏';
+        await sendWhatsAppImage(from, filename, caption);
+        await db.insertMessage(from, `[Image: ${filename}]`, 'bot');
+      }
     } catch (err) {
       console.error(`[WEBHOOK-POST] ERROR:`, err?.response?.data ?? err.message);
     }
   })();
+});
+
+// ─── Admin auth middleware ─────────────────────────────────────────────────────
+function adminAuth(req, res, next) {
+  const pass = process.env.ADMIN_PASSWORD;
+  if (!pass) return res.status(500).json({ error: 'ADMIN_PASSWORD not set' });
+  const provided = req.query.pass || (req.headers.authorization || '').replace('Bearer ', '');
+  if (provided !== pass) return res.status(401).json({ error: 'Unauthorized' });
+  next();
+}
+
+// GET /admin/templates — list images in public/templates/
+const TEMPLATES_DIR = path.join(__dirname, 'public', 'templates');
+app.get('/admin/templates', adminAuth, (_req, res) => {
+  if (!fs.existsSync(TEMPLATES_DIR)) return res.json([]);
+  const files = fs.readdirSync(TEMPLATES_DIR)
+    .filter(f => /\.(jpg|jpeg|png|webp|gif)$/i.test(f))
+    .map(f => ({ name: f, url: `/templates/${f}` }));
+  res.json(files);
+});
+
+// GET /admin/customers
+app.get('/admin/customers', adminAuth, async (req, res) => {
+  console.log(`[ADMIN] GET /admin/customers`);
+  try {
+    const customers = await db.getAllCustomers();
+    res.json(customers);
+  } catch (err) {
+    console.error(`[ADMIN] customers error:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /admin/messages/:phone
+app.get('/admin/messages/:phone', adminAuth, async (req, res) => {
+  const phone = req.params.phone;
+  console.log(`[ADMIN] GET /admin/messages/${phone}`);
+  try {
+    const [messages, orders] = await Promise.all([
+      db.getMessagesByPhone(phone),
+      db.getOrdersByPhone(phone),
+    ]);
+    res.json({ messages, orders });
+  } catch (err) {
+    console.error(`[ADMIN] messages error:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /admin/send — human reply (text or image)
+app.post('/admin/send', adminAuth, async (req, res) => {
+  const { phone, text, imageBase64, imageType, imageUrl } = req.body;
+  console.log(`[ADMIN] POST /admin/send → ${phone} type=${imageUrl ? 'url' : imageBase64 ? 'upload' : 'text'}`);
+  if (!phone) return res.status(400).json({ error: 'phone required' });
+
+  try {
+    if (imageUrl) {
+      // Send template image by public URL — no upload needed
+      const publicUrl = `${process.env.PUBLIC_URL || `https://whatsapp-chatbot-production-038d.up.railway.app`}${imageUrl}`;
+      await axios.post(
+        `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
+        { messaging_product: 'whatsapp', to: phone, type: 'image', image: { link: publicUrl, caption: text || '' } },
+        { headers: { Authorization: `Bearer ${META_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } }
+      );
+      await db.insertMessage(phone, `[Image]${text ? ': ' + text : ''}`, 'bot');
+      console.log(`[ADMIN] Template image sent to ${phone}: ${publicUrl}`);
+    } else if (imageBase64 && imageType) {
+      // Upload image to WhatsApp media API
+      const buffer = Buffer.from(imageBase64, 'base64');
+      const formData = new FormData();
+      formData.append('messaging_product', 'whatsapp');
+      formData.append('type', imageType);
+      formData.append('file', new Blob([buffer], { type: imageType }), 'image.jpg');
+
+      const uploadRes = await fetch(
+        `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/media`,
+        { method: 'POST', headers: { Authorization: `Bearer ${META_ACCESS_TOKEN}` }, body: formData }
+      );
+      const uploadData = await uploadRes.json();
+      if (!uploadData.id) throw new Error(`Media upload failed: ${JSON.stringify(uploadData)}`);
+      console.log(`[ADMIN] Media uploaded, id=${uploadData.id}`);
+
+      // Send image message
+      await axios.post(
+        `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
+        { messaging_product: 'whatsapp', to: phone, type: 'image', image: { id: uploadData.id, caption: text || '' } },
+        { headers: { Authorization: `Bearer ${META_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } }
+      );
+      await db.insertMessage(phone, `[Image]${text ? ': ' + text : ''}`, 'bot');
+    } else if (text) {
+      await sendWhatsAppMessage(phone, text);
+      await db.insertMessage(phone, text, 'bot');
+    } else {
+      return res.status(400).json({ error: 'text or image required' });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(`[ADMIN] send error:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /admin/followup — AI-generated follow-up for leads
+app.post('/admin/followup', adminAuth, async (req, res) => {
+  const { phone } = req.body;
+  console.log(`[ADMIN] POST /admin/followup → ${phone}`);
+  if (!phone) return res.status(400).json({ error: 'phone required' });
+  try {
+    const messages = await db.getMessagesByPhone(phone);
+    const historyText = messages
+      .map(m => `${m.sender_type === 'user' ? 'Customer' : 'Assistant'}: ${m.message_text}`)
+      .join('\n');
+
+    const result = await model.generateContent(
+      `You are a warm assistant for a professional astrology service. Below is a conversation with a potential customer who has NOT placed an order yet.\n\nConversation:\n${historyText}\n\nWrite a single short, warm, natural follow-up WhatsApp message to re-engage this customer. Use the same language they were using. Be genuine — not pushy. Do not list packages or prices unless they previously asked. Just warmly re-open the conversation.`
+    );
+    const followupText = result.response.text().trim();
+    console.log(`[ADMIN] Follow-up generated for ${phone}: "${followupText.substring(0, 80)}"`);
+    res.json({ ok: true, message: followupText });
+  } catch (err) {
+    console.error(`[ADMIN] followup error:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ─── Start ────────────────────────────────────────────────────────────────────

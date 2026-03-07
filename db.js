@@ -145,6 +145,49 @@ async function getOrdersByPhone(phoneNumber) {
   }
 }
 
+async function getAllCustomers() {
+  if (IS_PG) {
+    const res = await pool.query(`
+      SELECT
+        c.phone_number, c.name,
+        MAX(m.created_at) AS last_seen,
+        COUNT(DISTINCT m.id)::int AS msg_count,
+        COUNT(DISTINCT o.id)::int AS order_count
+      FROM customers c
+      LEFT JOIN messages m ON m.phone_number = c.phone_number
+      LEFT JOIN orders   o ON o.phone_number = c.phone_number
+      GROUP BY c.phone_number, c.name
+      ORDER BY last_seen DESC NULLS LAST
+    `);
+    return res.rows;
+  } else {
+    return db.prepare(`
+      SELECT
+        c.phone_number, c.name,
+        MAX(m.created_at) AS last_seen,
+        COUNT(DISTINCT m.id) AS msg_count,
+        COUNT(DISTINCT o.id) AS order_count
+      FROM customers c
+      LEFT JOIN messages m ON m.phone_number = c.phone_number
+      LEFT JOIN orders   o ON o.phone_number = c.phone_number
+      GROUP BY c.phone_number, c.name
+      ORDER BY last_seen DESC
+    `).all();
+  }
+}
+
+async function getMessagesByPhone(phoneNumber) {
+  if (IS_PG) {
+    const res = await pool.query(
+      'SELECT * FROM messages WHERE phone_number = $1 ORDER BY created_at ASC',
+      [phoneNumber]
+    );
+    return res.rows;
+  } else {
+    return db.prepare('SELECT * FROM messages WHERE phone_number = ? ORDER BY created_at ASC').all(phoneNumber);
+  }
+}
+
 async function countOrdersByYear(pattern) {
   if (IS_PG) {
     const res = await pool.query(
@@ -158,4 +201,4 @@ async function countOrdersByYear(pattern) {
   }
 }
 
-module.exports = { init, insertMessage, upsertCustomer, insertOrder, getOrdersByPhone, countOrdersByYear, IS_PG };
+module.exports = { init, insertMessage, upsertCustomer, insertOrder, getOrdersByPhone, countOrdersByYear, getAllCustomers, getMessagesByPhone, IS_PG };

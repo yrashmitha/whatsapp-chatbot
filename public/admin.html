@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin — පුරාණ ජෝතීර්වේදය</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+Sinhala:wght@400;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', 'Noto Sans Sinhala', sans-serif;
+      background: #f0f2f5;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Top bar ── */
+    .topbar {
+      background: #075e54;
+      color: #fff;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .topbar h1 { font-size: 16px; font-weight: 600; }
+    .topbar .meta { font-size: 12px; opacity: 0.75; }
+
+    /* ── Main layout ── */
+    .layout {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Left: customer list ── */
+    .sidebar {
+      width: 320px;
+      flex-shrink: 0;
+      background: #fff;
+      border-right: 1px solid #e0e0e0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .sidebar-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid #e0e0e0;
+      font-size: 13px;
+      font-weight: 600;
+      color: #444;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .sidebar-header button {
+      background: none;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      color: #555;
+    }
+    .sidebar-header button:hover { background: #f5f5f5; }
+
+    .customer-list {
+      flex: 1;
+      overflow-y: auto;
+    }
+    .customer-item {
+      padding: 12px 16px;
+      border-bottom: 1px solid #f0f0f0;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      transition: background 0.15s;
+    }
+    .customer-item:hover { background: #f9f9f9; }
+    .customer-item.active { background: #e8f5e9; border-left: 3px solid #075e54; }
+
+    .customer-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .customer-name { font-size: 14px; font-weight: 500; color: #111; }
+    .customer-phone { font-size: 12px; color: #888; margin-top: 1px; }
+    .customer-time { font-size: 11px; color: #aaa; }
+
+    .badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 10px;
+    }
+    .badge.order { background: #e8f5e9; color: #2e7d32; }
+    .badge.lead  { background: #fff8e1; color: #f57f17; }
+
+    .customer-stats { font-size: 11px; color: #aaa; }
+
+    /* ── Right: chat panel ── */
+    .chat-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .chat-topbar {
+      background: #fff;
+      border-bottom: 1px solid #e0e0e0;
+      padding: 12px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .chat-topbar .contact { font-size: 14px; font-weight: 600; color: #111; }
+    .chat-topbar .contact small { font-weight: 400; color: #888; margin-left: 8px; font-size: 12px; }
+
+    .btn-followup {
+      background: #ff9800;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 7px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .btn-followup:hover { background: #f57c00; }
+    .btn-followup:disabled { background: #ccc; cursor: default; }
+
+    .order-banner {
+      background: #e8f5e9;
+      border-bottom: 1px solid #c8e6c9;
+      padding: 8px 18px;
+      font-size: 13px;
+      color: #2e7d32;
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      background: #e5ddd5;
+    }
+
+    .bubble {
+      max-width: 68%;
+      padding: 9px 13px;
+      border-radius: 10px;
+      font-size: 14px;
+      line-height: 1.6;
+      word-break: break-word;
+    }
+    .bubble.user { align-self: flex-end; background: #dcf8c6; border-bottom-right-radius: 2px; }
+    .bubble.bot  { align-self: flex-start; background: #fff; border-bottom-left-radius: 2px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+    .bubble-time { font-size: 10px; color: #aaa; margin-top: 3px; text-align: right; }
+
+    .order-card {
+      align-self: center;
+      background: #075e54;
+      color: #fff;
+      border-radius: 10px;
+      padding: 10px 18px;
+      font-size: 13px;
+      max-width: 80%;
+      text-align: center;
+    }
+    .order-card .order-id { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+    .order-card .order-detail { font-size: 12px; opacity: 0.85; }
+
+    .empty-state {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #aaa;
+      font-size: 14px;
+      background: #e5ddd5;
+    }
+
+    /* ── Reply bar ── */
+    .reply-bar {
+      display: flex;
+      flex-direction: column;
+      padding: 10px 14px;
+      gap: 6px;
+      background: #f0f0f0;
+      border-top: 1px solid #ddd;
+      flex-shrink: 0;
+    }
+    .reply-bar .input-row {
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+    }
+    .img-preview {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      background: #fff;
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 12px;
+      color: #555;
+    }
+    .img-preview img { height: 40px; border-radius: 4px; object-fit: cover; }
+    .img-preview .remove-img { cursor: pointer; color: #c00; font-weight: 600; font-size: 14px; }
+    .btn-attach {
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      width: 40px; height: 40px;
+      cursor: pointer;
+      font-size: 18px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .btn-attach:hover { background: #f0f0f0; }
+    .reply-bar textarea {
+      flex: 1;
+      padding: 9px 14px;
+      border-radius: 10px;
+      border: none;
+      font-family: 'Inter', 'Noto Sans Sinhala', sans-serif;
+      font-size: 14px;
+      outline: none;
+      background: #fff;
+      resize: none;
+      height: 42px;
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .btn-send {
+      background: #075e54;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0 18px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .btn-send:hover { background: #128c7e; }
+    .btn-send:disabled { background: #aaa; cursor: default; }
+
+    /* ── Loading / toast ── */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #323232;
+      color: #fff;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      z-index: 999;
+    }
+    .toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>🔮 Admin Panel — පුරාණ ජෝතීර්වේදය</h1>
+  <span class="meta" id="topMeta">Loading...</span>
+</div>
+
+<div class="layout">
+  <!-- Customer list -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <span>Customers</span>
+      <button onclick="loadCustomers()">⟳ Refresh</button>
+    </div>
+    <div class="customer-list" id="customerList">
+      <div style="padding:20px;color:#aaa;font-size:13px;">Loading...</div>
+    </div>
+  </div>
+
+  <!-- Chat panel -->
+  <div class="chat-panel" id="chatPanel">
+    <div class="empty-state" id="emptyState">← Select a customer to view their chat</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  let PASS = localStorage.getItem('admin_pass') || '';
+  if (!PASS) {
+    PASS = prompt('Admin password:') || '';
+    if (PASS) localStorage.setItem('admin_pass', PASS);
+  }
+
+  function apiUrl(path) {
+    return `${path}?pass=${encodeURIComponent(PASS)}`;
+  }
+
+  async function apiFetch(path, opts = {}) {
+    const res = await fetch(apiUrl(path), {
+      headers: { 'Content-Type': 'application/json' },
+      ...opts,
+    });
+    if (res.status === 401) {
+      localStorage.removeItem('admin_pass');
+      alert('Wrong password. Reload and try again.');
+      throw new Error('Unauthorized');
+    }
+    return res.json();
+  }
+
+  // ── Toast ─────────────────────────────────────────────────────────────────
+  function toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), 2800);
+  }
+
+  // ── Format time ───────────────────────────────────────────────────────────
+  function fmtTime(ts) {
+    if (!ts) return '';
+    const d = new Date(ts);
+    const now = new Date();
+    const diff = now - d;
+    if (diff < 60000) return 'just now';
+    if (diff < 3600000) return `${Math.floor(diff/60000)}m ago`;
+    if (diff < 86400000) return `${Math.floor(diff/3600000)}h ago`;
+    return d.toLocaleDateString();
+  }
+
+  function fmtFull(ts) {
+    if (!ts) return '';
+    return new Date(ts).toLocaleString();
+  }
+
+  // ── WhatsApp markdown → HTML ──────────────────────────────────────────────
+  function parseWA(text) {
+    return (text || '')
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>')
+      .replace(/_([^_\n]+)_/g, '<em>$1</em>')
+      .replace(/\n/g, '<br>');
+  }
+
+  // ── Customer list ─────────────────────────────────────────────────────────
+  let customers = [];
+  let activePhone = null;
+
+  async function loadCustomers() {
+    try {
+      customers = await apiFetch('/admin/customers');
+      renderCustomers();
+      const total = customers.length;
+      const leads = customers.filter(c => +c.order_count === 0).length;
+      const orders = total - leads;
+      document.getElementById('topMeta').textContent =
+        `${total} customers · ${orders} orders · ${leads} leads`;
+    } catch (e) {
+      if (e.message !== 'Unauthorized') toast('Failed to load customers');
+    }
+  }
+
+  function renderCustomers() {
+    const list = document.getElementById('customerList');
+    if (!customers.length) {
+      list.innerHTML = '<div style="padding:20px;color:#aaa;font-size:13px;">No customers yet.</div>';
+      return;
+    }
+    list.innerHTML = customers.map(c => {
+      const hasOrder = +c.order_count > 0;
+      const badge = hasOrder
+        ? `<span class="badge order">✅ Order</span>`
+        : `<span class="badge lead">⏳ Lead</span>`;
+      const active = c.phone_number === activePhone ? ' active' : '';
+      return `
+        <div class="customer-item${active}" onclick="selectCustomer('${c.phone_number}')">
+          <div class="customer-top">
+            <span class="customer-name">${c.name || 'Unknown'}</span>
+            ${badge}
+          </div>
+          <div class="customer-phone">${c.phone_number}</div>
+          <div class="customer-top">
+            <span class="customer-stats">${c.msg_count} messages</span>
+            <span class="customer-time">${fmtTime(c.last_seen)}</span>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  // ── Chat view ─────────────────────────────────────────────────────────────
+  async function selectCustomer(phone) {
+    activePhone = phone;
+    renderCustomers();
+
+    const panel = document.getElementById('chatPanel');
+    panel.innerHTML = '<div class="empty-state">Loading...</div>';
+
+    try {
+      const data = await apiFetch(`/admin/messages/${encodeURIComponent(phone)}`);
+      renderChat(phone, data.messages, data.orders);
+    } catch (e) {
+      if (e.message !== 'Unauthorized') toast('Failed to load messages');
+    }
+  }
+
+  function renderChat(phone, messages, orders) {
+    const customer = customers.find(c => c.phone_number === phone) || {};
+    const hasOrder = orders.length > 0;
+    const panel = document.getElementById('chatPanel');
+
+    let orderBannerHtml = '';
+    if (hasOrder) {
+      const ids = orders.map(o => o.order_id).join(', ');
+      orderBannerHtml = `<div class="order-banner">✅ Order Confirmed — ${ids}</div>`;
+    }
+
+    const followupBtn = !hasOrder
+      ? `<button class="btn-followup" id="followupBtn" onclick="sendFollowup('${phone}')">🤖 AI Follow-up</button>`
+      : '';
+
+    const orderCards = orders.map(o => `
+      <div class="order-card">
+        <div class="order-id">✅ ${o.order_id}</div>
+        <div class="order-detail">
+          ${o.package || ''} · ${o.birth_date || ''} · ${o.birth_city || ''}<br>
+          Status: ${o.status}
+        </div>
+      </div>`).join('');
+
+    const bubbles = messages.map(m => {
+      const cls = m.sender_type === 'user' ? 'user' : 'bot';
+      return `<div class="bubble ${cls}">
+        ${parseWA(m.message_text)}
+        <div class="bubble-time">${fmtFull(m.created_at)}</div>
+      </div>`;
+    }).join('');
+
+    panel.innerHTML = `
+      <div class="chat-topbar">
+        <div class="contact">
+          ${customer.name || 'Unknown'}
+          <small>${phone}</small>
+        </div>
+        ${followupBtn}
+      </div>
+      ${orderBannerHtml}
+      <div class="messages" id="msgArea">
+        ${bubbles}
+        ${orderCards}
+      </div>
+      <div class="reply-bar">
+        <div class="img-preview" id="imgPreview">
+          <img id="imgThumb" src="" alt="preview" />
+          <span id="imgName"></span>
+          <span class="remove-img" onclick="removeImage()">✕</span>
+        </div>
+        <div class="input-row">
+          <input type="file" id="fileInput" accept="image/*" style="display:none" onchange="onFileSelected(event)" />
+          <button class="btn-attach" onclick="document.getElementById('fileInput').click()" title="Attach image">📎</button>
+          <textarea id="replyInput" placeholder="Type a message as human..." onkeydown="replyKeydown(event)"></textarea>
+          <button class="btn-send" id="sendBtn" onclick="sendReply('${phone}')">Send</button>
+        </div>
+      </div>`;
+
+    // Scroll to bottom
+    const msgArea = document.getElementById('msgArea');
+    msgArea.scrollTop = msgArea.scrollHeight;
+  }
+
+  function replyKeydown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (activePhone) sendReply(activePhone);
+    }
+  }
+
+  // ── Image attachment ──────────────────────────────────────────────────────
+  let selectedFile = null;
+
+  function onFileSelected(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    selectedFile = file;
+    const preview = document.getElementById('imgPreview');
+    const thumb   = document.getElementById('imgThumb');
+    const name    = document.getElementById('imgName');
+    thumb.src = URL.createObjectURL(file);
+    name.textContent = file.name;
+    preview.style.display = 'flex';
+  }
+
+  function removeImage() {
+    selectedFile = null;
+    document.getElementById('fileInput').value = '';
+    document.getElementById('imgPreview').style.display = 'none';
+    document.getElementById('imgThumb').src = '';
+  }
+
+  async function sendReply(phone) {
+    const input = document.getElementById('replyInput');
+    const text  = input.value.trim();
+    if (!text && !selectedFile) return;
+
+    const btn = document.getElementById('sendBtn');
+    btn.disabled = true;
+
+    try {
+      let body;
+      if (selectedFile) {
+        const base64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result.split(',')[1]);
+          reader.onerror = reject;
+          reader.readAsDataURL(selectedFile);
+        });
+        body = { phone, text, imageBase64: base64, imageType: selectedFile.type };
+      } else {
+        body = { phone, text };
+      }
+
+      await apiFetch('/admin/send', { method: 'POST', body: JSON.stringify(body) });
+      input.value = '';
+      removeImage();
+      toast('Message sent ✓');
+      await selectCustomer(phone);
+    } catch (e) {
+      if (e.message !== 'Unauthorized') toast('Send failed');
+    }
+    btn.disabled = false;
+  }
+
+  async function sendFollowup(phone) {
+    const btn = document.getElementById('followupBtn');
+    if (btn) btn.disabled = true;
+
+    toast('Generating AI follow-up...');
+    try {
+      const data = await apiFetch('/admin/followup', {
+        method: 'POST',
+        body: JSON.stringify({ phone }),
+      });
+      // Populate textarea — admin reviews and sends manually
+      const input = document.getElementById('replyInput');
+      if (input) {
+        input.value = data.message;
+        input.focus();
+      }
+      toast('AI draft ready — review and send ✓');
+    } catch (e) {
+      if (e.message !== 'Unauthorized') toast('Follow-up generation failed');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  loadCustomers();
+  setInterval(loadCustomers, 30000); // auto-refresh every 30s
+</script>
+</body>
+</html>

@@ -92,8 +92,8 @@ async function buildChatSession(phoneNumber) {
 async function handleMessage(phoneNumber, userMessage, chatSession) {
   console.log(`[MSG] Handling message from ${phoneNumber}: "${userMessage.substring(0, 80)}"`);
 
-  await db.insertMessage(phoneNumber, userMessage, 'user');
   await db.upsertCustomer(phoneNumber, null);
+  await db.insertMessage(phoneNumber, userMessage, 'user');
   console.log(`[DB] Saved user message for ${phoneNumber}`);
 
   console.log(`[GEMINI] Sending message to Gemini...`);

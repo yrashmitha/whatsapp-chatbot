@@ -62,8 +62,19 @@ async function init() {
       );
     `);
 
-    // Migrate existing deployments: add FK constraints if not already present
+    // Migrate existing deployments: backfill missing customers, then add FK constraints
     await pool.query(`
+      -- Insert a customer row for any phone that has messages/orders but no customer record
+      INSERT INTO customers (phone_number)
+        SELECT DISTINCT phone_number FROM messages
+        WHERE phone_number NOT IN (SELECT phone_number FROM customers)
+      ON CONFLICT DO NOTHING;
+
+      INSERT INTO customers (phone_number)
+        SELECT DISTINCT phone_number FROM orders
+        WHERE phone_number NOT IN (SELECT phone_number FROM customers)
+      ON CONFLICT DO NOTHING;
+
       DO $$ BEGIN
         IF NOT EXISTS (
           SELECT 1 FROM information_schema.table_constraints

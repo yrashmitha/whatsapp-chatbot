@@ -468,9 +468,7 @@
       orderBannerHtml = `<div class="order-banner">✅ Order Confirmed — ${ids}</div>`;
     }
 
-    const followupBtn = !hasOrder
-      ? `<button class="btn-followup" id="followupBtn" onclick="sendFollowup('${phone}')">🤖 AI Follow-up</button>`
-      : '';
+    const followupBtn = `<button class="btn-followup" id="followupBtn" onclick="sendFollowup('${phone}')">🤖 AI Follow-up</button>`;
 
     const statusOptions = ['pending','payment_received','paid','complete','cancelled'];
     const orderCards = orders.map(o => {

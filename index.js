@@ -377,6 +377,10 @@ app.post('/webhook', (req, res) => {
         console.log(`[WEBHOOK-POST] Image from ${from} | caption="${caption}"`);
 
         await db.upsertCustomer(from, null);
+        if (chatSessions.has(from)) {
+          const dbMsgs = await db.getMessagesByPhone(from);
+          if (dbMsgs.length === 0) chatSessions.delete(from);
+        }
         if (!chatSessions.has(from)) {
           chatSessions.set(from, { chat: await buildChatSession(from), phoneNumber: from });
         }
@@ -415,6 +419,14 @@ app.post('/webhook', (req, res) => {
 
       console.log(`[IN]  ${from}: ${userMessage}`);
 
+      // Invalidate stale in-memory session if DB was cleared externally
+      if (chatSessions.has(from)) {
+        const dbMsgs = await db.getMessagesByPhone(from);
+        if (dbMsgs.length === 0) {
+          console.log(`[WEBHOOK-POST] DB cleared for ${from} — rebuilding session`);
+          chatSessions.delete(from);
+        }
+      }
       if (!chatSessions.has(from)) {
         console.log(`[WEBHOOK-POST] New WhatsApp session for ${from}`);
         chatSessions.set(from, {

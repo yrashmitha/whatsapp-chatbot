@@ -34,23 +34,24 @@ if (IS_PG) {
 // ─── Schema ───────────────────────────────────────────────────────────────────
 async function init() {
   if (IS_PG) {
+    // customers must exist before messages/orders reference it
     await pool.query(`
-      CREATE TABLE IF NOT EXISTS messages (
-        id           SERIAL PRIMARY KEY,
-        phone_number TEXT NOT NULL,
-        message_text TEXT NOT NULL,
-        sender_type  TEXT NOT NULL CHECK(sender_type IN ('user','bot')),
-        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
       CREATE TABLE IF NOT EXISTS customers (
         phone_number TEXT PRIMARY KEY,
         name         TEXT,
         updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+      CREATE TABLE IF NOT EXISTS messages (
+        id           SERIAL PRIMARY KEY,
+        phone_number TEXT NOT NULL REFERENCES customers(phone_number) ON DELETE CASCADE,
+        message_text TEXT NOT NULL,
+        sender_type  TEXT NOT NULL CHECK(sender_type IN ('user','bot')),
+        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
       CREATE TABLE IF NOT EXISTS orders (
         id           SERIAL PRIMARY KEY,
         order_id     TEXT UNIQUE NOT NULL,
-        phone_number TEXT NOT NULL,
+        phone_number TEXT NOT NULL REFERENCES customers(phone_number) ON DELETE CASCADE,
         package      TEXT,
         birth_date   TEXT,
         birth_time   TEXT,
@@ -60,24 +61,47 @@ async function init() {
         created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
     `);
+
+    // Migrate existing deployments: add FK constraints if not already present
+    await pool.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.table_constraints
+          WHERE constraint_name = 'fk_messages_customer' AND table_name = 'messages'
+        ) THEN
+          ALTER TABLE messages ADD CONSTRAINT fk_messages_customer
+            FOREIGN KEY (phone_number) REFERENCES customers(phone_number) ON DELETE CASCADE;
+        END IF;
+      END $$;
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.table_constraints
+          WHERE constraint_name = 'fk_orders_customer' AND table_name = 'orders'
+        ) THEN
+          ALTER TABLE orders ADD CONSTRAINT fk_orders_customer
+            FOREIGN KEY (phone_number) REFERENCES customers(phone_number) ON DELETE CASCADE;
+        END IF;
+      END $$;
+    `);
   } else {
+    db.exec(`PRAGMA foreign_keys = ON;`);
     db.exec(`
-      CREATE TABLE IF NOT EXISTS messages (
-        id           INTEGER PRIMARY KEY AUTOINCREMENT,
-        phone_number TEXT NOT NULL,
-        message_text TEXT NOT NULL,
-        sender_type  TEXT NOT NULL CHECK(sender_type IN ('user','bot')),
-        created_at   TEXT NOT NULL DEFAULT (datetime('now'))
-      );
       CREATE TABLE IF NOT EXISTS customers (
         phone_number TEXT PRIMARY KEY,
         name         TEXT,
         updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
       );
+      CREATE TABLE IF NOT EXISTS messages (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        phone_number TEXT NOT NULL REFERENCES customers(phone_number) ON DELETE CASCADE,
+        message_text TEXT NOT NULL,
+        sender_type  TEXT NOT NULL CHECK(sender_type IN ('user','bot')),
+        created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+      );
       CREATE TABLE IF NOT EXISTS orders (
         id           INTEGER PRIMARY KEY AUTOINCREMENT,
         order_id     TEXT UNIQUE NOT NULL,
-        phone_number TEXT NOT NULL,
+        phone_number TEXT NOT NULL REFERENCES customers(phone_number) ON DELETE CASCADE,
         package      TEXT,
         birth_date   TEXT,
         birth_time   TEXT,

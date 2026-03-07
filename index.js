@@ -280,12 +280,15 @@ app.post('/webhook', (req, res) => {
 // ─── Start ────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 
+// Start listening immediately so Railway health check passes
+app.listen(PORT, () => {
+  console.log(`[STARTUP] Server running on port ${PORT}`);
+  console.log(`[STARTUP] Database: ${db.IS_PG ? 'PostgreSQL' : 'SQLite (local)'}`);
+});
+
+// Init DB in background
 db.init().then(() => {
   console.log(`[DB] Initialized successfully`);
-  app.listen(PORT, () => {
-    console.log(`[STARTUP] Server running on port ${PORT}`);
-    console.log(`[STARTUP] Database: ${db.IS_PG ? 'PostgreSQL' : 'SQLite (local)'}`);
-  });
 }).catch(err => {
   console.error(`[STARTUP] DB init FAILED:`, err.message || err);
   console.error(`[STARTUP] Full error:`, JSON.stringify(err, Object.getOwnPropertyNames(err)));

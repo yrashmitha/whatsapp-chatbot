@@ -169,8 +169,8 @@
       line-height: 1.6;
       word-break: break-word;
     }
-    .bubble.user { align-self: flex-end; background: #dcf8c6; border-bottom-right-radius: 2px; }
-    .bubble.bot  { align-self: flex-start; background: #fff; border-bottom-left-radius: 2px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+    .bubble.user { align-self: flex-start; background: #fff; border-bottom-left-radius: 2px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+    .bubble.bot  { align-self: flex-end; background: #dcf8c6; border-bottom-right-radius: 2px; }
     .bubble-time { font-size: 10px; color: #aaa; margin-top: 3px; text-align: right; }
     .msg-cost { margin-left: 6px; color: #81c784; font-size: 10px; }
 
@@ -378,12 +378,14 @@
     // Render [Photo:MEDIA_ID] as a clickable thumbnail
     const photoRe = /\[Photo:(\d+)\](.*?)(?=<|$)/;
     const escaped = (text || '')
+      .replace(/\[ORDER STATUS[^\]]*\]\s*/gi, '') // strip leaked status notes
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     // re-apply on escaped string — media IDs are numeric so no HTML injection risk
     return escaped
       .replace(/\[Photo:(\d+)\]([^\n]*)/g, (_, id, rest) => {
         const caption = rest.trim();
-        return `<a href="/admin/media/${id}" target="_blank"><img src="/admin/media/${id}" style="max-width:220px;max-height:220px;border-radius:8px;display:block;margin:4px 0" loading="lazy"></a>${caption ? `<br><em>${caption}</em>` : ''}`;
+        const src = `/admin/media/${id}?pass=${encodeURIComponent(PASS)}`;
+        return `<a href="${src}" target="_blank"><img src="${src}" style="max-width:220px;max-height:220px;border-radius:8px;display:block;margin:4px 0" loading="lazy"></a>${caption ? `<br><em>${caption}</em>` : ''}`;
       })
       .replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>')
       .replace(/_([^_\n]+)_/g, '<em>$1</em>')
@@ -535,8 +537,8 @@
           <span class="remove-img" onclick="removeImage()">✕</span>
         </div>
         <div class="input-row">
-          <input type="file" id="fileInput" accept="image/*" style="display:none" onchange="onFileSelected(event)" />
-          <button class="btn-attach" onclick="document.getElementById('fileInput').click()" title="Attach image">📎</button>
+          <input type="file" id="fileInput" accept="image/*,application/pdf" style="display:none" onchange="onFileSelected(event)" />
+          <button class="btn-attach" onclick="document.getElementById('fileInput').click()" title="Attach image or PDF">📎</button>
           <textarea id="replyInput" placeholder="Type a message as human..." onkeydown="replyKeydown(event)"></textarea>
           <button class="btn-send" id="sendBtn" onclick="sendReply('${phone}')">Send</button>
         </div>
@@ -564,8 +566,15 @@
     const preview = document.getElementById('imgPreview');
     const thumb   = document.getElementById('imgThumb');
     const name    = document.getElementById('imgName');
-    thumb.src = URL.createObjectURL(file);
-    name.textContent = file.name;
+    if (file.type === 'application/pdf') {
+      thumb.src = '';
+      thumb.style.display = 'none';
+      name.textContent = '📄 ' + file.name;
+    } else {
+      thumb.src = URL.createObjectURL(file);
+      thumb.style.display = '';
+      name.textContent = file.name;
+    }
     preview.style.display = 'flex';
   }
 
@@ -625,7 +634,7 @@
           reader.onerror = reject;
           reader.readAsDataURL(selectedFile);
         });
-        body = { phone, text, imageBase64: base64, imageType: selectedFile.type };
+        body = { phone, text, imageBase64: base64, imageType: selectedFile.type, fileName: selectedFile.name };
       } else {
         body = { phone, text };
       }

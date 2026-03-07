@@ -122,7 +122,9 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   console.log(`[GEMINI] Sending message to Gemini...`);
   const result  = await chatSession.sendMessage(messageToSend);
   let botReply  = result.response.text()
-    .replace(/\*\*([^*\n]+)\*\*/g, '*$1*'); // convert markdown **bold** → WhatsApp *bold*
+    .replace(/\*\*([^*\n]+)\*\*/g, '*$1*') // convert markdown **bold** → WhatsApp *bold*
+    .replace(/\[ORDER STATUS[^\]]*\]\s*/gi, '') // strip any echoed ORDER STATUS note wherever it appears
+    .trim();
 
   // Extract [[SEND_IMAGE:filename]] markers
   const IMAGE_RE = /\[\[SEND_IMAGE:([^\]]+)\]\]/g;
@@ -135,8 +137,9 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   }
 
   const usage        = result.response.usageMetadata || {};
-  const inputTokens  = usage.promptTokenCount     || 0;
-  const outputTokens = usage.candidatesTokenCount || 0;
+  console.log(`[GEMINI] usageMetadata raw:`, JSON.stringify(usage));
+  const inputTokens  = usage.promptTokenCount     || usage.inputTokenCount  || 0;
+  const outputTokens = usage.candidatesTokenCount || usage.outputTokenCount || 0;
   const callCostUSD  = calcCost(inputTokens, outputTokens);
   console.log(`[GEMINI] Tokens: in=${inputTokens} out=${outputTokens} cost=$${callCostUSD.toFixed(6)}`);
   console.log(`[GEMINI] Reply (first 120 chars): "${botReply.substring(0, 120)}"`);
@@ -484,9 +487,9 @@ app.get('/admin/messages/:phone', adminAuth, async (req, res) => {
   }
 });
 
-// POST /admin/send — human reply (text or image)
+// POST /admin/send — human reply (text, image, or PDF document)
 app.post('/admin/send', adminAuth, async (req, res) => {
-  const { phone, text, imageBase64, imageType, imageUrl } = req.body;
+  const { phone, text, imageBase64, imageType, imageUrl, fileName } = req.body;
   console.log(`[ADMIN] POST /admin/send → ${phone} type=${imageUrl ? 'url' : imageBase64 ? 'upload' : 'text'}`);
   if (!phone) return res.status(400).json({ error: 'phone required' });
 
@@ -502,12 +505,12 @@ app.post('/admin/send', adminAuth, async (req, res) => {
       await db.insertMessage(phone, `[Image]${text ? ': ' + text : ''}`, 'bot');
       console.log(`[ADMIN] Template image sent to ${phone}: ${publicUrl}`);
     } else if (imageBase64 && imageType) {
-      // Upload image to WhatsApp media API
+      const isPdf = imageType === 'application/pdf';
       const buffer = Buffer.from(imageBase64, 'base64');
       const formData = new FormData();
       formData.append('messaging_product', 'whatsapp');
       formData.append('type', imageType);
-      formData.append('file', new Blob([buffer], { type: imageType }), 'image.jpg');
+      formData.append('file', new Blob([buffer], { type: imageType }), fileName || (isPdf ? 'document.pdf' : 'image.jpg'));
 
       const uploadRes = await fetch(
         `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/media`,
@@ -515,15 +518,25 @@ app.post('/admin/send', adminAuth, async (req, res) => {
       );
       const uploadData = await uploadRes.json();
       if (!uploadData.id) throw new Error(`Media upload failed: ${JSON.stringify(uploadData)}`);
-      console.log(`[ADMIN] Media uploaded, id=${uploadData.id}`);
+      console.log(`[ADMIN] Media uploaded, id=${uploadData.id} isPdf=${isPdf}`);
 
-      // Send image message
-      await axios.post(
-        `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
-        { messaging_product: 'whatsapp', to: phone, type: 'image', image: { id: uploadData.id, caption: text || '' } },
-        { headers: { Authorization: `Bearer ${META_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } }
-      );
-      await db.insertMessage(phone, `[Image]${text ? ': ' + text : ''}`, 'bot');
+      if (isPdf) {
+        // Send as document
+        await axios.post(
+          `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
+          { messaging_product: 'whatsapp', to: phone, type: 'document', document: { id: uploadData.id, filename: fileName || 'document.pdf', caption: text || '' } },
+          { headers: { Authorization: `Bearer ${META_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } }
+        );
+        await db.insertMessage(phone, `[PDF: ${fileName || 'document.pdf'}]${text ? ' ' + text : ''}`, 'bot');
+      } else {
+        // Send as image
+        await axios.post(
+          `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
+          { messaging_product: 'whatsapp', to: phone, type: 'image', image: { id: uploadData.id, caption: text || '' } },
+          { headers: { Authorization: `Bearer ${META_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } }
+        );
+        await db.insertMessage(phone, `[Image]${text ? ': ' + text : ''}`, 'bot');
+      }
     } else if (text) {
       await sendWhatsAppMessage(phone, text);
       await db.insertMessage(phone, text, 'bot');

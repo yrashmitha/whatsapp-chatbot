@@ -181,6 +181,16 @@
     }
     .order-card .order-id { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
     .order-card .order-detail { font-size: 12px; opacity: 0.85; }
+    .order-card .status-row { display:flex; align-items:center; gap:6px; margin-top:8px; justify-content:center; }
+    .order-card select.status-select { font-size:12px; border-radius:6px; border:none; padding:3px 6px; cursor:pointer; }
+    .order-card .btn-status { font-size:11px; background:#25d366; color:#fff; border:none; border-radius:6px; padding:3px 10px; cursor:pointer; }
+    .order-card .btn-status:hover { background:#1da851; }
+    .status-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:700; margin-left:4px; }
+    .status-pending          { background:#ffc107; color:#333; }
+    .status-payment_received { background:#2196f3; color:#fff; }
+    .status-paid             { background:#4caf50; color:#fff; }
+    .status-complete         { background:#075e54; color:#fff; }
+    .status-cancelled        { background:#f44336; color:#fff; }
 
     .empty-state {
       flex: 1;
@@ -442,14 +452,24 @@
       ? `<button class="btn-followup" id="followupBtn" onclick="sendFollowup('${phone}')">🤖 AI Follow-up</button>`
       : '';
 
-    const orderCards = orders.map(o => `
-      <div class="order-card">
+    const statusOptions = ['pending','payment_received','paid','complete','cancelled'];
+    const orderCards = orders.map(o => {
+      const opts = statusOptions.map(s =>
+        `<option value="${s}" ${s === o.status ? 'selected' : ''}>${s}</option>`
+      ).join('');
+      return `
+      <div class="order-card" id="card-${o.order_id}">
         <div class="order-id">✅ ${o.order_id}</div>
         <div class="order-detail">
-          ${o.package || ''} · ${o.birth_date || ''} · ${o.birth_city || ''}<br>
-          Status: ${o.status}
+          ${o.package || ''} · ${o.birth_date || ''} · ${o.birth_city || ''}
         </div>
-      </div>`).join('');
+        <div class="status-row">
+          <span class="status-badge status-${o.status}">${o.status}</span>
+          <select class="status-select" id="sel-${o.order_id}">${opts}</select>
+          <button class="btn-status" onclick="updateOrderStatus('${o.order_id}')">Save</button>
+        </div>
+      </div>`;
+    }).join('');
 
     const bubbles = messages.map(m => {
       const cls = m.sender_type === 'user' ? 'user' : 'bot';
@@ -518,6 +538,25 @@
     document.getElementById('fileInput').value = '';
     document.getElementById('imgPreview').style.display = 'none';
     document.getElementById('imgThumb').src = '';
+  }
+
+  async function updateOrderStatus(orderId) {
+    const sel = document.getElementById(`sel-${orderId}`);
+    const status = sel.value;
+    try {
+      await apiFetch(`/admin/order/${encodeURIComponent(orderId)}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      });
+      // update badge in place
+      const card = document.getElementById(`card-${orderId}`);
+      const badge = card.querySelector('.status-badge');
+      badge.className = `status-badge status-${status}`;
+      badge.textContent = status;
+      toast(`Order ${orderId} → ${status}`);
+    } catch (e) {
+      if (e.message !== 'Unauthorized') toast('Update failed: ' + e.message);
+    }
   }
 
   async function sendReply(phone) {

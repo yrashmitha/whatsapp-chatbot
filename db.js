@@ -223,6 +223,29 @@ async function getMessagesByPhone(phoneNumber) {
   }
 }
 
+async function updateOrderStatusById(orderId, status) {
+  if (IS_PG) {
+    await pool.query('UPDATE orders SET status = $1 WHERE order_id = $2', [status, orderId]);
+  } else {
+    db.prepare('UPDATE orders SET status = ? WHERE order_id = ?').run(status, orderId);
+  }
+}
+
+async function updateLatestOrderStatus(phoneNumber, status) {
+  if (IS_PG) {
+    await pool.query(
+      `UPDATE orders SET status = $1
+       WHERE id = (SELECT id FROM orders WHERE phone_number = $2 ORDER BY created_at DESC LIMIT 1)`,
+      [status, phoneNumber]
+    );
+  } else {
+    db.prepare(
+      `UPDATE orders SET status = ?
+       WHERE id = (SELECT id FROM orders WHERE phone_number = ? ORDER BY created_at DESC LIMIT 1)`
+    ).run(status, phoneNumber);
+  }
+}
+
 async function countOrdersByYear(pattern) {
   if (IS_PG) {
     const res = await pool.query(
@@ -236,4 +259,4 @@ async function countOrdersByYear(pattern) {
   }
 }
 
-module.exports = { init, insertMessage, upsertCustomer, insertOrder, getOrdersByPhone, countOrdersByYear, getAllCustomers, getMessagesByPhone, IS_PG };
+module.exports = { init, insertMessage, upsertCustomer, insertOrder, getOrdersByPhone, countOrdersByYear, getAllCustomers, getMessagesByPhone, updateLatestOrderStatus, updateOrderStatusById, IS_PG };

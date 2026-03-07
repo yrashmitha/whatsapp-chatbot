@@ -28,7 +28,8 @@ const PRICE_OUTPUT = 0.30  / 1_000_000;
 function calcCost(i, o) { return i * PRICE_INPUT + o * PRICE_OUTPUT; }
 
 // ─── Order ID generation ──────────────────────────────────────────────────────
-const ORDER_MARKER = '[[ORDER_COMPLETE]]';
+const ORDER_MARKER   = '[[ORDER_COMPLETE]]';
+const PAYMENT_MARKER = '[[PAYMENT_CHECK]]';
 
 async function generateOrderId() {
   const year = new Date().getFullYear();
@@ -147,9 +148,21 @@ async function handleMessage(phoneNumber, userMessage, chatSession) {
     }
   }
 
+  let paymentReceived = false;
+  if (botReply.includes(PAYMENT_MARKER)) {
+    botReply = botReply.replace(PAYMENT_MARKER, '').replace(/\n{3,}/g, '\n\n').trim();
+    try {
+      await db.updateLatestOrderStatus(phoneNumber, 'payment_received');
+      console.log(`[PAYMENT] Status updated to payment_received for ${phoneNumber}`);
+    } catch (err) {
+      console.error(`[PAYMENT] Failed to update order status:`, err.message);
+    }
+    paymentReceived = true;
+  }
+
   await db.insertMessage(phoneNumber, botReply, 'bot');
   console.log(`[DB] Saved bot reply for ${phoneNumber}`);
-  return { botReply, orderId, callCostUSD, inputTokens, outputTokens, imagesToSend };
+  return { botReply, orderId, paymentReceived, callCostUSD, inputTokens, outputTokens, imagesToSend };
 }
 
 // ─── Template image media ID cache (uploaded once at startup) ─────────────────
@@ -484,6 +497,24 @@ app.post('/admin/send', adminAuth, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error(`[ADMIN] send error:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /admin/order/:orderId/status
+app.patch('/admin/order/:orderId/status', adminAuth, async (req, res) => {
+  const { orderId } = req.params;
+  const { status }  = req.body;
+  const allowed = ['pending', 'payment_received', 'paid', 'complete', 'cancelled'];
+  if (!status || !allowed.includes(status)) {
+    return res.status(400).json({ error: `status must be one of: ${allowed.join(', ')}` });
+  }
+  console.log(`[ADMIN] PATCH /admin/order/${orderId}/status → ${status}`);
+  try {
+    await db.updateOrderStatusById(orderId, status);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(`[ADMIN] order status update error:`, err.message);
     res.status(500).json({ error: err.message });
   }
 });

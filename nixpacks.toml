@@ -2,10 +2,10 @@
 nixPkgs = ["nodejs_22"]
 
 [phases.install]
-cmds = ["npm install --prefix backend", "npm install --prefix frontend"]
+cmds = ["npm install", "npm install --prefix frontend"]
 
 [phases.build]
-cmds = ["npm run build --prefix frontend"]
+cmds = ["npm run build"]
 
 [start]
 cmd = "node backend/index.js"

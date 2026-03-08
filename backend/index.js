@@ -1192,7 +1192,8 @@ app.post('/auth/login', async (req, res) => {
       const valid = await bcrypt.compare(password, saRow.rows[0].password_hash);
       if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
       const token = jwt.sign({ sub: username, role: 'superadmin', clientId: null }, JWT_SECRET, { expiresIn: '7d' });
-      return res.json({ token, role: 'superadmin', clientId: null, name: 'Super Admin' });
+      const user = { role: 'superadmin', clientId: null, name: 'Super Admin' };
+      return res.json({ token, user });
     }
     // Check client user
     const cfgRow = await db.pgQuery(
@@ -1204,7 +1205,8 @@ app.post('/auth/login', async (req, res) => {
     const valid = await bcrypt.compare(password, cfgRow.rows[0].crm_password_hash);
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
     const token = jwt.sign({ sub: username, role: 'client', clientId: username }, JWT_SECRET, { expiresIn: '7d' });
-    return res.json({ token, role: 'client', clientId: username, name: cfgRow.rows[0].name });
+    const user = { role: 'client', clientId: username, name: cfgRow.rows[0].name };
+    return res.json({ token, user });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1620,20 +1622,16 @@ app.get('/api/media/:mediaId', jwtAuth, async (req, res) => {
 
 // ─── SPA fallback — serve React app for all non-API routes ───────────────────
 app.get('*', (req, res) => {
+  const isBackendRoute =
+    req.path.startsWith('/api') ||
+    req.path.startsWith('/admin') ||
+    req.path.startsWith('/auth') ||
+    req.path.startsWith('/webhook') ||
+    req.path.startsWith('/legacy');
+  if (isBackendRoute) return res.status(404).json({ error: 'Not found' });
   const indexFile = path.join(__dirname, '../frontend/dist/index.html');
-  if (
-    !req.path.startsWith('/api') &&
-    !req.path.startsWith('/admin') &&
-    !req.path.startsWith('/auth') &&
-    !req.path.startsWith('/webhook') &&
-    !req.path.startsWith('/legacy') &&
-    !req.path.startsWith('/chat') &&
-    fs.existsSync(indexFile)
-  ) {
-    res.sendFile(indexFile);
-  } else if (!res.headersSent) {
-    res.status(404).json({ error: 'Not found' });
-  }
+  if (fs.existsSync(indexFile)) return res.sendFile(indexFile);
+  res.status(503).send('App not built');
 });
 
 // ─── Start ────────────────────────────────────────────────────────────────────

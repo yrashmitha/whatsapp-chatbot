@@ -1057,13 +1057,33 @@
 
     document.getElementById('chatPanel').innerHTML = `
       <div style="padding:20px;overflow-y:auto;height:100%;">
-        <h3 style="font-size:15px;color:#075e54;margin-bottom:6px;">Attribute Schema — ${clientId}</h3>
-        <p style="font-size:12px;color:#888;margin-bottom:14px;">Custom fields for products. Used by AI for search and catalog display.</p>
+        <h3 style="font-size:15px;color:#075e54;margin-bottom:4px;">Attribute Schema — ${clientId}</h3>
+        <p style="font-size:12px;color:#888;margin-bottom:16px;">Custom fields for products. Used by AI for search and catalog display.</p>
 
-        <div style="margin-bottom:18px;">${rows || '<p style="color:#aaa;font-size:13px;padding:8px 0;">No attributes yet.</p>'}</div>
+        <!-- JSON bulk import -->
+        <div style="margin-bottom:18px;background:#f9fffe;border:1px solid #c8e6c9;border-radius:8px;padding:14px;">
+          <h4 style="font-size:13px;font-weight:700;margin-bottom:8px;color:#075e54;">Paste JSON to import all attributes at once</h4>
+          <textarea id="attrJsonInput" style="width:100%;min-height:120px;font-family:monospace;font-size:12px;padding:9px;border:1px solid #ccc;border-radius:6px;resize:vertical;" placeholder='[
+  {"field_key":"color","field_label":"Color","field_type":"select","options":["Red","Blue","Green"],"filterable":true},
+  {"field_key":"size","field_label":"Size","field_type":"select","options":["S","M","L","XL"],"filterable":true},
+  {"field_key":"material","field_label":"Material","field_type":"text","filterable":false},
+  {"field_key":"weight","field_label":"Weight","field_type":"number","unit":"kg","filterable":false}
+]'></textarea>
+          <div style="margin-top:8px;display:flex;gap:8px;align-items:center;">
+            <button class="btn-primary" onclick="importAttrJson('${clientId}')" style="padding:6px 16px;font-size:13px;">Import JSON</button>
+            <span id="attrImportStatus" style="font-size:12px;color:#2e7d32;"></span>
+          </div>
+        </div>
 
+        <!-- Current attributes list -->
+        <div style="margin-bottom:18px;">
+          <h4 style="font-size:13px;font-weight:700;margin-bottom:8px;color:#333;">Current Attributes</h4>
+          <div id="attrListInner">${rows || '<p style="color:#aaa;font-size:13px;padding:4px 0;">No attributes yet.</p>'}</div>
+        </div>
+
+        <!-- Single add/edit form -->
         <div style="border-top:1px solid #eee;padding-top:16px;">
-          <h4 id="attrFormTitle" style="font-size:13px;font-weight:700;margin-bottom:12px;">Add New Attribute</h4>
+          <h4 id="attrFormTitle" style="font-size:13px;font-weight:700;margin-bottom:12px;">Add Single Attribute</h4>
           <div class="form-grid">
             <div class="form-group">
               <label>Key (no spaces)</label>
@@ -1146,6 +1166,29 @@
     } catch (err) {
       toast('Error: ' + err.message);
     }
+  }
+
+  async function importAttrJson(clientId) {
+    const textarea = document.getElementById('attrJsonInput');
+    const status   = document.getElementById('attrImportStatus');
+    if (!textarea) return;
+    const raw = textarea.value.trim();
+    if (!raw) { toast('Paste JSON first'); return; }
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch (e) { toast('Invalid JSON: ' + e.message); return; }
+    if (!Array.isArray(parsed)) { toast('JSON must be an array [...]'); return; }
+    status.textContent = 'Saving...';
+    try {
+      const result = await apiFetch('/admin/attributes/bulk', {
+        method: 'POST',
+        body: JSON.stringify({ client_id: clientId, attributes: parsed }),
+      });
+      status.style.color = result.errors.length ? '#e65100' : '#2e7d32';
+      status.textContent = `Saved ${result.saved}` + (result.errors.length ? ` | errors: ${result.errors.join('; ')}` : ' attributes');
+      textarea.value = '';
+      await loadAttributes();
+    } catch (e) { status.textContent = ''; toast('Error: ' + e.message); }
   }
 
   // keep old name working (called from inline onclick)

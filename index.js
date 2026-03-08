@@ -907,9 +907,10 @@ app.put('/admin/clients/:clientId', adminAuth, async (req, res) => {
   }
 });
 
-// GET /admin/products?client=CLIENT_ID
+// GET /admin/products?client_id=CLIENT_ID
 app.get('/admin/products', adminAuth, async (req, res) => {
-  const clientId = req.query.client || 'astrology_001';
+  const clientId = req.query.client_id || req.query.client;
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
   try {
     const result = await db.pgQuery(
       `SELECT * FROM client_products WHERE client_id = $1 ORDER BY category, sort_order, name`,

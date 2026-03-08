@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Product Catalog</title>
+  <style>
+    :root {
+      --brand: #075e54;
+      --brand-light: #128c7e;
+      --brand-dark: #054d45;
+      --bg: #f0f2f5;
+      --card: #ffffff;
+      --text: #111b21;
+      --muted: #667781;
+      --border: #e9edef;
+      --badge: #e8f5e9;
+      --badge-text: #2e7d32;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--brand);
+      color: #fff;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    header img.logo {
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      object-fit: cover;
+      background: rgba(255,255,255,0.2);
+    }
+    header .logo-placeholder {
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.25);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px; font-weight: 700;
+    }
+    header .title-block h1 { font-size: 18px; font-weight: 700; letter-spacing: 0.3px; }
+    header .title-block p  { font-size: 12px; opacity: 0.8; margin-top: 2px; }
+
+    /* ── Search bar ── */
+    .search-bar {
+      background: var(--brand-dark);
+      padding: 10px 16px 14px;
+    }
+    .search-bar input {
+      width: 100%;
+      padding: 10px 16px;
+      border-radius: 20px;
+      border: none;
+      font-size: 14px;
+      background: rgba(255,255,255,0.15);
+      color: #fff;
+      outline: none;
+    }
+    .search-bar input::placeholder { color: rgba(255,255,255,0.6); }
+
+    /* ── Category tabs ── */
+    .cat-tabs {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 12px 16px;
+      background: #fff;
+      border-bottom: 1px solid var(--border);
+      scrollbar-width: none;
+    }
+    .cat-tabs::-webkit-scrollbar { display: none; }
+    .cat-tab {
+      padding: 6px 16px;
+      border-radius: 20px;
+      border: 2px solid var(--brand);
+      background: transparent;
+      color: var(--brand);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s;
+    }
+    .cat-tab.active { background: var(--brand); color: #fff; }
+    .cat-tab:hover:not(.active) { background: var(--badge); }
+
+    /* ── Product grid ── */
+    main { padding: 16px; max-width: 960px; margin: 0 auto; }
+    .cat-section { margin-bottom: 28px; }
+    .cat-section h2 {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--brand);
+      border-left: 4px solid var(--brand);
+      padding-left: 10px;
+      margin-bottom: 12px;
+    }
+    .product-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 12px;
+    }
+
+    /* ── Product card ── */
+    .product-card {
+      background: var(--card);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      transition: transform 0.15s, box-shadow 0.15s;
+      display: flex;
+      flex-direction: column;
+    }
+    .product-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
+    .product-card .img-wrap {
+      background: #f5f5f5;
+      height: 160px;
+      overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .product-card .img-wrap img { width: 100%; height: 100%; object-fit: cover; }
+    .product-card .img-wrap .no-img {
+      font-size: 48px;
+      opacity: 0.3;
+    }
+    .product-card .card-body { padding: 14px; flex: 1; display: flex; flex-direction: column; gap: 6px; }
+    .product-card .card-name { font-size: 15px; font-weight: 700; line-height: 1.3; }
+    .product-card .card-sku  { font-size: 11px; color: var(--muted); }
+    .product-card .card-desc { font-size: 13px; color: var(--muted); line-height: 1.5; flex: 1; }
+
+    .product-card .card-price {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--brand);
+      margin-top: 4px;
+    }
+
+    /* ── Attributes ── */
+    .attr-list { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+    .attr-chip {
+      background: var(--badge);
+      color: var(--badge-text);
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 10px;
+      font-weight: 600;
+    }
+
+    /* ── Ask button ── */
+    .btn-ask {
+      display: block;
+      width: 100%;
+      margin-top: 10px;
+      padding: 10px;
+      background: #25d366;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      text-align: center;
+      text-decoration: none;
+      transition: background 0.15s;
+    }
+    .btn-ask:hover { background: #128c7e; }
+
+    /* ── Loading / empty states ── */
+    .state-msg {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--muted);
+    }
+    .state-msg .icon { font-size: 48px; margin-bottom: 12px; }
+    .state-msg h3 { font-size: 18px; margin-bottom: 6px; color: var(--text); }
+    .state-msg p  { font-size: 14px; }
+
+    /* ── Footer ── */
+    footer {
+      text-align: center;
+      padding: 20px;
+      font-size: 12px;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      margin-top: 20px;
+    }
+
+    @media (max-width: 480px) {
+      .product-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header id="site-header">
+  <div class="logo-placeholder" id="logo-box">?</div>
+  <div class="title-block">
+    <h1 id="brand-name">Loading…</h1>
+    <p id="brand-sub">Product Catalog</p>
+  </div>
+</header>
+
+<div class="search-bar">
+  <input type="text" id="search-input" placeholder="Search products…" oninput="filterProducts()">
+</div>
+
+<div class="cat-tabs" id="cat-tabs"></div>
+
+<main id="main-content">
+  <div class="state-msg" id="loading-state">
+    <div class="icon">⏳</div>
+    <h3>Loading catalog…</h3>
+    <p>Please wait a moment.</p>
+  </div>
+</main>
+
+<footer id="site-footer" style="display:none">
+  <span id="footer-text"></span>
+</footer>
+
+<script>
+  let allData = null;       // full API response
+  let activeCategory = 'All';
+  let searchQuery    = '';
+
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+
+  function getClientId() {
+    return new URLSearchParams(location.search).get('client') || '';
+  }
+
+  function formatPrice(product) {
+    if (!product.price && !product.price_max) return '';
+    const cur = product.currency || 'LKR';
+    if (product.price && product.price_max) {
+      return `${cur} ${Number(product.price).toLocaleString()} – ${Number(product.price_max).toLocaleString()}`;
+    }
+    return `${cur} ${Number(product.price || product.price_max).toLocaleString()}`;
+  }
+
+  function buildAttrChips(product, schema) {
+    if (!product.attributes || !schema.length) return '';
+    return schema
+      .filter(s => product.attributes[s.field_key] != null)
+      .map(s => {
+        const val = product.attributes[s.field_key];
+        const display = Array.isArray(val) ? val.join(', ') : val;
+        const unit = s.unit ? ` ${s.unit}` : '';
+        return `<span class="attr-chip">${s.field_label}: ${display}${unit}</span>`;
+      })
+      .join('');
+  }
+
+  function buildAskUrl(product) {
+    // Open WhatsApp chat — if client has a phone number configured use it, else wa.me
+    const text = encodeURIComponent(`Hi! I'm interested in: ${product.name}${product.sku ? ` (${product.sku})` : ''}`);
+    const phone = allData?.client?.phone_number_id || '';
+    // wa.me doesn't use phone_number_id (it's a Meta internal ID), so we just open wa.me
+    return `https://wa.me/?text=${text}`;
+  }
+
+  function applyBranding(client) {
+    const color = client.brand_color || '#075e54';
+    document.documentElement.style.setProperty('--brand',       color);
+    document.documentElement.style.setProperty('--brand-light', adjustColor(color, 20));
+    document.documentElement.style.setProperty('--brand-dark',  adjustColor(color, -20));
+
+    document.getElementById('brand-name').textContent = client.name || 'Catalog';
+    document.title = (client.name || 'Catalog') + ' — Products';
+
+    if (client.logo_url) {
+      const img = document.createElement('img');
+      img.className = 'logo';
+      img.src = client.logo_url;
+      img.alt = client.name;
+      img.onerror = () => {};
+      document.getElementById('logo-box').replaceWith(img);
+    } else {
+      document.getElementById('logo-box').textContent = (client.name || '?')[0].toUpperCase();
+    }
+  }
+
+  // Naive color lightening/darkening (hex only)
+  function adjustColor(hex, amount) {
+    const n = parseInt(hex.replace('#',''), 16);
+    const r = Math.min(255, Math.max(0, (n >> 16) + amount));
+    const g = Math.min(255, Math.max(0, ((n >> 8) & 0xff) + amount));
+    const b = Math.min(255, Math.max(0, (n & 0xff) + amount));
+    return '#' + [r,g,b].map(x => x.toString(16).padStart(2,'0')).join('');
+  }
+
+  // ── Render ───────────────────────────────────────────────────────────────────
+
+  function renderTabs() {
+    const tabs = document.getElementById('cat-tabs');
+    tabs.innerHTML = '';
+    const cats = ['All', ...Object.keys(allData.categories)];
+    cats.forEach(cat => {
+      const btn = document.createElement('button');
+      btn.className = 'cat-tab' + (cat === activeCategory ? ' active' : '');
+      btn.textContent = cat;
+      btn.onclick = () => { activeCategory = cat; renderTabs(); renderProducts(); };
+      tabs.appendChild(btn);
+    });
+  }
+
+  function matchesSearch(product) {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      (product.name        || '').toLowerCase().includes(q) ||
+      (product.description || '').toLowerCase().includes(q) ||
+      (product.sku         || '').toLowerCase().includes(q) ||
+      (product.category    || '').toLowerCase().includes(q) ||
+      JSON.stringify(product.attributes || {}).toLowerCase().includes(q)
+    );
+  }
+
+  function renderProducts() {
+    const main   = document.getElementById('main-content');
+    const schema = allData.attrSchema || [];
+    const cats   = allData.categories || {};
+
+    const filtered = {};
+    const catKeys  = activeCategory === 'All' ? Object.keys(cats) : [activeCategory];
+
+    for (const cat of catKeys) {
+      const products = (cats[cat] || []).filter(matchesSearch);
+      if (products.length > 0) filtered[cat] = products;
+    }
+
+    if (Object.keys(filtered).length === 0) {
+      main.innerHTML = `
+        <div class="state-msg">
+          <div class="icon">🔍</div>
+          <h3>No products found</h3>
+          <p>Try a different search term or category.</p>
+        </div>`;
+      return;
+    }
+
+    main.innerHTML = Object.entries(filtered).map(([cat, products]) => `
+      <section class="cat-section" data-cat="${cat}">
+        <h2>${cat}</h2>
+        <div class="product-grid">
+          ${products.map(p => renderCard(p, schema)).join('')}
+        </div>
+      </section>
+    `).join('');
+  }
+
+  function renderCard(product, schema) {
+    const price    = formatPrice(product);
+    const chips    = buildAttrChips(product, schema);
+    const askUrl   = buildAskUrl(product);
+    const imgHtml  = product.image_url
+      ? `<img src="${product.image_url}" alt="${product.name}" loading="lazy">`
+      : `<div class="no-img">🛍️</div>`;
+
+    return `
+      <div class="product-card">
+        <div class="img-wrap">${imgHtml}</div>
+        <div class="card-body">
+          <div class="card-name">${product.name}</div>
+          ${product.sku ? `<div class="card-sku">SKU: ${product.sku}</div>` : ''}
+          ${product.description ? `<div class="card-desc">${product.description}</div>` : ''}
+          ${chips ? `<div class="attr-list">${chips}</div>` : ''}
+          ${price ? `<div class="card-price">${price}</div>` : ''}
+          <a class="btn-ask" href="${askUrl}" target="_blank" rel="noopener">
+            💬 Ask on WhatsApp
+          </a>
+        </div>
+      </div>`;
+  }
+
+  function filterProducts() {
+    searchQuery = document.getElementById('search-input').value.trim();
+    renderProducts();
+  }
+
+  // ── Bootstrap ────────────────────────────────────────────────────────────────
+
+  async function init() {
+    const clientId = getClientId();
+    if (!clientId) {
+      document.getElementById('main-content').innerHTML = `
+        <div class="state-msg">
+          <div class="icon">⚠️</div>
+          <h3>No client specified</h3>
+          <p>Open this page with <code>?client=CLIENT_ID</code> in the URL.</p>
+        </div>`;
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/catalog/${encodeURIComponent(clientId)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      allData = await res.json();
+
+      applyBranding(allData.client);
+      renderTabs();
+      renderProducts();
+
+      const footer = document.getElementById('site-footer');
+      document.getElementById('footer-text').textContent =
+        `${allData.totalProducts} product${allData.totalProducts !== 1 ? 's' : ''} · ${allData.client.name}`;
+      footer.style.display = '';
+
+    } catch (err) {
+      document.getElementById('main-content').innerHTML = `
+        <div class="state-msg">
+          <div class="icon">❌</div>
+          <h3>Could not load catalog</h3>
+          <p>${err.message}</p>
+        </div>`;
+    }
+  }
+
+  init();
+</script>
+</body>
+</html>

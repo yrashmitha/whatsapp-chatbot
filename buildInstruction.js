@@ -299,4 +299,19 @@ ${buildTemplateSection()}
 `.trim();
 }
 
+/**
+ * Client-aware wrapper.
+ * All clients use custom_prompt from DB.
+ * Falls back to hardcoded astrology prompt only if no custom_prompt is set.
+ */
+function buildSystemInstructionForClient(client) {
+  if (client && client.custom_prompt && client.custom_prompt.trim()) {
+    return client.custom_prompt.trim();
+  }
+  // No prompt in DB yet — fall back to hardcoded astrology prompt
+  console.warn(`[buildInstruction] No custom_prompt set for client ${client?.id} — using hardcoded fallback`);
+  return buildSystemInstruction();
+}
+
 module.exports = buildSystemInstruction;
+module.exports.forClient = buildSystemInstructionForClient;

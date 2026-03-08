@@ -111,6 +111,99 @@ async function init() {
         END IF;
       END $$;
     `);
+
+    // ── Multi-tenant tables ──────────────────────────────────────────────────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS clients (
+        id         TEXT PRIMARY KEY,
+        name       TEXT NOT NULL,
+        type       TEXT NOT NULL DEFAULT 'astrology',
+        active     BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS client_configs (
+        client_id                TEXT PRIMARY KEY REFERENCES clients(id) ON DELETE CASCADE,
+        phone_number_id          TEXT,
+        wa_token_env             TEXT,
+        webhook_verify_token     TEXT,
+        ai_model                 TEXT NOT NULL DEFAULT 'gemini-2.5-flash',
+        system_prompt_mode       TEXT NOT NULL DEFAULT 'builtin',
+        custom_prompt            TEXT,
+        temperature              NUMERIC(3,2) NOT NULL DEFAULT 0.70,
+        brand_name               TEXT,
+        brand_color              TEXT NOT NULL DEFAULT '#075e54',
+        logo_url                 TEXT,
+        order_id_prefix          TEXT UNIQUE DEFAULT 'ORD',
+        product_catalog_enabled  BOOLEAN NOT NULL DEFAULT FALSE,
+        max_products_in_context  INT NOT NULL DEFAULT 10,
+        catalog_search_mode      TEXT NOT NULL DEFAULT 'fts',
+        order_flow_enabled       BOOLEAN NOT NULL DEFAULT TRUE,
+        admin_password_env       TEXT,
+        updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS client_products (
+        id          SERIAL PRIMARY KEY,
+        client_id   TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+        name        TEXT NOT NULL,
+        description TEXT,
+        price       NUMERIC(12,2),
+        price_max   NUMERIC(12,2),
+        currency    TEXT NOT NULL DEFAULT 'LKR',
+        category    TEXT,
+        subcategory TEXT,
+        sku         TEXT,
+        image_url   TEXT,
+        sort_order  INT NOT NULL DEFAULT 0,
+        attributes  JSONB NOT NULL DEFAULT '{}',
+        active      BOOLEAN NOT NULL DEFAULT TRUE,
+        search_vec  TSVECTOR GENERATED ALWAYS AS (
+          to_tsvector('english',
+            coalesce(name,'') || ' ' || coalesce(description,'') || ' ' ||
+            coalesce(category,'') || ' ' || coalesce(subcategory,'') || ' ' ||
+            coalesce(sku,'') || ' ' || coalesce(attributes::text,'')
+          )
+        ) STORED,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_client_products_search     ON client_products USING GIN (search_vec);
+      CREATE INDEX IF NOT EXISTS idx_client_products_attributes ON client_products USING GIN (attributes);
+      CREATE INDEX IF NOT EXISTS idx_client_products_client     ON client_products (client_id, active);
+      CREATE INDEX IF NOT EXISTS idx_client_products_category   ON client_products (client_id, category, active);
+      CREATE TABLE IF NOT EXISTS client_attribute_schemas (
+        id          SERIAL PRIMARY KEY,
+        client_id   TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+        field_key   TEXT NOT NULL,
+        field_label TEXT NOT NULL,
+        field_type  TEXT NOT NULL DEFAULT 'text',
+        options     JSONB,
+        unit        TEXT,
+        filterable  BOOLEAN NOT NULL DEFAULT TRUE,
+        sort_order  INT NOT NULL DEFAULT 0,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(client_id, field_key)
+      );
+      CREATE INDEX IF NOT EXISTS idx_attr_schema_client ON client_attribute_schemas (client_id, sort_order);
+    `);
+
+    // No auto-seed — clients are created via /onboard.html
+    await pool.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='customers' AND column_name='client_id') THEN
+          ALTER TABLE customers ADD COLUMN client_id TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='messages' AND column_name='client_id') THEN
+          ALTER TABLE messages ADD COLUMN client_id TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='client_id') THEN
+          ALTER TABLE orders ADD COLUMN client_id TEXT;
+        END IF;
+      END $$;
+
+      CREATE INDEX IF NOT EXISTS idx_customers_client ON customers (client_id);
+      CREATE INDEX IF NOT EXISTS idx_messages_client  ON messages  (client_id);
+      CREATE INDEX IF NOT EXISTS idx_orders_client    ON orders    (client_id);
+    `);
   } else {
     db.exec(`PRAGMA foreign_keys = ON;`);
     db.exec(`
@@ -146,6 +239,78 @@ async function init() {
     try { db.exec(`ALTER TABLE messages ADD COLUMN cost_usd REAL`); } catch (_) {}
     try { db.exec(`ALTER TABLE orders ADD COLUMN horoscope_received INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
     try { db.exec(`ALTER TABLE orders ADD COLUMN receipt_received INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
+
+    // ── Multi-tenant tables (SQLite) ─────────────────────────────────────────
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS clients (
+        id         TEXT PRIMARY KEY,
+        name       TEXT NOT NULL,
+        type       TEXT NOT NULL DEFAULT 'astrology',
+        active     INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS client_configs (
+        client_id                TEXT PRIMARY KEY REFERENCES clients(id) ON DELETE CASCADE,
+        phone_number_id          TEXT,
+        wa_token_env             TEXT,
+        webhook_verify_token     TEXT,
+        ai_model                 TEXT NOT NULL DEFAULT 'gemini-2.5-flash',
+        system_prompt_mode       TEXT NOT NULL DEFAULT 'builtin',
+        custom_prompt            TEXT,
+        temperature              REAL NOT NULL DEFAULT 0.70,
+        brand_name               TEXT,
+        brand_color              TEXT NOT NULL DEFAULT '#075e54',
+        logo_url                 TEXT,
+        order_id_prefix          TEXT UNIQUE DEFAULT 'ORD',
+        product_catalog_enabled  INTEGER NOT NULL DEFAULT 0,
+        max_products_in_context  INTEGER NOT NULL DEFAULT 10,
+        catalog_search_mode      TEXT NOT NULL DEFAULT 'fts',
+        order_flow_enabled       INTEGER NOT NULL DEFAULT 1,
+        admin_password_env       TEXT,
+        updated_at               TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS client_products (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        client_id   TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+        name        TEXT NOT NULL,
+        description TEXT,
+        price       REAL,
+        price_max   REAL,
+        currency    TEXT NOT NULL DEFAULT 'LKR',
+        category    TEXT,
+        subcategory TEXT,
+        sku         TEXT,
+        image_url   TEXT,
+        sort_order  INTEGER NOT NULL DEFAULT 0,
+        attributes  TEXT NOT NULL DEFAULT '{}',
+        active      INTEGER NOT NULL DEFAULT 1,
+        created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS client_attribute_schemas (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        client_id   TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+        field_key   TEXT NOT NULL,
+        field_label TEXT NOT NULL,
+        field_type  TEXT NOT NULL DEFAULT 'text',
+        options     TEXT,
+        unit        TEXT,
+        filterable  INTEGER NOT NULL DEFAULT 1,
+        sort_order  INTEGER NOT NULL DEFAULT 0,
+        created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(client_id, field_key)
+      );
+    `);
+
+    // No auto-seed — clients are created via /onboard.html
+
+    // Add client_id to existing tables
+    try { db.exec(`ALTER TABLE customers ADD COLUMN client_id TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE messages  ADD COLUMN client_id TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE orders    ADD COLUMN client_id TEXT`); } catch (_) {}
+    db.exec(`UPDATE customers SET client_id='astrology_001' WHERE client_id IS NULL`);
+    db.exec(`UPDATE messages  SET client_id='astrology_001' WHERE client_id IS NULL`);
+    db.exec(`UPDATE orders    SET client_id='astrology_001' WHERE client_id IS NULL`);
   }
 }
 
@@ -352,4 +517,75 @@ async function countOrdersByYear(pattern) {
   }
 }
 
-module.exports = { init, insertMessage, upsertCustomer, insertOrder, getOrdersByPhone, getLatestOrder, countOrdersByYear, getAllCustomers, getMessagesByPhone, updateLatestOrderStatus, updateOrderStatusById, updateOrderFlags, updateOrderFlagsById, deleteCustomer, deleteMessages, IS_PG };
+// ─── Product catalog queries ───────────────────────────────────────────────────
+
+/**
+ * Full-text search across client products.
+ * Falls back to returning empty array on SQLite (products are PG-only for now).
+ */
+async function searchProducts(clientId, query, limit = 10) {
+  if (IS_PG) {
+    if (!query || !query.trim()) {
+      const res = await pool.query(
+        `SELECT id, name, description, price, price_max, currency, category, subcategory, sku, image_url, attributes
+         FROM client_products WHERE client_id = $1 AND active = TRUE
+         ORDER BY sort_order, name LIMIT $2`,
+        [clientId, limit]
+      );
+      return res.rows;
+    }
+    const res = await pool.query(
+      `SELECT id, name, description, price, price_max, currency, category, subcategory, sku, image_url, attributes,
+              ts_rank(search_vec, plainto_tsquery('english', $2)) AS rank
+       FROM client_products WHERE client_id = $1 AND active = TRUE
+         AND search_vec @@ plainto_tsquery('english', $2)
+       ORDER BY rank DESC, sort_order LIMIT $3`,
+      [clientId, query.trim(), limit]
+    );
+    return res.rows;
+  } else {
+    // SQLite: simple LIKE search
+    const q = query ? `%${query.trim()}%` : null;
+    const rows = q
+      ? db.prepare(`SELECT id, name, description, price, price_max, currency, category, subcategory, sku, image_url, attributes
+                    FROM client_products WHERE client_id = ? AND active = 1
+                    AND (name LIKE ? OR description LIKE ? OR category LIKE ?) ORDER BY sort_order, name LIMIT ?`)
+           .all(clientId, q, q, q, limit)
+      : db.prepare(`SELECT id, name, description, price, price_max, currency, category, subcategory, sku, image_url, attributes
+                    FROM client_products WHERE client_id = ? AND active = 1 ORDER BY sort_order, name LIMIT ?`)
+           .all(clientId, limit);
+    return rows.map(r => ({ ...r, attributes: JSON.parse(r.attributes || '{}') }));
+  }
+}
+
+async function getAttributeSchema(clientId) {
+  if (IS_PG) {
+    const res = await pool.query(
+      `SELECT field_key, field_label, field_type, options, unit, filterable
+       FROM client_attribute_schemas WHERE client_id = $1 ORDER BY sort_order`,
+      [clientId]
+    );
+    return res.rows;
+  } else {
+    const rows = db.prepare(
+      `SELECT field_key, field_label, field_type, options, unit, filterable
+       FROM client_attribute_schemas WHERE client_id = ? ORDER BY sort_order`
+    ).all(clientId);
+    return rows.map(r => ({ ...r, options: r.options ? JSON.parse(r.options) : null }));
+  }
+}
+
+// Raw query helper — PG uses pool, SQLite does a best-effort sync query
+async function pgQuery(sql, params) {
+  if (IS_PG) return pool.query(sql, params);
+  // SQLite fallback: translate basic $1/$2 params to ? and run sync
+  const sqlite_sql = sql.replace(/\$\d+/g, '?');
+  try {
+    const rows = db.prepare(sqlite_sql).all(...(params || []));
+    return { rows };
+  } catch (_) {
+    return { rows: [] };
+  }
+}
+
+module.exports = { init, insertMessage, upsertCustomer, insertOrder, getOrdersByPhone, getLatestOrder, countOrdersByYear, getAllCustomers, getMessagesByPhone, updateLatestOrderStatus, updateOrderStatusById, updateOrderFlags, updateOrderFlagsById, deleteCustomer, deleteMessages, searchProducts, getAttributeSchema, IS_PG, pgQuery };

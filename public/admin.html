@@ -275,6 +275,120 @@
     .btn-send:hover { background: #128c7e; }
     .btn-send:disabled { background: #aaa; cursor: default; }
 
+    /* ── Tab switcher ── */
+    .sidebar-tabs {
+      display: flex;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    .sidebar-tab {
+      flex: 1;
+      padding: 10px 8px;
+      font-size: 12px;
+      font-weight: 600;
+      text-align: center;
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      color: #888;
+      transition: all 0.15s;
+    }
+    .sidebar-tab.active { color: #075e54; border-color: #075e54; }
+
+    /* ── Product panel ── */
+    .product-panel {
+      flex: 1;
+      overflow: hidden;
+      display: none;
+      flex-direction: column;
+    }
+    .product-panel.visible { display: flex; }
+
+    .prod-toolbar {
+      padding: 10px 14px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      border-bottom: 1px solid #e0e0e0;
+      background: #fafafa;
+      flex-wrap: wrap;
+    }
+    .prod-toolbar select {
+      padding: 5px 10px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 12px;
+    }
+    .btn-primary {
+      background: #075e54;
+      color: #fff;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-primary:hover { background: #128c7e; }
+    .btn-sm {
+      padding: 4px 10px;
+      border-radius: 5px;
+      font-size: 11px;
+      border: 1px solid #ccc;
+      background: #fff;
+      cursor: pointer;
+    }
+    .btn-sm:hover { background: #f5f5f5; }
+    .btn-sm.danger { color: #c62828; border-color: #ef9a9a; }
+    .btn-sm.danger:hover { background: #ffebee; }
+
+    .prod-list {
+      flex: 1;
+      overflow-y: auto;
+    }
+    .prod-item {
+      padding: 10px 14px;
+      border-bottom: 1px solid #f0f0f0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+    }
+    .prod-item:hover { background: #f9f9f9; }
+    .prod-item .prod-info { flex: 1; min-width: 0; }
+    .prod-item .prod-name { font-weight: 600; }
+    .prod-item .prod-meta { font-size: 11px; color: #888; }
+    .prod-item .prod-price { font-size: 12px; font-weight: 600; color: #075e54; white-space: nowrap; }
+
+    /* ── Product form (in chat panel area) ── */
+    .prod-form-panel {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: none;
+    }
+    .prod-form-panel.visible { display: block; }
+    .prod-form-panel h3 { margin-bottom: 16px; font-size: 15px; color: #075e54; }
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      max-width: 700px;
+    }
+    .form-grid .full { grid-column: 1 / -1; }
+    .form-group label { display: block; font-size: 12px; font-weight: 600; color: #555; margin-bottom: 4px; }
+    .form-group input, .form-group textarea, .form-group select {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    .form-group textarea { min-height: 70px; resize: vertical; }
+    .attr-editor { margin-top: 16px; max-width: 700px; }
+    .attr-editor h4 { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+    .attr-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+    .attr-row input { flex: 1; padding: 6px 8px; border: 1px solid #ccc; border-radius: 5px; font-size: 12px; }
+    .attr-row .attr-val { flex: 2; }
+
     /* ── Loading / toast ── */
     .toast {
       position: fixed;
@@ -299,21 +413,44 @@
   <h1>🔮 Admin Panel — පුරාණ ජෝතීර්වේදය</h1>
   <span class="meta" id="topMeta">Loading...</span>
   <span class="meta" style="margin-left:auto;">AI cost: <b id="adminCost">$0.000000</b></span>
+  <a href="/onboard.html" style="margin-left:16px;color:rgba(255,255,255,0.85);font-size:12px;text-decoration:none;border:1px solid rgba(255,255,255,0.3);padding:4px 10px;border-radius:5px;">⚙️ Clients</a>
 </div>
 
 <div class="layout">
-  <!-- Customer list -->
+  <!-- Sidebar -->
   <div class="sidebar">
-    <div class="sidebar-header">
-      <span>Customers</span>
-      <button onclick="loadCustomers()">⟳ Refresh</button>
+    <div class="sidebar-tabs">
+      <div class="sidebar-tab active" id="tab-customers" onclick="switchTab('customers')">💬 Customers</div>
+      <div class="sidebar-tab" id="tab-products" onclick="switchTab('products')">📦 Products</div>
     </div>
-    <div class="customer-list" id="customerList">
-      <div style="padding:20px;color:#aaa;font-size:13px;">Loading...</div>
+
+    <!-- Customer list -->
+    <div id="panel-customers" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
+      <div class="sidebar-header">
+        <span id="custCount">Customers</span>
+        <button onclick="loadCustomers()">⟳ Refresh</button>
+      </div>
+      <div class="customer-list" id="customerList">
+        <div style="padding:20px;color:#aaa;font-size:13px;">Loading...</div>
+      </div>
+    </div>
+
+    <!-- Product list -->
+    <div id="panel-products" class="product-panel">
+      <div class="prod-toolbar">
+        <select id="clientSelect" onchange="loadProducts()">
+          <option value="astrology_001">astrology_001</option>
+        </select>
+        <button class="btn-primary" onclick="showProductForm(null)">+ Add Product</button>
+        <button class="btn-sm" onclick="loadAttributes()">⚙ Attributes</button>
+      </div>
+      <div class="prod-list" id="prodList">
+        <div style="padding:16px;color:#aaa;font-size:13px;">Select a client to load products.</div>
+      </div>
     </div>
   </div>
 
-  <!-- Chat panel -->
+  <!-- Right panel: chat or product form -->
   <div class="chat-panel" id="chatPanel">
     <div class="empty-state" id="emptyState">← Select a customer to view their chat</div>
   </div>
@@ -403,8 +540,9 @@
       const total = customers.length;
       const leads = customers.filter(c => +c.order_count === 0).length;
       const orders = total - leads;
-      document.getElementById('topMeta').textContent =
-        `${total} customers · ${orders} orders · ${leads} leads`;
+      const meta = `${total} customers · ${orders} orders · ${leads} leads`;
+      document.getElementById('topMeta').textContent = meta;
+      document.getElementById('custCount').textContent = meta;
     } catch (e) {
       if (e.message !== 'Unauthorized') {
         toast('Failed to load customers: ' + e.message);
@@ -703,6 +841,271 @@
   function addAdminCost(usd) {
     totalAdminCost += usd;
     document.getElementById('adminCost').textContent = `$${totalAdminCost.toFixed(6)}`;
+  }
+
+  // ── Tab switcher ──────────────────────────────────────────────────────────
+  function switchTab(tab) {
+    document.getElementById('tab-customers').classList.toggle('active', tab === 'customers');
+    document.getElementById('tab-products').classList.toggle('active', tab === 'products');
+    document.getElementById('panel-customers').style.display = tab === 'customers' ? 'flex' : 'none';
+    document.getElementById('panel-products').classList.toggle('visible', tab === 'products');
+    if (tab === 'products') {
+      loadClients();
+      loadProducts();
+      document.getElementById('chatPanel').innerHTML = '<div class="empty-state">← Select a product or click + Add Product</div>';
+    } else {
+      document.getElementById('chatPanel').innerHTML = '<div class="empty-state">← Select a customer to view their chat</div>';
+    }
+  }
+
+  // ── Clients ────────────────────────────────────────────────────────────────
+  async function loadClients() {
+    try {
+      const clients = await apiFetch('/admin/clients');
+      const sel = document.getElementById('clientSelect');
+      sel.innerHTML = clients.map(c => `<option value="${c.id}">${c.id} — ${c.name || c.brand_name || ''}</option>`).join('');
+    } catch (_) {}
+  }
+
+  // ── Products ───────────────────────────────────────────────────────────────
+  let productAttrSchema = [];
+
+  async function loadProducts() {
+    const clientId = document.getElementById('clientSelect').value;
+    const list = document.getElementById('prodList');
+    list.innerHTML = '<div style="padding:16px;color:#aaa;font-size:13px;">Loading...</div>';
+    try {
+      const [products, schema] = await Promise.all([
+        apiFetch(`/admin/products?client=${encodeURIComponent(clientId)}`),
+        apiFetch(`/admin/attributes?client=${encodeURIComponent(clientId)}`),
+      ]);
+      productAttrSchema = schema;
+      if (!products.length) {
+        list.innerHTML = '<div style="padding:16px;color:#aaa;font-size:13px;">No products yet. Click + Add Product.</div>';
+        return;
+      }
+      list.innerHTML = products.map(p => `
+        <div class="prod-item">
+          <div class="prod-info">
+            <div class="prod-name">${p.name}</div>
+            <div class="prod-meta">${p.category || '—'} ${p.sku ? '· SKU: ' + p.sku : ''} ${p.active ? '' : '· ⛔ inactive'}</div>
+          </div>
+          <div class="prod-price">${p.price ? (p.currency || 'LKR') + ' ' + Number(p.price).toLocaleString() : ''}</div>
+          <button class="btn-sm" onclick="showProductForm(${p.id})">Edit</button>
+          <button class="btn-sm danger" onclick="deleteProduct(${p.id})">Del</button>
+        </div>`).join('');
+    } catch (err) {
+      list.innerHTML = `<div style="padding:16px;color:#f66;font-size:13px;">Error: ${err.message}</div>`;
+    }
+  }
+
+  async function showProductForm(productId) {
+    const clientId = document.getElementById('clientSelect').value;
+    let product = null;
+    if (productId) {
+      try {
+        const all = await apiFetch(`/admin/products?client=${encodeURIComponent(clientId)}`);
+        product = all.find(p => p.id === productId);
+      } catch (_) {}
+    }
+
+    const attrs = productAttrSchema;
+    const attrRows = attrs.map(s => {
+      const val = product?.attributes?.[s.field_key] ?? '';
+      return `
+        <div class="attr-row">
+          <label style="min-width:100px;font-size:12px;font-weight:600;color:#555">${s.field_label}</label>
+          <input class="attr-val" data-key="${s.field_key}" value="${val}" placeholder="${s.unit || ''}">
+        </div>`;
+    }).join('');
+
+    const title = product ? `Edit: ${product.name}` : 'New Product';
+    document.getElementById('chatPanel').innerHTML = `
+      <div style="padding:20px;overflow-y:auto;height:100%;">
+        <h3 style="font-size:15px;color:#075e54;margin-bottom:16px;">${title}</h3>
+        <div class="form-grid" id="prodForm">
+          <div class="form-group full">
+            <label>Name *</label>
+            <input id="pName" value="${product?.name || ''}">
+          </div>
+          <div class="form-group full">
+            <label>Description</label>
+            <textarea id="pDesc">${product?.description || ''}</textarea>
+          </div>
+          <div class="form-group">
+            <label>Category</label>
+            <input id="pCat" value="${product?.category || ''}">
+          </div>
+          <div class="form-group">
+            <label>Subcategory</label>
+            <input id="pSubcat" value="${product?.subcategory || ''}">
+          </div>
+          <div class="form-group">
+            <label>Price</label>
+            <input id="pPrice" type="number" value="${product?.price || ''}">
+          </div>
+          <div class="form-group">
+            <label>Price Max (for ranges)</label>
+            <input id="pPriceMax" type="number" value="${product?.price_max || ''}">
+          </div>
+          <div class="form-group">
+            <label>Currency</label>
+            <input id="pCurrency" value="${product?.currency || 'LKR'}">
+          </div>
+          <div class="form-group">
+            <label>SKU</label>
+            <input id="pSku" value="${product?.sku || ''}">
+          </div>
+          <div class="form-group full">
+            <label>Image URL</label>
+            <input id="pImageUrl" value="${product?.image_url || ''}">
+          </div>
+          <div class="form-group">
+            <label>Sort Order</label>
+            <input id="pSort" type="number" value="${product?.sort_order ?? 0}">
+          </div>
+          <div class="form-group">
+            <label>Active</label>
+            <select id="pActive">
+              <option value="true" ${product?.active !== false ? 'selected' : ''}>Yes</option>
+              <option value="false" ${product?.active === false ? 'selected' : ''}>No</option>
+            </select>
+          </div>
+        </div>
+        ${attrRows ? `<div style="margin-top:16px;"><h4 style="font-size:13px;font-weight:600;margin-bottom:8px;">Custom Attributes</h4>${attrRows}</div>` : ''}
+        <div style="margin-top:18px;display:flex;gap:10px;">
+          <button class="btn-primary" onclick="saveProduct(${productId || 'null'}, '${clientId}')">
+            ${product ? 'Save Changes' : 'Create Product'}
+          </button>
+          <button class="btn-sm" onclick="switchTab('products')">Cancel</button>
+        </div>
+      </div>`;
+  }
+
+  async function saveProduct(productId, clientId) {
+    const attributes = {};
+    document.querySelectorAll('.attr-val[data-key]').forEach(el => {
+      if (el.value.trim()) attributes[el.dataset.key] = el.value.trim();
+    });
+
+    const body = {
+      client_id:   clientId,
+      name:        document.getElementById('pName').value.trim(),
+      description: document.getElementById('pDesc').value.trim() || null,
+      category:    document.getElementById('pCat').value.trim() || null,
+      subcategory: document.getElementById('pSubcat').value.trim() || null,
+      price:       parseFloat(document.getElementById('pPrice').value) || null,
+      price_max:   parseFloat(document.getElementById('pPriceMax').value) || null,
+      currency:    document.getElementById('pCurrency').value.trim() || 'LKR',
+      sku:         document.getElementById('pSku').value.trim() || null,
+      image_url:   document.getElementById('pImageUrl').value.trim() || null,
+      sort_order:  parseInt(document.getElementById('pSort').value) || 0,
+      active:      document.getElementById('pActive').value === 'true',
+      attributes,
+    };
+
+    if (!body.name) { toast('Name is required'); return; }
+
+    try {
+      if (productId) {
+        await apiFetch(`/admin/products/${productId}`, { method: 'PUT', body: JSON.stringify(body) });
+        toast('Product updated ✓');
+      } else {
+        await apiFetch('/admin/products', { method: 'POST', body: JSON.stringify(body) });
+        toast('Product created ✓');
+      }
+      loadProducts();
+      document.getElementById('chatPanel').innerHTML = '<div class="empty-state">← Select a product or click + Add Product</div>';
+    } catch (err) {
+      toast('Error: ' + err.message);
+    }
+  }
+
+  async function deleteProduct(productId) {
+    if (!confirm('Delete this product?')) return;
+    try {
+      await apiFetch(`/admin/products/${productId}`, { method: 'DELETE' });
+      toast('Product deleted ✓');
+      loadProducts();
+    } catch (err) {
+      toast('Error: ' + err.message);
+    }
+  }
+
+  // ── Attribute schema editor ────────────────────────────────────────────────
+  async function loadAttributes() {
+    const clientId = document.getElementById('clientSelect').value;
+    let schema = [];
+    try { schema = await apiFetch(`/admin/attributes?client=${encodeURIComponent(clientId)}`); } catch (_) {}
+
+    const rows = schema.map(s => `
+      <div class="attr-row" style="margin-bottom:6px;">
+        <span style="min-width:90px;font-size:12px;font-weight:600;">${s.field_key}</span>
+        <span style="min-width:80px;font-size:12px;color:#555">${s.field_label}</span>
+        <span style="min-width:60px;font-size:11px;color:#888">${s.field_type}</span>
+        <span style="font-size:11px;color:#888;flex:1">${s.unit || ''}</span>
+        <span style="font-size:11px;color:${s.filterable ? '#2e7d32' : '#888'}">${s.filterable ? '🔍' : ''}</span>
+        <button class="btn-sm danger" onclick="deleteAttribute(${s.id})">Del</button>
+      </div>`).join('');
+
+    document.getElementById('chatPanel').innerHTML = `
+      <div style="padding:20px;overflow-y:auto;height:100%;">
+        <h3 style="font-size:15px;color:#075e54;margin-bottom:16px;">Attribute Schema — ${clientId}</h3>
+        <p style="font-size:12px;color:#888;margin-bottom:12px;">These define the custom fields that products can have. Used for AI SQL and catalog display.</p>
+        <div style="margin-bottom:16px;">${rows || '<p style="color:#aaa;font-size:13px;">No attributes yet.</p>'}</div>
+        <div style="border-top:1px solid #eee;padding-top:16px;">
+          <h4 style="font-size:13px;margin-bottom:10px;">Add New Attribute</h4>
+          <div class="form-grid">
+            <div class="form-group"><label>Key (no spaces)</label><input id="aKey" placeholder="e.g. color"></div>
+            <div class="form-group"><label>Label</label><input id="aLabel" placeholder="e.g. Color"></div>
+            <div class="form-group"><label>Type</label>
+              <select id="aType">
+                <option>text</option><option>number</option><option>select</option>
+                <option>boolean</option><option>multiselect</option>
+              </select>
+            </div>
+            <div class="form-group"><label>Unit</label><input id="aUnit" placeholder="e.g. kg, cm"></div>
+            <div class="form-group"><label>Options (comma-separated, for select)</label><input id="aOptions" placeholder="Red, Blue, Green"></div>
+            <div class="form-group"><label>Filterable by AI?</label>
+              <select id="aFilterable"><option value="true">Yes</option><option value="false">No</option></select>
+            </div>
+          </div>
+          <button class="btn-primary" style="margin-top:12px;" onclick="addAttribute('${clientId}')">Add Attribute</button>
+        </div>
+      </div>`;
+  }
+
+  async function addAttribute(clientId) {
+    const key     = document.getElementById('aKey').value.trim().replace(/\s+/g, '_');
+    const label   = document.getElementById('aLabel').value.trim();
+    const type    = document.getElementById('aType').value;
+    const unit    = document.getElementById('aUnit').value.trim() || null;
+    const optStr  = document.getElementById('aOptions').value.trim();
+    const options = optStr ? optStr.split(',').map(s => s.trim()).filter(Boolean) : null;
+    const filterable = document.getElementById('aFilterable').value === 'true';
+
+    if (!key || !label) { toast('Key and Label are required'); return; }
+    try {
+      await apiFetch('/admin/attributes', {
+        method: 'POST',
+        body: JSON.stringify({ client_id: clientId, field_key: key, field_label: label, field_type: type, options, unit, filterable }),
+      });
+      toast('Attribute saved ✓');
+      await loadAttributes();
+    } catch (err) {
+      toast('Error: ' + err.message);
+    }
+  }
+
+  async function deleteAttribute(attrId) {
+    if (!confirm('Delete this attribute?')) return;
+    try {
+      await apiFetch(`/admin/attributes/${attrId}`, { method: 'DELETE' });
+      toast('Attribute deleted ✓');
+      loadAttributes();
+    } catch (err) {
+      toast('Error: ' + err.message);
+    }
   }
 
   // ── Init ──────────────────────────────────────────────────────────────────

@@ -1409,9 +1409,23 @@ app.patch('/api/orders/:id/flags', jwtAuth, async (req, res) => {
 app.get('/api/products', jwtAuth, async (req, res) => {
   const clientId = resolveClientId(req);
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  const search = req.query.search || '';
+  const page  = Math.max(1, parseInt(req.query.page)  || 1);
+  const limit = Math.min(200, parseInt(req.query.limit) || 50);
+  const offset = (page - 1) * limit;
   try {
-    const r = await db.pgQuery(`SELECT * FROM client_products WHERE client_id=$1 ORDER BY category, sort_order, name`, [clientId]);
-    res.json(r.rows);
+    let r, countR;
+    if (search) {
+      r = await db.pgQuery(
+        `SELECT * FROM client_products WHERE client_id=$1 AND (name ILIKE $2 OR description ILIKE $2 OR category ILIKE $2) ORDER BY category, sort_order, name LIMIT $3 OFFSET $4`,
+        [clientId, `%${search}%`, limit, offset]
+      );
+      countR = await db.pgQuery(`SELECT COUNT(*) FROM client_products WHERE client_id=$1 AND (name ILIKE $2 OR description ILIKE $2 OR category ILIKE $2)`, [clientId, `%${search}%`]);
+    } else {
+      r = await db.pgQuery(`SELECT * FROM client_products WHERE client_id=$1 ORDER BY category, sort_order, name LIMIT $2 OFFSET $3`, [clientId, limit, offset]);
+      countR = await db.pgQuery(`SELECT COUNT(*) FROM client_products WHERE client_id=$1`, [clientId]);
+    }
+    res.json({ products: r.rows, total: parseInt(countR.rows[0].count) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

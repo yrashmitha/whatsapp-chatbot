@@ -7,17 +7,22 @@ const stored = (() => {
 export const useAuthStore = create(set => ({
   user:  stored,
   token: localStorage.getItem('crm_token') || null,
+  selectedClientId: '',   // superadmin global client selector
 
   login(token, user) {
     localStorage.setItem('crm_token', token);
     localStorage.setItem('crm_user', JSON.stringify(user));
-    set({ token, user });
+    set({ token, user, selectedClientId: '' });
   },
 
   logout() {
     localStorage.removeItem('crm_token');
     localStorage.removeItem('crm_user');
-    set({ token: null, user: null });
+    set({ token: null, user: null, selectedClientId: '' });
+  },
+
+  setSelectedClientId(id) {
+    set({ selectedClientId: id });
   },
 }));
 

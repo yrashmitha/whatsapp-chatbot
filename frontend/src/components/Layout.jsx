@@ -1,5 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useAuthStore, isSuperAdmin } from '../stores/auth';
+import api from '../lib/api';
 
 const navItems = [
   { to: '/chat', label: 'Chats', icon: '💬' },
@@ -9,8 +11,15 @@ const navItems = [
 ];
 
 export default function Layout({ children }) {
-  const { user, logout } = useAuthStore();
+  const { user, logout, selectedClientId, setSelectedClientId } = useAuthStore();
+  const superAdmin = isSuperAdmin(user);
   const navigate = useNavigate();
+
+  const { data: clientsData } = useQuery({
+    queryKey: ['clients'],
+    queryFn: () => api.get('/clients').then(r => r.data),
+    enabled: superAdmin,
+  });
 
   const handleLogout = () => {
     logout();
@@ -25,10 +34,27 @@ export default function Layout({ children }) {
           <div className="text-base font-bold text-violet-700">CRM Dashboard</div>
           {user && (
             <div className="mt-1 text-xs text-slate-500 truncate">
-              {isSuperAdmin(user) ? '⭐ Super Admin' : user.clientId}
+              {superAdmin ? '⭐ Super Admin' : user.clientId}
             </div>
           )}
         </div>
+
+        {/* Global client selector for superadmin */}
+        {superAdmin && (
+          <div className="px-3 py-2 border-b border-slate-100">
+            <label className="block text-xs text-slate-400 mb-1">Viewing client</label>
+            <select
+              value={selectedClientId}
+              onChange={e => setSelectedClientId(e.target.value)}
+              className="w-full text-sm border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-violet-400 bg-white"
+            >
+              <option value="">All Clients</option>
+              {(clientsData?.clients || []).map(c => (
+                <option key={c.client_id} value={c.client_id}>{c.client_id}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <nav className="flex-1 py-3 px-2 overflow-y-auto">
           {navItems.map(({ to, label, icon }) => (

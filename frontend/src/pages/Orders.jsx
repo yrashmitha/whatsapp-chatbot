@@ -3,27 +3,19 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore, isSuperAdmin } from '../stores/auth';
 import Layout from '../components/Layout';
 import Pagination from '../components/ui/Pagination';
-import Badge from '../components/ui/Badge';
 import Spinner from '../components/ui/Spinner';
 import { useToast } from '../components/ui/Toast';
 import api from '../lib/api';
 import { formatDateTime, STATUS_COLORS, STATUS_OPTIONS } from '../lib/utils';
 
 export default function Orders() {
-  const { user } = useAuthStore();
+  const { user, selectedClientId } = useAuthStore();
   const superAdmin = isSuperAdmin(user);
-  const [selectedClientId, setSelectedClientId] = useState('');
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const toast = useToast();
   const qc = useQueryClient();
-
-  const { data: clientsData } = useQuery({
-    queryKey: ['clients'],
-    queryFn: () => api.get('/clients').then(r => r.data),
-    enabled: superAdmin,
-  });
 
   const clientId = superAdmin ? (selectedClientId || null) : user?.clientId;
 
@@ -62,27 +54,15 @@ export default function Orders() {
   return (
     <Layout>
       <div className="flex flex-col h-full">
-        {/* Top bar */}
         <div className="px-6 py-4 border-b border-slate-200 bg-white flex items-center gap-3 flex-wrap shrink-0">
           <h1 className="text-lg font-semibold text-slate-800 mr-2">Orders</h1>
-
-          {superAdmin && (
-            <select value={selectedClientId} onChange={e => { setSelectedClientId(e.target.value); setPage(1); }}
-              className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-violet-400">
-              <option value="">All Clients</option>
-              {(clientsData?.clients || []).map(c => <option key={c.client_id} value={c.client_id}>{c.client_id}</option>)}
-            </select>
-          )}
-
           <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
             placeholder="Search…" className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-violet-400 w-40" />
-
           <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
             className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-violet-400">
             <option value="">All statuses</option>
             {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
-
           <div className="ml-auto">
             <button onClick={handleExport} className="text-sm bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg px-4 py-1.5 cursor-pointer transition-colors">
               Export CSV
@@ -90,7 +70,6 @@ export default function Orders() {
           </div>
         </div>
 
-        {/* Table */}
         <div className="flex-1 overflow-auto px-6 py-4">
           {isLoading ? (
             <div className="flex justify-center py-12"><Spinner /></div>
@@ -136,7 +115,6 @@ export default function Orders() {
           )}
         </div>
 
-        {/* Pagination */}
         {data?.total > 20 && (
           <div className="px-6 py-3 border-t border-slate-200 bg-white flex items-center justify-between shrink-0">
             <span className="text-sm text-slate-500">{data.total} total</span>

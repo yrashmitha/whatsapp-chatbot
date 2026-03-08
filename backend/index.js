@@ -1436,9 +1436,9 @@ app.post('/api/products', jwtAuth, async (req, res) => {
   if (!clientId || !name) return res.status(400).json({ error: 'name required' });
   try {
     const r = await db.pgQuery(
-      `INSERT INTO client_products (client_id,name,description,price,price_max,currency,category,subcategory,sku,image_url,sort_order,attributes,active)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
-      [clientId, name, description||null, price||null, price_max||null, currency||'LKR', category||null, subcategory||null, sku||null, image_url||null, sort_order||0, attributes ? JSON.stringify(attributes) : null, active !== false]
+      `INSERT INTO client_products (client_id,name,description,price,price_max,currency,category,subcategory,sku,image_url,sort_order,attributes,active,qty)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+      [clientId, name, description||null, price||null, price_max||null, currency||'LKR', category||null, subcategory||null, sku||null, image_url||null, sort_order||0, JSON.stringify(attributes||{}), active !== false, parseInt(req.body.qty)||0]
     );
     try { const emb = await embedText(productToText(req.body)); await db.saveProductEmbedding(r.rows[0].id, emb); } catch (_) {}
     res.json({ ok: true, id: r.rows[0].id });
@@ -1450,8 +1450,8 @@ app.put('/api/products/:id', jwtAuth, async (req, res) => {
   const { name, description, price, price_max, currency, category, subcategory, sku, image_url, sort_order, attributes, active } = req.body;
   try {
     await db.pgQuery(
-      `UPDATE client_products SET name=$1,description=$2,price=$3,price_max=$4,currency=$5,category=$6,subcategory=$7,sku=$8,image_url=$9,sort_order=$10,attributes=$11,active=$12,updated_at=NOW() WHERE id=$13`,
-      [name, description||null, price||null, price_max||null, currency||'LKR', category||null, subcategory||null, sku||null, image_url||null, sort_order||0, attributes ? JSON.stringify(attributes) : null, active !== false, req.params.id]
+      `UPDATE client_products SET name=$1,description=$2,price=$3,price_max=$4,currency=$5,category=$6,subcategory=$7,sku=$8,image_url=$9,sort_order=$10,attributes=$11,active=$12,qty=$13,updated_at=NOW() WHERE id=$14`,
+      [name, description||null, price||null, price_max||null, currency||'LKR', category||null, subcategory||null, sku||null, image_url||null, sort_order||0, JSON.stringify(attributes||{}), active !== false, parseInt(req.body.qty)||0, req.params.id]
     );
     try { const emb = await embedText(productToText(req.body)); await db.saveProductEmbedding(req.params.id, emb); } catch (_) {}
     res.json({ ok: true });
@@ -1500,7 +1500,7 @@ app.get('/api/attributes', jwtAuth, async (req, res) => {
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
   try {
     const r = await db.pgQuery(`SELECT * FROM client_attribute_schemas WHERE client_id=$1 ORDER BY sort_order`, [clientId]);
-    res.json(r.rows);
+    res.json({ attributes: r.rows });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

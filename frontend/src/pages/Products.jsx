@@ -103,8 +103,8 @@ export default function Products() {
                       <td className="py-2 pr-4 text-slate-500">{p.category || '—'}</td>
                       <td className="py-2 pr-4 text-slate-700 font-medium">{formatPrice(p.price)}</td>
                       <td className="py-2 pr-4">
-                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${p.in_stock ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
-                          {p.in_stock ? 'In Stock' : 'Out'}
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${p.active ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+                          {p.active ? `In Stock${p.qty > 0 ? ` (${p.qty})` : ''}` : 'Inactive'}
                         </span>
                       </td>
                       <td className="py-2 text-right">

@@ -186,6 +186,9 @@ async function init() {
       CREATE INDEX IF NOT EXISTS idx_attr_schema_client ON client_attribute_schemas (client_id, sort_order);
     `);
 
+    // qty column for products
+    await pool.query(`ALTER TABLE client_products ADD COLUMN IF NOT EXISTS qty INT NOT NULL DEFAULT 0`);
+
     // pgvector extension + embedding column
     await pool.query(`
       CREATE EXTENSION IF NOT EXISTS vector;

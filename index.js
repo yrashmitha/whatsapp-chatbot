@@ -1024,6 +1024,64 @@ app.delete('/admin/attributes/:id', adminAuth, async (req, res) => {
   }
 });
 
+// POST /admin/attributes/bulk — upsert full attribute schema from JSON array
+app.post('/admin/attributes/bulk', adminAuth, async (req, res) => {
+  const { client_id, attributes } = req.body;
+  if (!client_id || !Array.isArray(attributes)) return res.status(400).json({ error: 'client_id and attributes[] required' });
+  const errors = [];
+  for (let i = 0; i < attributes.length; i++) {
+    const a = attributes[i];
+    if (!a.field_key || !a.field_label) { errors.push(`Item ${i}: field_key and field_label required`); continue; }
+    try {
+      await db.pgQuery(
+        `INSERT INTO client_attribute_schemas (client_id, field_key, field_label, field_type, options, unit, filterable, sort_order)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (client_id, field_key) DO UPDATE SET
+           field_label=$3, field_type=$4, options=$5, unit=$6, filterable=$7, sort_order=$8`,
+        [client_id, a.field_key, a.field_label, a.field_type || 'text',
+         a.options ? JSON.stringify(a.options) : null, a.unit || null,
+         a.filterable !== false, a.sort_order || i]
+      );
+    } catch (e) { errors.push(`Item ${i} (${a.field_key}): ${e.message}`); }
+  }
+  res.json({ ok: true, saved: attributes.length - errors.length, errors });
+});
+
+// POST /admin/products/bulk — import JSON array of products
+app.post('/admin/products/bulk', adminAuth, async (req, res) => {
+  const { client_id, products } = req.body;
+  if (!client_id || !Array.isArray(products)) return res.status(400).json({ error: 'client_id and products[] required' });
+  // Load attribute schema for validation
+  let schema = [];
+  try {
+    const r = await db.pgQuery(`SELECT field_key, field_type FROM client_attribute_schemas WHERE client_id=$1`, [client_id]);
+    schema = r.rows;
+  } catch (_) {}
+  const validKeys = new Set(schema.map(s => s.field_key));
+
+  const saved = [], errors = [];
+  for (let i = 0; i < products.length; i++) {
+    const p = products[i];
+    if (!p.name) { errors.push(`Row ${i+1}: name is required`); continue; }
+    // Validate attributes against schema
+    if (p.attributes && validKeys.size > 0) {
+      const unknown = Object.keys(p.attributes).filter(k => !validKeys.has(k));
+      if (unknown.length) { errors.push(`Row ${i+1} (${p.name}): unknown attribute keys: ${unknown.join(', ')}`); continue; }
+    }
+    try {
+      const r = await db.pgQuery(
+        `INSERT INTO client_products (client_id,name,description,price,price_max,currency,category,subcategory,sku,image_url,sort_order,attributes,active)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+        [client_id, p.name, p.description||null, p.price||null, p.price_max||null, p.currency||'LKR',
+         p.category||null, p.subcategory||null, p.sku||null, p.image_url||null, p.sort_order||i,
+         p.attributes ? JSON.stringify(p.attributes) : null, p.active !== false]
+      );
+      saved.push(r.rows[0].id);
+    } catch (e) { errors.push(`Row ${i+1} (${p.name}): ${e.message}`); }
+  }
+  res.json({ ok: true, saved: saved.length, errors });
+});
+
 // ─── Start ────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 

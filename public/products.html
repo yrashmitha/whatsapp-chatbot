@@ -244,6 +244,29 @@
     }
     .toast.show { opacity: 1; }
 
+    /* Attr modal */
+    .attr-list-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; background: #f9f9f9;
+      border: 1px solid #eee; border-radius: 7px; margin-bottom: 6px;
+    }
+    .attr-key  { min-width: 110px; font-size: 12px; font-weight: 700; color: #111; }
+    .attr-lbl  { min-width: 100px; font-size: 12px; color: #333; }
+    .attr-type { font-size: 11px; color: #888; background: #eee; padding: 2px 7px; border-radius: 8px; }
+    .attr-opts { flex: 1; font-size: 11px; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .attr-actions { display: flex; gap: 5px; margin-left: auto; }
+
+    /* Dynamic attr fields in product modal */
+    .dyn-attr-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
+    .dyn-attr-field label { font-size: 12px; font-weight: 600; color: #555; }
+    .dyn-attr-field input, .dyn-attr-field select {
+      padding: 9px 11px; border: 1px solid #d0d0d0; border-radius: 7px;
+      font-size: 13px; color: #222; font-family: inherit;
+    }
+    .dyn-attr-field input:focus, .dyn-attr-field select:focus {
+      outline: none; border-color: #075e54;
+    }
+
     @media (max-width: 640px) {
       .form-grid { grid-template-columns: 1fr; }
       .form-grid .full { grid-column: 1; }
@@ -272,6 +295,8 @@
   <div class="toolbar">
     <input type="search" id="searchInput" placeholder="Search products..." oninput="renderTable()" />
     <button class="btn-primary" onclick="openModal(null)">+ Add Product</button>
+    <button class="btn-cancel" onclick="openImportModal()" style="padding:9px 14px;font-size:13px;">Import JSON</button>
+    <button class="btn-cancel" onclick="openAttrModal()" style="padding:9px 14px;font-size:13px;">⚙ Attributes</button>
   </div>
 
   <div class="table-wrap">
@@ -352,10 +377,16 @@
         </div>
       </div>
 
-      <div class="section-hdr">Custom Attributes <span style="font-weight:400;text-transform:none;font-size:11px;color:#aaa;">(JSON key-value pairs)</span></div>
-      <div class="field">
-        <textarea id="fAttrs" style="min-height:100px;font-family:monospace;font-size:12px;" placeholder='{"color": "blue", "size": "L", "material": "cotton"}'></textarea>
-        <span class="hint">Must be valid JSON. Leave blank for no attributes.</span>
+      <div id="dynAttrsSection" style="display:none;">
+        <div class="section-hdr">Custom Attributes</div>
+        <div id="dynAttrFields"></div>
+      </div>
+      <div id="rawAttrsSection">
+        <div class="section-hdr">Custom Attributes <span style="font-weight:400;text-transform:none;font-size:11px;color:#aaa;">(JSON)</span></div>
+        <div class="field">
+          <textarea id="fAttrs" style="min-height:80px;font-family:monospace;font-size:12px;" placeholder='{"color": "blue", "size": "L"}'></textarea>
+          <span class="hint">Must be valid JSON. Leave blank if no attributes.</span>
+        </div>
       </div>
 
       <div class="section-hdr">Visibility</div>
@@ -372,6 +403,124 @@
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- Attribute Schema Modal -->
+<div class="modal-overlay" id="attrModalOverlay">
+  <div class="modal" style="max-width:720px;">
+    <div class="modal-hdr">
+      <h2>Attribute Schema</h2>
+      <button class="modal-close" onclick="closeAttrModal()">×</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- JSON bulk paste -->
+      <div style="margin-bottom:18px;">
+        <h4 style="font-size:13px;font-weight:700;margin-bottom:6px;color:#075e54;">Paste JSON to import all attributes at once</h4>
+        <textarea id="attrJsonInput" style="width:100%;min-height:140px;font-family:monospace;font-size:12px;padding:10px;border:1px solid #d0d0d0;border-radius:7px;resize:vertical;"
+          placeholder='[
+  {"field_key":"color","field_label":"Color","field_type":"select","options":["Red","Blue","Green"],"filterable":true},
+  {"field_key":"size","field_label":"Size","field_type":"select","options":["S","M","L","XL"],"filterable":true},
+  {"field_key":"material","field_label":"Material","field_type":"text","filterable":false},
+  {"field_key":"weight","field_label":"Weight","field_type":"number","unit":"kg","filterable":false}
+]'></textarea>
+        <div style="margin-top:8px;display:flex;gap:8px;align-items:center;">
+          <button class="btn-save" onclick="importAttrJson()" style="padding:8px 18px;">Import JSON</button>
+          <span id="attrImportStatus" style="font-size:12px;color:#2e7d32;"></span>
+        </div>
+      </div>
+
+      <!-- Existing list -->
+      <div style="border-top:1px solid #eee;padding-top:16px;margin-bottom:18px;">
+        <h4 style="font-size:13px;font-weight:700;margin-bottom:10px;color:#333;">Current Attributes</h4>
+        <div id="attrListWrap">
+          <p style="color:#aaa;font-size:13px;">No attributes yet.</p>
+        </div>
+      </div>
+
+      <!-- Single add/edit form -->
+      <div style="border-top:1px solid #eee;padding-top:16px;">
+        <h4 id="attrFormTitle" style="font-size:13px;font-weight:700;margin-bottom:14px;color:#075e54;">Add Single Attribute</h4>
+        <div class="form-grid">
+          <div class="field">
+            <label>Key <span class="req">*</span></label>
+            <input id="aKey" placeholder="e.g. color" />
+          </div>
+          <div class="field">
+            <label>Label <span class="req">*</span></label>
+            <input id="aLabel" placeholder="e.g. Color" />
+          </div>
+          <div class="field">
+            <label>Type</label>
+            <select id="aType">
+              <option>text</option><option>number</option><option>select</option>
+              <option>boolean</option><option>multiselect</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Unit</label>
+            <input id="aUnit" placeholder="e.g. kg, cm" />
+          </div>
+          <div class="field full">
+            <label>Options <span style="font-weight:400;color:#999;">(comma-separated)</span></label>
+            <input id="aOptions" placeholder="Red, Blue, Green" />
+          </div>
+          <div class="field">
+            <label>Filterable by AI?</label>
+            <select id="aFilterable">
+              <option value="true">Yes</option>
+              <option value="false">No</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-save" id="attrSaveBtn" onclick="saveAttribute()">Add Attribute</button>
+      <button class="btn-cancel" id="attrCancelBtn" style="display:none;" onclick="cancelEditAttr()">Cancel</button>
+      <button class="btn-cancel" onclick="closeAttrModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Product Bulk Import Modal -->
+<div class="modal-overlay" id="importModalOverlay">
+  <div class="modal" style="max-width:720px;">
+    <div class="modal-hdr">
+      <h2>Import Products (JSON)</h2>
+      <button class="modal-close" onclick="closeImportModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:#555;margin-bottom:10px;">
+        Paste a JSON array of products. Attribute keys must match the attribute schema defined for this client.
+      </p>
+      <textarea id="importJsonInput" style="width:100%;min-height:200px;font-family:monospace;font-size:12px;padding:10px;border:1px solid #d0d0d0;border-radius:7px;resize:vertical;"
+        placeholder='[
+  {
+    "name": "Blue Cotton T-Shirt",
+    "description": "Comfortable everyday tee",
+    "sku": "TSH-BLU-M",
+    "price": 1500,
+    "currency": "LKR",
+    "category": "Clothing",
+    "subcategory": "T-Shirts",
+    "attributes": {"color": "Blue", "size": "M", "material": "Cotton"}
+  },
+  {
+    "name": "Red Polo Shirt",
+    "price": 2200,
+    "currency": "LKR",
+    "category": "Clothing",
+    "attributes": {"color": "Red", "size": "L"}
+  }
+]'></textarea>
+      <div id="importErrors" style="margin-top:10px;font-size:12px;color:#c62828;display:none;white-space:pre-wrap;background:#fff5f5;padding:10px;border-radius:6px;border:1px solid #ffcdd2;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-save" id="importBtn" onclick="runImport()">Import Products</button>
+      <button class="btn-cancel" onclick="closeImportModal()">Cancel</button>
+    </div>
+  </div>
+</div>
 
 <script>
   // ── Auth ──────────────────────────────────────────────────────────────────────
@@ -405,9 +554,11 @@
   }
 
   // ── State ─────────────────────────────────────────────────────────────────────
-  let products   = [];
-  let editingId  = null;
-  let clientId   = '';
+  let products    = [];
+  let attrSchema  = [];
+  let editingId   = null;
+  let editingAttrId = null;
+  let clientId    = '';
 
   // ── Load clients into dropdown ─────────────────────────────────────────────
   async function loadClients() {
@@ -433,9 +584,12 @@
 
   function onClientChange() {
     clientId = document.getElementById('clientSelect').value;
-    if (clientId) loadProducts();
-    else {
+    if (clientId) {
+      loadProducts();
+      loadAttrSchema();
+    } else {
       products = [];
+      attrSchema = [];
       renderTable();
     }
   }
@@ -519,10 +673,43 @@
     document.getElementById('fStock').value    = p?.stock_qty   ?? '';
     document.getElementById('fActive').checked = p?.active !== false;
 
-    const attrs = p?.attributes;
-    document.getElementById('fAttrs').value = attrs
-      ? (typeof attrs === 'string' ? attrs : JSON.stringify(attrs, null, 2))
-      : '';
+    const attrs = p?.attributes
+      ? (typeof p.attributes === 'string' ? JSON.parse(p.attributes) : p.attributes)
+      : {};
+
+    // Show dynamic fields if schema exists, else raw JSON fallback
+    if (attrSchema.length > 0) {
+      document.getElementById('dynAttrsSection').style.display = '';
+      document.getElementById('rawAttrsSection').style.display = 'none';
+      const container = document.getElementById('dynAttrFields');
+      container.innerHTML = attrSchema.map(s => {
+        const val = attrs[s.field_key] ?? '';
+        const opts = Array.isArray(s.options) ? s.options : (s.options ? s.options.split(',').map(x=>x.trim()) : []);
+        let input;
+        if (s.field_type === 'select' && opts.length) {
+          input = `<select class="dyn-attr-val" data-key="${esc(s.field_key)}">
+            <option value="">— select —</option>
+            ${opts.map(o => `<option value="${esc(o)}" ${val===o?'selected':''}>${esc(o)}</option>`).join('')}
+          </select>`;
+        } else if (s.field_type === 'boolean') {
+          input = `<select class="dyn-attr-val" data-key="${esc(s.field_key)}">
+            <option value="">—</option>
+            <option value="true" ${val==='true'||val===true?'selected':''}>Yes</option>
+            <option value="false" ${val==='false'||val===false?'selected':''}>No</option>
+          </select>`;
+        } else if (s.field_type === 'number') {
+          input = `<input type="number" class="dyn-attr-val" data-key="${esc(s.field_key)}" value="${esc(String(val))}" placeholder="${s.unit||''}">`;
+        } else {
+          input = `<input type="text" class="dyn-attr-val" data-key="${esc(s.field_key)}" value="${esc(String(val))}">`;
+        }
+        return `<div class="dyn-attr-field"><label>${esc(s.field_label)}${s.unit?` (${esc(s.unit)})`:''}</label>${input}</div>`;
+      }).join('');
+    } else {
+      document.getElementById('dynAttrsSection').style.display = 'none';
+      document.getElementById('rawAttrsSection').style.display = '';
+      document.getElementById('fAttrs').value = Object.keys(attrs).length
+        ? JSON.stringify(attrs, null, 2) : '';
+    }
 
     document.getElementById('saveBtn').disabled = false;
     document.getElementById('saveBtn').textContent = p ? 'Save Changes' : 'Add Product';
@@ -545,11 +732,19 @@
     const name = document.getElementById('fName').value.trim();
     if (!name) { toast('Product name is required'); return; }
 
-    const attrsRaw = document.getElementById('fAttrs').value.trim();
     let attributes = null;
-    if (attrsRaw) {
-      try { attributes = JSON.parse(attrsRaw); }
-      catch { toast('Attributes must be valid JSON'); return; }
+    if (attrSchema.length > 0) {
+      attributes = {};
+      document.querySelectorAll('.dyn-attr-val').forEach(el => {
+        if (el.value.trim()) attributes[el.dataset.key] = el.value.trim();
+      });
+      if (!Object.keys(attributes).length) attributes = null;
+    } else {
+      const attrsRaw = document.getElementById('fAttrs').value.trim();
+      if (attrsRaw) {
+        try { attributes = JSON.parse(attrsRaw); }
+        catch { toast('Attributes must be valid JSON'); return; }
+      }
     }
 
     const body = {
@@ -600,6 +795,200 @@
       toast('Error: ' + e.message);
     }
   }
+
+  // ── Attribute Schema ──────────────────────────────────────────────────────
+  async function loadAttrSchema() {
+    if (!clientId) return;
+    try {
+      attrSchema = await apiFetch(`/admin/attributes?client=${encodeURIComponent(clientId)}`);
+    } catch (_) { attrSchema = []; }
+  }
+
+  function renderAttrList() {
+    const wrap = document.getElementById('attrListWrap');
+    if (!attrSchema.length) {
+      wrap.innerHTML = '<p style="color:#aaa;font-size:13px;">No attributes yet. Add one below.</p>';
+      return;
+    }
+    wrap.innerHTML = attrSchema.map(s => {
+      const opts = Array.isArray(s.options) ? s.options.join(', ') : (s.options || '');
+      return `<div class="attr-list-item">
+        <span class="attr-key">${esc(s.field_key)}</span>
+        <span class="attr-lbl">${esc(s.field_label)}</span>
+        <span class="attr-type">${esc(s.field_type)}</span>
+        ${s.unit ? `<span style="font-size:11px;color:#888;">${esc(s.unit)}</span>` : ''}
+        ${opts ? `<span class="attr-opts" title="${esc(opts)}">${esc(opts)}</span>` : '<span class="attr-opts"></span>'}
+        <span style="font-size:11px;color:${s.filterable?'#2e7d32':'#ccc'};">${s.filterable?'AI':'—'}</span>
+        <div class="attr-actions">
+          <button class="btn-edit" onclick="editAttr(${s.id})">Edit</button>
+          <button class="btn-del" onclick="deleteAttr(${s.id}, '${esc(s.field_key)}')">Del</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function openAttrModal() {
+    if (!clientId) { toast('Select a client first'); return; }
+    resetAttrForm();
+    renderAttrList();
+    document.getElementById('attrModalOverlay').classList.add('open');
+  }
+
+  function closeAttrModal() {
+    document.getElementById('attrModalOverlay').classList.remove('open');
+    editingAttrId = null;
+  }
+
+  function resetAttrForm() {
+    editingAttrId = null;
+    document.getElementById('aKey').value = '';
+    document.getElementById('aKey').readOnly = false;
+    document.getElementById('aKey').style.background = '';
+    document.getElementById('aLabel').value = '';
+    document.getElementById('aType').value = 'text';
+    document.getElementById('aUnit').value = '';
+    document.getElementById('aOptions').value = '';
+    document.getElementById('aFilterable').value = 'true';
+    document.getElementById('attrFormTitle').textContent = 'Add New Attribute';
+    document.getElementById('attrSaveBtn').textContent = 'Add Attribute';
+    document.getElementById('attrCancelBtn').style.display = 'none';
+  }
+
+  function editAttr(id) {
+    const s = attrSchema.find(a => a.id === id);
+    if (!s) return;
+    editingAttrId = id;
+    document.getElementById('aKey').value = s.field_key;
+    document.getElementById('aKey').readOnly = true;
+    document.getElementById('aKey').style.background = '#f5f5f5';
+    document.getElementById('aLabel').value = s.field_label;
+    document.getElementById('aType').value = s.field_type;
+    document.getElementById('aUnit').value = s.unit || '';
+    const opts = Array.isArray(s.options) ? s.options.join(', ') : (s.options || '');
+    document.getElementById('aOptions').value = opts;
+    document.getElementById('aFilterable').value = s.filterable ? 'true' : 'false';
+    document.getElementById('attrFormTitle').textContent = `Edit: ${s.field_key}`;
+    document.getElementById('attrSaveBtn').textContent = 'Save Changes';
+    document.getElementById('attrCancelBtn').style.display = '';
+  }
+
+  function cancelEditAttr() {
+    resetAttrForm();
+  }
+
+  async function saveAttribute() {
+    const key   = document.getElementById('aKey').value.trim().replace(/\s+/g, '_');
+    const label = document.getElementById('aLabel').value.trim();
+    const type  = document.getElementById('aType').value;
+    const unit  = document.getElementById('aUnit').value.trim() || null;
+    const optStr = document.getElementById('aOptions').value.trim();
+    const options = optStr ? optStr.split(',').map(s => s.trim()).filter(Boolean) : null;
+    const filterable = document.getElementById('aFilterable').value === 'true';
+    if (!key || !label) { toast('Key and Label are required'); return; }
+    try {
+      await apiFetch('/admin/attributes', {
+        method: 'POST',
+        body: JSON.stringify({ client_id: clientId, field_key: key, field_label: label, field_type: type, options, unit, filterable }),
+      });
+      toast('Attribute saved');
+      attrSchema = await apiFetch(`/admin/attributes?client=${encodeURIComponent(clientId)}`);
+      resetAttrForm();
+      renderAttrList();
+    } catch (e) { toast('Error: ' + e.message); }
+  }
+
+  async function deleteAttr(id, key) {
+    if (!confirm(`Delete attribute "${key}"?`)) return;
+    try {
+      await apiFetch(`/admin/attributes/${id}`, { method: 'DELETE' });
+      toast('Attribute deleted');
+      attrSchema = await apiFetch(`/admin/attributes?client=${encodeURIComponent(clientId)}`);
+      renderAttrList();
+    } catch (e) { toast('Error: ' + e.message); }
+  }
+
+  document.getElementById('attrModalOverlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeAttrModal();
+  });
+
+  // ── JSON Attribute Import ──────────────────────────────────────────────────
+  async function importAttrJson() {
+    const raw = document.getElementById('attrJsonInput').value.trim();
+    const status = document.getElementById('attrImportStatus');
+    if (!raw) { status.textContent = ''; toast('Paste JSON first'); return; }
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch (e) { status.textContent = ''; toast('Invalid JSON: ' + e.message); return; }
+    if (!Array.isArray(parsed)) { toast('JSON must be an array [...]'); return; }
+    status.textContent = 'Saving...';
+    try {
+      const result = await apiFetch('/admin/attributes/bulk', {
+        method: 'POST',
+        body: JSON.stringify({ client_id: clientId, attributes: parsed }),
+      });
+      attrSchema = await apiFetch(`/admin/attributes?client=${encodeURIComponent(clientId)}`);
+      renderAttrList();
+      document.getElementById('attrJsonInput').value = '';
+      status.style.color = result.errors.length ? '#e65100' : '#2e7d32';
+      status.textContent = `Saved ${result.saved}` + (result.errors.length ? ` | ${result.errors.length} error(s): ${result.errors.join('; ')}` : ' attributes');
+    } catch (e) { status.textContent = ''; toast('Error: ' + e.message); }
+  }
+
+  // ── Product Bulk Import ────────────────────────────────────────────────────
+  function openImportModal() {
+    if (!clientId) { toast('Select a client first'); return; }
+    document.getElementById('importErrors').style.display = 'none';
+    document.getElementById('importErrors').textContent = '';
+    document.getElementById('importBtn').disabled = false;
+    document.getElementById('importBtn').textContent = 'Import Products';
+    document.getElementById('importModalOverlay').classList.add('open');
+  }
+
+  function closeImportModal() {
+    document.getElementById('importModalOverlay').classList.remove('open');
+  }
+
+  async function runImport() {
+    const raw = document.getElementById('importJsonInput').value.trim();
+    if (!raw) { toast('Paste product JSON first'); return; }
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch (e) { toast('Invalid JSON: ' + e.message); return; }
+    if (!Array.isArray(parsed)) { toast('JSON must be an array [...]'); return; }
+
+    const btn = document.getElementById('importBtn');
+    btn.disabled = true;
+    btn.textContent = `Importing ${parsed.length} products...`;
+    const errDiv = document.getElementById('importErrors');
+    errDiv.style.display = 'none';
+
+    try {
+      const result = await apiFetch('/admin/products/bulk', {
+        method: 'POST',
+        body: JSON.stringify({ client_id: clientId, products: parsed }),
+      });
+      if (result.errors.length) {
+        errDiv.textContent = result.errors.join('\n');
+        errDiv.style.display = '';
+        toast(`Saved ${result.saved}, ${result.errors.length} failed`);
+        btn.disabled = false;
+        btn.textContent = 'Import Products';
+      } else {
+        toast(`Imported ${result.saved} products`);
+        closeImportModal();
+        document.getElementById('importJsonInput').value = '';
+        await loadProducts();
+      }
+    } catch (e) {
+      toast('Error: ' + e.message);
+      btn.disabled = false;
+      btn.textContent = 'Import Products';
+    }
+  }
+
+  document.getElementById('importModalOverlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeImportModal();
+  });
 
   // ── Init ──────────────────────────────────────────────────────────────────
   loadClients();

@@ -302,6 +302,11 @@
     <div class="links-card" id="linksCard">
       <h3>🔗 Quick Links</h3>
       <div class="link-row">
+        <label>Manage Products</label>
+        <a id="lnkProducts" href="#" target="_blank"></a>
+        <button class="copy-btn" onclick="copyLink('lnkProducts')">Copy</button>
+      </div>
+      <div class="link-row">
         <label>Catalog Page</label>
         <a id="lnkCatalog" href="#" target="_blank"></a>
         <button class="copy-btn" onclick="copyLink('lnkCatalog')">Copy</button>
@@ -406,13 +411,16 @@
 
   // ── Show links ──────────────────────────────────────────────────────────────
   function showLinks(clientId) {
-    const card    = document.getElementById('linksCard');
-    const catalog = `${BASE_URL}/catalog.html?client=${clientId}`;
-    const webhook = `${BASE_URL}/webhook`;
-    document.getElementById('lnkCatalog').href        = catalog;
-    document.getElementById('lnkCatalog').textContent = catalog;
-    document.getElementById('lnkWebhook').href        = webhook;
-    document.getElementById('lnkWebhook').textContent = webhook;
+    const card     = document.getElementById('linksCard');
+    const products = `${BASE_URL}/products.html?client=${clientId}`;
+    const catalog  = `${BASE_URL}/catalog.html?client=${clientId}`;
+    const webhook  = `${BASE_URL}/webhook`;
+    document.getElementById('lnkProducts').href        = products;
+    document.getElementById('lnkProducts').textContent = products;
+    document.getElementById('lnkCatalog').href         = catalog;
+    document.getElementById('lnkCatalog').textContent  = catalog;
+    document.getElementById('lnkWebhook').href         = webhook;
+    document.getElementById('lnkWebhook').textContent  = webhook;
     card.style.display = '';
   }
 

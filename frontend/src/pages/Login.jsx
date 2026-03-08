@@ -16,7 +16,7 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      const res = await authApi.post('/auth/login', { username, password });
+      const res = await authApi.post('/login', { username, password });
       login(res.data.token, res.data.user);
       navigate('/chat', { replace: true });
     } catch (err) {

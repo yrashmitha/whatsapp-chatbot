@@ -90,10 +90,10 @@ export default function Orders() {
                   <tr key={o.id} className="border-b border-slate-100 hover:bg-slate-50">
                     <td className="py-2.5 pr-4 text-slate-500 font-mono text-xs">#{o.id}</td>
                     <td className="py-2.5 pr-4">
-                      <div className="font-medium text-slate-800">{o.customer_name || o.phone}</div>
-                      <div className="text-xs text-slate-400">{o.phone}</div>
+                      <div className="font-medium text-slate-800">{o.customer_name || o.phone || o.phone_number}</div>
+                      <div className="text-xs text-slate-400">{o.phone || o.phone_number}</div>
                     </td>
-                    <td className="py-2.5 pr-4 text-slate-700">{o.package_name || '—'}</td>
+                    <td className="py-2.5 pr-4 text-slate-700">{o.package_name || o.package || '—'}</td>
                     <td className="py-2.5 pr-4">
                       <select
                         value={o.status}

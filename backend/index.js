@@ -408,7 +408,7 @@ function jwtAuth(req, res, next) {
 
 // For super admin: use ?client_id= param; for clients: always use their own id
 function resolveClientId(req) {
-  if (req.user?.role === 'superadmin') return req.query.client_id || null;
+  if (req.user?.role === 'superadmin') return req.query.client_id || req.body?.client_id || null;
   return req.user?.clientId || null;
 }
 
@@ -1346,15 +1346,21 @@ app.get('/api/orders', jwtAuth, async (req, res) => {
   try {
     const conditions = [];
     const params = [];
-    if (clientId) { params.push(clientId); conditions.push(`client_id=$${params.length}`); }
-    if (status)   { params.push(status);   conditions.push(`status=$${params.length}`); }
-    if (search)   { params.push(`%${search}%`); conditions.push(`(order_id ILIKE $${params.length} OR phone_number ILIKE $${params.length})`); }
+    if (clientId) { params.push(clientId); conditions.push(`o.client_id=$${params.length}`); }
+    if (status)   { params.push(status);   conditions.push(`o.status=$${params.length}`); }
+    if (search)   { params.push(`%${search}%`); conditions.push(`(o.order_id ILIKE $${params.length} OR o.phone_number ILIKE $${params.length})`); }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     params.push(limit);  const limitIdx  = params.length;
     params.push(offset); const offsetIdx = params.length;
+    const countConditions = [];
+    const countParams = [];
+    if (clientId) { countParams.push(clientId); countConditions.push(`client_id=$${countParams.length}`); }
+    if (status)   { countParams.push(status);   countConditions.push(`status=$${countParams.length}`); }
+    if (search)   { countParams.push(`%${search}%`); countConditions.push(`(order_id ILIKE $${countParams.length} OR phone_number ILIKE $${countParams.length})`); }
+    const countWhere = countConditions.length ? `WHERE ${countConditions.join(' AND ')}` : '';
     const [rows, countRes] = await Promise.all([
-      db.pgQuery(`SELECT o.*, cu.name AS customer_name FROM orders o LEFT JOIN customers cu ON cu.phone_number=o.phone_number ${where} ORDER BY o.created_at DESC LIMIT $${limitIdx} OFFSET $${offsetIdx}`, params),
-      db.pgQuery(`SELECT COUNT(*) FROM orders ${where}`, params.slice(0, params.length - 2)),
+      db.pgQuery(`SELECT o.*, o.phone_number AS phone, cu.name AS customer_name FROM orders o LEFT JOIN customers cu ON cu.phone_number=o.phone_number ${where} ORDER BY o.created_at DESC LIMIT $${limitIdx} OFFSET $${offsetIdx}`, params),
+      db.pgQuery(`SELECT COUNT(*) FROM orders ${countWhere}`, countParams),
     ]);
     res.json({ orders: rows.rows, total: parseInt(countRes.rows[0].count), page, limit });
   } catch (e) { res.status(500).json({ error: e.message }); }

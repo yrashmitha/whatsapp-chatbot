@@ -7,7 +7,7 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const genAI    = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const embModel = genAI.getGenerativeModel({ model: 'text-embedding-004' });
+const embModel = genAI.getGenerativeModel({ model: 'text-embedding-004' }, { apiVersion: 'v1' });
 
 /**
  * Embed a text string → float[768]

@@ -4,7 +4,7 @@
 // Used to embed products at save time and customer queries at search time
 // ─────────────────────────────────────────────────────────────────────────────
 
-const EMBED_MODEL = 'text-embedding-004';
+const EMBED_MODEL = 'gemini-embedding-001';
 
 /**
  * Embed a text string → float[768] via direct REST call

@@ -174,22 +174,38 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     if (fc.name === 'search_products' && client?.product_catalog_enabled && db.IS_PG) {
       console.log(`[RAG] search_products called with query: "${fc.args.query}"`);
       let resultText = 'No matching products found.';
+      const limit = client.max_products_in_context || 5;
+      const formatProducts = (products) => products.map(p => {
+        const price = p.price_max ? `${p.price}–${p.price_max}` : (p.price || '?');
+        const attrs = p.attributes && typeof p.attributes === 'object' && Object.keys(p.attributes).length > 0
+          ? ' | ' + Object.entries(p.attributes).map(([k, v]) => `${k}: ${v}`).join(', ')
+          : '';
+        return `• ${p.name}${p.sku ? ` (${p.sku})` : ''} | ${p.currency} ${price}${p.category ? ` | ${p.category}` : ''}${attrs}${p.description ? ` — ${p.description}` : ''}`;
+      }).join('\n');
+
+      let products = [];
       try {
-        const emb      = await embedText(fc.args.query);
-        const limit    = client.max_products_in_context || 5;
-        const products = await db.vectorSearchProducts(client.id, emb, limit);
+        const emb = await embedText(fc.args.query);
+        products = await db.vectorSearchProducts(client.id, emb, limit);
         if (products.length > 0) {
-          resultText = products.map(p => {
-            const price = p.price_max ? `${p.price}–${p.price_max}` : (p.price || '?');
-            const attrs = p.attributes && typeof p.attributes === 'object' && Object.keys(p.attributes).length > 0
-              ? ' | ' + Object.entries(p.attributes).map(([k, v]) => `${k}: ${v}`).join(', ')
-              : '';
-            return `• ${p.name}${p.sku ? ` (${p.sku})` : ''} | ${p.currency} ${price}${p.category ? ` | ${p.category}` : ''}${attrs}${p.description ? ` — ${p.description}` : ''}`;
-          }).join('\n');
-          console.log(`[RAG] Returning ${products.length} products to Gemini`);
+          console.log(`[RAG] Vector search returned ${products.length} products`);
+          resultText = formatProducts(products);
         }
       } catch (e) {
-        console.warn('[RAG] vector search failed:', e.message);
+        console.warn('[RAG] Vector search failed, falling back to FTS:', e.message);
+      }
+
+      // FTS fallback: used when embedding fails or returns no results
+      if (!products.length) {
+        try {
+          products = await db.searchProducts(client.id, fc.args.query, limit);
+          if (products.length > 0) {
+            console.log(`[RAG] FTS fallback returned ${products.length} products`);
+            resultText = formatProducts(products);
+          }
+        } catch (e) {
+          console.warn('[RAG] FTS fallback failed:', e.message);
+        }
       }
       result    = await chatSession.sendMessage([{ functionResponse: { name: 'search_products', response: { result: resultText } } }]);
       candidate = result.response;

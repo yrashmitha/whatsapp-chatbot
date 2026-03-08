@@ -1232,8 +1232,8 @@ app.post('/auth/set-password', jwtAuth, async (req, res) => {
 app.get('/api/clients', jwtAuth, async (req, res) => {
   if (req.user.role !== 'superadmin') return res.status(403).json({ error: 'Forbidden' });
   try {
-    const r = await db.pgQuery(`SELECT c.id, c.name, c.type, c.active, cc.brand_name, cc.brand_color FROM clients c LEFT JOIN client_configs cc ON cc.client_id=c.id WHERE c.active=TRUE ORDER BY c.name`);
-    res.json(r.rows);
+    const r = await db.pgQuery(`SELECT c.id AS client_id, c.name, c.type, c.active, cc.brand_name, cc.brand_color FROM clients c LEFT JOIN client_configs cc ON cc.client_id=c.id WHERE c.active=TRUE ORDER BY c.name`);
+    res.json({ clients: r.rows });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

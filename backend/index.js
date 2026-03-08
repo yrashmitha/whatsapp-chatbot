@@ -1629,6 +1629,8 @@ app.get('*', (req, res) => {
     req.path.startsWith('/webhook') ||
     req.path.startsWith('/legacy');
   if (isBackendRoute) return res.status(404).json({ error: 'Not found' });
+  // Don't serve HTML for asset requests — they must exist as static files
+  if (path.extname(req.path)) return res.status(404).send('Not found');
   const indexFile = path.join(__dirname, '../frontend/dist/index.html');
   if (fs.existsSync(indexFile)) return res.sendFile(indexFile);
   res.status(503).send('App not built');

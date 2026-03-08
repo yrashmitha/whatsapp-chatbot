@@ -1096,6 +1096,24 @@ app.listen(PORT, () => {
 db.init().then(async () => {
   console.log(`[DB] Initialized successfully`);
   await uploadTemplateImages();
+  // Auto-embed any products missing embeddings (non-blocking)
+  if (db.IS_PG) {
+    const { embedText, productToText } = require('./embedder');
+    db.pgQuery(`SELECT id, name, description, category, subcategory, sku, attributes FROM client_products WHERE active = TRUE AND embedding IS NULL`)
+      .then(async ({ rows }) => {
+        if (!rows.length) return;
+        console.log(`[EMBED] Backfilling ${rows.length} products...`);
+        for (const p of rows) {
+          try {
+            const emb = await embedText(productToText(p));
+            await db.saveProductEmbedding(p.id, emb);
+            console.log(`[EMBED] ✓ ${p.name}`);
+          } catch (e) { console.warn(`[EMBED] failed ${p.id}: ${e.message}`); }
+        }
+        console.log('[EMBED] Backfill done.');
+      })
+      .catch(e => console.warn('[EMBED] Backfill error:', e.message));
+  }
 }).catch(err => {
   console.error(`[STARTUP] DB init FAILED:`, err.message || err);
   console.error(`[STARTUP] Full error:`, JSON.stringify(err, Object.getOwnPropertyNames(err)));

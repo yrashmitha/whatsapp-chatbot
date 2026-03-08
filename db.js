@@ -186,6 +186,14 @@ async function init() {
       CREATE INDEX IF NOT EXISTS idx_attr_schema_client ON client_attribute_schemas (client_id, sort_order);
     `);
 
+    // pgvector extension + embedding column
+    await pool.query(`
+      CREATE EXTENSION IF NOT EXISTS vector;
+      ALTER TABLE client_products ADD COLUMN IF NOT EXISTS embedding VECTOR(768);
+      CREATE INDEX IF NOT EXISTS idx_products_embedding
+        ON client_products USING hnsw (embedding vector_cosine_ops);
+    `);
+
     // No auto-seed — clients are created via /onboard.html
     await pool.query(`
       DO $$ BEGIN
@@ -575,6 +583,31 @@ async function getAttributeSchema(clientId) {
   }
 }
 
+// ─── Vector search ────────────────────────────────────────────────────────────
+
+async function vectorSearchProducts(clientId, embedding, limit = 10) {
+  if (!IS_PG) return []; // pgvector not available on SQLite
+  const res = await pool.query(
+    `SELECT id, name, description, price, price_max, currency,
+            category, subcategory, sku, image_url, attributes,
+            1 - (embedding <=> $2::vector) AS similarity
+     FROM client_products
+     WHERE client_id = $1 AND active = TRUE AND embedding IS NOT NULL
+     ORDER BY embedding <=> $2::vector
+     LIMIT $3`,
+    [clientId, JSON.stringify(embedding), limit]
+  );
+  return res.rows;
+}
+
+async function saveProductEmbedding(productId, embedding) {
+  if (!IS_PG) return;
+  await pool.query(
+    `UPDATE client_products SET embedding = $1::vector WHERE id = $2`,
+    [JSON.stringify(embedding), productId]
+  );
+}
+
 // Raw query helper — PG uses pool, SQLite does a best-effort sync query
 async function pgQuery(sql, params) {
   if (IS_PG) return pool.query(sql, params);
@@ -588,4 +621,4 @@ async function pgQuery(sql, params) {
   }
 }
 
-module.exports = { init, insertMessage, upsertCustomer, insertOrder, getOrdersByPhone, getLatestOrder, countOrdersByYear, getAllCustomers, getMessagesByPhone, updateLatestOrderStatus, updateOrderStatusById, updateOrderFlags, updateOrderFlagsById, deleteCustomer, deleteMessages, searchProducts, getAttributeSchema, IS_PG, pgQuery };
+module.exports = { init, insertMessage, upsertCustomer, insertOrder, getOrdersByPhone, getLatestOrder, countOrdersByYear, getAllCustomers, getMessagesByPhone, updateLatestOrderStatus, updateOrderStatusById, updateOrderFlags, updateOrderFlagsById, deleteCustomer, deleteMessages, searchProducts, getAttributeSchema, vectorSearchProducts, saveProductEmbedding, IS_PG, pgQuery };

@@ -8,6 +8,7 @@ const fs      = require('fs');
 const buildSystemInstruction = require('./buildInstruction');
 const db           = require('./db');
 const clientRouter = require('./clientRouter');
+const { embedText, productToText } = require('./embedder');
 
 // ─── WhatsApp credentials (test vs prod) ─────────────────────────────────────
 const IS_TEST = (process.env.WHATSAPP_MODE || 'test') !== 'prod';
@@ -115,7 +116,31 @@ async function buildChatSession(phoneNumber, client) {
     console.log(`[SESSION] Using custom model for client ${client.id} (mode=${client.system_prompt_mode})`);
   }
 
-  return chatModel.startChat({ history: initialHistory });
+  // Build search_products tool for product-enabled clients (pgvector only)
+  let tools = [];
+  if (client?.product_catalog_enabled && db.IS_PG) {
+    const attrSchema = await db.getAttributeSchema(client.id);
+    const attrHint = attrSchema.length > 0
+      ? ' Available product attributes for this client: ' +
+        attrSchema.map(a => `${a.field_label}(${a.field_type}${a.unit ? ', unit:' + a.unit : ''})`).join(', ') + '.'
+      : '';
+    tools = [{
+      functionDeclarations: [{
+        name: 'search_products',
+        description: 'Search the product catalog. Call this when a customer asks about products, availability, price, or features.' + attrHint,
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            query: { type: 'STRING', description: 'Search query, e.g. "red cotton shirt size L under 2000 LKR"' }
+          },
+          required: ['query']
+        }
+      }]
+    }];
+    console.log(`[SESSION] Product search tool enabled for client ${client.id} (${attrSchema.length} attr fields)`);
+  }
+
+  return chatModel.startChat({ history: initialHistory, tools });
 }
 
 async function buildOrderStatusNote(phoneNumber) {
@@ -139,8 +164,41 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   const messageToSend = statusNote ? `${statusNote}\n\n${userMessage}` : userMessage;
 
   console.log(`[GEMINI] Sending message to Gemini...`);
-  const result  = await chatSession.sendMessage(messageToSend);
-  let botReply  = result.response.text()
+  let result    = await chatSession.sendMessage(messageToSend);
+  let candidate = result.response;
+
+  // ── Function calling loop (product search via pgvector) ──────────────────
+  let fcLoopCount = 0;
+  while (candidate.functionCalls()?.length > 0 && fcLoopCount++ < 3) {
+    const fc = candidate.functionCalls()[0];
+    if (fc.name === 'search_products' && client?.product_catalog_enabled && db.IS_PG) {
+      console.log(`[RAG] search_products called with query: "${fc.args.query}"`);
+      let resultText = 'No matching products found.';
+      try {
+        const emb      = await embedText(fc.args.query);
+        const limit    = client.max_products_in_context || 5;
+        const products = await db.vectorSearchProducts(client.id, emb, limit);
+        if (products.length > 0) {
+          resultText = products.map(p => {
+            const price = p.price_max ? `${p.price}–${p.price_max}` : (p.price || '?');
+            const attrs = p.attributes && typeof p.attributes === 'object' && Object.keys(p.attributes).length > 0
+              ? ' | ' + Object.entries(p.attributes).map(([k, v]) => `${k}: ${v}`).join(', ')
+              : '';
+            return `• ${p.name}${p.sku ? ` (${p.sku})` : ''} | ${p.currency} ${price}${p.category ? ` | ${p.category}` : ''}${attrs}${p.description ? ` — ${p.description}` : ''}`;
+          }).join('\n');
+          console.log(`[RAG] Returning ${products.length} products to Gemini`);
+        }
+      } catch (e) {
+        console.warn('[RAG] vector search failed:', e.message);
+      }
+      result    = await chatSession.sendMessage([{ functionResponse: { name: 'search_products', response: { result: resultText } } }]);
+      candidate = result.response;
+    } else {
+      break;
+    }
+  }
+
+  let botReply  = candidate.text()
     .replace(/\*\*([^*\n]+)\*\*/g, '*$1*') // convert markdown **bold** → WhatsApp *bold*
     .replace(/\[ORDER STATUS[^\]]*\]\s*/gi, '') // strip any echoed ORDER STATUS note wherever it appears
     .trim();
@@ -875,7 +933,13 @@ app.post('/admin/products', adminAuth, async (req, res) => {
        currency || 'LKR', category || null, subcategory || null, sku || null,
        image_url || null, sort_order || 0, JSON.stringify(attributes || {})]
     );
-    res.json({ ok: true, id: result.rows[0].id });
+    const newId = result.rows[0].id;
+    // Generate and save embedding asynchronously
+    if (db.IS_PG) {
+      embedText(productToText(req.body)).then(emb => db.saveProductEmbedding(newId, emb))
+        .catch(e => console.warn('[EMBED] POST product:', e.message));
+    }
+    res.json({ ok: true, id: newId });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -895,6 +959,11 @@ app.put('/admin/products/:id', adminAuth, async (req, res) => {
        image_url || null, sort_order || 0, JSON.stringify(attributes || {}),
        active !== false, id]
     );
+    // Re-embed on update
+    if (db.IS_PG) {
+      embedText(productToText(req.body)).then(emb => db.saveProductEmbedding(id, emb))
+        .catch(e => console.warn('[EMBED] PUT product:', e.message));
+    }
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -11,6 +11,8 @@ export default function AttributeModal({ open, onClose, clientId }) {
   const toast = useToast();
   const qc = useQueryClient();
   const [newAttr, setNewAttr] = useState({ field_key: '', field_label: '', field_type: 'text', options: '' });
+  const [editingId, setEditingId] = useState(null);
+  const [editAttr, setEditAttr] = useState({});
   const [bulkJson, setBulkJson] = useState('');
   const [showBulk, setShowBulk] = useState(false);
 
@@ -39,6 +41,24 @@ export default function AttributeModal({ open, onClose, clientId }) {
     onError: (e) => toast.error(e.response?.data?.error || 'Failed to add attribute'),
   });
 
+  const update = useMutation({
+    mutationFn: () => api.put(`/attributes/${editingId}`, {
+      field_label: editAttr.field_label,
+      field_type: editAttr.field_type,
+      options: editAttr.field_type === 'select'
+        ? (typeof editAttr.options === 'string'
+          ? editAttr.options.split(',').map(s => s.trim()).filter(Boolean)
+          : editAttr.options || [])
+        : [],
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['attributes'] });
+      setEditingId(null);
+      toast.success('Attribute updated');
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed to update'),
+  });
+
   const del = useMutation({
     mutationFn: (id) => api.delete(`/attributes/${id}`, { params }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['attributes'] }); toast.success('Deleted'); },
@@ -56,6 +76,15 @@ export default function AttributeModal({ open, onClose, clientId }) {
     } catch {
       toast.error('Invalid JSON or import failed');
     }
+  };
+
+  const startEdit = (a) => {
+    setEditingId(a.id);
+    setEditAttr({
+      field_label: a.field_label,
+      field_type: a.field_type,
+      options: Array.isArray(a.options) ? a.options.join(', ') : (a.options || ''),
+    });
   };
 
   // Auto-generate field_key from label
@@ -78,14 +107,40 @@ export default function AttributeModal({ open, onClose, clientId }) {
           {attrs.length === 0 ? <div className="text-sm text-slate-400">No attributes yet</div> : (
             <div className="flex flex-col gap-1">
               {attrs.map(a => (
-                <div key={a.id} className="flex items-center justify-between py-1.5 px-3 bg-slate-50 rounded-lg">
-                  <div>
-                    <span className="text-sm font-medium text-slate-700">{a.field_label}</span>
-                    <span className="ml-2 text-xs text-slate-400">{a.field_type}</span>
-                    <span className="ml-2 text-xs text-slate-300 font-mono">{a.field_key}</span>
-                    {a.options?.length > 0 && <span className="ml-2 text-xs text-violet-500">{a.options.join(', ')}</span>}
-                  </div>
-                  <button onClick={() => del.mutate(a.id)} className="text-red-400 hover:text-red-600 text-xs cursor-pointer bg-transparent border-0">Delete</button>
+                <div key={a.id} className="border border-slate-100 rounded-lg">
+                  {editingId === a.id ? (
+                    <div className="p-3 flex flex-col gap-2">
+                      <div className="flex gap-2">
+                        <input value={editAttr.field_label} onChange={e => setEditAttr(x => ({ ...x, field_label: e.target.value }))}
+                          placeholder="Label" className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-violet-400" />
+                        <select value={editAttr.field_type} onChange={e => setEditAttr(x => ({ ...x, field_type: e.target.value }))}
+                          className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-violet-400">
+                          {TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </div>
+                      {editAttr.field_type === 'select' && (
+                        <input value={editAttr.options} onChange={e => setEditAttr(x => ({ ...x, options: e.target.value }))}
+                          placeholder="Options (comma separated)" className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-violet-400" />
+                      )}
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={() => update.mutate()} disabled={update.isPending}>Save</Button>
+                        <Button size="sm" variant="secondary" onClick={() => setEditingId(null)}>Cancel</Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between py-1.5 px-3 bg-slate-50 rounded-lg">
+                      <div>
+                        <span className="text-sm font-medium text-slate-700">{a.field_label}</span>
+                        <span className="ml-2 text-xs text-slate-400">{a.field_type}</span>
+                        <span className="ml-2 text-xs text-slate-300 font-mono">{a.field_key}</span>
+                        {a.options?.length > 0 && <span className="ml-2 text-xs text-violet-500">{(Array.isArray(a.options) ? a.options : []).join(', ')}</span>}
+                      </div>
+                      <div className="flex gap-3">
+                        <button onClick={() => startEdit(a)} className="text-violet-500 hover:text-violet-700 text-xs cursor-pointer bg-transparent border-0">Edit</button>
+                        <button onClick={() => del.mutate(a.id)} className="text-red-400 hover:text-red-600 text-xs cursor-pointer bg-transparent border-0">Delete</button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -118,7 +173,7 @@ export default function AttributeModal({ open, onClose, clientId }) {
               placeholder="Options (comma separated, e.g. Red, Blue, Green)"
               className="w-full text-sm border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-violet-400 mb-2" />
           )}
-          <Button size="sm" onClick={() => add.mutate()} disabled={!newAttr.field_key || !newAttr.field_label}>Add</Button>
+          <Button size="sm" onClick={() => add.mutate()} disabled={!newAttr.field_key || !newAttr.field_label || add.isPending}>Add</Button>
         </div>
 
         {/* Bulk JSON */}

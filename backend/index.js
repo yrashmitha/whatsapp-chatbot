@@ -1606,8 +1606,8 @@ app.put('/api/settings/password', jwtAuth, async (req, res) => {
 
 // PUT /api/settings/prompt
 app.put('/api/settings/prompt', jwtAuth, async (req, res) => {
-  const clientId = req.user.clientId;
-  if (!clientId) return res.status(403).json({ error: 'Superadmin cannot set client prompt without client_id' });
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
   const { prompt } = req.body;
   try {
     await db.pgQuery(`UPDATE client_configs SET custom_prompt=$1, system_prompt_mode='custom', updated_at=NOW() WHERE client_id=$2`, [prompt || null, clientId]);
@@ -1618,8 +1618,8 @@ app.put('/api/settings/prompt', jwtAuth, async (req, res) => {
 
 // GET /api/settings
 app.get('/api/settings', jwtAuth, async (req, res) => {
-  const clientId = req.user.clientId;
-  if (!clientId) return res.status(403).json({ error: 'No client context' });
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
   try {
     const r = await db.pgQuery(`SELECT custom_prompt, system_prompt_mode, temperature, brand_name, brand_color FROM client_configs WHERE client_id=$1`, [clientId]);
     res.json(r.rows[0] || {});

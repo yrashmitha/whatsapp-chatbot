@@ -151,13 +151,18 @@ export default function ProductModal({ open, onClose, product, attributes, clien
               {attributes.map(attr => (
                 <div key={attr.id}>
                   <label className="block text-xs font-medium text-slate-600 mb-1">{attr.field_label}</label>
-                  {attr.field_type === 'select' ? (
-                    <select value={form.attributes?.[attr.field_key] || ''} onChange={e => setAttr(attr.field_key, e.target.value)}
-                      className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-violet-400">
-                      <option value="">Select...</option>
-                      {(attr.options || []).map(o => <option key={o} value={o}>{o}</option>)}
-                    </select>
-                  ) : attr.field_type === 'boolean' ? (
+                  {attr.field_type === 'select' ? (() => {
+                    const opts = Array.isArray(attr.options) ? attr.options : [];
+                    const curVal = form.attributes?.[attr.field_key] || '';
+                    const allOpts = curVal && !opts.includes(curVal) ? [curVal, ...opts] : opts;
+                    return (
+                      <select value={curVal} onChange={e => setAttr(attr.field_key, e.target.value)}
+                        className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-violet-400">
+                        <option value="">Select...</option>
+                        {allOpts.map(o => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                    );
+                  })() : attr.field_type === 'boolean' ? (
                     <label className="flex items-center gap-2 cursor-pointer mt-1">
                       <input type="checkbox" checked={!!form.attributes?.[attr.field_key]} onChange={e => setAttr(attr.field_key, e.target.checked)} />
                       <span className="text-sm text-slate-600">Yes</span>

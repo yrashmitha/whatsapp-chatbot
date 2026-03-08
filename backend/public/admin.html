@@ -1,0 +1,1213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin — පුරාණ ජෝතීර්වේදය</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+Sinhala:wght@400;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', 'Noto Sans Sinhala', sans-serif;
+      background: #f0f2f5;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Top bar ── */
+    .topbar {
+      background: #075e54;
+      color: #fff;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .topbar h1 { font-size: 16px; font-weight: 600; }
+    .topbar .meta { font-size: 12px; opacity: 0.75; }
+
+    /* ── Main layout ── */
+    .layout {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Left: customer list ── */
+    .sidebar {
+      width: 320px;
+      flex-shrink: 0;
+      background: #fff;
+      border-right: 1px solid #e0e0e0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .sidebar-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid #e0e0e0;
+      font-size: 13px;
+      font-weight: 600;
+      color: #444;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .sidebar-header button {
+      background: none;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      color: #555;
+    }
+    .sidebar-header button:hover { background: #f5f5f5; }
+
+    .customer-list {
+      flex: 1;
+      overflow-y: auto;
+    }
+    .customer-item {
+      padding: 12px 16px;
+      border-bottom: 1px solid #f0f0f0;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      transition: background 0.15s;
+    }
+    .customer-item:hover { background: #f9f9f9; }
+    .customer-item.active { background: #e8f5e9; border-left: 3px solid #075e54; }
+
+    .customer-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .customer-name { font-size: 14px; font-weight: 500; color: #111; }
+    .customer-phone { font-size: 12px; color: #888; margin-top: 1px; }
+    .customer-time { font-size: 11px; color: #aaa; }
+
+    .badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 10px;
+    }
+    .badge.order { background: #e8f5e9; color: #2e7d32; }
+    .badge.lead  { background: #fff8e1; color: #f57f17; }
+
+    .customer-stats { font-size: 11px; color: #aaa; }
+
+    /* ── Right: chat panel ── */
+    .chat-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .chat-topbar {
+      background: #fff;
+      border-bottom: 1px solid #e0e0e0;
+      padding: 12px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .chat-topbar .contact { font-size: 14px; font-weight: 600; color: #111; }
+    .chat-topbar .contact small { font-weight: 400; color: #888; margin-left: 8px; font-size: 12px; }
+
+    .btn-followup {
+      background: #ff9800;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 7px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .btn-followup:hover { background: #f57c00; }
+    .btn-followup:disabled { background: #ccc; cursor: default; }
+    .btn-danger { background: #e53935; color: #fff; border: none; border-radius: 8px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+    .btn-danger:hover { background: #b71c1c; }
+    .btn-warn { background: #ff9800; color: #fff; border: none; border-radius: 8px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+    .btn-warn:hover { background: #e65100; }
+
+    .order-banner {
+      background: #e8f5e9;
+      border-bottom: 1px solid #c8e6c9;
+      padding: 8px 18px;
+      font-size: 13px;
+      color: #2e7d32;
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      background: #e5ddd5;
+    }
+
+    .bubble {
+      max-width: 68%;
+      padding: 9px 13px;
+      border-radius: 10px;
+      font-size: 14px;
+      line-height: 1.6;
+      word-break: break-word;
+    }
+    .bubble.user { align-self: flex-start; background: #fff; border-bottom-left-radius: 2px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+    .bubble.bot  { align-self: flex-end; background: #dcf8c6; border-bottom-right-radius: 2px; }
+    .bubble-time { font-size: 10px; color: #aaa; margin-top: 3px; text-align: right; }
+    .msg-cost { margin-left: 6px; color: #81c784; font-size: 10px; }
+
+    .order-card {
+      align-self: center;
+      background: #075e54;
+      color: #fff;
+      border-radius: 10px;
+      padding: 10px 18px;
+      font-size: 13px;
+      max-width: 80%;
+      text-align: center;
+    }
+    .order-card .order-id { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+    .order-card .order-detail { font-size: 12px; opacity: 0.85; }
+    .order-card .flag-row { display:flex; gap:6px; margin-top:6px; justify-content:center; flex-wrap:wrap; }
+    .flag-badge { font-size:11px; opacity:0.9; }
+    .btn-flag { font-size:10px; background:rgba(255,255,255,0.2); color:#fff; border:1px solid rgba(255,255,255,0.4); border-radius:6px; padding:2px 8px; cursor:pointer; }
+    .btn-flag:hover { background:rgba(255,255,255,0.35); }
+    .order-card .status-row { display:flex; align-items:center; gap:6px; margin-top:8px; justify-content:center; }
+    .order-card select.status-select { font-size:12px; border-radius:6px; border:none; padding:3px 6px; cursor:pointer; }
+    .order-card .btn-status { font-size:11px; background:#25d366; color:#fff; border:none; border-radius:6px; padding:3px 10px; cursor:pointer; }
+    .order-card .btn-status:hover { background:#1da851; }
+    .status-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:700; margin-left:4px; }
+    .status-pending          { background:#ffc107; color:#333; }
+    .status-payment_received { background:#2196f3; color:#fff; }
+    .status-paid             { background:#4caf50; color:#fff; }
+    .status-complete         { background:#075e54; color:#fff; }
+    .status-cancelled        { background:#f44336; color:#fff; }
+
+    .empty-state {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #aaa;
+      font-size: 14px;
+      background: #e5ddd5;
+    }
+
+    /* ── Reply bar ── */
+    .reply-bar {
+      display: flex;
+      flex-direction: column;
+      padding: 10px 14px;
+      gap: 6px;
+      background: #f0f0f0;
+      border-top: 1px solid #ddd;
+      flex-shrink: 0;
+    }
+    .reply-bar .input-row {
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+    }
+    .img-preview {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      background: #fff;
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 12px;
+      color: #555;
+    }
+    .img-preview img { height: 40px; border-radius: 4px; object-fit: cover; }
+    .img-preview .remove-img { cursor: pointer; color: #c00; font-weight: 600; font-size: 14px; }
+    .btn-attach {
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      width: 40px; height: 40px;
+      cursor: pointer;
+      font-size: 18px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .btn-attach:hover { background: #f0f0f0; }
+    .reply-bar textarea {
+      flex: 1;
+      padding: 9px 14px;
+      border-radius: 10px;
+      border: none;
+      font-family: 'Inter', 'Noto Sans Sinhala', sans-serif;
+      font-size: 14px;
+      outline: none;
+      background: #fff;
+      resize: none;
+      height: 42px;
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .btn-send {
+      background: #075e54;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0 18px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .btn-send:hover { background: #128c7e; }
+    .btn-send:disabled { background: #aaa; cursor: default; }
+
+    /* ── Tab switcher ── */
+    .sidebar-tabs {
+      display: flex;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    .sidebar-tab {
+      flex: 1;
+      padding: 10px 8px;
+      font-size: 12px;
+      font-weight: 600;
+      text-align: center;
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      color: #888;
+      transition: all 0.15s;
+    }
+    .sidebar-tab.active { color: #075e54; border-color: #075e54; }
+
+    /* ── Product panel ── */
+    .product-panel {
+      flex: 1;
+      overflow: hidden;
+      display: none;
+      flex-direction: column;
+    }
+    .product-panel.visible { display: flex; }
+
+    .prod-toolbar {
+      padding: 10px 14px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      border-bottom: 1px solid #e0e0e0;
+      background: #fafafa;
+      flex-wrap: wrap;
+    }
+    .prod-toolbar select {
+      padding: 5px 10px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 12px;
+    }
+    .btn-primary {
+      background: #075e54;
+      color: #fff;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-primary:hover { background: #128c7e; }
+    .btn-sm {
+      padding: 4px 10px;
+      border-radius: 5px;
+      font-size: 11px;
+      border: 1px solid #ccc;
+      background: #fff;
+      cursor: pointer;
+    }
+    .btn-sm:hover { background: #f5f5f5; }
+    .btn-sm.danger { color: #c62828; border-color: #ef9a9a; }
+    .btn-sm.danger:hover { background: #ffebee; }
+
+    .prod-list {
+      flex: 1;
+      overflow-y: auto;
+    }
+    .prod-item {
+      padding: 10px 14px;
+      border-bottom: 1px solid #f0f0f0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+    }
+    .prod-item:hover { background: #f9f9f9; }
+    .prod-item .prod-info { flex: 1; min-width: 0; }
+    .prod-item .prod-name { font-weight: 600; }
+    .prod-item .prod-meta { font-size: 11px; color: #888; }
+    .prod-item .prod-price { font-size: 12px; font-weight: 600; color: #075e54; white-space: nowrap; }
+
+    /* ── Product form (in chat panel area) ── */
+    .prod-form-panel {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: none;
+    }
+    .prod-form-panel.visible { display: block; }
+    .prod-form-panel h3 { margin-bottom: 16px; font-size: 15px; color: #075e54; }
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      max-width: 700px;
+    }
+    .form-grid .full { grid-column: 1 / -1; }
+    .form-group label { display: block; font-size: 12px; font-weight: 600; color: #555; margin-bottom: 4px; }
+    .form-group input, .form-group textarea, .form-group select {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    .form-group textarea { min-height: 70px; resize: vertical; }
+    .attr-editor { margin-top: 16px; max-width: 700px; }
+    .attr-editor h4 { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+    .attr-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+    .attr-row input { flex: 1; padding: 6px 8px; border: 1px solid #ccc; border-radius: 5px; font-size: 12px; }
+    .attr-row .attr-val { flex: 2; }
+
+    /* ── Loading / toast ── */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #323232;
+      color: #fff;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      z-index: 999;
+    }
+    .toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>🔮 Admin Panel — පුරාණ ජෝතීර්වේදය</h1>
+  <span class="meta" id="topMeta">Loading...</span>
+  <span class="meta" style="margin-left:auto;">AI cost: <b id="adminCost">$0.000000</b></span>
+  <a href="/onboard.html" style="margin-left:16px;color:rgba(255,255,255,0.85);font-size:12px;text-decoration:none;border:1px solid rgba(255,255,255,0.3);padding:4px 10px;border-radius:5px;">⚙️ Clients</a>
+</div>
+
+<div class="layout">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-tabs">
+      <div class="sidebar-tab active" id="tab-customers" onclick="switchTab('customers')">💬 Customers</div>
+      <div class="sidebar-tab" id="tab-products" onclick="switchTab('products')">📦 Products</div>
+    </div>
+
+    <!-- Customer list -->
+    <div id="panel-customers" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
+      <div class="sidebar-header">
+        <span id="custCount">Customers</span>
+        <button onclick="loadCustomers()">⟳ Refresh</button>
+      </div>
+      <div class="customer-list" id="customerList">
+        <div style="padding:20px;color:#aaa;font-size:13px;">Loading...</div>
+      </div>
+    </div>
+
+    <!-- Product list -->
+    <div id="panel-products" class="product-panel">
+      <div class="prod-toolbar">
+        <select id="clientSelect" onchange="loadProducts()">
+          <option value="astrology_001">astrology_001</option>
+        </select>
+        <button class="btn-primary" onclick="showProductForm(null)">+ Add Product</button>
+        <button class="btn-sm" onclick="loadAttributes()">⚙ Attributes</button>
+      </div>
+      <div class="prod-list" id="prodList">
+        <div style="padding:16px;color:#aaa;font-size:13px;">Select a client to load products.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right panel: chat or product form -->
+  <div class="chat-panel" id="chatPanel">
+    <div class="empty-state" id="emptyState">← Select a customer to view their chat</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  let PASS = localStorage.getItem('admin_pass') || '';
+  if (!PASS) {
+    PASS = prompt('Admin password:') || '';
+    if (PASS) localStorage.setItem('admin_pass', PASS);
+  }
+
+  function apiUrl(path) {
+    return `${path}?pass=${encodeURIComponent(PASS)}`;
+  }
+
+  async function apiFetch(path, opts = {}) {
+    const res = await fetch(apiUrl(path), {
+      headers: { 'Content-Type': 'application/json' },
+      ...opts,
+    });
+    if (res.status === 401) {
+      localStorage.removeItem('admin_pass');
+      alert('Wrong password. Reload and try again.');
+      throw new Error('Unauthorized');
+    }
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
+  }
+
+  // ── Toast ─────────────────────────────────────────────────────────────────
+  function toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), 2800);
+  }
+
+  // ── Format time ───────────────────────────────────────────────────────────
+  function fmtTime(ts) {
+    if (!ts) return '';
+    const d = new Date(ts);
+    const now = new Date();
+    const diff = now - d;
+    if (diff < 60000) return 'just now';
+    if (diff < 3600000) return `${Math.floor(diff/60000)}m ago`;
+    if (diff < 86400000) return `${Math.floor(diff/3600000)}h ago`;
+    return d.toLocaleDateString();
+  }
+
+  function fmtFull(ts) {
+    if (!ts) return '';
+    return new Date(ts).toLocaleString();
+  }
+
+  // ── WhatsApp markdown → HTML ──────────────────────────────────────────────
+  function parseWA(text) {
+    // Render [Photo:MEDIA_ID] as a clickable thumbnail
+    const photoRe = /\[Photo:(\d+)\](.*?)(?=<|$)/;
+    const escaped = (text || '')
+      .replace(/\[ORDER STATUS[^\]]*\]\s*/gi, '') // strip leaked status notes
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    // re-apply on escaped string — media IDs are numeric so no HTML injection risk
+    return escaped
+      .replace(/\[Photo:(\d+)\]([^\n]*)/g, (_, id, rest) => {
+        const caption = rest.trim();
+        const src = `/admin/media/${id}?pass=${encodeURIComponent(PASS)}`;
+        return `<a href="${src}" target="_blank"><img src="${src}" style="max-width:220px;max-height:220px;border-radius:8px;display:block;margin:4px 0" loading="lazy"></a>${caption ? `<br><em>${caption}</em>` : ''}`;
+      })
+      .replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>')
+      .replace(/_([^_\n]+)_/g, '<em>$1</em>')
+      .replace(/\n/g, '<br>');
+  }
+
+  // ── Customer list ─────────────────────────────────────────────────────────
+  let customers = [];
+  let activePhone = null;
+
+  async function loadCustomers() {
+    try {
+      customers = await apiFetch('/admin/customers');
+      renderCustomers();
+      const total = customers.length;
+      const leads = customers.filter(c => +c.order_count === 0).length;
+      const orders = total - leads;
+      const meta = `${total} customers · ${orders} orders · ${leads} leads`;
+      document.getElementById('topMeta').textContent = meta;
+      document.getElementById('custCount').textContent = meta;
+    } catch (e) {
+      if (e.message !== 'Unauthorized') {
+        toast('Failed to load customers: ' + e.message);
+        document.getElementById('customerList').innerHTML =
+          `<div style="padding:20px;color:#f66;font-size:13px;">Error: ${e.message}</div>`;
+      }
+    }
+  }
+
+  function renderCustomers() {
+    const list = document.getElementById('customerList');
+    if (!customers.length) {
+      list.innerHTML = '<div style="padding:20px;color:#aaa;font-size:13px;">No customers yet.</div>';
+      return;
+    }
+    list.innerHTML = customers.map(c => {
+      const hasOrder = +c.order_count > 0;
+      const badge = hasOrder
+        ? `<span class="badge order">✅ Order</span>`
+        : `<span class="badge lead">⏳ Lead</span>`;
+      const active = c.phone_number === activePhone ? ' active' : '';
+      return `
+        <div class="customer-item${active}" onclick="selectCustomer('${c.phone_number}')">
+          <div class="customer-top">
+            <span class="customer-name">${c.name || 'Unknown'}</span>
+            ${badge}
+          </div>
+          <div class="customer-phone">${c.phone_number}</div>
+          <div class="customer-top">
+            <span class="customer-stats">${c.msg_count} messages</span>
+            <span class="customer-time">${fmtTime(c.last_seen)}</span>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  // ── Chat view ─────────────────────────────────────────────────────────────
+  async function selectCustomer(phone) {
+    activePhone = phone;
+    renderCustomers();
+
+    const panel = document.getElementById('chatPanel');
+    panel.innerHTML = '<div class="empty-state">Loading...</div>';
+
+    try {
+      const data = await apiFetch(`/admin/messages/${encodeURIComponent(phone)}`);
+      renderChat(phone, data.messages, data.orders);
+    } catch (e) {
+      if (e.message !== 'Unauthorized') toast('Failed to load messages');
+    }
+  }
+
+  function renderChat(phone, messages, orders) {
+    const customer = customers.find(c => c.phone_number === phone) || {};
+    const hasOrder = orders.length > 0;
+    const panel = document.getElementById('chatPanel');
+
+    let orderBannerHtml = '';
+    if (hasOrder) {
+      const ids = orders.map(o => o.order_id).join(', ');
+      orderBannerHtml = `<div class="order-banner">✅ Order Confirmed — ${ids}</div>`;
+    }
+
+    const followupBtn = `<button class="btn-followup" id="followupBtn" onclick="sendFollowup('${phone}')">🤖 AI Follow-up</button>`;
+
+    const statusOptions = ['pending','payment_received','paid','complete','cancelled'];
+    const orderCards = orders.map(o => {
+      const opts = statusOptions.map(s =>
+        `<option value="${s}" ${s === o.status ? 'selected' : ''}>${s}</option>`
+      ).join('');
+      const horo = o.horoscope_received ? '📜 Horoscope ✅' : '📜 Horoscope ❌';
+      const rcpt = o.receipt_received   ? '💳 Receipt ✅'   : '💳 Receipt ❌';
+      const horoBtn = o.horoscope_received
+        ? `<button class="btn-flag" onclick="toggleFlag('${o.order_id}','horoscope_received',false)">Unmark Horoscope</button>`
+        : `<button class="btn-flag" onclick="toggleFlag('${o.order_id}','horoscope_received',true)">Mark Horoscope ✅</button>`;
+      const rcptBtn = o.receipt_received
+        ? `<button class="btn-flag" onclick="toggleFlag('${o.order_id}','receipt_received',false)">Unmark Receipt</button>`
+        : `<button class="btn-flag" onclick="toggleFlag('${o.order_id}','receipt_received',true)">Mark Receipt ✅</button>`;
+      return `
+      <div class="order-card" id="card-${o.order_id}">
+        <div class="order-id">✅ ${o.order_id}</div>
+        <div class="order-detail">
+          ${o.package || ''} · ${o.birth_date || ''} · ${o.birth_city || ''}
+        </div>
+        <div class="flag-row">
+          <span class="flag-badge">${horo}</span>
+          <span class="flag-badge">${rcpt}</span>
+        </div>
+        <div class="flag-row">${horoBtn}${rcptBtn}</div>
+        <div class="status-row">
+          <span class="status-badge status-${o.status}" id="sbadge-${o.order_id}">${o.status}</span>
+          <select class="status-select" id="sel-${o.order_id}">${opts}</select>
+          <button class="btn-status" onclick="updateOrderStatus('${o.order_id}')">Save</button>
+        </div>
+      </div>`;
+    }).join('');
+
+    const totalCost = messages.reduce((s, m) => s + (parseFloat(m.cost_usd) || 0), 0);
+    const bubbles = messages.map(m => {
+      const cls = m.sender_type === 'user' ? 'user' : 'bot';
+      const costTag = m.cost_usd ? `<span class="msg-cost">$${parseFloat(m.cost_usd).toFixed(6)}</span>` : '';
+      return `<div class="bubble ${cls}">
+        ${parseWA(m.message_text)}
+        <div class="bubble-time">${fmtFull(m.created_at)}${costTag}</div>
+      </div>`;
+    }).join('');
+
+    panel.innerHTML = `
+      <div class="chat-topbar">
+        <div class="contact">
+          ${customer.name || 'Unknown'}
+          <small>${phone}</small>
+          <small style="color:#a5d6a7;">AI cost: $${totalCost.toFixed(6)}</small>
+        </div>
+        ${followupBtn}
+        <button class="btn-warn" onclick="deleteChat('${phone}')" title="Delete chat history only">🗑 Chat</button>
+        <button class="btn-danger" onclick="deleteCustomer('${phone}')" title="Delete customer + all data">❌ Customer</button>
+      </div>
+      ${orderBannerHtml}
+      <div class="messages" id="msgArea">
+        ${bubbles}
+        ${orderCards}
+      </div>
+      <div class="reply-bar">
+        <div class="img-preview" id="imgPreview">
+          <img id="imgThumb" src="" alt="preview" />
+          <span id="imgName"></span>
+          <span class="remove-img" onclick="removeImage()">✕</span>
+        </div>
+        <div class="input-row">
+          <input type="file" id="fileInput" accept="image/*,application/pdf" style="display:none" onchange="onFileSelected(event)" />
+          <button class="btn-attach" onclick="document.getElementById('fileInput').click()" title="Attach image or PDF">📎</button>
+          <textarea id="replyInput" placeholder="Type a message as human..." onkeydown="replyKeydown(event)"></textarea>
+          <button class="btn-send" id="sendBtn" onclick="sendReply('${phone}')">Send</button>
+        </div>
+      </div>`;
+
+    // Scroll to bottom
+    const msgArea = document.getElementById('msgArea');
+    msgArea.scrollTop = msgArea.scrollHeight;
+  }
+
+  function replyKeydown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (activePhone) sendReply(activePhone);
+    }
+  }
+
+  // ── Image attachment ──────────────────────────────────────────────────────
+  let selectedFile = null;
+
+  function onFileSelected(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    selectedFile = file;
+    const preview = document.getElementById('imgPreview');
+    const thumb   = document.getElementById('imgThumb');
+    const name    = document.getElementById('imgName');
+    if (file.type === 'application/pdf') {
+      thumb.src = '';
+      thumb.style.display = 'none';
+      name.textContent = '📄 ' + file.name;
+    } else {
+      thumb.src = URL.createObjectURL(file);
+      thumb.style.display = '';
+      name.textContent = file.name;
+    }
+    preview.style.display = 'flex';
+  }
+
+  function removeImage() {
+    selectedFile = null;
+    document.getElementById('fileInput').value = '';
+    document.getElementById('imgPreview').style.display = 'none';
+    document.getElementById('imgThumb').src = '';
+  }
+
+  async function toggleFlag(orderId, field, value) {
+    try {
+      await apiFetch(`/admin/order/${encodeURIComponent(orderId)}/flags`, {
+        method: 'PATCH',
+        body: JSON.stringify({ [field]: value }),
+      });
+      toast(`${field} → ${value ? '✅' : '❌'}`);
+      await selectCustomer(activePhone);
+    } catch (e) {
+      if (e.message !== 'Unauthorized') toast('Update failed: ' + e.message);
+    }
+  }
+
+  async function updateOrderStatus(orderId) {
+    const sel = document.getElementById(`sel-${orderId}`);
+    const status = sel.value;
+    try {
+      await apiFetch(`/admin/order/${encodeURIComponent(orderId)}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      });
+      // update badge in place
+      const card = document.getElementById(`card-${orderId}`);
+      const badge = card.querySelector('.status-badge');
+      badge.className = `status-badge status-${status}`;
+      badge.textContent = status;
+      toast(`Order ${orderId} → ${status}`);
+    } catch (e) {
+      if (e.message !== 'Unauthorized') toast('Update failed: ' + e.message);
+    }
+  }
+
+  async function sendReply(phone) {
+    const input = document.getElementById('replyInput');
+    const text  = input.value.trim();
+    if (!text && !selectedFile) return;
+
+    const btn = document.getElementById('sendBtn');
+    btn.disabled = true;
+
+    try {
+      let body;
+      if (selectedFile) {
+        const base64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result.split(',')[1]);
+          reader.onerror = reject;
+          reader.readAsDataURL(selectedFile);
+        });
+        body = { phone, text, imageBase64: base64, imageType: selectedFile.type, fileName: selectedFile.name };
+      } else {
+        body = { phone, text };
+      }
+
+      await apiFetch('/admin/send', { method: 'POST', body: JSON.stringify(body) });
+      input.value = '';
+      removeImage();
+      toast('Message sent ✓');
+      await selectCustomer(phone);
+    } catch (e) {
+      if (e.message !== 'Unauthorized') toast('Send failed');
+    }
+    btn.disabled = false;
+  }
+
+  async function sendFollowup(phone) {
+    const btn = document.getElementById('followupBtn');
+    if (btn) btn.disabled = true;
+
+    toast('Generating AI follow-up...');
+    try {
+      const data = await apiFetch('/admin/followup', {
+        method: 'POST',
+        body: JSON.stringify({ phone }),
+      });
+      // Populate textarea — admin reviews and sends manually
+      const input = document.getElementById('replyInput');
+      if (input) {
+        input.value = data.message;
+        input.focus();
+      }
+      if (data.costUSD) addAdminCost(data.costUSD);
+      toast('AI draft ready — review and send ✓');
+    } catch (e) {
+      if (e.message !== 'Unauthorized') toast('Follow-up generation failed');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  // ── Delete actions ────────────────────────────────────────────────────────
+  async function deleteChat(phone) {
+    if (!confirm(`Delete all chat messages for ${phone}?\n(Customer and orders are kept)`)) return;
+    try {
+      await apiFetch(`/admin/customer/${encodeURIComponent(phone)}/messages`, { method: 'DELETE' });
+      toast('Chat history deleted ✓');
+      await selectCustomer(phone);
+    } catch (e) {
+      if (e.message !== 'Unauthorized') toast('Delete failed: ' + e.message);
+    }
+  }
+
+  async function deleteCustomer(phone) {
+    if (!confirm(`DELETE customer ${phone} and ALL their messages + orders?\nThis cannot be undone.`)) return;
+    try {
+      await apiFetch(`/admin/customer/${encodeURIComponent(phone)}`, { method: 'DELETE' });
+      toast('Customer deleted ✓');
+      activePhone = null;
+      document.getElementById('chatPanel').innerHTML = '<div class="empty-state">Select a customer</div>';
+      await loadCustomers();
+    } catch (e) {
+      if (e.message !== 'Unauthorized') toast('Delete failed: ' + e.message);
+    }
+  }
+
+  // ── AI cost tracker ───────────────────────────────────────────────────────
+  let totalAdminCost = 0;
+  function addAdminCost(usd) {
+    totalAdminCost += usd;
+    document.getElementById('adminCost').textContent = `$${totalAdminCost.toFixed(6)}`;
+  }
+
+  // ── Tab switcher ──────────────────────────────────────────────────────────
+  function switchTab(tab) {
+    document.getElementById('tab-customers').classList.toggle('active', tab === 'customers');
+    document.getElementById('tab-products').classList.toggle('active', tab === 'products');
+    document.getElementById('panel-customers').style.display = tab === 'customers' ? 'flex' : 'none';
+    document.getElementById('panel-products').classList.toggle('visible', tab === 'products');
+    if (tab === 'products') {
+      loadClients();
+      loadProducts();
+      document.getElementById('chatPanel').innerHTML = '<div class="empty-state">← Select a product or click + Add Product</div>';
+    } else {
+      document.getElementById('chatPanel').innerHTML = '<div class="empty-state">← Select a customer to view their chat</div>';
+    }
+  }
+
+  // ── Clients ────────────────────────────────────────────────────────────────
+  async function loadClients() {
+    try {
+      const clients = await apiFetch('/admin/clients');
+      const sel = document.getElementById('clientSelect');
+      sel.innerHTML = clients.map(c => `<option value="${c.id}">${c.id} — ${c.name || c.brand_name || ''}</option>`).join('');
+    } catch (_) {}
+  }
+
+  // ── Products ───────────────────────────────────────────────────────────────
+  let productAttrSchema = [];
+
+  async function loadProducts() {
+    const clientId = document.getElementById('clientSelect').value;
+    const list = document.getElementById('prodList');
+    list.innerHTML = '<div style="padding:16px;color:#aaa;font-size:13px;">Loading...</div>';
+    try {
+      const [products, schema] = await Promise.all([
+        apiFetch(`/admin/products?client=${encodeURIComponent(clientId)}`),
+        apiFetch(`/admin/attributes?client=${encodeURIComponent(clientId)}`),
+      ]);
+      productAttrSchema = schema;
+      if (!products.length) {
+        list.innerHTML = '<div style="padding:16px;color:#aaa;font-size:13px;">No products yet. Click + Add Product.</div>';
+        return;
+      }
+      list.innerHTML = products.map(p => `
+        <div class="prod-item">
+          <div class="prod-info">
+            <div class="prod-name">${p.name}</div>
+            <div class="prod-meta">${p.category || '—'} ${p.sku ? '· SKU: ' + p.sku : ''} ${p.active ? '' : '· ⛔ inactive'}</div>
+          </div>
+          <div class="prod-price">${p.price ? (p.currency || 'LKR') + ' ' + Number(p.price).toLocaleString() : ''}</div>
+          <button class="btn-sm" onclick="showProductForm(${p.id})">Edit</button>
+          <button class="btn-sm danger" onclick="deleteProduct(${p.id})">Del</button>
+        </div>`).join('');
+    } catch (err) {
+      list.innerHTML = `<div style="padding:16px;color:#f66;font-size:13px;">Error: ${err.message}</div>`;
+    }
+  }
+
+  async function showProductForm(productId) {
+    const clientId = document.getElementById('clientSelect').value;
+    let product = null;
+    if (productId) {
+      try {
+        const all = await apiFetch(`/admin/products?client=${encodeURIComponent(clientId)}`);
+        product = all.find(p => p.id === productId);
+      } catch (_) {}
+    }
+
+    const attrs = productAttrSchema;
+    const attrRows = attrs.map(s => {
+      const val = product?.attributes?.[s.field_key] ?? '';
+      return `
+        <div class="attr-row">
+          <label style="min-width:100px;font-size:12px;font-weight:600;color:#555">${s.field_label}</label>
+          <input class="attr-val" data-key="${s.field_key}" value="${val}" placeholder="${s.unit || ''}">
+        </div>`;
+    }).join('');
+
+    const title = product ? `Edit: ${product.name}` : 'New Product';
+    document.getElementById('chatPanel').innerHTML = `
+      <div style="padding:20px;overflow-y:auto;height:100%;">
+        <h3 style="font-size:15px;color:#075e54;margin-bottom:16px;">${title}</h3>
+        <div class="form-grid" id="prodForm">
+          <div class="form-group full">
+            <label>Name *</label>
+            <input id="pName" value="${product?.name || ''}">
+          </div>
+          <div class="form-group full">
+            <label>Description</label>
+            <textarea id="pDesc">${product?.description || ''}</textarea>
+          </div>
+          <div class="form-group">
+            <label>Category</label>
+            <input id="pCat" value="${product?.category || ''}">
+          </div>
+          <div class="form-group">
+            <label>Subcategory</label>
+            <input id="pSubcat" value="${product?.subcategory || ''}">
+          </div>
+          <div class="form-group">
+            <label>Price</label>
+            <input id="pPrice" type="number" value="${product?.price || ''}">
+          </div>
+          <div class="form-group">
+            <label>Price Max (for ranges)</label>
+            <input id="pPriceMax" type="number" value="${product?.price_max || ''}">
+          </div>
+          <div class="form-group">
+            <label>Currency</label>
+            <input id="pCurrency" value="${product?.currency || 'LKR'}">
+          </div>
+          <div class="form-group">
+            <label>SKU</label>
+            <input id="pSku" value="${product?.sku || ''}">
+          </div>
+          <div class="form-group full">
+            <label>Image URL</label>
+            <input id="pImageUrl" value="${product?.image_url || ''}">
+          </div>
+          <div class="form-group">
+            <label>Sort Order</label>
+            <input id="pSort" type="number" value="${product?.sort_order ?? 0}">
+          </div>
+          <div class="form-group">
+            <label>Active</label>
+            <select id="pActive">
+              <option value="true" ${product?.active !== false ? 'selected' : ''}>Yes</option>
+              <option value="false" ${product?.active === false ? 'selected' : ''}>No</option>
+            </select>
+          </div>
+        </div>
+        ${attrRows ? `<div style="margin-top:16px;"><h4 style="font-size:13px;font-weight:600;margin-bottom:8px;">Custom Attributes</h4>${attrRows}</div>` : ''}
+        <div style="margin-top:18px;display:flex;gap:10px;">
+          <button class="btn-primary" onclick="saveProduct(${productId || 'null'}, '${clientId}')">
+            ${product ? 'Save Changes' : 'Create Product'}
+          </button>
+          <button class="btn-sm" onclick="switchTab('products')">Cancel</button>
+        </div>
+      </div>`;
+  }
+
+  async function saveProduct(productId, clientId) {
+    const attributes = {};
+    document.querySelectorAll('.attr-val[data-key]').forEach(el => {
+      if (el.value.trim()) attributes[el.dataset.key] = el.value.trim();
+    });
+
+    const body = {
+      client_id:   clientId,
+      name:        document.getElementById('pName').value.trim(),
+      description: document.getElementById('pDesc').value.trim() || null,
+      category:    document.getElementById('pCat').value.trim() || null,
+      subcategory: document.getElementById('pSubcat').value.trim() || null,
+      price:       parseFloat(document.getElementById('pPrice').value) || null,
+      price_max:   parseFloat(document.getElementById('pPriceMax').value) || null,
+      currency:    document.getElementById('pCurrency').value.trim() || 'LKR',
+      sku:         document.getElementById('pSku').value.trim() || null,
+      image_url:   document.getElementById('pImageUrl').value.trim() || null,
+      sort_order:  parseInt(document.getElementById('pSort').value) || 0,
+      active:      document.getElementById('pActive').value === 'true',
+      attributes,
+    };
+
+    if (!body.name) { toast('Name is required'); return; }
+
+    try {
+      if (productId) {
+        await apiFetch(`/admin/products/${productId}`, { method: 'PUT', body: JSON.stringify(body) });
+        toast('Product updated ✓');
+      } else {
+        await apiFetch('/admin/products', { method: 'POST', body: JSON.stringify(body) });
+        toast('Product created ✓');
+      }
+      loadProducts();
+      document.getElementById('chatPanel').innerHTML = '<div class="empty-state">← Select a product or click + Add Product</div>';
+    } catch (err) {
+      toast('Error: ' + err.message);
+    }
+  }
+
+  async function deleteProduct(productId) {
+    if (!confirm('Delete this product?')) return;
+    try {
+      await apiFetch(`/admin/products/${productId}`, { method: 'DELETE' });
+      toast('Product deleted ✓');
+      loadProducts();
+    } catch (err) {
+      toast('Error: ' + err.message);
+    }
+  }
+
+  // ── Attribute schema editor ────────────────────────────────────────────────
+  let _attrSchema = []; // cached for edit prefill
+
+  async function loadAttributes() {
+    const clientId = document.getElementById('clientSelect').value;
+    _attrSchema = [];
+    try { _attrSchema = await apiFetch(`/admin/attributes?client=${encodeURIComponent(clientId)}`); } catch (_) {}
+
+    const rows = _attrSchema.map(s => {
+      const opts = Array.isArray(s.options) ? s.options.join(', ') : (s.options || '');
+      return `
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#f9f9f9;border-radius:6px;border:1px solid #eee;margin-bottom:6px;">
+          <span style="min-width:100px;font-size:12px;font-weight:700;color:#111;">${s.field_key}</span>
+          <span style="min-width:90px;font-size:12px;color:#333;">${s.field_label}</span>
+          <span style="min-width:70px;font-size:11px;color:#888;background:#eee;padding:2px 7px;border-radius:8px;">${s.field_type}</span>
+          ${s.unit ? `<span style="font-size:11px;color:#888;">${s.unit}</span>` : ''}
+          ${opts ? `<span style="font-size:11px;color:#666;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${opts}">${opts}</span>` : '<span style="flex:1"></span>'}
+          <span style="font-size:11px;color:${s.filterable ? '#2e7d32' : '#bbb'};">${s.filterable ? '🔍 AI' : ''}</span>
+          <button class="btn-sm" onclick="editAttribute(${s.id})" style="padding:3px 10px;">Edit</button>
+          <button class="btn-sm danger" onclick="deleteAttribute(${s.id})" style="padding:3px 8px;">Del</button>
+        </div>`;
+    }).join('');
+
+    document.getElementById('chatPanel').innerHTML = `
+      <div style="padding:20px;overflow-y:auto;height:100%;">
+        <h3 style="font-size:15px;color:#075e54;margin-bottom:4px;">Attribute Schema — ${clientId}</h3>
+        <p style="font-size:12px;color:#888;margin-bottom:16px;">Custom fields for products. Used by AI for search and catalog display.</p>
+
+        <!-- JSON bulk import -->
+        <div style="margin-bottom:18px;background:#f9fffe;border:1px solid #c8e6c9;border-radius:8px;padding:14px;">
+          <h4 style="font-size:13px;font-weight:700;margin-bottom:8px;color:#075e54;">Paste JSON to import all attributes at once</h4>
+          <textarea id="attrJsonInput" style="width:100%;min-height:120px;font-family:monospace;font-size:12px;padding:9px;border:1px solid #ccc;border-radius:6px;resize:vertical;" placeholder='[
+  {"field_key":"color","field_label":"Color","field_type":"select","options":["Red","Blue","Green"],"filterable":true},
+  {"field_key":"size","field_label":"Size","field_type":"select","options":["S","M","L","XL"],"filterable":true},
+  {"field_key":"material","field_label":"Material","field_type":"text","filterable":false},
+  {"field_key":"weight","field_label":"Weight","field_type":"number","unit":"kg","filterable":false}
+]'></textarea>
+          <div style="margin-top:8px;display:flex;gap:8px;align-items:center;">
+            <button class="btn-primary" onclick="importAttrJson('${clientId}')" style="padding:6px 16px;font-size:13px;">Import JSON</button>
+            <span id="attrImportStatus" style="font-size:12px;color:#2e7d32;"></span>
+          </div>
+        </div>
+
+        <!-- Current attributes list -->
+        <div style="margin-bottom:18px;">
+          <h4 style="font-size:13px;font-weight:700;margin-bottom:8px;color:#333;">Current Attributes</h4>
+          <div id="attrListInner">${rows || '<p style="color:#aaa;font-size:13px;padding:4px 0;">No attributes yet.</p>'}</div>
+        </div>
+
+        <!-- Single add/edit form -->
+        <div style="border-top:1px solid #eee;padding-top:16px;">
+          <h4 id="attrFormTitle" style="font-size:13px;font-weight:700;margin-bottom:12px;">Add Single Attribute</h4>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Key (no spaces)</label>
+              <input id="aKey" placeholder="e.g. color">
+            </div>
+            <div class="form-group">
+              <label>Label</label>
+              <input id="aLabel" placeholder="e.g. Color">
+            </div>
+            <div class="form-group">
+              <label>Type</label>
+              <select id="aType">
+                <option>text</option><option>number</option><option>select</option>
+                <option>boolean</option><option>multiselect</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Unit</label>
+              <input id="aUnit" placeholder="e.g. kg, cm">
+            </div>
+            <div class="form-group">
+              <label>Options (comma-separated, for select type)</label>
+              <input id="aOptions" placeholder="Red, Blue, Green">
+            </div>
+            <div class="form-group">
+              <label>Filterable by AI?</label>
+              <select id="aFilterable">
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:12px;">
+            <button class="btn-primary" id="attrSaveBtn" onclick="saveAttribute('${clientId}')">Add Attribute</button>
+            <button class="btn-sm" id="attrCancelBtn" style="display:none;" onclick="cancelEditAttribute('${clientId}')">Cancel</button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function editAttribute(attrId) {
+    const s = _attrSchema.find(a => a.id === attrId);
+    if (!s) return;
+    document.getElementById('aKey').value       = s.field_key;
+    document.getElementById('aKey').readOnly    = true;
+    document.getElementById('aKey').style.background = '#f5f5f5';
+    document.getElementById('aLabel').value     = s.field_label;
+    document.getElementById('aType').value      = s.field_type;
+    document.getElementById('aUnit').value      = s.unit || '';
+    const opts = Array.isArray(s.options) ? s.options.join(', ') : (s.options || '');
+    document.getElementById('aOptions').value   = opts;
+    document.getElementById('aFilterable').value = s.filterable ? 'true' : 'false';
+    document.getElementById('attrFormTitle').textContent = `Edit Attribute: ${s.field_key}`;
+    document.getElementById('attrSaveBtn').textContent   = 'Save Changes';
+    document.getElementById('attrCancelBtn').style.display = '';
+    document.getElementById('aLabel').focus();
+  }
+
+  function cancelEditAttribute(clientId) {
+    loadAttributes();
+  }
+
+  async function saveAttribute(clientId) {
+    const key     = document.getElementById('aKey').value.trim().replace(/\s+/g, '_');
+    const label   = document.getElementById('aLabel').value.trim();
+    const type    = document.getElementById('aType').value;
+    const unit    = document.getElementById('aUnit').value.trim() || null;
+    const optStr  = document.getElementById('aOptions').value.trim();
+    const options = optStr ? optStr.split(',').map(s => s.trim()).filter(Boolean) : null;
+    const filterable = document.getElementById('aFilterable').value === 'true';
+
+    if (!key || !label) { toast('Key and Label are required'); return; }
+    try {
+      await apiFetch('/admin/attributes', {
+        method: 'POST',
+        body: JSON.stringify({ client_id: clientId, field_key: key, field_label: label, field_type: type, options, unit, filterable }),
+      });
+      toast('Attribute saved ✓');
+      await loadAttributes();
+    } catch (err) {
+      toast('Error: ' + err.message);
+    }
+  }
+
+  async function importAttrJson(clientId) {
+    const textarea = document.getElementById('attrJsonInput');
+    const status   = document.getElementById('attrImportStatus');
+    if (!textarea) return;
+    const raw = textarea.value.trim();
+    if (!raw) { toast('Paste JSON first'); return; }
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch (e) { toast('Invalid JSON: ' + e.message); return; }
+    if (!Array.isArray(parsed)) { toast('JSON must be an array [...]'); return; }
+    status.textContent = 'Saving...';
+    try {
+      const result = await apiFetch('/admin/attributes/bulk', {
+        method: 'POST',
+        body: JSON.stringify({ client_id: clientId, attributes: parsed }),
+      });
+      status.style.color = result.errors.length ? '#e65100' : '#2e7d32';
+      status.textContent = `Saved ${result.saved}` + (result.errors.length ? ` | errors: ${result.errors.join('; ')}` : ' attributes');
+      textarea.value = '';
+      await loadAttributes();
+    } catch (e) { status.textContent = ''; toast('Error: ' + e.message); }
+  }
+
+  // keep old name working (called from inline onclick)
+  function addAttribute(clientId) { return saveAttribute(clientId); }
+
+  async function deleteAttribute(attrId) {
+    if (!confirm('Delete this attribute?')) return;
+    try {
+      await apiFetch(`/admin/attributes/${attrId}`, { method: 'DELETE' });
+      toast('Attribute deleted ✓');
+      loadAttributes();
+    } catch (err) {
+      toast('Error: ' + err.message);
+    }
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  loadCustomers();
+  setInterval(loadCustomers, 30000); // auto-refresh every 30s
+</script>
+</body>
+</html>

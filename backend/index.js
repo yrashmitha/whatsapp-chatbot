@@ -7,6 +7,8 @@ const path    = require('path');
 const fs      = require('fs');
 const crypto  = require('crypto');
 const multer  = require('multer');
+const bcrypt  = require('bcryptjs');
+const jwt     = require('jsonwebtoken');
 const upload  = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 const buildSystemInstruction = require('./buildInstruction');
 const db           = require('./db');
@@ -382,7 +384,33 @@ async function sendWhatsAppMessage(to, text, client) {
 // ─── Express app ──────────────────────────────────────────────────────────────
 const app = express();
 app.use(express.json({ limit: '20mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+
+// Serve React CRM build (primary)
+const FRONTEND_DIST = path.join(__dirname, '../frontend/dist');
+if (fs.existsSync(FRONTEND_DIST)) {
+  app.use(express.static(FRONTEND_DIST));
+  console.log('[STARTUP] Serving React frontend from', FRONTEND_DIST);
+}
+// Legacy HTML pages still accessible at /legacy/*
+app.use('/legacy', express.static(path.join(__dirname, 'public')));
+
+// ─── JWT Auth ─────────────────────────────────────────────────────────────────
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-prod';
+
+function jwtAuth(req, res, next) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    req.user = jwt.verify(token, JWT_SECRET);
+    next();
+  } catch { res.status(401).json({ error: 'Invalid or expired token' }); }
+}
+
+// For super admin: use ?client_id= param; for clients: always use their own id
+function resolveClientId(req) {
+  if (req.user?.role === 'superadmin') return req.query.client_id || null;
+  return req.user?.clientId || null;
+}
 
 // Log every incoming request
 app.use((req, res, next) => {
@@ -1149,6 +1177,465 @@ app.post('/admin/products/bulk', adminAuth, async (req, res) => {
   res.json({ ok: true, saved: saved.length, errors });
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// CRM AUTH ROUTES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// POST /auth/login
+app.post('/auth/login', async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'username and password required' });
+  try {
+    // Check superadmin first
+    const saRow = await db.pgQuery(`SELECT * FROM crm_users WHERE username=$1 AND role='superadmin'`, [username]);
+    if (saRow.rows.length > 0) {
+      const valid = await bcrypt.compare(password, saRow.rows[0].password_hash);
+      if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+      const token = jwt.sign({ sub: username, role: 'superadmin', clientId: null }, JWT_SECRET, { expiresIn: '7d' });
+      return res.json({ token, role: 'superadmin', clientId: null, name: 'Super Admin' });
+    }
+    // Check client user
+    const cfgRow = await db.pgQuery(
+      `SELECT cc.crm_password_hash, c.name FROM client_configs cc JOIN clients c ON c.id=cc.client_id WHERE cc.client_id=$1 AND c.active=TRUE`,
+      [username]
+    );
+    if (!cfgRow.rows.length || !cfgRow.rows[0].crm_password_hash)
+      return res.status(401).json({ error: 'Invalid credentials' });
+    const valid = await bcrypt.compare(password, cfgRow.rows[0].crm_password_hash);
+    if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+    const token = jwt.sign({ sub: username, role: 'client', clientId: username }, JWT_SECRET, { expiresIn: '7d' });
+    return res.json({ token, role: 'client', clientId: username, name: cfgRow.rows[0].name });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /auth/me
+app.get('/auth/me', jwtAuth, (req, res) => res.json(req.user));
+
+// POST /auth/set-password — set CRM password for a client (superadmin only or self)
+app.post('/auth/set-password', jwtAuth, async (req, res) => {
+  const { clientId, password } = req.body;
+  if (!clientId || !password) return res.status(400).json({ error: 'clientId and password required' });
+  if (req.user.role !== 'superadmin' && req.user.clientId !== clientId)
+    return res.status(403).json({ error: 'Forbidden' });
+  try {
+    const hash = await bcrypt.hash(password, 10);
+    await db.pgQuery(`UPDATE client_configs SET crm_password_hash=$1 WHERE client_id=$2`, [hash, clientId]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CRM API ROUTES (JWT protected)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// GET /api/clients — list clients (superadmin only)
+app.get('/api/clients', jwtAuth, async (req, res) => {
+  if (req.user.role !== 'superadmin') return res.status(403).json({ error: 'Forbidden' });
+  try {
+    const r = await db.pgQuery(`SELECT c.id, c.name, c.type, c.active, cc.brand_name, cc.brand_color FROM clients c LEFT JOIN client_configs cc ON cc.client_id=c.id WHERE c.active=TRUE ORDER BY c.name`);
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/customers — paginated
+app.get('/api/customers', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  const page  = Math.max(1, parseInt(req.query.page)  || 1);
+  const limit = Math.min(100, parseInt(req.query.limit) || 20);
+  const search = req.query.search || '';
+  const offset = (page - 1) * limit;
+  try {
+    const where = clientId
+      ? `WHERE cu.client_id=$1 ${search ? "AND (cu.phone_number ILIKE $4 OR cu.name ILIKE $4)" : ''}`
+      : `WHERE 1=1 ${search ? "AND (cu.phone_number ILIKE $3 OR cu.name ILIKE $3)" : ''}`;
+    const params = clientId
+      ? [clientId, limit, offset, ...(search ? [`%${search}%`] : [])]
+      : [limit, offset, ...(search ? [`%${search}%`] : [])];
+    const q = `
+      SELECT cu.phone_number, cu.name, cu.client_id, cu.updated_at,
+             COUNT(DISTINCT m.id) AS message_count,
+             COUNT(DISTINCT o.id) AS order_count,
+             MAX(m.created_at) AS last_message_at
+      FROM customers cu
+      LEFT JOIN messages m ON m.phone_number=cu.phone_number
+      LEFT JOIN orders   o ON o.phone_number=cu.phone_number
+      ${where}
+      GROUP BY cu.phone_number, cu.name, cu.client_id, cu.updated_at
+      ORDER BY last_message_at DESC NULLS LAST
+      LIMIT ${clientId ? '$2' : '$1'} OFFSET ${clientId ? '$3' : '$2'}`;
+    const countQ = clientId
+      ? `SELECT COUNT(*) FROM customers cu ${search ? "WHERE client_id=$1 AND (phone_number ILIKE $2 OR name ILIKE $2)" : "WHERE client_id=$1"}`
+      : `SELECT COUNT(*) FROM customers cu ${search ? "WHERE (phone_number ILIKE $1 OR name ILIKE $1)" : ''}`;
+    const countParams = clientId ? [clientId, ...(search ? [`%${search}%`] : [])] : (search ? [`%${search}%`] : []);
+    const [rows, countRes] = await Promise.all([db.pgQuery(q, params), db.pgQuery(countQ, countParams)]);
+    res.json({ customers: rows.rows, total: parseInt(countRes.rows[0].count), page, limit });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/messages/:phone — cursor-based lazy load
+app.get('/api/messages/:phone', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  const { phone } = req.params;
+  const limit = Math.min(100, parseInt(req.query.limit) || 50);
+  const before = req.query.before; // ISO timestamp
+  try {
+    const params = before
+      ? (clientId ? [phone, clientId, before, limit] : [phone, before, limit])
+      : (clientId ? [phone, clientId, limit] : [phone, limit]);
+    const q = `
+      SELECT id, phone_number, message_text, sender_type, created_at, cost_usd
+      FROM messages
+      WHERE phone_number=$1 ${clientId ? 'AND client_id=$2' : ''}
+      ${before ? `AND created_at < ${clientId ? '$3' : '$2'}` : ''}
+      ORDER BY created_at DESC
+      LIMIT ${before ? (clientId ? '$4' : '$3') : (clientId ? '$3' : '$2')}`;
+    const r = await db.pgQuery(q, params);
+    const msgs = r.rows.reverse(); // oldest first
+    res.json({ messages: msgs, hasMore: msgs.length === limit });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/send — send WhatsApp message
+app.post('/api/send', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  const { phone, message, type = 'text', mediaUrl } = req.body;
+  if (!phone || !message) return res.status(400).json({ error: 'phone and message required' });
+  try {
+    const client = clientId ? await clientRouter.getClientById(clientId) : null;
+    if (type === 'text') {
+      await sendWhatsAppMessage(phone, message, client);
+      await db.insertMessage(phone, message, 'bot');
+    } else if (type === 'image' && mediaUrl) {
+      await axios.post(
+        `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
+        { messaging_product: 'whatsapp', to: phone, type: 'image', image: { link: mediaUrl, caption: message } },
+        { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
+      );
+      await db.insertMessage(phone, `[Image] ${message}`, 'bot');
+    }
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e?.response?.data?.error?.message || e.message }); }
+});
+
+// DELETE /api/customers/:phone/messages
+app.delete('/api/customers/:phone/messages', jwtAuth, async (req, res) => {
+  try {
+    await db.pgQuery(`DELETE FROM messages WHERE phone_number=$1`, [req.params.phone]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/customers/:phone
+app.delete('/api/customers/:phone', jwtAuth, async (req, res) => {
+  try {
+    await db.deleteCustomer(req.params.phone);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/orders — paginated
+app.get('/api/orders', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  const page   = Math.max(1, parseInt(req.query.page) || 1);
+  const limit  = Math.min(100, parseInt(req.query.limit) || 20);
+  const offset = (page - 1) * limit;
+  const status = req.query.status || '';
+  const search = req.query.search || '';
+  try {
+    const conditions = [];
+    const params = [];
+    if (clientId) { params.push(clientId); conditions.push(`client_id=$${params.length}`); }
+    if (status)   { params.push(status);   conditions.push(`status=$${params.length}`); }
+    if (search)   { params.push(`%${search}%`); conditions.push(`(order_id ILIKE $${params.length} OR phone_number ILIKE $${params.length})`); }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    params.push(limit);  const limitIdx  = params.length;
+    params.push(offset); const offsetIdx = params.length;
+    const [rows, countRes] = await Promise.all([
+      db.pgQuery(`SELECT o.*, cu.name AS customer_name FROM orders o LEFT JOIN customers cu ON cu.phone_number=o.phone_number ${where} ORDER BY o.created_at DESC LIMIT $${limitIdx} OFFSET $${offsetIdx}`, params),
+      db.pgQuery(`SELECT COUNT(*) FROM orders ${where}`, params.slice(0, params.length - 2)),
+    ]);
+    res.json({ orders: rows.rows, total: parseInt(countRes.rows[0].count), page, limit });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/orders/export — CSV download
+app.get('/api/orders/export', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  try {
+    const where = clientId ? 'WHERE o.client_id=$1' : '';
+    const params = clientId ? [clientId] : [];
+    const r = await db.pgQuery(
+      `SELECT o.order_id, o.phone_number, cu.name AS customer_name, o.package, o.status,
+              o.birth_date, o.birth_time, o.birth_city, o.problems,
+              o.horoscope_received, o.receipt_received, o.created_at, o.client_id
+       FROM orders o LEFT JOIN customers cu ON cu.phone_number=o.phone_number
+       ${where} ORDER BY o.created_at DESC`, params
+    );
+    const cols = ['order_id','phone_number','customer_name','package','status','birth_date','birth_time','birth_city','problems','horoscope_received','receipt_received','created_at','client_id'];
+    const csv  = [cols.join(','), ...r.rows.map(row =>
+      cols.map(c => `"${String(row[c] ?? '').replace(/"/g, '""')}"`).join(',')
+    )].join('\n');
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="orders-${Date.now()}.csv"`);
+    res.send(csv);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PATCH /api/orders/:id/status
+app.patch('/api/orders/:id/status', jwtAuth, async (req, res) => {
+  try {
+    await db.pgQuery(`UPDATE orders SET status=$1 WHERE order_id=$2`, [req.body.status, req.params.id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PATCH /api/orders/:id/flags
+app.patch('/api/orders/:id/flags', jwtAuth, async (req, res) => {
+  const { horoscope_received, receipt_received } = req.body;
+  try {
+    const sets = [], params = [];
+    if (horoscope_received !== undefined) { params.push(horoscope_received); sets.push(`horoscope_received=$${params.length}`); }
+    if (receipt_received   !== undefined) { params.push(receipt_received);   sets.push(`receipt_received=$${params.length}`); }
+    if (!sets.length) return res.status(400).json({ error: 'Nothing to update' });
+    params.push(req.params.id);
+    await db.pgQuery(`UPDATE orders SET ${sets.join(',')} WHERE order_id=$${params.length}`, params);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/products
+app.get('/api/products', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    const r = await db.pgQuery(`SELECT * FROM client_products WHERE client_id=$1 ORDER BY category, sort_order, name`, [clientId]);
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/products
+app.post('/api/products', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  const { name, description, price, price_max, currency, category, subcategory, sku, image_url, sort_order, attributes, active } = req.body;
+  if (!clientId || !name) return res.status(400).json({ error: 'name required' });
+  try {
+    const r = await db.pgQuery(
+      `INSERT INTO client_products (client_id,name,description,price,price_max,currency,category,subcategory,sku,image_url,sort_order,attributes,active)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+      [clientId, name, description||null, price||null, price_max||null, currency||'LKR', category||null, subcategory||null, sku||null, image_url||null, sort_order||0, attributes ? JSON.stringify(attributes) : null, active !== false]
+    );
+    try { const emb = await embedText(productToText(req.body)); await db.saveProductEmbedding(r.rows[0].id, emb); } catch (_) {}
+    res.json({ ok: true, id: r.rows[0].id });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/products/:id
+app.put('/api/products/:id', jwtAuth, async (req, res) => {
+  const { name, description, price, price_max, currency, category, subcategory, sku, image_url, sort_order, attributes, active } = req.body;
+  try {
+    await db.pgQuery(
+      `UPDATE client_products SET name=$1,description=$2,price=$3,price_max=$4,currency=$5,category=$6,subcategory=$7,sku=$8,image_url=$9,sort_order=$10,attributes=$11,active=$12,updated_at=NOW() WHERE id=$13`,
+      [name, description||null, price||null, price_max||null, currency||'LKR', category||null, subcategory||null, sku||null, image_url||null, sort_order||0, attributes ? JSON.stringify(attributes) : null, active !== false, req.params.id]
+    );
+    try { const emb = await embedText(productToText(req.body)); await db.saveProductEmbedding(req.params.id, emb); } catch (_) {}
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/products/:id
+app.delete('/api/products/:id', jwtAuth, async (req, res) => {
+  try {
+    await db.pgQuery(`DELETE FROM client_products WHERE id=$1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/products/bulk
+app.post('/api/products/bulk', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  const { products } = req.body;
+  if (!clientId || !Array.isArray(products)) return res.status(400).json({ error: 'products[] required' });
+  let schema = [];
+  try { const r = await db.pgQuery(`SELECT field_key FROM client_attribute_schemas WHERE client_id=$1`, [clientId]); schema = r.rows; } catch (_) {}
+  const validKeys = new Set(schema.map(s => s.field_key));
+  const saved = [], errors = [];
+  for (let i = 0; i < products.length; i++) {
+    const p = products[i];
+    if (!p.name) { errors.push(`Row ${i+1}: name required`); continue; }
+    if (p.attributes && validKeys.size > 0) {
+      const unknown = Object.keys(p.attributes).filter(k => !validKeys.has(k));
+      if (unknown.length) { errors.push(`Row ${i+1} (${p.name}): unknown attributes: ${unknown.join(', ')}`); continue; }
+    }
+    try {
+      const r = await db.pgQuery(
+        `INSERT INTO client_products (client_id,name,description,price,price_max,currency,category,subcategory,sku,image_url,sort_order,attributes,active)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+        [clientId, p.name, p.description||null, p.price||null, p.price_max||null, p.currency||'LKR', p.category||null, p.subcategory||null, p.sku||null, p.image_url||null, p.sort_order||i, p.attributes ? JSON.stringify(p.attributes) : null, p.active !== false]
+      );
+      saved.push(r.rows[0].id);
+    } catch (e) { errors.push(`Row ${i+1} (${p.name}): ${e.message}`); }
+  }
+  res.json({ ok: true, saved: saved.length, errors });
+});
+
+// GET /api/attributes
+app.get('/api/attributes', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    const r = await db.pgQuery(`SELECT * FROM client_attribute_schemas WHERE client_id=$1 ORDER BY sort_order`, [clientId]);
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/attributes
+app.post('/api/attributes', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  const { field_key, field_label, field_type, options, unit, filterable } = req.body;
+  if (!clientId || !field_key || !field_label) return res.status(400).json({ error: 'field_key and field_label required' });
+  try {
+    await db.pgQuery(
+      `INSERT INTO client_attribute_schemas (client_id,field_key,field_label,field_type,options,unit,filterable)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (client_id,field_key) DO UPDATE SET field_label=$3,field_type=$4,options=$5,unit=$6,filterable=$7`,
+      [clientId, field_key, field_label, field_type||'text', options ? JSON.stringify(options) : null, unit||null, filterable !== false]
+    );
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/attributes/:id
+app.put('/api/attributes/:id', jwtAuth, async (req, res) => {
+  const { field_label, field_type, options, unit, filterable } = req.body;
+  try {
+    await db.pgQuery(
+      `UPDATE client_attribute_schemas SET field_label=$1,field_type=$2,options=$3,unit=$4,filterable=$5 WHERE id=$6`,
+      [field_label, field_type||'text', options ? JSON.stringify(options) : null, unit||null, filterable !== false, req.params.id]
+    );
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/attributes/:id
+app.delete('/api/attributes/:id', jwtAuth, async (req, res) => {
+  try {
+    await db.pgQuery(`DELETE FROM client_attribute_schemas WHERE id=$1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/attributes/bulk
+app.post('/api/attributes/bulk', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  const { attributes } = req.body;
+  if (!clientId || !Array.isArray(attributes)) return res.status(400).json({ error: 'attributes[] required' });
+  const errors = [];
+  for (let i = 0; i < attributes.length; i++) {
+    const a = attributes[i];
+    try {
+      await db.pgQuery(
+        `INSERT INTO client_attribute_schemas (client_id,field_key,field_label,field_type,options,unit,filterable,sort_order)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (client_id,field_key) DO UPDATE SET field_label=$3,field_type=$4,options=$5,unit=$6,filterable=$7,sort_order=$8`,
+        [clientId, a.field_key, a.field_label, a.field_type||'text', a.options ? JSON.stringify(a.options) : null, a.unit||null, a.filterable !== false, a.sort_order||i]
+      );
+    } catch (e) { errors.push(`${a.field_key}: ${e.message}`); }
+  }
+  res.json({ ok: true, saved: attributes.length - errors.length, errors });
+});
+
+// POST /api/upload-image
+app.post('/api/upload-image', jwtAuth, upload.single('image'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  const { CLOUDINARY_CLOUD_NAME: cloud, CLOUDINARY_API_KEY: apiKey, CLOUDINARY_API_SECRET: apiSecret } = process.env;
+  if (!cloud || !apiKey || !apiSecret) return res.status(500).json({ error: 'Cloudinary not configured' });
+  try {
+    const timestamp = Math.floor(Date.now() / 1000);
+    const signature = crypto.createHash('sha1').update(`folder=products&timestamp=${timestamp}${apiSecret}`).digest('hex');
+    const form = new FormData();
+    form.append('file', new Blob([req.file.buffer], { type: req.file.mimetype }), req.file.originalname);
+    form.append('folder', 'products');
+    form.append('timestamp', String(timestamp));
+    form.append('api_key', apiKey);
+    form.append('signature', signature);
+    const r = await fetch(`https://api.cloudinary.com/v1_1/${cloud}/image/upload`, { method: 'POST', body: form });
+    const data = await r.json();
+    if (!r.ok) return res.status(500).json({ error: data.error?.message || 'Cloudinary error' });
+    res.json({ url: data.secure_url });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/settings/password
+app.put('/api/settings/password', jwtAuth, async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) return res.status(400).json({ error: 'currentPassword and newPassword required' });
+  const clientId = req.user.clientId;
+  if (!clientId) return res.status(403).json({ error: 'Superadmin password change not supported via API' });
+  try {
+    const r = await db.pgQuery(`SELECT crm_password_hash FROM client_configs WHERE client_id=$1`, [clientId]);
+    if (!r.rows.length || !r.rows[0].crm_password_hash) return res.status(400).json({ error: 'No password set' });
+    const valid = await bcrypt.compare(currentPassword, r.rows[0].crm_password_hash);
+    if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
+    const hash = await bcrypt.hash(newPassword, 10);
+    await db.pgQuery(`UPDATE client_configs SET crm_password_hash=$1 WHERE client_id=$2`, [hash, clientId]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/settings/prompt
+app.put('/api/settings/prompt', jwtAuth, async (req, res) => {
+  const clientId = req.user.clientId;
+  if (!clientId) return res.status(403).json({ error: 'Superadmin cannot set client prompt without client_id' });
+  const { prompt } = req.body;
+  try {
+    await db.pgQuery(`UPDATE client_configs SET custom_prompt=$1, system_prompt_mode='custom', updated_at=NOW() WHERE client_id=$2`, [prompt || null, clientId]);
+    clientRouter.invalidateCache(clientId);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/settings
+app.get('/api/settings', jwtAuth, async (req, res) => {
+  const clientId = req.user.clientId;
+  if (!clientId) return res.status(403).json({ error: 'No client context' });
+  try {
+    const r = await db.pgQuery(`SELECT custom_prompt, system_prompt_mode, temperature, brand_name, brand_color FROM client_configs WHERE client_id=$1`, [clientId]);
+    res.json(r.rows[0] || {});
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/media/:mediaId — proxy WhatsApp media
+app.get('/api/media/:mediaId', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  try {
+    const client = clientId ? await clientRouter.getClientById(clientId) : null;
+    const token = waToken(client);
+    const urlRes = await axios.get(`https://graph.facebook.com/v18.0/${req.params.mediaId}`, { headers: { Authorization: `Bearer ${token}` } });
+    const mediaUrl = urlRes.data.url;
+    const mediaRes = await axios.get(mediaUrl, { headers: { Authorization: `Bearer ${token}` }, responseType: 'arraybuffer' });
+    res.set('Content-Type', mediaRes.headers['content-type'] || 'application/octet-stream');
+    res.send(Buffer.from(mediaRes.data));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── SPA fallback — serve React app for all non-API routes ───────────────────
+app.get('*', (req, res) => {
+  const indexFile = path.join(__dirname, '../frontend/dist/index.html');
+  if (
+    !req.path.startsWith('/api') &&
+    !req.path.startsWith('/admin') &&
+    !req.path.startsWith('/auth') &&
+    !req.path.startsWith('/webhook') &&
+    !req.path.startsWith('/legacy') &&
+    !req.path.startsWith('/chat') &&
+    fs.existsSync(indexFile)
+  ) {
+    res.sendFile(indexFile);
+  } else if (!res.headersSent) {
+    res.status(404).json({ error: 'Not found' });
+  }
+});
+
 // ─── Start ────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 
@@ -1161,6 +1648,17 @@ app.listen(PORT, () => {
 // Init DB in background, then upload template images
 db.init().then(async () => {
   console.log(`[DB] Initialized successfully`);
+  // Seed superadmin if SUPERADMIN_PASSWORD is set and no superadmin row exists yet
+  if (db.IS_PG && process.env.SUPERADMIN_PASSWORD) {
+    try {
+      const existing = await db.pgQuery(`SELECT id FROM crm_users WHERE username='superadmin'`);
+      if (existing.rows.length === 0) {
+        const hash = await bcrypt.hash(process.env.SUPERADMIN_PASSWORD, 10);
+        await db.pgQuery(`INSERT INTO crm_users (username, password_hash, role) VALUES ('superadmin', $1, 'superadmin')`, [hash]);
+        console.log('[AUTH] Superadmin user created');
+      }
+    } catch (e) { console.warn('[AUTH] Superadmin seed failed:', e.message); }
+  }
   await uploadTemplateImages();
   // Auto-embed any products missing embeddings (non-blocking)
   if (db.IS_PG) {

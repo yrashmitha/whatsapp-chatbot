@@ -15,7 +15,7 @@ async function embedText(text) {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content: { parts: [{ text }] } }),
+    body: JSON.stringify({ content: { parts: [{ text }] }, outputDimensionality: 768 }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(`Embed API error ${res.status}: ${JSON.stringify(data)}`);

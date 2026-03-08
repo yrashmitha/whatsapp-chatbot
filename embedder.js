@@ -4,17 +4,22 @@
 // Used to embed products at save time and customer queries at search time
 // ─────────────────────────────────────────────────────────────────────────────
 
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-
-const genAI    = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const embModel = genAI.getGenerativeModel({ model: 'embedding-001' });
+const EMBED_MODEL = 'text-embedding-004';
 
 /**
- * Embed a text string → float[768]
+ * Embed a text string → float[768] via direct REST call
  */
 async function embedText(text) {
-  const result = await embModel.embedContent(text);
-  return result.embedding.values;
+  const apiKey = process.env.GEMINI_API_KEY;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${EMBED_MODEL}:embedContent?key=${apiKey}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content: { parts: [{ text }] } }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(`Embed API error ${res.status}: ${JSON.stringify(data)}`);
+  return data.embedding.values;
 }
 
 /**

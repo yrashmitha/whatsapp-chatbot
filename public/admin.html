@@ -1033,49 +1033,100 @@
   }
 
   // ── Attribute schema editor ────────────────────────────────────────────────
+  let _attrSchema = []; // cached for edit prefill
+
   async function loadAttributes() {
     const clientId = document.getElementById('clientSelect').value;
-    let schema = [];
-    try { schema = await apiFetch(`/admin/attributes?client=${encodeURIComponent(clientId)}`); } catch (_) {}
+    _attrSchema = [];
+    try { _attrSchema = await apiFetch(`/admin/attributes?client=${encodeURIComponent(clientId)}`); } catch (_) {}
 
-    const rows = schema.map(s => `
-      <div class="attr-row" style="margin-bottom:6px;">
-        <span style="min-width:90px;font-size:12px;font-weight:600;">${s.field_key}</span>
-        <span style="min-width:80px;font-size:12px;color:#555">${s.field_label}</span>
-        <span style="min-width:60px;font-size:11px;color:#888">${s.field_type}</span>
-        <span style="font-size:11px;color:#888;flex:1">${s.unit || ''}</span>
-        <span style="font-size:11px;color:${s.filterable ? '#2e7d32' : '#888'}">${s.filterable ? '🔍' : ''}</span>
-        <button class="btn-sm danger" onclick="deleteAttribute(${s.id})">Del</button>
-      </div>`).join('');
+    const rows = _attrSchema.map(s => {
+      const opts = Array.isArray(s.options) ? s.options.join(', ') : (s.options || '');
+      return `
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#f9f9f9;border-radius:6px;border:1px solid #eee;margin-bottom:6px;">
+          <span style="min-width:100px;font-size:12px;font-weight:700;color:#111;">${s.field_key}</span>
+          <span style="min-width:90px;font-size:12px;color:#333;">${s.field_label}</span>
+          <span style="min-width:70px;font-size:11px;color:#888;background:#eee;padding:2px 7px;border-radius:8px;">${s.field_type}</span>
+          ${s.unit ? `<span style="font-size:11px;color:#888;">${s.unit}</span>` : ''}
+          ${opts ? `<span style="font-size:11px;color:#666;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${opts}">${opts}</span>` : '<span style="flex:1"></span>'}
+          <span style="font-size:11px;color:${s.filterable ? '#2e7d32' : '#bbb'};">${s.filterable ? '🔍 AI' : ''}</span>
+          <button class="btn-sm" onclick="editAttribute(${s.id})" style="padding:3px 10px;">Edit</button>
+          <button class="btn-sm danger" onclick="deleteAttribute(${s.id})" style="padding:3px 8px;">Del</button>
+        </div>`;
+    }).join('');
 
     document.getElementById('chatPanel').innerHTML = `
       <div style="padding:20px;overflow-y:auto;height:100%;">
-        <h3 style="font-size:15px;color:#075e54;margin-bottom:16px;">Attribute Schema — ${clientId}</h3>
-        <p style="font-size:12px;color:#888;margin-bottom:12px;">These define the custom fields that products can have. Used for AI SQL and catalog display.</p>
-        <div style="margin-bottom:16px;">${rows || '<p style="color:#aaa;font-size:13px;">No attributes yet.</p>'}</div>
+        <h3 style="font-size:15px;color:#075e54;margin-bottom:6px;">Attribute Schema — ${clientId}</h3>
+        <p style="font-size:12px;color:#888;margin-bottom:14px;">Custom fields for products. Used by AI for search and catalog display.</p>
+
+        <div style="margin-bottom:18px;">${rows || '<p style="color:#aaa;font-size:13px;padding:8px 0;">No attributes yet.</p>'}</div>
+
         <div style="border-top:1px solid #eee;padding-top:16px;">
-          <h4 style="font-size:13px;margin-bottom:10px;">Add New Attribute</h4>
+          <h4 id="attrFormTitle" style="font-size:13px;font-weight:700;margin-bottom:12px;">Add New Attribute</h4>
           <div class="form-grid">
-            <div class="form-group"><label>Key (no spaces)</label><input id="aKey" placeholder="e.g. color"></div>
-            <div class="form-group"><label>Label</label><input id="aLabel" placeholder="e.g. Color"></div>
-            <div class="form-group"><label>Type</label>
+            <div class="form-group">
+              <label>Key (no spaces)</label>
+              <input id="aKey" placeholder="e.g. color">
+            </div>
+            <div class="form-group">
+              <label>Label</label>
+              <input id="aLabel" placeholder="e.g. Color">
+            </div>
+            <div class="form-group">
+              <label>Type</label>
               <select id="aType">
                 <option>text</option><option>number</option><option>select</option>
                 <option>boolean</option><option>multiselect</option>
               </select>
             </div>
-            <div class="form-group"><label>Unit</label><input id="aUnit" placeholder="e.g. kg, cm"></div>
-            <div class="form-group"><label>Options (comma-separated, for select)</label><input id="aOptions" placeholder="Red, Blue, Green"></div>
-            <div class="form-group"><label>Filterable by AI?</label>
-              <select id="aFilterable"><option value="true">Yes</option><option value="false">No</option></select>
+            <div class="form-group">
+              <label>Unit</label>
+              <input id="aUnit" placeholder="e.g. kg, cm">
+            </div>
+            <div class="form-group">
+              <label>Options (comma-separated, for select type)</label>
+              <input id="aOptions" placeholder="Red, Blue, Green">
+            </div>
+            <div class="form-group">
+              <label>Filterable by AI?</label>
+              <select id="aFilterable">
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+              </select>
             </div>
           </div>
-          <button class="btn-primary" style="margin-top:12px;" onclick="addAttribute('${clientId}')">Add Attribute</button>
+          <div style="display:flex;gap:8px;margin-top:12px;">
+            <button class="btn-primary" id="attrSaveBtn" onclick="saveAttribute('${clientId}')">Add Attribute</button>
+            <button class="btn-sm" id="attrCancelBtn" style="display:none;" onclick="cancelEditAttribute('${clientId}')">Cancel</button>
+          </div>
         </div>
       </div>`;
   }
 
-  async function addAttribute(clientId) {
+  function editAttribute(attrId) {
+    const s = _attrSchema.find(a => a.id === attrId);
+    if (!s) return;
+    document.getElementById('aKey').value       = s.field_key;
+    document.getElementById('aKey').readOnly    = true;
+    document.getElementById('aKey').style.background = '#f5f5f5';
+    document.getElementById('aLabel').value     = s.field_label;
+    document.getElementById('aType').value      = s.field_type;
+    document.getElementById('aUnit').value      = s.unit || '';
+    const opts = Array.isArray(s.options) ? s.options.join(', ') : (s.options || '');
+    document.getElementById('aOptions').value   = opts;
+    document.getElementById('aFilterable').value = s.filterable ? 'true' : 'false';
+    document.getElementById('attrFormTitle').textContent = `Edit Attribute: ${s.field_key}`;
+    document.getElementById('attrSaveBtn').textContent   = 'Save Changes';
+    document.getElementById('attrCancelBtn').style.display = '';
+    document.getElementById('aLabel').focus();
+  }
+
+  function cancelEditAttribute(clientId) {
+    loadAttributes();
+  }
+
+  async function saveAttribute(clientId) {
     const key     = document.getElementById('aKey').value.trim().replace(/\s+/g, '_');
     const label   = document.getElementById('aLabel').value.trim();
     const type    = document.getElementById('aType').value;
@@ -1096,6 +1147,9 @@
       toast('Error: ' + err.message);
     }
   }
+
+  // keep old name working (called from inline onclick)
+  function addAttribute(clientId) { return saveAttribute(clientId); }
 
   async function deleteAttribute(attrId) {
     if (!confirm('Delete this attribute?')) return;

@@ -165,7 +165,7 @@ async function buildOrderStatusNote(phoneNumber) {
 async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserInsert = false, client = null, retryNote = null } = {}) {
   console.log(`[MSG] Handling message from ${phoneNumber}: "${userMessage.substring(0, 80)}"`);
 
-  await db.upsertCustomer(phoneNumber, null);
+  await db.upsertCustomer(phoneNumber, null, client?.id);
   if (!skipUserInsert) {
     await db.insertMessage(phoneNumber, userMessage, 'user');
     console.log(`[DB] Saved user message for ${phoneNumber}`);
@@ -310,7 +310,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
       await db.insertOrder(orderId, phoneNumber, client?.id ?? null, details);
       console.log(`[ORDER] Saved order ${orderId} for ${phoneNumber}`);
       if (details.customer_name) {
-        await db.upsertCustomer(phoneNumber, details.customer_name);
+        await db.upsertCustomer(phoneNumber, details.customer_name, client?.id);
         console.log(`[DB] Updated customer name: ${details.customer_name}`);
       }
       botReply += `\n\n✅ *ඔබේ Order ID: ${orderId}*\nමෙය ආරක්ෂිතව සටහන් කර ගන්න. ඕනෑම ප්‍රශ්නයකදී මෙම ID ඉදිරිපත් කළ හැකියි. 🙏`;
@@ -568,7 +568,7 @@ app.post('/webhook', (req, res) => {
         const caption = msg.image?.caption?.trim() || '';
         console.log(`[WEBHOOK-POST] Image from ${from} | caption="${caption}"`);
 
-        await db.upsertCustomer(from, null);
+        await db.upsertCustomer(from, null, client?.id);
         if (chatSessions.has(sessionKey)) {
           const dbMsgs = await db.getMessagesByPhone(from);
           if (dbMsgs.length === 0) chatSessions.delete(sessionKey);
@@ -1759,6 +1759,9 @@ app.put('/api/settings/prompt', jwtAuth, async (req, res) => {
       [prompt || null, error_message || null, JSON.stringify(parsedFields), clientId]
     );
     clientRouter.invalidateCache(clientId);
+    for (const key of chatSessions.keys()) {
+      if (key.startsWith(`${clientId}:`)) chatSessions.delete(key);
+    }
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

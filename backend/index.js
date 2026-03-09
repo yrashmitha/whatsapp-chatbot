@@ -115,11 +115,12 @@ async function buildChatSession(phoneNumber, client) {
     tools = [{
       functionDeclarations: [{
         name: 'search_products',
-        description: 'Search the product catalog. You MUST call this function BEFORE recommending, describing, or naming any specific product — even when making suggestions based on customer preferences (e.g. "office scent", "fresh", "woody"). Build a query from the customer\'s preferences and search first. Call this when a customer asks about products, availability, price, features, or when you want to recommend something.' + attrHint + ' STRICT RULE: Only tell the customer about products that appear in the search results. If the result is "No matching products found", tell the customer that item is not available. NEVER invent, guess, or mention any product not returned by this search.',
+        description: 'Search the product catalog. You MUST call this function BEFORE recommending, describing, or naming any specific product — even when making suggestions based on customer preferences (e.g. "office scent", "fresh", "woody"). Build a query from the customer\'s preferences and search first. Call this when a customer asks about products, availability, price, features, or when you want to recommend something. When a customer mentions a total budget, calculate max_price = budget - delivery_fee and pass it to filter results.' + attrHint + ' STRICT RULE: Only tell the customer about products that appear in the search results. If the result is "No matching products found", tell the customer that item is not available. NEVER invent, guess, or mention any product not returned by this search.',
         parameters: {
           type: 'OBJECT',
           properties: {
-            query: { type: 'STRING', description: 'Search query, e.g. "red cotton shirt size L under 2000 LKR"' }
+            query: { type: 'STRING', description: 'Search query, e.g. "red cotton shirt size L under 2000 LKR"' },
+            max_price: { type: 'NUMBER', description: 'Maximum product price (excluding delivery). If customer mentions a total budget, subtract the delivery fee to get this value. Example: budget Rs 1500 with Rs 300 delivery → max_price: 1200. Only set this when the customer has explicitly stated a budget limit.' }
           },
           required: ['query']
         }
@@ -251,7 +252,8 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   while (candidate.functionCalls()?.length > 0 && fcLoopCount++ < 3) {
     const fc = candidate.functionCalls()[0];
     if (fc.name === 'search_products' && client?.product_catalog_enabled && db.IS_PG) {
-      console.log(`[RAG] search_products called with query: "${fc.args.query}"`);
+      const maxPrice = (fc.args.max_price != null && fc.args.max_price > 0) ? fc.args.max_price : null;
+      console.log(`[RAG] search_products called with query: "${fc.args.query}"${maxPrice != null ? ` | max_price: ${maxPrice}` : ''}`);
       let resultText = 'No matching products found.';
       const limit = client.max_products_in_context || 5;
       const formatProducts = (products) => products.map(p => {
@@ -265,7 +267,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
       let products = [];
       try {
         const emb = await embedText(fc.args.query);
-        products = await db.vectorSearchProducts(client.id, emb, limit);
+        products = await db.vectorSearchProducts(client.id, emb, limit, maxPrice);
         if (products.length > 0) {
           console.log(`[RAG] Vector search returned ${products.length} products`);
           resultText = formatProducts(products);
@@ -277,7 +279,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
       // FTS fallback: used when embedding fails or returns no results
       if (!products.length) {
         try {
-          products = await db.searchProducts(client.id, fc.args.query, limit);
+          products = await db.searchProducts(client.id, fc.args.query, limit, maxPrice);
           if (products.length > 0) {
             console.log(`[RAG] FTS fallback returned ${products.length} products`);
             resultText = formatProducts(products);

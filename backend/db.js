@@ -606,37 +606,46 @@ async function countOrdersByYear(pattern) {
  * Full-text search across client products.
  * Falls back to returning empty array on SQLite (products are PG-only for now).
  */
-async function searchProducts(clientId, query, limit = 10) {
+async function searchProducts(clientId, query, limit = 10, maxPrice = null) {
   if (IS_PG) {
     if (!query || !query.trim()) {
+      const params = [clientId, limit];
+      let priceClause = '';
+      if (maxPrice != null) { priceClause = `AND price <= $3`; params.push(maxPrice); }
       const res = await pool.query(
         `SELECT id, name, description, price, price_max, currency, category, subcategory, sku, image_url, attributes
-         FROM client_products WHERE client_id = $1 AND active = TRUE
+         FROM client_products WHERE client_id = $1 AND active = TRUE ${priceClause}
          ORDER BY sort_order, name LIMIT $2`,
-        [clientId, limit]
+        params
       );
       return res.rows;
     }
+    const params = [clientId, query.trim(), limit];
+    let priceClause = '';
+    if (maxPrice != null) { priceClause = `AND price <= $4`; params.push(maxPrice); }
     const res = await pool.query(
       `SELECT id, name, description, price, price_max, currency, category, subcategory, sku, image_url, attributes,
               ts_rank(search_vec, plainto_tsquery('english', $2)) AS rank
        FROM client_products WHERE client_id = $1 AND active = TRUE
          AND search_vec @@ plainto_tsquery('english', $2)
+         ${priceClause}
        ORDER BY rank DESC, sort_order LIMIT $3`,
-      [clientId, query.trim(), limit]
+      params
     );
     return res.rows;
   } else {
     // SQLite: simple LIKE search
     const q = query ? `%${query.trim()}%` : null;
+    const priceFilter = maxPrice != null ? `AND price <= ?` : '';
+    const priceParam = maxPrice != null ? [maxPrice] : [];
     const rows = q
       ? db.prepare(`SELECT id, name, description, price, price_max, currency, category, subcategory, sku, image_url, attributes
                     FROM client_products WHERE client_id = ? AND active = 1
-                    AND (name LIKE ? OR description LIKE ? OR category LIKE ?) ORDER BY sort_order, name LIMIT ?`)
-           .all(clientId, q, q, q, limit)
+                    AND (name LIKE ? OR description LIKE ? OR category LIKE ?) ${priceFilter} ORDER BY sort_order, name LIMIT ?`)
+           .all(clientId, q, q, q, ...priceParam, limit)
       : db.prepare(`SELECT id, name, description, price, price_max, currency, category, subcategory, sku, image_url, attributes
-                    FROM client_products WHERE client_id = ? AND active = 1 ORDER BY sort_order, name LIMIT ?`)
-           .all(clientId, limit);
+                    FROM client_products WHERE client_id = ? AND active = 1 ${priceFilter} ORDER BY sort_order, name LIMIT ?`)
+           .all(clientId, ...priceParam, limit);
     return rows.map(r => ({ ...r, attributes: JSON.parse(r.attributes || '{}') }));
   }
 }
@@ -660,8 +669,11 @@ async function getAttributeSchema(clientId) {
 
 // ─── Vector search ────────────────────────────────────────────────────────────
 
-async function vectorSearchProducts(clientId, embedding, limit = 10) {
+async function vectorSearchProducts(clientId, embedding, limit = 10, maxPrice = null) {
   if (!IS_PG) return []; // pgvector not available on SQLite
+  const params = [clientId, JSON.stringify(embedding), limit];
+  let priceClause = '';
+  if (maxPrice != null) { priceClause = `AND price <= $4`; params.push(maxPrice); }
   const res = await pool.query(
     `SELECT id, name, description, price, price_max, currency,
             category, subcategory, sku, image_url, attributes,
@@ -669,9 +681,10 @@ async function vectorSearchProducts(clientId, embedding, limit = 10) {
      FROM client_products
      WHERE client_id = $1 AND active = TRUE AND embedding IS NOT NULL
        AND (1 - (embedding <=> $2::vector)) > 0.5
+       ${priceClause}
      ORDER BY embedding <=> $2::vector
      LIMIT $3`,
-    [clientId, JSON.stringify(embedding), limit]
+    params
   );
   return res.rows;
 }

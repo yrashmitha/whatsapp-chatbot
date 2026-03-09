@@ -22,6 +22,7 @@ export default function Orders() {
   const [statusFilter, setStatusFilter] = useState('');
   const [expandedOrder, setExpandedOrder] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null); // { id, orderId, fields }
+  const [productPopup, setProductPopup] = useState(null); // product object or 'loading'
   const toast = useToast();
   const qc = useQueryClient();
 
@@ -53,6 +54,16 @@ export default function Orders() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['orders'] }); setEditingOrder(null); toast.success('Order updated'); },
     onError: () => toast.error('Failed to update order'),
   });
+
+  const handleProductClick = async (productValue) => {
+    setProductPopup('loading');
+    const name = productValue.split(/\s*[—–-]\s*Rs/i)[0].trim();
+    try {
+      const r = await api.get('/products', { params: { search: name, limit: 1, ...(clientId && { client_id: clientId }) } });
+      const p = r.data.products?.[0] || null;
+      setProductPopup(p || 'notfound');
+    } catch { setProductPopup('notfound'); }
+  };
 
   const handleExport = async () => {
     const exportParams = new URLSearchParams({ ...(clientId && { client_id: clientId }), ...(statusFilter && { status: statusFilter }), ...(search && { search }) });
@@ -183,7 +194,14 @@ export default function Orders() {
                                 {Object.entries(cf).map(([k, v]) => (
                                   <div key={k} className="flex gap-2 text-xs">
                                     <span className="text-slate-400 capitalize shrink-0">{k.replace(/_/g, ' ')}:</span>
-                                    <span className="text-slate-700">{String(v ?? '—')}</span>
+                                    {k === 'product' && v ? (
+                                      <button onClick={() => handleProductClick(String(v))}
+                                        className="text-violet-600 hover:text-violet-800 underline cursor-pointer bg-transparent border-0 text-xs text-left p-0">
+                                        {String(v)}
+                                      </button>
+                                    ) : (
+                                      <span className="text-slate-700">{String(v ?? '—')}</span>
+                                    )}
                                   </div>
                                 ))}
                               </div>
@@ -209,6 +227,42 @@ export default function Orders() {
           </div>
         )}
       </div>
+      {/* Product detail popup */}
+      {productPopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setProductPopup(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+            {productPopup === 'loading' ? (
+              <div className="flex justify-center items-center py-16"><Spinner /></div>
+            ) : productPopup === 'notfound' ? (
+              <div className="p-6 text-center text-slate-400 text-sm">Product not found</div>
+            ) : (
+              <>
+                {productPopup.image_url && (
+                  <img src={productPopup.image_url} alt={productPopup.name} className="w-full h-48 object-cover" />
+                )}
+                <div className="p-5">
+                  <div className="font-semibold text-slate-800 text-base mb-0.5">{productPopup.name}</div>
+                  {productPopup.category && <div className="text-xs text-violet-500 mb-2">{productPopup.category}{productPopup.subcategory ? ` · ${productPopup.subcategory}` : ''}</div>}
+                  {productPopup.description && <div className="text-sm text-slate-600 mb-3">{productPopup.description}</div>}
+                  <div className="text-sm font-semibold text-slate-800 mb-3">
+                    {productPopup.currency || 'Rs'} {productPopup.price_max ? `${productPopup.price} – ${productPopup.price_max}` : productPopup.price}
+                  </div>
+                  {productPopup.attributes && Object.keys(productPopup.attributes).length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {Object.entries(productPopup.attributes).map(([k, v]) => (
+                        <span key={k} className="text-xs bg-slate-100 text-slate-600 rounded-full px-2 py-0.5">{k}: {v}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+            <div className="border-t border-slate-100 px-5 py-3 flex justify-end">
+              <button onClick={() => setProductPopup(null)} className="text-sm text-slate-500 hover:text-slate-700 cursor-pointer bg-transparent border-0">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }

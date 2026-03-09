@@ -95,6 +95,10 @@ async function getAllClients() {
 function invalidateCache(key) {
   cache.delete(key);
   cache.delete(`id:${key}`);
+  // Also clear phone_number_id keyed entries for this client
+  for (const [cacheKey, entry] of cache.entries()) {
+    if (entry.client?.id === key) cache.delete(cacheKey);
+  }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

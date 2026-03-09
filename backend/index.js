@@ -202,9 +202,19 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     }
   }
 
+  // Detect message language and prepend a hard hint so Gemini mirrors it correctly
+  const hasSinhala = /[\u0D80-\u0DFF]/.test(userMessage);
+  const looksEnglish = !hasSinhala && /[a-zA-Z]/.test(userMessage);
+  const langHint = hasSinhala
+    ? '[LANGUAGE DIRECTIVE: Customer wrote in Sinhala. You MUST reply in Sinhala script only.]'
+    : looksEnglish
+    ? '[LANGUAGE DIRECTIVE: Customer wrote in English. You MUST reply in English only. Do NOT use Sinhala.]'
+    : null;
+
   // Inject current order status so AI knows what documents are already received
   const statusNote = await buildOrderStatusNote(phoneNumber);
   let messageToSend = statusNote ? `${statusNote}\n\n${userMessage}` : userMessage;
+  if (langHint) messageToSend = `${langHint}\n${messageToSend}`;
   if (retryNote) messageToSend = `${retryNote}\n\n${messageToSend}`;
 
   console.log(`[GEMINI] Sending message to Gemini...`);

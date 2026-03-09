@@ -953,7 +953,7 @@ app.delete('/admin/customer/:phone', adminAuth, async (req, res) => {
   const phone = decodeURIComponent(req.params.phone);
   console.log(`[ADMIN] DELETE customer ${phone}`);
   try {
-    chatSessions.delete(phone);
+    for (const key of chatSessions.keys()) { if (key.endsWith(`:${phone}`)) chatSessions.delete(key); }
     await db.deleteCustomer(phone);
     res.json({ ok: true });
   } catch (err) {
@@ -967,7 +967,7 @@ app.delete('/admin/customer/:phone/messages', adminAuth, async (req, res) => {
   const phone = decodeURIComponent(req.params.phone);
   console.log(`[ADMIN] DELETE messages for ${phone}`);
   try {
-    chatSessions.delete(phone);
+    for (const key of chatSessions.keys()) { if (key.endsWith(`:${phone}`)) chatSessions.delete(key); }
     await db.deleteMessages(phone);
     res.json({ ok: true });
   } catch (err) {
@@ -1500,7 +1500,9 @@ app.post('/api/send', jwtAuth, async (req, res) => {
 // DELETE /api/customers/:phone/messages
 app.delete('/api/customers/:phone/messages', jwtAuth, async (req, res) => {
   try {
-    await db.pgQuery(`DELETE FROM messages WHERE phone_number=$1`, [req.params.phone]);
+    const phone = req.params.phone;
+    for (const key of chatSessions.keys()) { if (key.endsWith(`:${phone}`)) chatSessions.delete(key); }
+    await db.pgQuery(`DELETE FROM messages WHERE phone_number=$1`, [phone]);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1508,7 +1510,9 @@ app.delete('/api/customers/:phone/messages', jwtAuth, async (req, res) => {
 // DELETE /api/customers/:phone
 app.delete('/api/customers/:phone', jwtAuth, async (req, res) => {
   try {
-    await db.deleteCustomer(req.params.phone);
+    const phone = req.params.phone;
+    for (const key of chatSessions.keys()) { if (key.endsWith(`:${phone}`)) chatSessions.delete(key); }
+    await db.deleteCustomer(phone);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

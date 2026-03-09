@@ -59,13 +59,18 @@ export default function Orders() {
     setProductPopup('loading');
     try {
       if (cf.product_id) {
-        const r = await api.get(`/products/${cf.product_id}`);
-        setProductPopup(r.data.product ? [r.data.product] : 'notfound');
+        const ids = String(cf.product_id).split(',').map(s => s.trim()).filter(Boolean);
+        const results = await Promise.all(ids.map(id => api.get(`/products/${id}`).then(r => r.data.product).catch(() => null)));
+        const products = results.filter(Boolean);
+        setProductPopup(products.length ? products : 'notfound');
       } else if (cf.product) {
-        const name = String(cf.product).split(/\s*[—–-]\s*Rs/i)[0].trim();
         const searchClientId = orderClientId || clientId;
-        const r = await api.get('/products', { params: { search: name, limit: 5, ...(searchClientId && { client_id: searchClientId }) } });
-        const products = r.data.products || [];
+        const names = String(cf.product).split(',').map(s => s.split(/\s*[—–-]\s*Rs/i)[0].trim()).filter(Boolean);
+        const results = await Promise.all(names.map(name =>
+          api.get('/products', { params: { search: name, limit: 1, ...(searchClientId && { client_id: searchClientId }) } })
+            .then(r => r.data.products?.[0]).catch(() => null)
+        ));
+        const products = results.filter(Boolean);
         setProductPopup(products.length ? products : 'notfound');
       } else {
         setProductPopup('notfound');

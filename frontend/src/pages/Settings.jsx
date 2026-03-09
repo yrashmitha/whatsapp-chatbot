@@ -18,8 +18,9 @@ export default function Settings() {
   const [pwd, setPwd] = useState({ current: '', newPwd: '', confirm: '' });
   const [pwdLoading, setPwdLoading] = useState(false);
 
-  // Prompt form
+  // Prompt + error message form
   const [prompt, setPrompt] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
   const [promptLoading, setPromptLoading] = useState(false);
 
   // Set password for a client (superadmin)
@@ -35,7 +36,10 @@ export default function Settings() {
   });
 
   useEffect(() => {
-    if (settingsData?.custom_prompt !== undefined) setPrompt(settingsData.custom_prompt || '');
+    if (settingsData) {
+      setPrompt(settingsData.custom_prompt || '');
+      setErrorMsg(settingsData.error_message || '');
+    }
   }, [settingsData]);
 
   // Sync clientPwd.clientId when selectedClientId changes
@@ -65,7 +69,7 @@ export default function Settings() {
     if (!clientId) { toast.error('Select a client first'); return; }
     setPromptLoading(true);
     try {
-      await api.put('/settings/prompt', { prompt }, { params });
+      await api.put('/settings/prompt', { prompt, error_message: errorMsg }, { params });
       qc.invalidateQueries({ queryKey: ['settings', clientId] });
       toast.success('AI prompt saved');
     } catch {
@@ -140,7 +144,18 @@ export default function Settings() {
                     placeholder="You are a helpful assistant for [business name]…"
                     className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
                   />
-                  <div><Button type="submit" disabled={promptLoading}>{promptLoading ? 'Saving…' : 'Save Prompt'}</Button></div>
+                  <div className="border-t border-slate-100 pt-3 mt-1">
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">AI Unavailable Message</label>
+                    <textarea
+                      rows={3}
+                      value={errorMsg}
+                      onChange={e => setErrorMsg(e.target.value)}
+                      placeholder="We're experiencing a short technical issue. We'll get back to you in a few minutes — sorry for the inconvenience! 🙏"
+                      className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y"
+                    />
+                    <p className="text-xs text-slate-400 mt-1">Sent instantly to customers when the AI service is temporarily down. Leave blank to use the default message.</p>
+                  </div>
+                  <div><Button type="submit" disabled={promptLoading}>{promptLoading ? 'Saving…' : 'Save'}</Button></div>
                 </form>
               )}
             </>

@@ -225,6 +225,20 @@ async function init() {
         role          TEXT NOT NULL DEFAULT 'client'
       );
       ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS crm_password_hash TEXT;
+      ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS error_message TEXT;
+      CREATE TABLE IF NOT EXISTS message_retry_queue (
+        id           SERIAL PRIMARY KEY,
+        phone_number TEXT NOT NULL,
+        client_id    TEXT NOT NULL,
+        message_text TEXT NOT NULL,
+        attempts     INT NOT NULL DEFAULT 0,
+        max_attempts INT NOT NULL DEFAULT 5,
+        retry_after  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        resolved_at  TIMESTAMPTZ
+      );
+      CREATE INDEX IF NOT EXISTS idx_retry_queue_pending
+        ON message_retry_queue (retry_after) WHERE resolved_at IS NULL;
     `);
   } else {
     db.exec(`PRAGMA foreign_keys = ON;`);

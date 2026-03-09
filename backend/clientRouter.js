@@ -14,7 +14,7 @@ const CLIENT_SELECT = `
   SELECT
     c.id, c.name, c.type, c.active,
     cc.phone_number_id, cc.wa_token_env, cc.webhook_verify_token,
-    cc.ai_model, cc.system_prompt_mode, cc.custom_prompt, cc.temperature,
+    cc.ai_model, cc.system_prompt_mode, cc.custom_prompt, cc.error_message, cc.temperature,
     cc.brand_name, cc.brand_color, cc.logo_url,
     cc.order_id_prefix, cc.product_catalog_enabled, cc.max_products_in_context,
     cc.catalog_search_mode, cc.order_flow_enabled, cc.admin_password_env

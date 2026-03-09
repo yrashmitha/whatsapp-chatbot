@@ -155,7 +155,7 @@ async function buildOrderStatusNote(phoneNumber) {
 }
 
 // ─── Handle incoming message ──────────────────────────────────────────────────
-async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserInsert = false, client = null } = {}) {
+async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserInsert = false, client = null, retryNote = null } = {}) {
   console.log(`[MSG] Handling message from ${phoneNumber}: "${userMessage.substring(0, 80)}"`);
 
   await db.upsertCustomer(phoneNumber, null);
@@ -166,10 +166,25 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
 
   // Inject current order status so AI knows what documents are already received
   const statusNote = await buildOrderStatusNote(phoneNumber);
-  const messageToSend = statusNote ? `${statusNote}\n\n${userMessage}` : userMessage;
+  let messageToSend = statusNote ? `${statusNote}\n\n${userMessage}` : userMessage;
+  if (retryNote) messageToSend = `${retryNote}\n\n${messageToSend}`;
 
   console.log(`[GEMINI] Sending message to Gemini...`);
-  let result    = await chatSession.sendMessage(messageToSend);
+  let result;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      result = await chatSession.sendMessage(messageToSend);
+      break;
+    } catch (aiErr) {
+      const retryable = /503|unavailable|overloaded/i.test(aiErr.message || '');
+      console.error(`[GEMINI] Attempt ${attempt}/3 failed:`, aiErr.message);
+      if (attempt < 3 && retryable) {
+        await new Promise(r => setTimeout(r, 1000 * attempt));
+      } else {
+        throw aiErr;
+      }
+    }
+  }
   let candidate = result.response;
 
   // ── Function calling loop (product search via pgvector) ──────────────────
@@ -606,9 +621,94 @@ app.post('/webhook', (req, res) => {
       }
     } catch (err) {
       console.error(`[WEBHOOK-POST] ERROR:`, err?.response?.data ?? err.message);
+      if (from && client && userMessage) {
+        try {
+          const apology = client.error_message ||
+            "We're experiencing a short technical issue. We'll get back to you in a few minutes — sorry for the inconvenience! 🙏";
+          await sendWhatsAppMessage(from, apology, client);
+        } catch (_) {}
+        try {
+          await db.pgQuery(
+            `INSERT INTO message_retry_queue (phone_number, client_id, message_text, retry_after)
+             VALUES ($1, $2, $3, NOW() + INTERVAL '5 minutes')`,
+            [from, client.id, userMessage]
+          );
+          console.log(`[RETRY-QUEUE] Enqueued message from ${from} for retry in 5 min`);
+        } catch (qErr) {
+          console.error(`[RETRY-QUEUE] Failed to enqueue:`, qErr.message);
+        }
+      }
     }
   })();
 });
+
+// ─── Background retry worker ──────────────────────────────────────────────────
+const RETRY_DELAYS_MIN = [5, 10, 20, 40, 60];
+
+setInterval(async () => {
+  try {
+    const { rows } = await db.pgQuery(
+      `SELECT * FROM message_retry_queue
+       WHERE resolved_at IS NULL AND retry_after <= NOW() AND attempts < max_attempts
+       ORDER BY retry_after LIMIT 5`
+    );
+    if (!rows.length) return;
+
+    for (const item of rows) {
+      const nextAttempt = item.attempts + 1;
+      const nextDelay = RETRY_DELAYS_MIN[nextAttempt] || 60;
+      await db.pgQuery(
+        `UPDATE message_retry_queue SET attempts=$1, retry_after=NOW() + $2::interval WHERE id=$3`,
+        [nextAttempt, `${nextDelay} minutes`, item.id]
+      );
+
+      try {
+        console.log(`[RETRY-WORKER] Retrying msg from ${item.phone_number} (attempt ${nextAttempt}/${item.max_attempts})`);
+        const client = await clientRouter.getClientById(item.client_id);
+        if (!client) throw new Error('Client not found');
+
+        const sessionKey = `${client.id}:${item.phone_number}`;
+        if (!chatSessions.has(sessionKey)) {
+          chatSessions.set(sessionKey, {
+            chat: await buildChatSession(item.phone_number, client),
+            phoneNumber: item.phone_number,
+          });
+        }
+        const session = chatSessions.get(sessionKey);
+
+        const retryNote = `[SYSTEM: This is a retry. The customer's previous message could not be processed ${item.attempts} time(s) due to a temporary service issue. Please start your reply with a brief, natural apology for the short delay (e.g. "Sorry for the short wait! 🙏"), then respond normally to their message.]`;
+
+        const { botReply } = await handleMessage(
+          item.phone_number, item.message_text, session.chat,
+          { skipUserInsert: true, client, retryNote }
+        );
+
+        await sendWhatsAppMessage(item.phone_number, botReply, client);
+        await db.pgQuery(`UPDATE message_retry_queue SET resolved_at=NOW() WHERE id=$1`, [item.id]);
+        console.log(`[RETRY-WORKER] Success for ${item.phone_number}`);
+
+      } catch (retryErr) {
+        console.error(`[RETRY-WORKER] Attempt ${nextAttempt} failed for ${item.phone_number}:`, retryErr.message);
+        if (nextAttempt >= item.max_attempts) {
+          try {
+            const client = await clientRouter.getClientById(item.client_id);
+            if (client) {
+              await sendWhatsAppMessage(
+                item.phone_number,
+                "We sincerely apologize — we're having prolonged technical difficulties. Please try contacting us again later. We're sorry for the trouble! 🙏",
+                client
+              );
+            }
+          } catch (_) {}
+          await db.pgQuery(`UPDATE message_retry_queue SET resolved_at=NOW() WHERE id=$1`, [item.id]);
+          console.log(`[RETRY-WORKER] Max attempts reached for ${item.phone_number} — resolved as failed`);
+        }
+      }
+    }
+  } catch (e) {
+    console.error(`[RETRY-WORKER] Worker error:`, e.message);
+  }
+}, 2 * 60 * 1000);
 
 // ─── Public catalog API ────────────────────────────────────────────────────────
 // GET /api/catalog/:clientId — returns client branding + products grouped by category
@@ -1608,9 +1708,12 @@ app.put('/api/settings/password', jwtAuth, async (req, res) => {
 app.put('/api/settings/prompt', jwtAuth, async (req, res) => {
   const clientId = resolveClientId(req);
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
-  const { prompt } = req.body;
+  const { prompt, error_message } = req.body;
   try {
-    await db.pgQuery(`UPDATE client_configs SET custom_prompt=$1, system_prompt_mode='custom', updated_at=NOW() WHERE client_id=$2`, [prompt || null, clientId]);
+    await db.pgQuery(
+      `UPDATE client_configs SET custom_prompt=$1, error_message=$2, system_prompt_mode='custom', updated_at=NOW() WHERE client_id=$3`,
+      [prompt || null, error_message !== undefined ? (error_message || null) : null, clientId]
+    );
     clientRouter.invalidateCache(clientId);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1621,7 +1724,7 @@ app.get('/api/settings', jwtAuth, async (req, res) => {
   const clientId = resolveClientId(req);
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
   try {
-    const r = await db.pgQuery(`SELECT custom_prompt, system_prompt_mode, temperature, brand_name, brand_color FROM client_configs WHERE client_id=$1`, [clientId]);
+    const r = await db.pgQuery(`SELECT custom_prompt, error_message, system_prompt_mode, temperature, brand_name, brand_color FROM client_configs WHERE client_id=$1`, [clientId]);
     res.json(r.rows[0] || {});
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

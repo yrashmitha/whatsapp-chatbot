@@ -176,7 +176,7 @@ async function buildOrderStatusNote(phoneNumber) {
 
 // ─── Handle incoming message ──────────────────────────────────────────────────
 async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserInsert = false, client = null, retryNote = null } = {}) {
-  console.log(`[MSG] Handling message from ${phoneNumber}: "${userMessage.substring(0, 80)}"`);
+  console.log(`[IN] ${phoneNumber}: "${userMessage.substring(0, 100)}"`);
 
   await db.upsertCustomer(phoneNumber, null, client?.id);
   if (!skipUserInsert) {
@@ -282,10 +282,16 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     }
   }
 
-  let botReply  = candidate.text()
+  let botReply  = (candidate.text() || '')
     .replace(/\*\*([^*\n]+)\*\*/g, '*$1*') // convert markdown **bold** → WhatsApp *bold*
     .replace(/\[ORDER STATUS[^\]]*\]\s*/gi, '') // strip any echoed ORDER STATUS note wherever it appears
     .trim();
+
+  // If Gemini returned empty text (e.g. incomplete function call cycle), send a safe fallback
+  if (!botReply) {
+    console.warn('[GEMINI] Empty reply after processing — using fallback');
+    botReply = client?.error_message || "Sorry, I didn't get that. Could you please try again? 🙏";
+  }
 
   // Extract [[SEND_IMAGE:filename]] markers
   const IMAGE_RE = /\[\[SEND_IMAGE:([^\]]+)\]\]/g;
@@ -302,8 +308,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   const inputTokens  = usage.promptTokenCount     || usage.inputTokenCount  || 0;
   const outputTokens = usage.candidatesTokenCount || usage.outputTokenCount || 0;
   const callCostUSD  = calcCost(inputTokens, outputTokens);
-  console.log(`[GEMINI] Tokens: in=${inputTokens} out=${outputTokens} cost=$${callCostUSD.toFixed(6)}`);
-  console.log(`[GEMINI] Reply (first 120 chars): "${botReply.substring(0, 120)}"`);
+  console.log(`[OUT] "${botReply.substring(0, 120)}" | tokens in=${inputTokens} out=${outputTokens} cost=$${callCostUSD.toFixed(6)}`);
 
   let orderId = null;
   const orderMatch = botReply.match(ORDER_MARKER_REGEX);
@@ -571,6 +576,9 @@ app.get('/webhook', (req, res) => {
 app.post('/webhook', (req, res) => {
   res.sendStatus(200);
 
+  // Declare outside try so catch block can reference them for error recovery
+  let from = null, client = null, userMessage = null;
+
   (async () => {
     try {
       const value = req.body?.entry?.[0]?.changes?.[0]?.value;
@@ -583,7 +591,7 @@ app.post('/webhook', (req, res) => {
 
       // ── Resolve client from incoming phone_number_id ──────────────────────
       const incomingPhoneNumberId = value.metadata?.phone_number_id;
-      let client = await clientRouter.getClientByPhoneNumberId(incomingPhoneNumberId)
+      client = await clientRouter.getClientByPhoneNumberId(incomingPhoneNumberId)
         || clientRouter.buildLocalClient();
 
       // DEV OVERRIDE: set DEV_CLIENT_ID in .env to force a specific client
@@ -592,7 +600,7 @@ app.post('/webhook', (req, res) => {
       }
 
       const msg  = value.messages[0];
-      const from = msg.from;
+      from = msg.from;
       let sessionKey = `${client.id}:${from}`;
 
       console.log(`[WEBHOOK-POST] client=${client.id} msg type=${msg.type} from=${from}`);
@@ -621,8 +629,7 @@ app.post('/webhook', (req, res) => {
         await db.insertMessage(from, userLabel, 'user', null, client?.id ?? null);
 
         const { botReply, imagesToSend } = await handleMessage(from, imageNote, imgSession.chat, { skipUserInsert: true, client });
-        console.log(`[OUT] ${from}: ${botReply.substring(0, 120)}`);
-        await sendWhatsAppMessage(from, botReply, client);
+        if (botReply.trim()) await sendWhatsAppMessage(from, botReply, client);
 
         for (const filename of imagesToSend) {
           const imgCaption = filename.toLowerCase().startsWith('horoscope')
@@ -635,13 +642,12 @@ app.post('/webhook', (req, res) => {
       }
 
       // ── Text messages ───────────────────────────────────────────────────────
-      const userMessage = msg.text?.body;
+      userMessage = msg.text?.body;
       if (!userMessage) {
         console.log(`[WEBHOOK-POST] Unsupported message type "${msg.type}" from ${from} — skipping`);
         return;
       }
 
-      console.log(`[IN]  ${from}: ${userMessage}`);
 
       // Invalidate stale in-memory session if DB was cleared externally
       if (chatSessions.has(sessionKey)) {
@@ -661,8 +667,11 @@ app.post('/webhook', (req, res) => {
       const session = chatSessions.get(sessionKey);
 
       const { botReply, imagesToSend, productImagesToSend } = await handleMessage(from, userMessage, session.chat, { client });
-      console.log(`[OUT] ${from}: ${botReply.substring(0, 120)}`);
-      await sendWhatsAppMessage(from, botReply, client);
+      if (!botReply.trim()) {
+        console.warn(`[WEBHOOK-POST] Empty botReply from Gemini for ${from} — skipping send`);
+      } else {
+        await sendWhatsAppMessage(from, botReply, client);
+      }
 
       for (const filename of imagesToSend) {
         const caption = filename.toLowerCase().startsWith('horoscope')

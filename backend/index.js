@@ -179,7 +179,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
 
   await db.upsertCustomer(phoneNumber, null, client?.id);
   if (!skipUserInsert) {
-    await db.insertMessage(phoneNumber, userMessage, 'user');
+    await db.insertMessage(phoneNumber, userMessage, 'user', null, client?.id ?? null);
     console.log(`[DB] Saved user message for ${phoneNumber}`);
   }
 
@@ -375,7 +375,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     paymentReceived = true;
   }
 
-  await db.insertMessage(phoneNumber, botReply, 'bot', callCostUSD);
+  await db.insertMessage(phoneNumber, botReply, 'bot', callCostUSD, client?.id ?? null);
   console.log(`[DB] Saved bot reply for ${phoneNumber} cost=$${callCostUSD.toFixed(6)}`);
 
   // Sliding window: keep only last 40 entries in memory, drop oldest from front
@@ -617,7 +617,7 @@ app.post('/webhook', (req, res) => {
 
         const mediaId = msg.image?.id || '';
         const userLabel = `[Photo:${mediaId}]${caption ? ` ${caption}` : ''}`;
-        await db.insertMessage(from, userLabel, 'user');
+        await db.insertMessage(from, userLabel, 'user', null, client?.id ?? null);
 
         const { botReply, imagesToSend } = await handleMessage(from, imageNote, imgSession.chat, { skipUserInsert: true, client });
         console.log(`[OUT] ${from}: ${botReply.substring(0, 120)}`);
@@ -628,7 +628,7 @@ app.post('/webhook', (req, res) => {
             ? 'ලග්න කොටු 12 සහ නවාංශ කොටු 12 දෙකම පෙනෙන ලෙස photo send කරන්න 🙏'
             : 'මේවා මම ඉක්මනින්ම හොයාගත්ත කීප දෙනෙකුගේ screenshots 🙏';
           await sendWhatsAppImage(from, filename, imgCaption, client);
-          await db.insertMessage(from, `[Image: ${filename}]`, 'bot');
+          await db.insertMessage(from, `[Image: ${filename}]`, 'bot', null, client?.id ?? null);
         }
         return;
       }
@@ -668,7 +668,7 @@ app.post('/webhook', (req, res) => {
           ? 'ලග්න කොටු 12 සහ නවාංශ කොටු 12 දෙකම පෙනෙන ලෙස photo send කරන්න 🙏'
           : 'මේවා මම ඉක්මනින්ම හොයාගත්ත කීප දෙනෙකුගේ screenshots 🙏';
         await sendWhatsAppImage(from, filename, caption, client);
-        await db.insertMessage(from, `[Image: ${filename}]`, 'bot');
+        await db.insertMessage(from, `[Image: ${filename}]`, 'bot', null, client?.id ?? null);
       }
 
       // Send product images from RAG search
@@ -679,7 +679,7 @@ app.post('/webhook', (req, res) => {
             { messaging_product: 'whatsapp', to: from, type: 'image', image: { link: url, caption } },
             { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
           );
-          await db.insertMessage(from, `[Product Image: ${caption}]`, 'bot');
+          await db.insertMessage(from, `[Product Image: ${caption}]`, 'bot', null, client?.id ?? null);
           console.log(`[WA-IMG] Product image sent: ${caption}`);
         } catch (e) {
           console.warn(`[WA-IMG] Failed to send product image "${caption}":`, e?.response?.data ?? e.message);
@@ -1472,14 +1472,14 @@ app.post('/api/send', jwtAuth, async (req, res) => {
     const client = clientId ? await clientRouter.getClientById(clientId) : null;
     if (type === 'text') {
       await sendWhatsAppMessage(phone, message, client);
-      await db.insertMessage(phone, message, 'bot');
+      await db.insertMessage(phone, message, 'bot', null, clientId);
     } else if (type === 'image' && mediaUrl) {
       await axios.post(
         `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
         { messaging_product: 'whatsapp', to: phone, type: 'image', image: { link: mediaUrl, caption: message } },
         { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
       );
-      await db.insertMessage(phone, `[Image] ${message}`, 'bot');
+      await db.insertMessage(phone, `[Image] ${message}`, 'bot', null, clientId);
     }
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e?.response?.data?.error?.message || e.message }); }

@@ -214,6 +214,10 @@ async function init() {
       -- Backfill orders.client_id from customers table where null
       UPDATE orders o SET client_id = c.client_id
       FROM customers c WHERE c.phone_number = o.phone_number AND o.client_id IS NULL AND c.client_id IS NOT NULL;
+
+      -- Backfill messages.client_id from customers table where null
+      UPDATE messages m SET client_id = c.client_id
+      FROM customers c WHERE c.phone_number = m.phone_number AND m.client_id IS NULL AND c.client_id IS NOT NULL;
     `);
 
     // ── Dynamic order fields migration ──────────────────────────────────────
@@ -382,14 +386,14 @@ async function init() {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-async function insertMessage(phoneNumber, text, senderType, costUsd = null) {
+async function insertMessage(phoneNumber, text, senderType, costUsd = null, clientId = null) {
   if (IS_PG) {
     await pool.query(
-      'INSERT INTO messages (phone_number, message_text, sender_type, cost_usd) VALUES ($1, $2, $3, $4)',
-      [phoneNumber, text, senderType, costUsd]
+      'INSERT INTO messages (phone_number, message_text, sender_type, cost_usd, client_id) VALUES ($1, $2, $3, $4, $5)',
+      [phoneNumber, text, senderType, costUsd, clientId]
     );
   } else {
-    db.prepare('INSERT INTO messages (phone_number, message_text, sender_type, cost_usd) VALUES (?, ?, ?, ?)').run(phoneNumber, text, senderType, costUsd);
+    db.prepare('INSERT INTO messages (phone_number, message_text, sender_type, cost_usd, client_id) VALUES (?, ?, ?, ?, ?)').run(phoneNumber, text, senderType, costUsd, clientId);
   }
 }
 

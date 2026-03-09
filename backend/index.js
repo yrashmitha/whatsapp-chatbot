@@ -112,7 +112,7 @@ async function buildChatSession(phoneNumber, client) {
     tools = [{
       functionDeclarations: [{
         name: 'search_products',
-        description: 'Search the product catalog. Call this when a customer asks about products, availability, price, or features.' + attrHint + ' STRICT RULE: Only tell the customer about products that appear in the search results. If the result is "No matching products found", tell the customer that item is not available. NEVER invent, guess, or mention any product not returned by this search.',
+        description: 'Search the product catalog. You MUST call this function BEFORE recommending, describing, or naming any specific product — even when making suggestions based on customer preferences (e.g. "office scent", "fresh", "woody"). Build a query from the customer\'s preferences and search first. Call this when a customer asks about products, availability, price, features, or when you want to recommend something.' + attrHint + ' STRICT RULE: Only tell the customer about products that appear in the search results. If the result is "No matching products found", tell the customer that item is not available. NEVER invent, guess, or mention any product not returned by this search.',
         parameters: {
           type: 'OBJECT',
           properties: {

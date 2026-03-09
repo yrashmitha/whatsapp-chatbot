@@ -11,7 +11,7 @@ const bcrypt  = require('bcryptjs');
 const jwt     = require('jsonwebtoken');
 const upload  = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 const buildSystemInstruction = require('./buildInstruction');
-const { buildOrderFieldsInstruction, buildContactInstruction } = require('./buildInstruction');
+const { buildOrderFieldsInstruction, buildContactInstruction, buildLanguageInstruction } = require('./buildInstruction');
 const db           = require('./db');
 const clientRouter = require('./clientRouter');
 const { embedText, productToText } = require('./embedder');
@@ -89,7 +89,8 @@ async function buildChatSession(phoneNumber, client) {
     const baseInstruction = buildSystemInstruction.forClient(client);
     const orderFieldsBlock = buildOrderFieldsInstruction(client.order_fields || []);
     const contactBlock = buildContactInstruction(client.contact_number || null);
-    const fullInstruction = baseInstruction + orderFieldsBlock + contactBlock;
+    const languageBlock = buildLanguageInstruction();
+    const fullInstruction = baseInstruction + orderFieldsBlock + contactBlock + languageBlock;
     chatModel = genAI.getGenerativeModel({
       model: client.ai_model || 'gemini-2.5-flash',
       systemInstruction: fullInstruction,
@@ -100,7 +101,7 @@ async function buildChatSession(phoneNumber, client) {
         maxOutputTokens: 1024,
       },
     });
-    console.log(`[SESSION] Built client model for ${client.id} (mode=${client.system_prompt_mode}, orderFields=${client.order_fields?.length || 0})`);
+    console.log(`[SESSION] Built client model for ${client.id} | mode=${client.system_prompt_mode} | orderFields=${client.order_fields?.length || 0} | contactNumber=${client.contact_number || 'none'} | instructionLen=${fullInstruction.length}`);
   }
 
   // Build search_products tool for product-enabled clients (pgvector only)

@@ -214,6 +214,10 @@ async function init() {
       CREATE INDEX IF NOT EXISTS idx_customers_client ON customers (client_id);
       CREATE INDEX IF NOT EXISTS idx_messages_client  ON messages  (client_id);
       CREATE INDEX IF NOT EXISTS idx_orders_client    ON orders    (client_id);
+
+      -- Backfill orders.client_id from customers table where null
+      UPDATE orders o SET client_id = c.client_id
+      FROM customers c WHERE c.phone_number = o.phone_number AND o.client_id IS NULL AND c.client_id IS NOT NULL;
     `);
 
     // ── CRM auth tables ──────────────────────────────────────────────────────
@@ -380,16 +384,16 @@ async function upsertCustomer(phoneNumber, name) {
   }
 }
 
-async function insertOrder(orderId, phoneNumber, pkg, birthDate, birthTime, birthCity, problems) {
+async function insertOrder(orderId, phoneNumber, pkg, birthDate, birthTime, birthCity, problems, clientId) {
   if (IS_PG) {
     await pool.query(
-      'INSERT INTO orders (order_id, phone_number, package, birth_date, birth_time, birth_city, problems) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-      [orderId, phoneNumber, pkg, birthDate, birthTime, birthCity, problems]
+      'INSERT INTO orders (order_id, phone_number, package, birth_date, birth_time, birth_city, problems, client_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+      [orderId, phoneNumber, pkg, birthDate, birthTime, birthCity, problems, clientId || null]
     );
   } else {
     db.prepare(
-      'INSERT INTO orders (order_id, phone_number, package, birth_date, birth_time, birth_city, problems) VALUES (?,?,?,?,?,?,?)'
-    ).run(orderId, phoneNumber, pkg, birthDate, birthTime, birthCity, problems);
+      'INSERT INTO orders (order_id, phone_number, package, birth_date, birth_time, birth_city, problems, client_id) VALUES (?,?,?,?,?,?,?,?)'
+    ).run(orderId, phoneNumber, pkg, birthDate, birthTime, birthCity, problems, clientId || null);
   }
 }
 

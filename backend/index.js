@@ -325,7 +325,8 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
         details.birth_date ?? null,
         details.birth_time ?? null,
         details.birth_city ?? null,
-        details.problems   ?? null
+        details.problems   ?? null,
+        client?.id ?? null
       );
       console.log(`[ORDER] Saved order ${orderId} for ${phoneNumber}`);
       if (details.customer_name) {

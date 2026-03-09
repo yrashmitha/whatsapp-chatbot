@@ -11,7 +11,7 @@ const bcrypt  = require('bcryptjs');
 const jwt     = require('jsonwebtoken');
 const upload  = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 const buildSystemInstruction = require('./buildInstruction');
-const { buildOrderFieldsInstruction, buildContactInstruction, buildLanguageInstruction } = require('./buildInstruction');
+const { buildOrderFieldsInstruction, buildContactInstruction } = require('./buildInstruction');
 const db           = require('./db');
 const clientRouter = require('./clientRouter');
 const { embedText, productToText } = require('./embedder');
@@ -89,8 +89,7 @@ async function buildChatSession(phoneNumber, client) {
     const baseInstruction = buildSystemInstruction.forClient(client);
     const orderFieldsBlock = buildOrderFieldsInstruction(client.order_fields || []);
     const contactBlock = buildContactInstruction(client.contact_number || null);
-    const languageBlock = buildLanguageInstruction();
-    const fullInstruction = baseInstruction + orderFieldsBlock + contactBlock + languageBlock;
+    const fullInstruction = baseInstruction + orderFieldsBlock + contactBlock;
     chatModel = genAI.getGenerativeModel({
       model: client.ai_model || 'gemini-2.5-flash',
       systemInstruction: fullInstruction,

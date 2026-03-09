@@ -1046,7 +1046,7 @@ app.post('/admin/followup', adminAuth, async (req, res) => {
       .join('\n');
 
     const result = await model.generateContent(
-      `You are a warm assistant for a professional astrology service. Below is a conversation with a potential customer who has NOT placed an order yet.\n\nConversation:\n${historyText}\n\nWrite a single short, warm, natural follow-up WhatsApp message to re-engage this customer. Use the same language they were using. Be genuine — not pushy. Do not list packages or prices unless they previously asked. Just warmly re-open the conversation.`
+      `You are a warm assistant for a professional astrology service. Below is a conversation with a potential customer who has NOT placed an order yet.\n\nConversation:\n${historyText}\n\nWrite a single short, warm, natural follow-up WhatsApp message to re-engage this customer. Be genuine — not pushy. Do not list packages or prices unless they previously asked. Just warmly re-open the conversation.`
     );
     const followupText = result.response.text().trim();
     const usage = result.response.usageMetadata || {};

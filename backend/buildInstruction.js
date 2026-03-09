@@ -355,16 +355,7 @@ function buildContactInstruction(contactNumber) {
   return `\n\n## Escalation Rule — STRICT\nYou MUST follow this rule without exception:\n- If a customer asks something you cannot confidently answer using the knowledge and information provided to you, do NOT guess or make up an answer.\n- Instead, politely apologise and direct them to a human agent.\n- Always say something like: "I'm sorry, I'm not able to help with that right now. Please contact our team directly at *${contactNumber}* and they'll be happy to assist you."\n- This applies to: complaints, issues outside your knowledge, account problems, special requests, or anything you are uncertain about.\n- Never pretend to know something you don't. Honesty and directing to a human is always the right choice.`;
 }
 
-/**
- * Language mirroring enforcement — always appended last so it overrides any
- * conflicting "default language" instructions in the custom prompt.
- */
-function buildLanguageInstruction() {
-  return `\n\n## Language Detection — ABSOLUTE RULE (overrides everything above)\nDetect the language of the customer's CURRENT message and reply in that SAME language. No exceptions.\n- Customer writes in English → reply in English. ALWAYS. Even if your default is Sinhala.\n- Customer writes in Sinhala (unicode) → reply in Sinhala.\n- Customer writes in Singlish (romanised Sinhala, e.g. "kohomada", "price eka") → reply in Sinhala.\n- Customer writes mixed English + Sinhala → reply in natural Sinhala with English words where natural.\nNEVER reply in Sinhala to a customer who wrote their message in English. This rule has the highest priority.`;
-}
-
 module.exports = buildSystemInstruction;
 module.exports.forClient = buildSystemInstructionForClient;
 module.exports.buildOrderFieldsInstruction = buildOrderFieldsInstruction;
 module.exports.buildContactInstruction = buildContactInstruction;
-module.exports.buildLanguageInstruction = buildLanguageInstruction;

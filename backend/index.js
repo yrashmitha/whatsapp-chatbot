@@ -145,7 +145,34 @@ async function buildChatSession(phoneNumber, client) {
     console.log(`[SESSION] Product search tool enabled for client ${client.id} (${attrSchema.length} attr fields)`);
   }
 
-  return chatModel.startChat({ history: initialHistory, tools });
+  // Load last 40 messages from DB so context survives server restarts
+  const SESSION_MSG_LIMIT = 40;
+  const dbMsgs = await db.getMessagesByPhone(phoneNumber);
+  const recentMsgs = dbMsgs.slice(-SESSION_MSG_LIMIT);
+  const msgHistory = recentMsgs
+    .filter(m => !m.message_text.startsWith('[SYSTEM NOTE'))
+    .map(m => ({
+      role: m.sender_type === 'user' ? 'user' : 'model',
+      parts: [{ text: m.message_text }],
+    }));
+
+  // Gemini requires alternating user/model turns — merge consecutive same-role entries
+  const mergedHistory = [];
+  for (const msg of msgHistory) {
+    const last = mergedHistory[mergedHistory.length - 1];
+    if (last && last.role === msg.role) {
+      last.parts[0].text += '\n' + msg.parts[0].text;
+    } else {
+      mergedHistory.push({ role: msg.role, parts: [{ text: msg.parts[0].text }] });
+    }
+  }
+  // History must start with 'user' turn
+  while (mergedHistory.length > 0 && mergedHistory[0].role !== 'user') mergedHistory.shift();
+
+  const fullHistory = [...initialHistory, ...mergedHistory];
+  console.log(`[SESSION] Loaded ${mergedHistory.length} messages from DB into session context`);
+
+  return chatModel.startChat({ history: fullHistory, tools });
 }
 
 async function buildOrderStatusNote(phoneNumber) {

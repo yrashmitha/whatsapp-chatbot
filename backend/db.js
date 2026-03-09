@@ -648,6 +648,7 @@ async function vectorSearchProducts(clientId, embedding, limit = 10) {
             1 - (embedding <=> $2::vector) AS similarity
      FROM client_products
      WHERE client_id = $1 AND active = TRUE AND embedding IS NOT NULL
+       AND (1 - (embedding <=> $2::vector)) > 0.5
      ORDER BY embedding <=> $2::vector
      LIMIT $3`,
     [clientId, JSON.stringify(embedding), limit]

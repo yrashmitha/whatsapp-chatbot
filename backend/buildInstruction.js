@@ -323,7 +323,7 @@ function buildOrderFieldsInstruction(orderFields) {
     return '';
   }
 
-  const template = { customer_name: "<customer's full name>", product: "<product name and price, e.g. Azzaro Chrome 5ml — Rs 1400>" };
+  const template = { customer_name: "<customer's full name>", product: "<product name and price, e.g. Azzaro Chrome 5ml — Rs 1400>", product_id: "<the product_id value shown in brackets in search results, e.g. 42>" };
   for (const f of orderFields) {
     template[f.key] = f.description ? `<${f.description}>` : `<${f.label}>`;
   }

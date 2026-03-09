@@ -241,7 +241,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
         const attrs = p.attributes && typeof p.attributes === 'object' && Object.keys(p.attributes).length > 0
           ? ' | ' + Object.entries(p.attributes).map(([k, v]) => `${k}: ${v}`).join(', ')
           : '';
-        return `• ${p.name}${p.sku ? ` (${p.sku})` : ''} | ${p.currency} ${price}${p.category ? ` | ${p.category}` : ''}${attrs}${p.description ? ` — ${p.description}` : ''}`;
+        return `• [product_id:${p.id}] ${p.name}${p.sku ? ` (${p.sku})` : ''} | ${p.currency} ${price}${p.category ? ` | ${p.category}` : ''}${attrs}${p.description ? ` — ${p.description}` : ''}`;
       }).join('\n');
 
       let products = [];
@@ -1625,6 +1625,15 @@ app.get('/api/products', jwtAuth, async (req, res) => {
       countR = await db.pgQuery(`SELECT COUNT(*) FROM client_products WHERE client_id=$1`, [clientId]);
     }
     res.json({ products: r.rows, total: parseInt(countR.rows[0].count) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/products/:id
+app.get('/api/products/:id', jwtAuth, async (req, res) => {
+  try {
+    const r = await db.pgQuery(`SELECT * FROM client_products WHERE id=$1`, [req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
+    res.json({ product: r.rows[0] });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

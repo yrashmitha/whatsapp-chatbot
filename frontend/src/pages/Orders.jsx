@@ -55,14 +55,21 @@ export default function Orders() {
     onError: () => toast.error('Failed to update order'),
   });
 
-  const handleProductClick = async (productValue, orderClientId) => {
+  const handleProductClick = async (cf, orderClientId) => {
     setProductPopup('loading');
-    const name = productValue.split(/\s*[—–-]\s*Rs/i)[0].trim();
-    const searchClientId = orderClientId || clientId;
     try {
-      const r = await api.get('/products', { params: { search: name, limit: 5, ...(searchClientId && { client_id: searchClientId }) } });
-      const products = r.data.products || [];
-      setProductPopup(products.length ? products : 'notfound');
+      if (cf.product_id) {
+        const r = await api.get(`/products/${cf.product_id}`);
+        setProductPopup(r.data.product ? [r.data.product] : 'notfound');
+      } else if (cf.product) {
+        const name = String(cf.product).split(/\s*[—–-]\s*Rs/i)[0].trim();
+        const searchClientId = orderClientId || clientId;
+        const r = await api.get('/products', { params: { search: name, limit: 5, ...(searchClientId && { client_id: searchClientId }) } });
+        const products = r.data.products || [];
+        setProductPopup(products.length ? products : 'notfound');
+      } else {
+        setProductPopup('notfound');
+      }
     } catch { setProductPopup('notfound'); }
   };
 
@@ -192,11 +199,11 @@ export default function Orders() {
                               </div>
                             ) : (
                               <div className="grid grid-cols-2 gap-x-8 gap-y-1">
-                                {Object.entries(cf).map(([k, v]) => (
+                                {Object.entries(cf).filter(([k]) => k !== 'product_id').map(([k, v]) => (
                                   <div key={k} className="flex gap-2 text-xs">
                                     <span className="text-slate-400 capitalize shrink-0">{k.replace(/_/g, ' ')}:</span>
                                     {k === 'product' && v ? (
-                                      <button onClick={() => handleProductClick(String(v), o.client_id)}
+                                      <button onClick={() => handleProductClick(cf, o.client_id)}
                                         className="text-violet-600 hover:text-violet-800 underline cursor-pointer bg-transparent border-0 text-xs text-left p-0">
                                         {String(v)}
                                       </button>

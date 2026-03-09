@@ -320,7 +320,9 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
 
     let details = null;
     try {
-      details = JSON.parse(orderMatch[1]);
+      // Gemini sometimes escapes apostrophes as \' which is invalid JSON — sanitize first
+      const sanitized = orderMatch[1].replace(/\\'/g, "'");
+      details = JSON.parse(sanitized);
     } catch (e) {
       console.error(`[ORDER] Failed to parse order JSON from marker:`, e.message, orderMatch[1]);
     }

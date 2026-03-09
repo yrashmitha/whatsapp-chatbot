@@ -203,29 +203,9 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     }
   }
 
-  // Detect message language and prepend a hard directive so Gemini mirrors it correctly
-  const hasSinhalaScript = /[\u0D80-\u0DFF]/.test(userMessage);
-  const SINGLISH_WORDS = /\b(kohomada|mokakda|mokada|eka|neda|nee|wada|oya|api|mama|thiyenawa|thiyena|karanna|ganna|yanna|denna|wediya|godak|aluth|puluwan|bariyo|hadanna|kiyala|wela|nam|hari|anik|ehema|methana|oyata|mage|wage|lassana|honda|nikan|epa|machan|nangi|aiya|akka|ayye|koheda|kiyanneko|kauda|kiyanawa|kiyanne|danne|denne|thnx)\b/i;
-  const isSinglish = !hasSinhalaScript && SINGLISH_WORDS.test(userMessage);
-  const hasLatinOnly = !hasSinhalaScript && /[a-zA-Z]/.test(userMessage);
-
-  // Check for non-Latin, non-Sinhala scripts (Arabic, Tamil, Hindi, etc.)
-  const hasOtherScript = !hasSinhalaScript && /[\u0600-\u06FF\u0900-\u097F\u0B80-\u0BFF\u4E00-\u9FFF\u3040-\u30FF\u1100-\u11FF]/.test(userMessage);
-
-  const langHint = hasSinhalaScript
-    ? '[LANGUAGE DIRECTIVE: Customer wrote in Sinhala script. You MUST reply in Sinhala script only.]'
-    : isSinglish
-    ? '[LANGUAGE DIRECTIVE: Customer wrote in Singlish (romanised Sinhala). You MUST reply in Sinhala script only.]'
-    : hasOtherScript
-    ? '[LANGUAGE DIRECTIVE: Customer wrote in a non-English script. Detect their language and reply in that SAME language only.]'
-    : hasLatinOnly
-    ? '[LANGUAGE DIRECTIVE: Customer wrote in English. You MUST reply in English only. Do NOT use Sinhala.]'
-    : null;
-
   // Inject current order status so AI knows what documents are already received
   const statusNote = await buildOrderStatusNote(phoneNumber);
   let messageToSend = statusNote ? `${statusNote}\n\n${userMessage}` : userMessage;
-  if (langHint) messageToSend = `${langHint}\n${messageToSend}`;
   if (retryNote) messageToSend = `${retryNote}\n\n${messageToSend}`;
 
   console.log(`[GEMINI] Sending message to Gemini...`);

@@ -274,7 +274,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
         await db.upsertCustomer(phoneNumber, details.customer_name);
         console.log(`[DB] Updated customer name: ${details.customer_name}`);
       }
-      botReply += `\n\n✅ *ඔබේ Order ID: ${orderId}*\nමෙය ආරක්ෂිතව සටහන් කර ගන්න. ඕනෑම ප්‍රශ්නයකදී මෙම ID ඉදිරිපත් කළ හැකියි. 🙏`;
+      botReply += `\n\n✅ *ඔබේ Order ID: ${orderId}*`;
     } else {
       console.warn(`[ORDER] ORDER_COMPLETE marker found but extractOrderDetails returned null`);
     }

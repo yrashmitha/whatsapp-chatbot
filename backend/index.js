@@ -101,7 +101,8 @@ async function buildChatSession(phoneNumber, client) {
         maxOutputTokens: 1024,
       },
     });
-    console.log(`[SESSION] Built client model for ${client.id} | mode=${client.system_prompt_mode} | orderFields=${client.order_fields?.length || 0} | contactNumber=${client.contact_number || 'none'} | instructionLen=${fullInstruction.length} | promptStart="${fullInstruction.substring(0, 80).replace(/\n/g, ' ')}"`);
+    console.log(`[SESSION] Built client model for ${client.id} | mode=${client.system_prompt_mode} | orderFields=${client.order_fields?.length || 0} | contactNumber=${client.contact_number || 'none'} | instructionLen=${fullInstruction.length}`);
+    console.log(`[SESSION] Full system instruction: ${fullInstruction.replace(/\n/g, '\\n')}`);
   }
 
   // Build search_products tool for product-enabled clients (pgvector only)

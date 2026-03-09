@@ -52,14 +52,10 @@ async function init() {
         id                  SERIAL PRIMARY KEY,
         order_id            TEXT UNIQUE NOT NULL,
         phone_number        TEXT NOT NULL REFERENCES customers(phone_number) ON DELETE CASCADE,
-        package             TEXT,
-        birth_date          TEXT,
-        birth_time          TEXT,
-        birth_city          TEXT,
-        problems            TEXT,
         status              TEXT NOT NULL DEFAULT 'pending',
         horoscope_received  BOOLEAN NOT NULL DEFAULT FALSE,
         receipt_received    BOOLEAN NOT NULL DEFAULT FALSE,
+        custom_fields       JSONB,
         created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
     `);
@@ -220,6 +216,33 @@ async function init() {
       FROM customers c WHERE c.phone_number = o.phone_number AND o.client_id IS NULL AND c.client_id IS NOT NULL;
     `);
 
+    // ── Dynamic order fields migration ──────────────────────────────────────
+    await pool.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='client_configs' AND column_name='order_fields') THEN
+          ALTER TABLE client_configs ADD COLUMN order_fields JSONB NOT NULL DEFAULT '[]';
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='custom_fields') THEN
+          ALTER TABLE orders ADD COLUMN custom_fields JSONB;
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='package') THEN
+          ALTER TABLE orders DROP COLUMN package;
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='birth_date') THEN
+          ALTER TABLE orders DROP COLUMN birth_date;
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='birth_time') THEN
+          ALTER TABLE orders DROP COLUMN birth_time;
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='birth_city') THEN
+          ALTER TABLE orders DROP COLUMN birth_city;
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='problems') THEN
+          ALTER TABLE orders DROP COLUMN problems;
+        END IF;
+      END $$;
+    `);
+
     // ── CRM auth tables ──────────────────────────────────────────────────────
     await pool.query(`
       CREATE TABLE IF NOT EXISTS crm_users (
@@ -264,14 +287,10 @@ async function init() {
         id                  INTEGER PRIMARY KEY AUTOINCREMENT,
         order_id            TEXT UNIQUE NOT NULL,
         phone_number        TEXT NOT NULL REFERENCES customers(phone_number) ON DELETE CASCADE,
-        package             TEXT,
-        birth_date          TEXT,
-        birth_time          TEXT,
-        birth_city          TEXT,
-        problems            TEXT,
         status              TEXT NOT NULL DEFAULT 'pending',
         horoscope_received  INTEGER NOT NULL DEFAULT 0,
         receipt_received    INTEGER NOT NULL DEFAULT 0,
+        custom_fields       TEXT,
         created_at          TEXT NOT NULL DEFAULT (datetime('now'))
       );
     `);
@@ -351,6 +370,10 @@ async function init() {
     db.exec(`UPDATE customers SET client_id='astrology_001' WHERE client_id IS NULL`);
     db.exec(`UPDATE messages  SET client_id='astrology_001' WHERE client_id IS NULL`);
     db.exec(`UPDATE orders    SET client_id='astrology_001' WHERE client_id IS NULL`);
+    // Dynamic order fields migration
+    try { db.exec(`ALTER TABLE client_configs ADD COLUMN order_fields TEXT NOT NULL DEFAULT '[]'`); } catch (_) {}
+    try { db.exec(`ALTER TABLE orders ADD COLUMN custom_fields TEXT`); } catch (_) {}
+    // SQLite cannot DROP columns — old columns (package, birth_date, etc.) remain but are ignored
   }
 }
 
@@ -384,16 +407,16 @@ async function upsertCustomer(phoneNumber, name) {
   }
 }
 
-async function insertOrder(orderId, phoneNumber, pkg, birthDate, birthTime, birthCity, problems, clientId) {
+async function insertOrder(orderId, phoneNumber, clientId, customFields) {
   if (IS_PG) {
     await pool.query(
-      'INSERT INTO orders (order_id, phone_number, package, birth_date, birth_time, birth_city, problems, client_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
-      [orderId, phoneNumber, pkg, birthDate, birthTime, birthCity, problems, clientId || null]
+      'INSERT INTO orders (order_id, phone_number, client_id, custom_fields) VALUES ($1,$2,$3,$4)',
+      [orderId, phoneNumber, clientId || null, customFields || null]
     );
   } else {
     db.prepare(
-      'INSERT INTO orders (order_id, phone_number, package, birth_date, birth_time, birth_city, problems, client_id) VALUES (?,?,?,?,?,?,?,?)'
-    ).run(orderId, phoneNumber, pkg, birthDate, birthTime, birthCity, problems, clientId || null);
+      'INSERT INTO orders (order_id, phone_number, client_id, custom_fields) VALUES (?,?,?,?)'
+    ).run(orderId, phoneNumber, clientId || null, customFields ? JSON.stringify(customFields) : null);
   }
 }
 

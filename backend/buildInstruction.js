@@ -275,10 +275,11 @@ SYSTEM STATUS NOTES (injected as [ORDER STATUS: ...] before each message — use
 - receipt_received=true → already received receipt, do NOT ask again
 
 MARKER RULES (each used once only):
-- [[ORDER_COMPLETE]] → when sharing payment details
+- [[ORDER_COMPLETE:{"customer_name":"<name>","package":"<package>","birth_date":"<DD/MM/YYYY>","birth_time":"<HH:MM AM/PM>","birth_city":"<city>","problems":"<problems or null>"}]] → emit when sharing payment details, fill real values in the JSON
 - [[HOROSCOPE_RECEIVED]] → when customer sends horoscope photo
 - [[PAYMENT_CHECK]] → when customer sends payment receipt
 - Never repeat any marker. Never invent an Order ID.
+- The ORDER_COMPLETE marker must be on its own line with no extra text around it.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 FORMATTING
@@ -313,5 +314,30 @@ function buildSystemInstructionForClient(client) {
   return buildSystemInstruction();
 }
 
+/**
+ * Builds the order fields instruction block appended to any system prompt.
+ * Tells the AI what fields to collect and the exact JSON structure to embed in the marker.
+ */
+function buildOrderFieldsInstruction(orderFields) {
+  if (!orderFields || orderFields.length === 0) {
+    return '';
+  }
+
+  const template = { customer_name: "<customer's full name>" };
+  for (const f of orderFields) {
+    template[f.key] = f.description ? `<${f.description}>` : `<${f.label}>`;
+  }
+
+  const fieldList = orderFields
+    .map((f, i) => {
+      const req = f.required ? '(required)' : '(optional)';
+      const desc = f.description ? ` — ${f.description}` : '';
+      return `${i + 1}. ${f.label} ${req}${desc}`;
+    }).join('\n');
+
+  return `\n\n## Order Information Required\nWhen a customer wants to place an order, collect ALL of the following before confirming:\n${fieldList}\n\nOnce the customer has confirmed all details, emit EXACTLY this on its own line (fill real values, no extra text around the marker):\n[[ORDER_COMPLETE:${JSON.stringify(template)}]]`;
+}
+
 module.exports = buildSystemInstruction;
 module.exports.forClient = buildSystemInstructionForClient;
+module.exports.buildOrderFieldsInstruction = buildOrderFieldsInstruction;

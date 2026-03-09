@@ -11,6 +11,7 @@ const bcrypt  = require('bcryptjs');
 const jwt     = require('jsonwebtoken');
 const upload  = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 const buildSystemInstruction = require('./buildInstruction');
+const { buildOrderFieldsInstruction } = require('./buildInstruction');
 const db           = require('./db');
 const clientRouter = require('./clientRouter');
 const { embedText, productToText } = require('./embedder');
@@ -44,7 +45,7 @@ const PRICE_OUTPUT = 0.30  / 1_000_000;
 function calcCost(i, o) { return i * PRICE_INPUT + o * PRICE_OUTPUT; }
 
 // ─── Order ID generation ──────────────────────────────────────────────────────
-const ORDER_MARKER      = '[[ORDER_COMPLETE]]';
+const ORDER_MARKER_REGEX = /\[\[ORDER_COMPLETE:([\s\S]*?)\]\]/;
 const PAYMENT_MARKER    = '[[PAYMENT_CHECK]]';
 const HOROSCOPE_MARKER  = '[[HOROSCOPE_RECEIVED]]';
 
@@ -57,33 +58,6 @@ async function generateOrderId(client) {
   return id;
 }
 
-// ─── Order extraction ─────────────────────────────────────────────────────────
-async function extractOrderDetails(history) {
-  console.log(`[EXTRACT] Extracting order details from ${history.length} history messages`);
-  const historyText = history
-    .map(m => `${m.role === 'user' ? 'Customer' : 'Assistant'}: ${m.parts.map(p => p.text).join('')}`)
-    .join('\n');
-
-  const result = await model.generateContent(
-    `From the following conversation, extract the confirmed order details as JSON only (no other text). Use null for any unknown fields.\n\nConversation:\n${historyText}\n\nReturn only this JSON object:\n{"customer_name": null, "package": null, "birth_date": null, "birth_time": null, "birth_city": null, "problems": null}`
-  );
-
-  const text  = result.response.text().trim();
-  console.log(`[EXTRACT] Gemini raw response: ${text}`);
-  const match = text.match(/\{[\s\S]*?\}/);
-  if (match) {
-    try {
-      const parsed = JSON.parse(match[0]);
-      console.log(`[EXTRACT] Parsed:`, JSON.stringify(parsed));
-      return parsed;
-    } catch (e) {
-      console.error(`[EXTRACT] JSON parse failed:`, e.message);
-      return null;
-    }
-  }
-  console.warn(`[EXTRACT] No JSON found in response`);
-  return null;
-}
 
 // ─── Session builder ──────────────────────────────────────────────────────────
 async function buildChatSession(phoneNumber, client) {
@@ -94,7 +68,11 @@ async function buildChatSession(phoneNumber, client) {
 
   if (existingOrders.length > 0) {
     const orderList = existingOrders
-      .map(o => `Order ID: ${o.order_id} | Package: ${o.package || '?'} | Status: ${o.status} | horoscope_received: ${!!o.horoscope_received} | receipt_received: ${!!o.receipt_received} | Date: ${String(o.created_at).split('T')[0]}`)
+      .map(o => {
+        const cf = o.custom_fields ? (typeof o.custom_fields === 'string' ? (() => { try { return JSON.parse(o.custom_fields); } catch { return {}; } })() : o.custom_fields) : {};
+        const cfStr = Object.entries(cf).map(([k, v]) => `${k}: ${v}`).join(', ');
+        return `Order ID: ${o.order_id} | Status: ${o.status} | horoscope_received: ${!!o.horoscope_received} | receipt_received: ${!!o.receipt_received} | Date: ${String(o.created_at).split('T')[0]}${cfStr ? ' | ' + cfStr : ''}`;
+      })
       .join('\n');
 
     initialHistory = [
@@ -104,13 +82,15 @@ async function buildChatSession(phoneNumber, client) {
     console.log(`[SESSION] Injected order history into initial context`);
   }
 
-  // Use per-client model if the client has a custom prompt or different model
+  // Always build per-client model to inject order fields + custom prompt
   let chatModel = model;
-  if (client && (client.system_prompt_mode === 'custom' || client.ai_model !== 'gemini-2.5-flash')) {
-    const instruction = buildSystemInstruction.forClient(client);
+  if (client) {
+    const baseInstruction = buildSystemInstruction.forClient(client);
+    const orderFieldsBlock = buildOrderFieldsInstruction(client.order_fields || []);
+    const fullInstruction = baseInstruction + orderFieldsBlock;
     chatModel = genAI.getGenerativeModel({
       model: client.ai_model || 'gemini-2.5-flash',
-      systemInstruction: instruction,
+      systemInstruction: fullInstruction,
       generationConfig: {
         temperature: parseFloat(client.temperature) || 0.7,
         topP: 0.95,
@@ -118,7 +98,7 @@ async function buildChatSession(phoneNumber, client) {
         maxOutputTokens: 1024,
       },
     });
-    console.log(`[SESSION] Using custom model for client ${client.id} (mode=${client.system_prompt_mode})`);
+    console.log(`[SESSION] Built client model for ${client.id} (mode=${client.system_prompt_mode}, orderFields=${client.order_fields?.length || 0})`);
   }
 
   // Build search_products tool for product-enabled clients (pgvector only)
@@ -310,24 +290,21 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   console.log(`[GEMINI] Reply (first 120 chars): "${botReply.substring(0, 120)}"`);
 
   let orderId = null;
-  if (botReply.includes(ORDER_MARKER)) {
-    console.log(`[ORDER] ORDER_COMPLETE marker detected — starting order save`);
-    botReply = botReply.replace(ORDER_MARKER, '').trim();
+  const orderMatch = botReply.match(ORDER_MARKER_REGEX);
+  if (orderMatch) {
+    console.log(`[ORDER] ORDER_COMPLETE marker detected`);
+    botReply = botReply.replace(ORDER_MARKER_REGEX, '').trim();
 
-    const history = await chatSession.getHistory();
-    const details = await extractOrderDetails(history);
+    let details = null;
+    try {
+      details = JSON.parse(orderMatch[1]);
+    } catch (e) {
+      console.error(`[ORDER] Failed to parse order JSON from marker:`, e.message, orderMatch[1]);
+    }
 
     if (details) {
       orderId = await generateOrderId(client);
-      await db.insertOrder(
-        orderId, phoneNumber,
-        details.package    ?? null,
-        details.birth_date ?? null,
-        details.birth_time ?? null,
-        details.birth_city ?? null,
-        details.problems   ?? null,
-        client?.id ?? null
-      );
+      await db.insertOrder(orderId, phoneNumber, client?.id ?? null, details);
       console.log(`[ORDER] Saved order ${orderId} for ${phoneNumber}`);
       if (details.customer_name) {
         await db.upsertCustomer(phoneNumber, details.customer_name);
@@ -335,7 +312,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
       }
       botReply += `\n\n✅ *ඔබේ Order ID: ${orderId}*\nමෙය ආරක්ෂිතව සටහන් කර ගන්න. ඕනෑම ප්‍රශ්නයකදී මෙම ID ඉදිරිපත් කළ හැකියි. 🙏`;
     } else {
-      console.warn(`[ORDER] ORDER_COMPLETE marker found but extractOrderDetails returned null`);
+      console.warn(`[ORDER] ORDER_COMPLETE marker found but JSON parse failed`);
     }
   }
 
@@ -1761,11 +1738,22 @@ app.put('/api/settings/password', jwtAuth, async (req, res) => {
 app.put('/api/settings/prompt', jwtAuth, async (req, res) => {
   const clientId = resolveClientId(req);
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
-  const { prompt, error_message } = req.body;
+  const { prompt, error_message, order_fields } = req.body;
+  let parsedFields = [];
+  if (Array.isArray(order_fields)) {
+    parsedFields = order_fields
+      .map(f => ({
+        key: String(f.key || '').trim(),
+        label: String(f.label || '').trim(),
+        description: String(f.description || '').trim(),
+        required: Boolean(f.required),
+      }))
+      .filter(f => f.key && f.label);
+  }
   try {
     await db.pgQuery(
-      `UPDATE client_configs SET custom_prompt=$1, error_message=$2, system_prompt_mode='custom', updated_at=NOW() WHERE client_id=$3`,
-      [prompt || null, error_message !== undefined ? (error_message || null) : null, clientId]
+      `UPDATE client_configs SET custom_prompt=$1, error_message=$2, order_fields=$3, system_prompt_mode='custom', updated_at=NOW() WHERE client_id=$4`,
+      [prompt || null, error_message || null, JSON.stringify(parsedFields), clientId]
     );
     clientRouter.invalidateCache(clientId);
     res.json({ ok: true });
@@ -1777,8 +1765,16 @@ app.get('/api/settings', jwtAuth, async (req, res) => {
   const clientId = resolveClientId(req);
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
   try {
-    const r = await db.pgQuery(`SELECT custom_prompt, error_message, system_prompt_mode, temperature, brand_name, brand_color FROM client_configs WHERE client_id=$1`, [clientId]);
-    res.json(r.rows[0] || {});
+    const r = await db.pgQuery(
+      `SELECT custom_prompt, error_message, system_prompt_mode, temperature, brand_name, brand_color, order_fields FROM client_configs WHERE client_id=$1`,
+      [clientId]
+    );
+    const row = r.rows[0] || {};
+    if (row.order_fields && typeof row.order_fields === 'string') {
+      try { row.order_fields = JSON.parse(row.order_fields); } catch { row.order_fields = []; }
+    }
+    if (!row.order_fields) row.order_fields = [];
+    res.json(row);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

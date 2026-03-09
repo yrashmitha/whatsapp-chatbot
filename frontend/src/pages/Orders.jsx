@@ -55,13 +55,14 @@ export default function Orders() {
     onError: () => toast.error('Failed to update order'),
   });
 
-  const handleProductClick = async (productValue) => {
+  const handleProductClick = async (productValue, orderClientId) => {
     setProductPopup('loading');
     const name = productValue.split(/\s*[—–-]\s*Rs/i)[0].trim();
+    const searchClientId = orderClientId || clientId;
     try {
-      const r = await api.get('/products', { params: { search: name, limit: 1, ...(clientId && { client_id: clientId }) } });
-      const p = r.data.products?.[0] || null;
-      setProductPopup(p || 'notfound');
+      const r = await api.get('/products', { params: { search: name, limit: 5, ...(searchClientId && { client_id: searchClientId }) } });
+      const products = r.data.products || [];
+      setProductPopup(products.length ? products : 'notfound');
     } catch { setProductPopup('notfound'); }
   };
 
@@ -195,7 +196,7 @@ export default function Orders() {
                                   <div key={k} className="flex gap-2 text-xs">
                                     <span className="text-slate-400 capitalize shrink-0">{k.replace(/_/g, ' ')}:</span>
                                     {k === 'product' && v ? (
-                                      <button onClick={() => handleProductClick(String(v))}
+                                      <button onClick={() => handleProductClick(String(v), o.client_id)}
                                         className="text-violet-600 hover:text-violet-800 underline cursor-pointer bg-transparent border-0 text-xs text-left p-0">
                                         {String(v)}
                                       </button>
@@ -236,26 +237,30 @@ export default function Orders() {
             ) : productPopup === 'notfound' ? (
               <div className="p-6 text-center text-slate-400 text-sm">Product not found</div>
             ) : (
-              <>
-                {productPopup.image_url && (
-                  <img src={productPopup.image_url} alt={productPopup.name} className="w-full h-48 object-cover" />
-                )}
-                <div className="p-5">
-                  <div className="font-semibold text-slate-800 text-base mb-0.5">{productPopup.name}</div>
-                  {productPopup.category && <div className="text-xs text-violet-500 mb-2">{productPopup.category}{productPopup.subcategory ? ` · ${productPopup.subcategory}` : ''}</div>}
-                  {productPopup.description && <div className="text-sm text-slate-600 mb-3">{productPopup.description}</div>}
-                  <div className="text-sm font-semibold text-slate-800 mb-3">
-                    {productPopup.currency || 'Rs'} {productPopup.price_max ? `${productPopup.price} – ${productPopup.price_max}` : productPopup.price}
-                  </div>
-                  {productPopup.attributes && Object.keys(productPopup.attributes).length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {Object.entries(productPopup.attributes).map(([k, v]) => (
-                        <span key={k} className="text-xs bg-slate-100 text-slate-600 rounded-full px-2 py-0.5">{k}: {v}</span>
-                      ))}
+              <div className="max-h-[80vh] overflow-y-auto">
+                {productPopup.map((p, i) => (
+                  <div key={p.id} className={i > 0 ? 'border-t border-slate-100' : ''}>
+                    {p.image_url && (
+                      <img src={p.image_url} alt={p.name} className="w-full h-48 object-cover" />
+                    )}
+                    <div className="p-5">
+                      <div className="font-semibold text-slate-800 text-base mb-0.5">{p.name}</div>
+                      {p.category && <div className="text-xs text-violet-500 mb-2">{p.category}{p.subcategory ? ` · ${p.subcategory}` : ''}</div>}
+                      {p.description && <div className="text-sm text-slate-600 mb-3">{p.description}</div>}
+                      <div className="text-sm font-semibold text-slate-800 mb-3">
+                        {p.currency || 'Rs'} {p.price_max ? `${p.price} – ${p.price_max}` : p.price}
+                      </div>
+                      {p.attributes && Object.keys(p.attributes).length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {Object.entries(p.attributes).map(([k, v]) => (
+                            <span key={k} className="text-xs bg-slate-100 text-slate-600 rounded-full px-2 py-0.5">{k}: {v}</span>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              </>
+                  </div>
+                ))}
+              </div>
             )}
             <div className="border-t border-slate-100 px-5 py-3 flex justify-end">
               <button onClick={() => setProductPopup(null)} className="text-sm text-slate-500 hover:text-slate-700 cursor-pointer bg-transparent border-0">Close</button>

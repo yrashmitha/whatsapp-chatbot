@@ -222,6 +222,9 @@ async function init() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='client_configs' AND column_name='order_fields') THEN
           ALTER TABLE client_configs ADD COLUMN order_fields JSONB NOT NULL DEFAULT '[]';
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='client_configs' AND column_name='contact_number') THEN
+          ALTER TABLE client_configs ADD COLUMN contact_number TEXT;
+        END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='custom_fields') THEN
           ALTER TABLE orders ADD COLUMN custom_fields JSONB;
         END IF;
@@ -373,6 +376,7 @@ async function init() {
     // Dynamic order fields migration
     try { db.exec(`ALTER TABLE client_configs ADD COLUMN order_fields TEXT NOT NULL DEFAULT '[]'`); } catch (_) {}
     try { db.exec(`ALTER TABLE orders ADD COLUMN custom_fields TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE client_configs ADD COLUMN contact_number TEXT`); } catch (_) {}
     // SQLite cannot DROP columns — old columns (package, birth_date, etc.) remain but are ignored
   }
 }
@@ -546,6 +550,16 @@ async function updateOrderFlagsById(orderId, flags) {
   }
 }
 
+async function updateOrderCustomFields(orderId, customFields) {
+  if (IS_PG) {
+    await pool.query('UPDATE orders SET custom_fields=$1 WHERE order_id=$2',
+      [customFields, orderId]);
+  } else {
+    db.prepare('UPDATE orders SET custom_fields=? WHERE order_id=?')
+      .run(JSON.stringify(customFields), orderId);
+  }
+}
+
 async function updateOrderStatusById(orderId, status) {
   if (IS_PG) {
     await pool.query('UPDATE orders SET status = $1 WHERE order_id = $2', [status, orderId]);
@@ -679,4 +693,4 @@ async function pgQuery(sql, params) {
   }
 }
 
-module.exports = { init, insertMessage, upsertCustomer, insertOrder, getOrdersByPhone, getLatestOrder, countOrdersByYear, getAllCustomers, getMessagesByPhone, updateLatestOrderStatus, updateOrderStatusById, updateOrderFlags, updateOrderFlagsById, deleteCustomer, deleteMessages, searchProducts, getAttributeSchema, vectorSearchProducts, saveProductEmbedding, IS_PG, pgQuery };
+module.exports = { init, insertMessage, upsertCustomer, insertOrder, getOrdersByPhone, getLatestOrder, countOrdersByYear, getAllCustomers, getMessagesByPhone, updateLatestOrderStatus, updateOrderStatusById, updateOrderCustomFields, updateOrderFlags, updateOrderFlagsById, deleteCustomer, deleteMessages, searchProducts, getAttributeSchema, vectorSearchProducts, saveProductEmbedding, IS_PG, pgQuery };

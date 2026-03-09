@@ -21,6 +21,7 @@ export default function Orders() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [expandedOrder, setExpandedOrder] = useState(null);
+  const [editingOrder, setEditingOrder] = useState(null); // { id, orderId, fields }
   const toast = useToast();
   const qc = useQueryClient();
 
@@ -45,6 +46,12 @@ export default function Orders() {
     mutationFn: ({ orderId, status }) => api.patch(`/orders/${orderId}/status`, { status }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['orders'] }); toast.success('Status updated'); },
     onError: () => toast.error('Failed to update status'),
+  });
+
+  const updateFields = useMutation({
+    mutationFn: ({ orderId, custom_fields }) => api.patch(`/orders/${orderId}/fields`, { custom_fields }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['orders'] }); setEditingOrder(null); toast.success('Order updated'); },
+    onError: () => toast.error('Failed to update order'),
   });
 
   const handleExport = async () => {
@@ -136,15 +143,51 @@ export default function Orders() {
                       {isExpanded && hasDetails && (
                         <tr className="bg-violet-50 border-b border-violet-100">
                           <td colSpan={colCount} className="px-6 py-3">
-                            <div className="text-xs font-semibold text-slate-600 mb-2">Order Details</div>
-                            <div className="grid grid-cols-2 gap-x-8 gap-y-1">
-                              {Object.entries(cf).map(([k, v]) => (
-                                <div key={k} className="flex gap-2 text-xs">
-                                  <span className="text-slate-400 capitalize shrink-0">{k.replace(/_/g, ' ')}:</span>
-                                  <span className="text-slate-700">{String(v ?? '—')}</span>
-                                </div>
-                              ))}
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="text-xs font-semibold text-slate-600">Order Details</div>
+                              {editingOrder?.id !== o.id && (
+                                <button onClick={() => setEditingOrder({ id: o.id, orderId: o.order_id, fields: { ...cf } })}
+                                  className="text-xs text-violet-600 hover:text-violet-800 cursor-pointer bg-transparent border-0">
+                                  Edit Details
+                                </button>
+                              )}
                             </div>
+                            {editingOrder?.id === o.id ? (
+                              <div>
+                                <div className="grid grid-cols-2 gap-x-8 gap-y-2 mb-3">
+                                  {Object.entries(editingOrder.fields).map(([k, v]) => (
+                                    <div key={k} className="flex flex-col gap-0.5">
+                                      <label className="text-xs text-slate-400 capitalize">{k.replace(/_/g, ' ')}</label>
+                                      <input
+                                        value={String(v ?? '')}
+                                        onChange={e => setEditingOrder(prev => ({ ...prev, fields: { ...prev.fields, [k]: e.target.value } }))}
+                                        className="text-xs border border-violet-200 rounded px-2 py-1 outline-none focus:border-violet-400 bg-white"
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => updateFields.mutate({ orderId: editingOrder.orderId, custom_fields: editingOrder.fields })}
+                                    className="text-xs bg-violet-600 hover:bg-violet-700 text-white rounded px-3 py-1 cursor-pointer border-0">
+                                    Save
+                                  </button>
+                                  <button onClick={() => setEditingOrder(null)}
+                                    className="text-xs text-slate-500 hover:text-slate-700 cursor-pointer bg-transparent border-0">
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="grid grid-cols-2 gap-x-8 gap-y-1">
+                                {Object.entries(cf).map(([k, v]) => (
+                                  <div key={k} className="flex gap-2 text-xs">
+                                    <span className="text-slate-400 capitalize shrink-0">{k.replace(/_/g, ' ')}:</span>
+                                    <span className="text-slate-700">{String(v ?? '—')}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </td>
                         </tr>
                       )}

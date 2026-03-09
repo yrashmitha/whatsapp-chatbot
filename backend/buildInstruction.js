@@ -328,16 +328,34 @@ function buildOrderFieldsInstruction(orderFields) {
     template[f.key] = f.description ? `<${f.description}>` : `<${f.label}>`;
   }
 
+  const requiredFields = orderFields.filter(f => f.required);
+  const optionalFields = orderFields.filter(f => !f.required);
+
   const fieldList = orderFields
     .map((f, i) => {
-      const req = f.required ? '(required)' : '(optional)';
+      const req = f.required ? '(REQUIRED)' : '(optional)';
       const desc = f.description ? ` — ${f.description}` : '';
       return `${i + 1}. ${f.label} ${req}${desc}`;
     }).join('\n');
 
-  return `\n\n## Order Information Required\nWhen a customer wants to place an order, collect ALL of the following before confirming:\n${fieldList}\n\nOnce the customer has confirmed all details, emit EXACTLY this on its own line (fill real values, no extra text around the marker):\n[[ORDER_COMPLETE:${JSON.stringify(template)}]]`;
+  const requiredKeys = requiredFields.map(f => `"${f.label}"`).join(', ');
+  const optionalNote = optionalFields.length > 0
+    ? `\n- Optional fields (${optionalFields.map(f => `"${f.label}"`).join(', ')}): collect if customer provides them, but do NOT block the order if they skip these.`
+    : '';
+
+  return `\n\n## Order Information Required\nWhen a customer wants to place an order, collect the following information:\n${fieldList}\n\n### STRICT RULES:\n- You MUST collect ALL REQUIRED fields (${requiredKeys}) before emitting [[ORDER_COMPLETE]].\n- Do NOT emit [[ORDER_COMPLETE]] until every REQUIRED field has been explicitly provided by the customer.${optionalNote}\n- If a required field is missing, ask for it. Do not proceed without it.\n- For optional fields left blank, use null in the JSON.\n\nOnce ALL required fields are confirmed, emit EXACTLY this on its own line (fill real values, no extra text around the marker):\n[[ORDER_COMPLETE:${JSON.stringify(template)}]]\n\nIf a customer asks to change any detail of an existing order, confirm the new value with them, then emit EXACTLY this on its own line:\n[[ORDER_UPDATE:{"order_id":"<their order ID>","updates":{"<field_key>":"<new value>"}}]]`;
+}
+
+/**
+ * Builds the emergency contact instruction block.
+ * Appended to every system prompt when a contact_number is configured.
+ */
+function buildContactInstruction(contactNumber) {
+  if (!contactNumber) return '';
+  return `\n\n## Escalation Rule — STRICT\nYou MUST follow this rule without exception:\n- If a customer asks something you cannot confidently answer using the knowledge and information provided to you, do NOT guess or make up an answer.\n- Instead, politely apologise and direct them to a human agent.\n- Always say something like: "I'm sorry, I'm not able to help with that right now. Please contact our team directly at *${contactNumber}* and they'll be happy to assist you."\n- This applies to: complaints, issues outside your knowledge, account problems, special requests, or anything you are uncertain about.\n- Never pretend to know something you don't. Honesty and directing to a human is always the right choice.`;
 }
 
 module.exports = buildSystemInstruction;
 module.exports.forClient = buildSystemInstructionForClient;
 module.exports.buildOrderFieldsInstruction = buildOrderFieldsInstruction;
+module.exports.buildContactInstruction = buildContactInstruction;

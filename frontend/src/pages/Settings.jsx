@@ -21,6 +21,7 @@ export default function Settings() {
   // Prompt + error message form
   const [prompt, setPrompt] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [contactNumber, setContactNumber] = useState('');
   const [promptLoading, setPromptLoading] = useState(false);
 
   // Order fields
@@ -43,6 +44,7 @@ export default function Settings() {
     if (settingsData) {
       setPrompt(settingsData.custom_prompt || '');
       setErrorMsg(settingsData.error_message || '');
+      setContactNumber(settingsData.contact_number || '');
       setOrderFields(settingsData.order_fields || []);
     }
   }, [settingsData]);
@@ -74,7 +76,7 @@ export default function Settings() {
     if (!clientId) { toast.error('Select a client first'); return; }
     setPromptLoading(true);
     try {
-      await api.put('/settings/prompt', { prompt, error_message: errorMsg, order_fields: orderFields }, { params });
+      await api.put('/settings/prompt', { prompt, error_message: errorMsg, contact_number: contactNumber, order_fields: orderFields }, { params });
       qc.invalidateQueries({ queryKey: ['settings', clientId] });
       toast.success('Settings saved');
     } catch {
@@ -174,6 +176,19 @@ export default function Settings() {
                       className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y"
                     />
                     <p className="text-xs text-slate-400 mt-1">Sent instantly to customers when the AI service is temporarily down. Leave blank to use the default message.</p>
+                  </div>
+
+                  {/* Emergency Contact */}
+                  <div className="border-t border-slate-100 pt-3 mt-1">
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Emergency Contact Number</label>
+                    <input
+                      type="text"
+                      value={contactNumber}
+                      onChange={e => setContactNumber(e.target.value)}
+                      placeholder="e.g. +94771234567"
+                      className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                    />
+                    <p className="text-xs text-slate-400 mt-1">When the AI cannot answer a question, it will ask the customer to contact this number. Leave blank to disable.</p>
                   </div>
 
                   {/* Order Fields */}

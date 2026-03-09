@@ -11,7 +11,7 @@ const bcrypt  = require('bcryptjs');
 const jwt     = require('jsonwebtoken');
 const upload  = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 const buildSystemInstruction = require('./buildInstruction');
-const { buildOrderFieldsInstruction } = require('./buildInstruction');
+const { buildOrderFieldsInstruction, buildContactInstruction } = require('./buildInstruction');
 const db           = require('./db');
 const clientRouter = require('./clientRouter');
 const { embedText, productToText } = require('./embedder');
@@ -45,9 +45,10 @@ const PRICE_OUTPUT = 0.30  / 1_000_000;
 function calcCost(i, o) { return i * PRICE_INPUT + o * PRICE_OUTPUT; }
 
 // ─── Order ID generation ──────────────────────────────────────────────────────
-const ORDER_MARKER_REGEX = /\[\[ORDER_COMPLETE:([\s\S]*?)\]\]/;
-const PAYMENT_MARKER    = '[[PAYMENT_CHECK]]';
-const HOROSCOPE_MARKER  = '[[HOROSCOPE_RECEIVED]]';
+const ORDER_MARKER_REGEX  = /\[\[ORDER_COMPLETE:([\s\S]*?)\]\]/;
+const ORDER_UPDATE_REGEX  = /\[\[ORDER_UPDATE:([\s\S]*?)\]\]/;
+const PAYMENT_MARKER      = '[[PAYMENT_CHECK]]';
+const HOROSCOPE_MARKER    = '[[HOROSCOPE_RECEIVED]]';
 
 async function generateOrderId(client) {
   const prefix = (client && client.order_id_prefix) || 'PJ';
@@ -87,7 +88,8 @@ async function buildChatSession(phoneNumber, client) {
   if (client) {
     const baseInstruction = buildSystemInstruction.forClient(client);
     const orderFieldsBlock = buildOrderFieldsInstruction(client.order_fields || []);
-    const fullInstruction = baseInstruction + orderFieldsBlock;
+    const contactBlock = buildContactInstruction(client.contact_number || null);
+    const fullInstruction = baseInstruction + orderFieldsBlock + contactBlock;
     chatModel = genAI.getGenerativeModel({
       model: client.ai_model || 'gemini-2.5-flash',
       systemInstruction: fullInstruction,
@@ -156,9 +158,19 @@ async function buildChatSession(phoneNumber, client) {
 }
 
 async function buildOrderStatusNote(phoneNumber) {
-  const order = await db.getLatestOrder(phoneNumber);
-  if (!order) return null;
-  return `[ORDER STATUS — ${order.order_id}: horoscope_received=${!!order.horoscope_received}, receipt_received=${!!order.receipt_received}, status=${order.status}]`;
+  const all = await db.getOrdersByPhone(phoneNumber);
+  if (!all.length) return null;
+  const orders = all.slice(0, 5);
+  const lines = orders.map(o => {
+    const cf = o.custom_fields
+      ? (typeof o.custom_fields === 'string' ? (() => { try { return JSON.parse(o.custom_fields); } catch { return {}; } })() : o.custom_fields)
+      : {};
+    const cfStr = Object.entries(cf).map(([k, v]) => `${k}: ${v}`).join(', ');
+    return `[ORDER ${o.order_id}: status=${o.status}, horoscope_received=${!!o.horoscope_received}, receipt_received=${!!o.receipt_received}, date=${String(o.created_at).split('T')[0]}${cfStr ? ', ' + cfStr : ''}]`;
+  });
+  const note = lines.join('\n');
+  const suffix = all.length > 5 ? `\n[NOTE: Showing last 5 orders only. Customer has ${all.length} orders total.]` : '';
+  return note + suffix;
 }
 
 // ─── Handle incoming message ──────────────────────────────────────────────────
@@ -317,6 +329,27 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     } else {
       console.warn(`[ORDER] ORDER_COMPLETE marker found but JSON parse failed`);
     }
+  }
+
+  const updateMatch = botReply.match(ORDER_UPDATE_REGEX);
+  if (updateMatch) {
+    botReply = botReply.replace(ORDER_UPDATE_REGEX, '').trim();
+    try {
+      const { order_id, updates } = JSON.parse(updateMatch[1]);
+      if (order_id && updates && typeof updates === 'object') {
+        const existing = await db.getOrdersByPhone(phoneNumber);
+        const order = existing.find(o => o.order_id === order_id);
+        if (order) {
+          const cf = order.custom_fields
+            ? (typeof order.custom_fields === 'string' ? JSON.parse(order.custom_fields) : order.custom_fields)
+            : {};
+          await db.updateOrderCustomFields(order_id, { ...cf, ...updates });
+          console.log(`[ORDER] Updated fields for ${order_id}:`, updates);
+        } else {
+          console.warn(`[ORDER] ORDER_UPDATE: order ${order_id} not found for ${phoneNumber}`);
+        }
+      }
+    } catch (e) { console.error('[ORDER] ORDER_UPDATE parse failed:', e.message); }
   }
 
   if (botReply.includes(HOROSCOPE_MARKER)) {
@@ -1387,7 +1420,7 @@ app.get('/api/customers', jwtAuth, async (req, res) => {
       ? [clientId, limit, offset, ...(search ? [`%${search}%`] : [])]
       : [limit, offset, ...(search ? [`%${search}%`] : [])];
     const q = `
-      SELECT cu.phone_number, cu.name, cu.client_id, cu.updated_at,
+      SELECT cu.phone_number, cu.phone_number AS phone, cu.name, cu.client_id, cu.updated_at,
              COUNT(DISTINCT m.id) AS message_count,
              COUNT(DISTINCT o.id) AS order_count,
              MAX(m.created_at) AS last_message_at
@@ -1540,6 +1573,17 @@ app.patch('/api/orders/:id/flags', jwtAuth, async (req, res) => {
     if (!sets.length) return res.status(400).json({ error: 'Nothing to update' });
     params.push(req.params.id);
     await db.pgQuery(`UPDATE orders SET ${sets.join(',')} WHERE order_id=$${params.length}`, params);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PATCH /api/orders/:id/fields
+app.patch('/api/orders/:id/fields', jwtAuth, async (req, res) => {
+  const { custom_fields } = req.body;
+  if (!custom_fields || typeof custom_fields !== 'object')
+    return res.status(400).json({ error: 'custom_fields object required' });
+  try {
+    await db.updateOrderCustomFields(req.params.id, custom_fields);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1741,7 +1785,7 @@ app.put('/api/settings/password', jwtAuth, async (req, res) => {
 app.put('/api/settings/prompt', jwtAuth, async (req, res) => {
   const clientId = resolveClientId(req);
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
-  const { prompt, error_message, order_fields } = req.body;
+  const { prompt, error_message, order_fields, contact_number } = req.body;
   let parsedFields = [];
   if (Array.isArray(order_fields)) {
     parsedFields = order_fields
@@ -1755,8 +1799,8 @@ app.put('/api/settings/prompt', jwtAuth, async (req, res) => {
   }
   try {
     await db.pgQuery(
-      `UPDATE client_configs SET custom_prompt=$1, error_message=$2, order_fields=$3, system_prompt_mode='custom', updated_at=NOW() WHERE client_id=$4`,
-      [prompt || null, error_message || null, JSON.stringify(parsedFields), clientId]
+      `UPDATE client_configs SET custom_prompt=$1, error_message=$2, order_fields=$3, contact_number=$4, system_prompt_mode='custom', updated_at=NOW() WHERE client_id=$5`,
+      [prompt || null, error_message || null, JSON.stringify(parsedFields), contact_number || null, clientId]
     );
     clientRouter.invalidateCache(clientId);
     for (const key of chatSessions.keys()) {
@@ -1772,7 +1816,7 @@ app.get('/api/settings', jwtAuth, async (req, res) => {
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
   try {
     const r = await db.pgQuery(
-      `SELECT custom_prompt, error_message, system_prompt_mode, temperature, brand_name, brand_color, order_fields FROM client_configs WHERE client_id=$1`,
+      `SELECT custom_prompt, error_message, system_prompt_mode, temperature, brand_name, brand_color, order_fields, contact_number FROM client_configs WHERE client_id=$1`,
       [clientId]
     );
     const row = r.rows[0] || {};

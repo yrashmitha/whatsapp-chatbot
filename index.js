@@ -192,7 +192,11 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
         const emb = await embedText(fc.args.query);
         products = await db.vectorSearchProducts(client.id, emb, limit);
         if (products.length > 0) {
-          console.log(`[RAG] Vector search returned ${products.length} products`);
+          console.log(
+            `[RAG] Vector search returned ${products.length} products: ${products
+              .map(p => p.name)
+              .join(", ")}`
+          );
           resultText = formatProducts(products);
         }
       } catch (e) {

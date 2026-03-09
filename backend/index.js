@@ -191,6 +191,24 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     console.log(`[DB] Saved user message for ${phoneNumber}`);
   }
 
+  // If in-memory history is empty, reload last 40 messages from DB
+  if (!chatSession._history || chatSession._history.length === 0) {
+    const dbMsgs = await db.getMessagesByPhone(phoneNumber);
+    if (dbMsgs.length > 0) {
+      const recent = dbMsgs.slice(-40).filter(m => !m.message_text.startsWith('[SYSTEM NOTE'));
+      const merged = [];
+      for (const m of recent) {
+        const role = m.sender_type === 'user' ? 'user' : 'model';
+        const last = merged[merged.length - 1];
+        if (last && last.role === role) { last.parts[0].text += '\n' + m.message_text; }
+        else merged.push({ role, parts: [{ text: m.message_text }] });
+      }
+      while (merged.length && merged[0].role !== 'user') merged.shift();
+      chatSession._history = merged;
+      console.log(`[SESSION] Reloaded ${merged.length} messages from DB into empty session`);
+    }
+  }
+
   // Inject current order status so AI knows what documents are already received
   const statusNote = await buildOrderStatusNote(phoneNumber);
   let messageToSend = statusNote ? `${statusNote}\n\n${userMessage}` : userMessage;
@@ -345,6 +363,13 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
 
   await db.insertMessage(phoneNumber, botReply, 'bot', callCostUSD);
   console.log(`[DB] Saved bot reply for ${phoneNumber} cost=$${callCostUSD.toFixed(6)}`);
+
+  // Sliding window: keep only last 40 entries in memory, drop oldest from front
+  const MAX_HISTORY = 40;
+  if (chatSession._history?.length > MAX_HISTORY) {
+    chatSession._history.splice(0, chatSession._history.length - MAX_HISTORY);
+  }
+
   return { botReply, orderId, paymentReceived, callCostUSD, inputTokens, outputTokens, imagesToSend, productImagesToSend };
 }
 

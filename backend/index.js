@@ -208,7 +208,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   let messageToSend = statusNote ? `${statusNote}\n\n${userMessage}` : userMessage;
   if (retryNote) messageToSend = `${retryNote}\n\n${messageToSend}`;
 
-  console.log(`[GEMINI] Full prompt:\n${messageToSend}`);
+  console.log(`[GEMINI] Full prompt: ${messageToSend.replace(/\n/g, '\\n')}`);
   let result;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {

@@ -170,7 +170,7 @@ export default function Settings() {
                       rows={3}
                       value={errorMsg}
                       onChange={e => setErrorMsg(e.target.value)}
-                      placeholder="We're experiencing a short technical issue. We'll get back to you in a few minutes — sorry for the inconvenience! 🙏"
+                      placeholder="We're experiencing a short technical issue. We'll get back to you in a few minutes - sorry for the inconvenience! 🙏"
                       className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y"
                     />
                     <p className="text-xs text-slate-400 mt-1">Sent instantly to customers when the AI service is temporarily down. Leave blank to use the default message.</p>

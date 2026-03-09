@@ -112,7 +112,7 @@ async function buildChatSession(phoneNumber, client) {
     tools = [{
       functionDeclarations: [{
         name: 'search_products',
-        description: 'Search the product catalog. Call this when a customer asks about products, availability, price, or features.' + attrHint,
+        description: 'Search the product catalog. Call this when a customer asks about products, availability, price, or features.' + attrHint + ' STRICT RULE: Only tell the customer about products that appear in the search results. If the result is "No matching products found", tell the customer that item is not available. NEVER invent, guess, or mention any product not returned by this search.',
         parameters: {
           type: 'OBJECT',
           properties: {
@@ -259,7 +259,10 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
         if (p.image_url) productImagesToSend.push({ url: p.image_url, caption: p.name });
       }
 
-      result    = await chatSession.sendMessage([{ functionResponse: { name: 'search_products', response: { result: resultText } } }]);
+      const finalResult = products.length === 0
+        ? 'No matching products found. Do NOT suggest or mention any product — tell the customer this item is not available.'
+        : resultText;
+      result    = await chatSession.sendMessage([{ functionResponse: { name: 'search_products', response: { result: finalResult } } }]);
       candidate = result.response;
     } else {
       break;
@@ -654,7 +657,7 @@ app.post('/webhook', (req, res) => {
       if (from && client && userMessage) {
         try {
           const apology = client.error_message ||
-            "We're experiencing a short technical issue. We'll get back to you in a few minutes — sorry for the inconvenience! 🙏";
+            "We're experiencing a short technical issue. We'll get back to you in a few minutes - sorry for the inconvenience! 🙏";
           await sendWhatsAppMessage(from, apology, client);
         } catch (_) {}
         try {

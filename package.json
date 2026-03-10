@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "build": "npm install --prefix frontend && npm run build --prefix frontend",
-    "start": "node backend/index.js",
-    "dev:backend": "node backend/index.js",
+    "start": "node --max-old-space-size=1024 backend/index.js",
+    "dev:backend": "node --max-old-space-size=1024 backend/index.js",
     "dev:frontend": "cd frontend && npm run dev"
   },
   "engines": {

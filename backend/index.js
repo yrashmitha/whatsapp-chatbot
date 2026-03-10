@@ -791,6 +791,11 @@ setInterval(async () => {
 
       } catch (retryErr) {
         console.error(`[RETRY-WORKER] Attempt ${nextAttempt} failed for ${item.phone_number}:`, retryErr.message);
+        // If the session history is corrupt, drop it so next attempt rebuilds fresh from DB
+        if (/function response turn/i.test(retryErr.message || '')) {
+          chatSessions.delete(sessionKey);
+          console.warn(`[RETRY-WORKER] Dropped corrupt session for ${item.phone_number} — will rebuild on next attempt`);
+        }
         if (nextAttempt >= item.max_attempts) {
           try {
             const client = await clientRouter.getClientById(item.client_id);

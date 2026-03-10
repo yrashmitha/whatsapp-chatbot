@@ -730,6 +730,15 @@ app.post('/webhook', (req, res) => {
       }
 
 
+      // Check per-chat AI mode — if disabled, store message and skip Gemini
+      const aiEnabled = await db.getCustomerAiEnabled(from, client.id);
+      if (!aiEnabled) {
+        await db.upsertCustomer(from, null, client.id);
+        await db.insertMessage(from, userMessage, 'user', null, client.id);
+        console.log(`[webhook] AI disabled for ${client.id}:${from} — message stored, no reply sent`);
+        return;
+      }
+
       // Invalidate stale in-memory session if DB was cleared externally
       if (chatSessions.has(sessionKey)) {
         const dbMsgs = await db.getMessagesByPhone(from);
@@ -1600,6 +1609,29 @@ app.delete('/api/customers/:phone', jwtAuth, async (req, res) => {
     for (const key of chatSessions.keys()) { if (key.endsWith(`:${phone}`)) chatSessions.delete(key); }
     await db.deleteCustomer(phone);
     res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/customers/:phone/ai-mode
+app.get('/api/customers/:phone/ai-mode', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  const { phone } = req.params;
+  try {
+    const enabled = await db.getCustomerAiEnabled(phone, clientId);
+    res.json({ ai_enabled: enabled });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PATCH /api/customers/:phone/ai-mode
+app.patch('/api/customers/:phone/ai-mode', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  const { phone } = req.params;
+  const { enabled } = req.body;
+  if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled (boolean) required' });
+  try {
+    await db.setCustomerAiMode(phone, clientId, enabled);
+    if (!enabled) chatSessions.delete(`${clientId}:${phone}`);
+    res.json({ ok: true, ai_enabled: enabled });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

@@ -291,6 +291,16 @@ async function init() {
       CREATE INDEX IF NOT EXISTS idx_retry_queue_pending
         ON message_retry_queue (retry_after) WHERE resolved_at IS NULL;
     `);
+
+    // ── Per-chat AI mode ─────────────────────────────────────────────────────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS customer_settings (
+        phone_number TEXT    NOT NULL,
+        client_id    TEXT    NOT NULL,
+        ai_enabled   BOOLEAN NOT NULL DEFAULT TRUE,
+        PRIMARY KEY (phone_number, client_id)
+      );
+    `);
   } else {
     db.exec(`PRAGMA foreign_keys = ON;`);
     db.exec(`
@@ -399,6 +409,16 @@ async function init() {
     try { db.exec(`ALTER TABLE orders ADD COLUMN custom_fields TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE client_configs ADD COLUMN contact_number TEXT`); } catch (_) {}
     // SQLite cannot DROP columns — old columns (package, birth_date, etc.) remain but are ignored
+
+    // ── Per-chat AI mode (SQLite) ────────────────────────────────────────────
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS customer_settings (
+        phone_number TEXT    NOT NULL,
+        client_id    TEXT    NOT NULL,
+        ai_enabled   INTEGER NOT NULL DEFAULT 1,
+        PRIMARY KEY (phone_number, client_id)
+      );
+    `);
   }
 }
 
@@ -787,6 +807,26 @@ async function deleteKnowledgeChunk(id) {
   await pool.query(`DELETE FROM client_knowledge_chunks WHERE id=$1`, [id]);
 }
 
+// ─── Per-chat AI mode ─────────────────────────────────────────────────────────
+async function getCustomerAiEnabled(phone, clientId) {
+  if (!IS_PG) return true; // local dev always AI on
+  const r = await pool.query(
+    `SELECT ai_enabled FROM customer_settings WHERE phone_number=$1 AND client_id=$2`,
+    [phone, clientId]
+  );
+  return r.rows.length === 0 ? true : !!r.rows[0].ai_enabled;
+}
+
+async function setCustomerAiMode(phone, clientId, enabled) {
+  if (!IS_PG) return;
+  await pool.query(
+    `INSERT INTO customer_settings (phone_number, client_id, ai_enabled)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (phone_number, client_id) DO UPDATE SET ai_enabled=$3`,
+    [phone, clientId, enabled]
+  );
+}
+
 // Raw query helper — PG uses pool, SQLite does a best-effort sync query
 async function pgQuery(sql, params) {
   if (IS_PG) return pool.query(sql, params);
@@ -800,4 +840,4 @@ async function pgQuery(sql, params) {
   }
 }
 
-module.exports = { init, insertMessage, upsertCustomer, insertOrder, getOrdersByPhone, getLatestOrder, countOrdersByYear, getAllCustomers, getMessagesByPhone, updateLatestOrderStatus, updateOrderStatusById, updateOrderCustomFields, updateOrderFlags, updateOrderFlagsById, deleteCustomer, deleteMessages, searchProducts, getAttributeSchema, vectorSearchProducts, saveProductEmbedding, vectorSearchKnowledge, insertKnowledgeChunks, deleteKnowledgeByTitle, getKnowledgeSections, getKnowledgeChunksByTitle, updateKnowledgeChunk, deleteKnowledgeChunk, IS_PG, pgQuery };
+module.exports = { init, insertMessage, upsertCustomer, insertOrder, getOrdersByPhone, getLatestOrder, countOrdersByYear, getAllCustomers, getMessagesByPhone, updateLatestOrderStatus, updateOrderStatusById, updateOrderCustomFields, updateOrderFlags, updateOrderFlagsById, deleteCustomer, deleteMessages, searchProducts, getAttributeSchema, vectorSearchProducts, saveProductEmbedding, vectorSearchKnowledge, insertKnowledgeChunks, deleteKnowledgeByTitle, getKnowledgeSections, getKnowledgeChunksByTitle, updateKnowledgeChunk, deleteKnowledgeChunk, getCustomerAiEnabled, setCustomerAiMode, IS_PG, pgQuery };

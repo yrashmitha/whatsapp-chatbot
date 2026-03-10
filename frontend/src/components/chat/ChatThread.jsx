@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../lib/api';
 import MessageBubble from './MessageBubble';
 import MessageInput from './MessageInput';
@@ -95,6 +95,21 @@ export default function ChatThread({ customer, clientId, onCustomerDeleted }) {
 
   const totalCost = allMessages.reduce((sum, m) => sum + (parseFloat(m.cost_usd) || 0), 0);
 
+  const { data: aiModeData, refetch: refetchAiMode } = useQuery({
+    queryKey: ['ai-mode', phone, clientId],
+    queryFn: () => api.get(`/customers/${phone}/ai-mode`, {
+      params: clientId ? { client_id: clientId } : {}
+    }).then(r => r.data),
+  });
+  const aiEnabled = aiModeData?.ai_enabled ?? true;
+
+  const toggleAiMutation = useMutation({
+    mutationFn: (enabled) => api.patch(`/customers/${phone}/ai-mode`, { enabled },
+      { params: clientId ? { client_id: clientId } : {} }
+    ),
+    onSuccess: () => refetchAiMode(),
+  });
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -104,7 +119,19 @@ export default function ChatThread({ customer, clientId, onCustomerDeleted }) {
           {name && <div className="text-xs text-slate-400">{phone}</div>}
           {totalCost > 0 && <div className="text-xs text-slate-400">${totalCost.toFixed(6)}</div>}
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <button
+            onClick={() => toggleAiMutation.mutate(!aiEnabled)}
+            disabled={toggleAiMutation.isPending}
+            className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${
+              aiEnabled
+                ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                : 'bg-slate-200 text-slate-500 hover:bg-slate-300'
+            }`}
+            title={aiEnabled ? 'AI is ON — click to disable' : 'AI is OFF — click to enable'}
+          >
+            AI {aiEnabled ? 'ON' : 'OFF'}
+          </button>
           <Button variant="ghost" size="sm" onClick={handleDeleteHistory}>Clear history</Button>
           <Button variant="danger" size="sm" onClick={handleDeleteCustomer}>Delete</Button>
         </div>

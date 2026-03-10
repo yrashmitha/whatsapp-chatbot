@@ -22,19 +22,24 @@ export default function ChatThread({ customer, clientId, onCustomerDeleted }) {
       const params = { limit: 50, ...(pageParam && { before: pageParam }), ...(clientId && { client_id: clientId }) };
       return api.get(`/messages/${phone}`, { params }).then(r => r.data);
     },
-    getNextPageParam: (lastPage) => lastPage.next_cursor || undefined,
+    getNextPageParam: (lastPage) =>
+      lastPage.hasMore ? lastPage.messages[0]?.created_at : undefined,
     initialPageParam: null,
   });
 
-  // Flatten pages (each page is older messages at the front)
-  const allMessages = data?.pages.flatMap(p => p.messages).reverse() ?? [];
+  // Flatten pages: reverse page order so oldest page first, newest page last → oldest msg at top, newest at bottom
+  const allMessages = data?.pages.slice().reverse().flatMap(p => p.messages) ?? [];
 
-  // Scroll to bottom on first load
+  // Scroll to bottom on initial load and new messages, but not when loading older pages
+  const prevPageCount = useRef(0);
   useEffect(() => {
-    if (!isLoading && bottomRef.current) {
-      bottomRef.current.scrollIntoView();
+    const curPageCount = data?.pages.length ?? 0;
+    const addedOlderPage = curPageCount > prevPageCount.current && prevPageCount.current > 0;
+    prevPageCount.current = curPageCount;
+    if (!addedOlderPage) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [isLoading, phone]);
+  }, [allMessages.length, data?.pages.length]);
 
   // Preserve scroll position when older messages prepended
   useEffect(() => {
@@ -88,6 +93,8 @@ export default function ChatThread({ customer, clientId, onCustomerDeleted }) {
     }
   };
 
+  const totalCost = allMessages.reduce((sum, m) => sum + (parseFloat(m.cost_usd) || 0), 0);
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -95,6 +102,7 @@ export default function ChatThread({ customer, clientId, onCustomerDeleted }) {
         <div>
           <div className="text-sm font-semibold text-slate-800">{name || phone}</div>
           {name && <div className="text-xs text-slate-400">{phone}</div>}
+          {totalCost > 0 && <div className="text-xs text-slate-400">${totalCost.toFixed(6)}</div>}
         </div>
         <div className="flex gap-2">
           <Button variant="ghost" size="sm" onClick={handleDeleteHistory}>Clear history</Button>

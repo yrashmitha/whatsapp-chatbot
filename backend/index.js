@@ -572,6 +572,20 @@ app.use((req, res, next) => {
 
 const chatSessions = new Map();
 
+// Evict sessions idle for more than 2 hours to prevent memory growth
+const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
+setInterval(() => {
+  const cutoff = Date.now() - SESSION_TTL_MS;
+  let evicted = 0;
+  for (const [key, session] of chatSessions.entries()) {
+    if ((session.lastUsed || 0) < cutoff) {
+      chatSessions.delete(key);
+      evicted++;
+    }
+  }
+  if (evicted > 0) console.log(`[SESSION-GC] Evicted ${evicted} idle sessions, ${chatSessions.size} remaining`);
+}, 30 * 60 * 1000); // run every 30 min
+
 // POST /chat — Web UI
 app.post('/chat', async (req, res) => {
   const userMessage = req.body?.message?.trim();
@@ -594,6 +608,7 @@ app.post('/chat', async (req, res) => {
   }
 
   const session = chatSessions.get(sessionId);
+  session.lastUsed = Date.now();
 
   try {
     const { botReply, orderId, callCostUSD, inputTokens, outputTokens, imagesToSend } =
@@ -684,6 +699,7 @@ app.post('/webhook', (req, res) => {
           chatSessions.set(sessionKey, { chat: await buildChatSession(from, client), phoneNumber: from });
         }
         const imgSession = chatSessions.get(sessionKey);
+        imgSession.lastUsed = Date.now();
 
         const imageNote = caption
           ? `[Customer sent a photo with caption: "${caption}". You cannot see the image itself. Respond based on context — if this is likely their horoscope chart, acknowledge it and add [[HOROSCOPE_RECEIVED]]. If it looks like a payment receipt, acknowledge and add [[PAYMENT_CHECK]]. Also add a short note that you cannot view images directly but the team will review it.]`
@@ -730,6 +746,7 @@ app.post('/webhook', (req, res) => {
         });
       }
       const session = chatSessions.get(sessionKey);
+      session.lastUsed = Date.now();
 
       const { botReply, imagesToSend, productImagesToSend } = await handleMessage(from, userMessage, session.chat, { client });
       if (!botReply.trim()) {
@@ -816,6 +833,7 @@ setInterval(async () => {
           });
         }
         const session = chatSessions.get(sessionKey);
+        session.lastUsed = Date.now();
 
         const retryNote = `[SYSTEM: This is a retry. The customer's previous message could not be processed ${item.attempts} time(s) due to a temporary service issue. Please start your reply with a brief, natural apology for the short delay (e.g. "Sorry for the short wait! 🙏"), then respond normally to their message.]`;
 

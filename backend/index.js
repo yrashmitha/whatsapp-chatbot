@@ -216,9 +216,19 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
       break;
     } catch (aiErr) {
       const retryable = /503|unavailable|overloaded/i.test(aiErr.message || '');
+      const funcTurnErr = /function response turn/i.test(aiErr.message || '');
       console.error(`[GEMINI] Attempt ${attempt}/3 failed:`, aiErr.message);
       if (attempt < 3 && retryable) {
         await new Promise(r => setTimeout(r, 1000 * attempt));
+      } else if (attempt < 3 && funcTurnErr && chatSession._history) {
+        // History has orphaned functionCall/functionResponse turns — strip them and retry
+        console.warn('[GEMINI] Sanitizing history due to function turn mismatch, retrying...');
+        chatSession._history = chatSession._history.filter(
+          turn => !turn.parts?.some(p => p.functionCall || p.functionResponse)
+        );
+        while (chatSession._history.length > 0 && chatSession._history[0].role !== 'user') {
+          chatSession._history.shift();
+        }
       } else {
         throw aiErr;
       }
@@ -392,6 +402,18 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   const MAX_HISTORY = 40;
   if (chatSession._history?.length > MAX_HISTORY) {
     chatSession._history.splice(0, chatSession._history.length - MAX_HISTORY);
+    // After trimming, remove any orphaned function turns from the front.
+    // Trimming can split a functionCall/functionResponse pair, leaving a
+    // dangling functionResponse (or model functionCall) which causes Gemini 400.
+    while (chatSession._history.length > 0) {
+      const first = chatSession._history[0];
+      const isFuncTurn = first.parts?.some(p => p.functionCall || p.functionResponse);
+      if (first.role !== 'user' || isFuncTurn) {
+        chatSession._history.shift();
+      } else {
+        break;
+      }
+    }
   }
 
   return { botReply, orderId, paymentReceived, callCostUSD, inputTokens, outputTokens, imagesToSend, productImagesToSend };

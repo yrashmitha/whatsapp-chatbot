@@ -16,6 +16,7 @@ function chunkText(text, chunkSize = 600, overlap = 100) {
     }
     const chunk = clean.slice(start, end).trim();
     if (chunk) chunks.push(chunk);
+    if (end >= clean.length) break; // reached end — no overlap needed
     start = end - overlap;
     if (start >= clean.length) break;
   }

@@ -1970,14 +1970,16 @@ app.post('/api/knowledge', jwtAuth, async (req, res) => {
   try {
     const chunks = chunkText(content);
     if (!chunks.length) return res.status(400).json({ error: 'No content to embed' });
-    const chunksWithEmbeddings = [];
-    for (const text of chunks) {
-      const embedding = await embedText(text);
-      chunksWithEmbeddings.push({ content: text, embedding });
+    const BATCH = 10;
+    let total = 0;
+    for (let i = 0; i < chunks.length; i += BATCH) {
+      const batch = chunks.slice(i, i + BATCH);
+      const embeddings = await Promise.all(batch.map(text => embedText(text)));
+      await db.insertKnowledgeChunks(clientId, title, batch.map((content, j) => ({ content, embedding: embeddings[j] })));
+      total += batch.length;
     }
-    await db.insertKnowledgeChunks(clientId, title, chunksWithEmbeddings);
-    console.log(`[KNOWLEDGE] Added ${chunksWithEmbeddings.length} chunks for client ${clientId} title="${title}"`);
-    res.json({ ok: true, chunks: chunksWithEmbeddings.length });
+    console.log(`[KNOWLEDGE] Added ${total} chunks for client ${clientId} title="${title}"`);
+    res.json({ ok: true, chunks: total });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

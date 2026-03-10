@@ -731,13 +731,18 @@ async function vectorSearchKnowledge(clientId, embedding, limit = 5) {
 }
 
 async function insertKnowledgeChunks(clientId, title, chunks) {
-  if (!IS_PG) return;
-  for (const { content, embedding } of chunks) {
-    await pool.query(
-      `INSERT INTO client_knowledge_chunks (client_id, title, content, embedding) VALUES ($1, $2, $3, $4::vector)`,
-      [clientId, title, content, JSON.stringify(embedding)]
-    );
-  }
+  if (!IS_PG || !chunks.length) return;
+  const values = [];
+  const params = [];
+  chunks.forEach(({ content, embedding }, i) => {
+    const base = i * 4;
+    values.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}::vector)`);
+    params.push(clientId, title, content, JSON.stringify(embedding));
+  });
+  await pool.query(
+    `INSERT INTO client_knowledge_chunks (client_id, title, content, embedding) VALUES ${values.join(', ')}`,
+    params
+  );
 }
 
 async function deleteKnowledgeByTitle(clientId, title) {

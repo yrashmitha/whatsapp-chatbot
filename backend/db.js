@@ -250,6 +250,23 @@ async function init() {
       END $$;
     `);
 
+    // ── Knowledge base ───────────────────────────────────────────────────────
+    await pool.query(`
+      ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS knowledge_base_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+      CREATE TABLE IF NOT EXISTS client_knowledge_chunks (
+        id         SERIAL PRIMARY KEY,
+        client_id  TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+        title      TEXT NOT NULL,
+        content    TEXT NOT NULL,
+        embedding  VECTOR(768),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_knowledge_embedding
+        ON client_knowledge_chunks USING hnsw (embedding vector_cosine_ops);
+      CREATE INDEX IF NOT EXISTS idx_knowledge_client
+        ON client_knowledge_chunks (client_id);
+    `);
+
     // ── CRM auth tables ──────────────────────────────────────────────────────
     await pool.query(`
       CREATE TABLE IF NOT EXISTS crm_users (
@@ -697,6 +714,74 @@ async function saveProductEmbedding(productId, embedding) {
   );
 }
 
+// ─── Knowledge base functions ─────────────────────────────────────────────────
+
+async function vectorSearchKnowledge(clientId, embedding, limit = 5) {
+  if (!IS_PG) return [];
+  const res = await pool.query(
+    `SELECT id, title, content, 1 - (embedding <=> $2::vector) AS similarity
+     FROM client_knowledge_chunks
+     WHERE client_id = $1 AND embedding IS NOT NULL
+       AND (1 - (embedding <=> $2::vector)) > 0.4
+     ORDER BY embedding <=> $2::vector
+     LIMIT $3`,
+    [clientId, JSON.stringify(embedding), limit]
+  );
+  return res.rows;
+}
+
+async function insertKnowledgeChunks(clientId, title, chunks) {
+  if (!IS_PG) return;
+  for (const { content, embedding } of chunks) {
+    await pool.query(
+      `INSERT INTO client_knowledge_chunks (client_id, title, content, embedding) VALUES ($1, $2, $3, $4::vector)`,
+      [clientId, title, content, JSON.stringify(embedding)]
+    );
+  }
+}
+
+async function deleteKnowledgeByTitle(clientId, title) {
+  if (!IS_PG) return;
+  await pool.query(
+    `DELETE FROM client_knowledge_chunks WHERE client_id=$1 AND title=$2`,
+    [clientId, title]
+  );
+}
+
+async function getKnowledgeSections(clientId) {
+  if (!IS_PG) return [];
+  const res = await pool.query(
+    `SELECT title, COUNT(*) AS chunk_count, MIN(created_at) AS created_at
+     FROM client_knowledge_chunks WHERE client_id=$1
+     GROUP BY title ORDER BY MIN(created_at)`,
+    [clientId]
+  );
+  return res.rows;
+}
+
+async function getKnowledgeChunksByTitle(clientId, title) {
+  if (!IS_PG) return [];
+  const res = await pool.query(
+    `SELECT id, content, created_at FROM client_knowledge_chunks
+     WHERE client_id=$1 AND title=$2 ORDER BY id`,
+    [clientId, title]
+  );
+  return res.rows;
+}
+
+async function updateKnowledgeChunk(id, content, embedding) {
+  if (!IS_PG) return;
+  await pool.query(
+    `UPDATE client_knowledge_chunks SET content=$1, embedding=$2::vector WHERE id=$3`,
+    [content, JSON.stringify(embedding), id]
+  );
+}
+
+async function deleteKnowledgeChunk(id) {
+  if (!IS_PG) return;
+  await pool.query(`DELETE FROM client_knowledge_chunks WHERE id=$1`, [id]);
+}
+
 // Raw query helper — PG uses pool, SQLite does a best-effort sync query
 async function pgQuery(sql, params) {
   if (IS_PG) return pool.query(sql, params);
@@ -710,4 +795,4 @@ async function pgQuery(sql, params) {
   }
 }
 
-module.exports = { init, insertMessage, upsertCustomer, insertOrder, getOrdersByPhone, getLatestOrder, countOrdersByYear, getAllCustomers, getMessagesByPhone, updateLatestOrderStatus, updateOrderStatusById, updateOrderCustomFields, updateOrderFlags, updateOrderFlagsById, deleteCustomer, deleteMessages, searchProducts, getAttributeSchema, vectorSearchProducts, saveProductEmbedding, IS_PG, pgQuery };
+module.exports = { init, insertMessage, upsertCustomer, insertOrder, getOrdersByPhone, getLatestOrder, countOrdersByYear, getAllCustomers, getMessagesByPhone, updateLatestOrderStatus, updateOrderStatusById, updateOrderCustomFields, updateOrderFlags, updateOrderFlagsById, deleteCustomer, deleteMessages, searchProducts, getAttributeSchema, vectorSearchProducts, saveProductEmbedding, vectorSearchKnowledge, insertKnowledgeChunks, deleteKnowledgeByTitle, getKnowledgeSections, getKnowledgeChunksByTitle, updateKnowledgeChunk, deleteKnowledgeChunk, IS_PG, pgQuery };

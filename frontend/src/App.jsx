@@ -6,6 +6,7 @@ import Login from './pages/Login';
 import Chat from './pages/Chat';
 import Orders from './pages/Orders';
 import Products from './pages/Products';
+import KnowledgeBase from './pages/KnowledgeBase';
 import Settings from './pages/Settings';
 
 const qc = new QueryClient({
@@ -17,6 +18,7 @@ const router = createBrowserRouter([
   { path: '/chat', element: <ProtectedRoute><Chat /></ProtectedRoute> },
   { path: '/orders', element: <ProtectedRoute><Orders /></ProtectedRoute> },
   { path: '/products', element: <ProtectedRoute><Products /></ProtectedRoute> },
+  { path: '/knowledge', element: <ProtectedRoute><KnowledgeBase /></ProtectedRoute> },
   { path: '/settings', element: <ProtectedRoute><Settings /></ProtectedRoute> },
   { path: '/', element: <Navigate to="/chat" replace /> },
   { path: '*', element: <Navigate to="/chat" replace /> },

@@ -22,6 +22,8 @@ export default function Settings() {
   const [prompt, setPrompt] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [contactNumber, setContactNumber] = useState('');
+  const [knowledgeBaseEnabled, setKnowledgeBaseEnabled] = useState(false);
+  const [productCatalogEnabled, setProductCatalogEnabled] = useState(false);
   const [promptLoading, setPromptLoading] = useState(false);
 
   // Order fields
@@ -45,6 +47,8 @@ export default function Settings() {
       setPrompt(settingsData.custom_prompt || '');
       setErrorMsg(settingsData.error_message || '');
       setContactNumber(settingsData.contact_number || '');
+      setKnowledgeBaseEnabled(!!settingsData.knowledge_base_enabled);
+      setProductCatalogEnabled(!!settingsData.product_catalog_enabled);
       setOrderFields(settingsData.order_fields || []);
     }
   }, [settingsData]);
@@ -76,7 +80,7 @@ export default function Settings() {
     if (!clientId) { toast.error('Select a client first'); return; }
     setPromptLoading(true);
     try {
-      await api.put('/settings/prompt', { prompt, error_message: errorMsg, contact_number: contactNumber, order_fields: orderFields }, { params });
+      await api.put('/settings/prompt', { prompt, error_message: errorMsg, contact_number: contactNumber, knowledge_base_enabled: knowledgeBaseEnabled, product_catalog_enabled: productCatalogEnabled, order_fields: orderFields }, { params });
       qc.invalidateQueries({ queryKey: ['settings', clientId] });
       toast.success('Settings saved');
     } catch {
@@ -189,6 +193,34 @@ export default function Settings() {
                       className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
                     />
                     <p className="text-xs text-slate-400 mt-1">When the AI cannot answer a question, it will ask the customer to contact this number. Leave blank to disable.</p>
+                  </div>
+
+                  {/* Feature toggles */}
+                  <div className="border-t border-slate-100 pt-3 mt-1 flex flex-col gap-3">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={productCatalogEnabled}
+                        onChange={e => setProductCatalogEnabled(e.target.checked)}
+                        className="w-4 h-4 accent-violet-600"
+                      />
+                      <div>
+                        <p className="text-xs font-medium text-slate-600">Enable Product Catalog</p>
+                        <p className="text-xs text-slate-400">Let the AI search and recommend products from your catalog.</p>
+                      </div>
+                    </label>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={knowledgeBaseEnabled}
+                        onChange={e => setKnowledgeBaseEnabled(e.target.checked)}
+                        className="w-4 h-4 accent-violet-600"
+                      />
+                      <div>
+                        <p className="text-xs font-medium text-slate-600">Enable Knowledge Base</p>
+                        <p className="text-xs text-slate-400">Let the AI search your knowledge base documents to answer customer questions.</p>
+                      </div>
+                    </label>
                   </div>
 
                   {/* Order Fields */}

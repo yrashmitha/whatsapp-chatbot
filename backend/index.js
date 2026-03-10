@@ -15,6 +15,7 @@ const { buildOrderFieldsInstruction, buildContactInstruction } = require('./buil
 const db           = require('./db');
 const clientRouter = require('./clientRouter');
 const { embedText, productToText } = require('./embedder');
+const { chunkText } = require('./chunker');
 
 // ─── WhatsApp credentials (test vs prod) ─────────────────────────────────────
 const IS_TEST = (process.env.WHATSAPP_MODE || 'test') !== 'prod';
@@ -127,6 +128,27 @@ async function buildChatSession(phoneNumber, client) {
       }]
     }];
     console.log(`[SESSION] Product search tool enabled for client ${client.id} (${attrSchema.length} attr fields)`);
+  }
+
+  // Add knowledge base search tool if enabled
+  if (client?.knowledge_base_enabled && db.IS_PG) {
+    const kbDecl = {
+      name: 'search_knowledge',
+      description: 'Search the knowledge base for information. You MUST call this before answering ANY customer question about services, policies, coverage, pricing, terms, or any topic. Only answer based on what is returned — never invent or guess information not found in the results.',
+      parameters: {
+        type: 'OBJECT',
+        properties: {
+          query: { type: 'STRING', description: 'The customer question or topic to search for' }
+        },
+        required: ['query']
+      }
+    };
+    if (tools.length > 0) {
+      tools[0].functionDeclarations.push(kbDecl);
+    } else {
+      tools = [{ functionDeclarations: [kbDecl] }];
+    }
+    console.log(`[SESSION] Knowledge base search tool enabled for client ${client.id}`);
   }
 
   // Load last 40 messages from DB so context survives server restarts
@@ -288,6 +310,23 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
         ? 'No matching products found. Do NOT suggest or mention any product — tell the customer this item is not available.'
         : resultText;
       result    = await chatSession.sendMessage([{ functionResponse: { name: 'search_products', response: { result: finalResult } } }]);
+      candidate = result.response;
+    } else if (fc.name === 'search_knowledge' && client?.knowledge_base_enabled && db.IS_PG) {
+      console.log(`[RAG] search_knowledge called with query: "${fc.args.query}"`);
+      let resultText = 'No relevant information found in the knowledge base.';
+      try {
+        const emb = await embedText(fc.args.query);
+        const chunks = await db.vectorSearchKnowledge(client.id, emb, 5);
+        if (chunks.length > 0) {
+          console.log(`[RAG] Knowledge base returned ${chunks.length} chunks`);
+          resultText = chunks.map(c => `[${c.title}]\n${c.content}`).join('\n\n---\n\n');
+        } else {
+          console.log(`[RAG] Knowledge base returned no results`);
+        }
+      } catch (e) {
+        console.warn('[RAG] Knowledge search failed:', e.message);
+      }
+      result    = await chatSession.sendMessage([{ functionResponse: { name: 'search_knowledge', response: { result: resultText } } }]);
       candidate = result.response;
     } else {
       break;
@@ -1839,7 +1878,7 @@ app.put('/api/settings/password', jwtAuth, async (req, res) => {
 app.put('/api/settings/prompt', jwtAuth, async (req, res) => {
   const clientId = resolveClientId(req);
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
-  const { prompt, error_message, order_fields, contact_number } = req.body;
+  const { prompt, error_message, order_fields, contact_number, knowledge_base_enabled, product_catalog_enabled } = req.body;
   let parsedFields = [];
   if (Array.isArray(order_fields)) {
     parsedFields = order_fields
@@ -1853,8 +1892,8 @@ app.put('/api/settings/prompt', jwtAuth, async (req, res) => {
   }
   try {
     await db.pgQuery(
-      `UPDATE client_configs SET custom_prompt=$1, error_message=$2, order_fields=$3, contact_number=$4, system_prompt_mode='custom', updated_at=NOW() WHERE client_id=$5`,
-      [prompt || null, error_message || null, JSON.stringify(parsedFields), contact_number || null, clientId]
+      `UPDATE client_configs SET custom_prompt=$1, error_message=$2, order_fields=$3, contact_number=$4, knowledge_base_enabled=$5, product_catalog_enabled=$6, system_prompt_mode='custom', updated_at=NOW() WHERE client_id=$7`,
+      [prompt || null, error_message || null, JSON.stringify(parsedFields), contact_number || null, knowledge_base_enabled === true || knowledge_base_enabled === 'true', product_catalog_enabled === true || product_catalog_enabled === 'true', clientId]
     );
     clientRouter.invalidateCache(clientId);
     for (const key of chatSessions.keys()) {
@@ -1870,7 +1909,7 @@ app.get('/api/settings', jwtAuth, async (req, res) => {
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
   try {
     const r = await db.pgQuery(
-      `SELECT custom_prompt, error_message, system_prompt_mode, temperature, brand_name, brand_color, order_fields, contact_number FROM client_configs WHERE client_id=$1`,
+      `SELECT custom_prompt, error_message, system_prompt_mode, temperature, brand_name, brand_color, order_fields, contact_number, knowledge_base_enabled, product_catalog_enabled FROM client_configs WHERE client_id=$1`,
       [clientId]
     );
     const row = r.rows[0] || {};
@@ -1879,6 +1918,77 @@ app.get('/api/settings', jwtAuth, async (req, res) => {
     }
     if (!row.order_fields) row.order_fields = [];
     res.json(row);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Knowledge base API ───────────────────────────────────────────────────────
+
+// GET /api/knowledge — list document sections
+app.get('/api/knowledge', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    const sections = await db.getKnowledgeSections(clientId);
+    res.json(sections);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/knowledge/:title/chunks — list chunks for a document
+app.get('/api/knowledge/:title/chunks', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    const chunks = await db.getKnowledgeChunksByTitle(clientId, decodeURIComponent(req.params.title));
+    res.json(chunks);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/knowledge — add a document (chunk + embed)
+app.post('/api/knowledge', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  const { title, content } = req.body;
+  if (!title || !content) return res.status(400).json({ error: 'title and content are required' });
+  try {
+    const chunks = chunkText(content);
+    if (!chunks.length) return res.status(400).json({ error: 'No content to embed' });
+    const chunksWithEmbeddings = [];
+    for (const text of chunks) {
+      const embedding = await embedText(text);
+      chunksWithEmbeddings.push({ content: text, embedding });
+    }
+    await db.insertKnowledgeChunks(clientId, title, chunksWithEmbeddings);
+    console.log(`[KNOWLEDGE] Added ${chunksWithEmbeddings.length} chunks for client ${clientId} title="${title}"`);
+    res.json({ ok: true, chunks: chunksWithEmbeddings.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/knowledge/chunks/:id — edit a single chunk (re-embeds)
+app.put('/api/knowledge/chunks/:id', jwtAuth, async (req, res) => {
+  const { content } = req.body;
+  if (!content) return res.status(400).json({ error: 'content is required' });
+  try {
+    const embedding = await embedText(content);
+    await db.updateKnowledgeChunk(parseInt(req.params.id), content, embedding);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/knowledge/chunks/:id — delete a single chunk
+app.delete('/api/knowledge/chunks/:id', jwtAuth, async (req, res) => {
+  try {
+    await db.deleteKnowledgeChunk(parseInt(req.params.id));
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/knowledge/:title — delete all chunks for a document
+app.delete('/api/knowledge/:title', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    await db.deleteKnowledgeByTitle(clientId, decodeURIComponent(req.params.title));
+    res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "build": "npm install --prefix frontend && npm run build --prefix frontend",
-    "start": "node --max-old-space-size=1024 backend/index.js",
+    "start": "bash start.sh",
     "dev:backend": "node --max-old-space-size=1024 backend/index.js",
     "dev:frontend": "cd frontend && npm run dev"
   },

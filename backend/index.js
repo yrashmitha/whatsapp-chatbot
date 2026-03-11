@@ -161,7 +161,7 @@ async function buildChatSession(phoneNumber, client) {
   if (client?.knowledge_base_enabled && db.IS_PG) {
     const kbDecl = {
       name: 'search_knowledge',
-      description: 'Search the knowledge base for information. Call this MULTIPLE TIMES with different focused queries if the question has multiple aspects — each call may return different relevant chunks. You MUST search before answering any question about services, policies, coverage, pricing, or terms. Only answer based on what is returned — never invent information.',
+      description: 'This is the Knowledge Base Tool (දත්ත ලබාගැනීමේ ක්රමවේදය / දත්ත ගබඩාව). You MUST call this tool before answering ANY question — never answer from your own memory. IMPORTANT: Always translate the search query to SINHALA keywords before searching, because all content is stored in Sinhala. Call multiple times with different Sinhala queries if the question has multiple aspects. Only use what is returned — never invent information.',
       parameters: {
         type: 'OBJECT',
         properties: {

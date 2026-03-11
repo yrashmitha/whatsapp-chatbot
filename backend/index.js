@@ -90,7 +90,14 @@ async function buildChatSession(phoneNumber, client) {
     const baseInstruction = buildSystemInstruction.forClient(client);
     const orderFieldsBlock = buildOrderFieldsInstruction(client.order_fields || []);
     const contactBlock = buildContactInstruction(client.contact_number || null);
-    const fullInstruction = baseInstruction + orderFieldsBlock + contactBlock;
+    const mediaItems = await db.getClientMedia(client.id);
+    let mediaBlock = '';
+    if (mediaItems.length > 0) {
+      mediaBlock = '\n\n━━━ Media Images You Can Send ━━━\n'
+        + 'Use the send_image tool to deliver images to the customer. Send them at the right moment based on these descriptions:\n'
+        + mediaItems.map(m => `- "${m.title}": ${m.description}\n  URL: ${m.image_url}`).join('\n');
+    }
+    const fullInstruction = baseInstruction + orderFieldsBlock + contactBlock + mediaBlock;
     chatModel = genAI.getGenerativeModel({
       model: client.ai_model || 'gemini-2.5-flash',
       systemInstruction: fullInstruction,
@@ -149,6 +156,25 @@ async function buildChatSession(phoneNumber, client) {
       tools = [{ functionDeclarations: [kbDecl] }];
     }
     console.log(`[SESSION] Knowledge base search tool enabled for client ${client.id}`);
+  }
+
+  // Always add send_image tool (for media library)
+  const sendImageDecl = {
+    name: 'send_image',
+    description: 'Send an image to the customer. Use this based on the media image descriptions in your system instructions — send images at exactly the right moment. Pass the exact image_url from your instructions.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        image_url: { type: 'STRING', description: 'The direct image URL to send' },
+        caption:   { type: 'STRING', description: 'Short caption shown under the image' },
+      },
+      required: ['image_url'],
+    },
+  };
+  if (tools.length > 0) {
+    tools[0].functionDeclarations.push(sendImageDecl);
+  } else {
+    tools = [{ functionDeclarations: [sendImageDecl] }];
   }
 
   // Load last 40 messages from DB so context survives server restarts
@@ -327,6 +353,12 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
         console.warn('[RAG] Knowledge search failed:', e.message);
       }
       result    = await chatSession.sendMessage([{ functionResponse: { name: 'search_knowledge', response: { result: resultText } } }]);
+      candidate = result.response;
+    } else if (fc.name === 'send_image') {
+      const { image_url, caption = '' } = fc.args;
+      console.log(`[MEDIA] send_image called: url="${image_url}" caption="${caption}"`);
+      if (image_url) productImagesToSend.push({ url: image_url, caption });
+      result    = await chatSession.sendMessage([{ functionResponse: { name: 'send_image', response: { ok: true } } }]);
       candidate = result.response;
     } else {
       break;
@@ -1632,6 +1664,41 @@ app.patch('/api/customers/:phone/ai-mode', jwtAuth, async (req, res) => {
     await db.setCustomerAiMode(phone, clientId, enabled);
     if (!enabled) chatSessions.delete(`${clientId}:${phone}`);
     res.json({ ok: true, ai_enabled: enabled });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Media library endpoints ──────────────────────────────────────────────────
+app.get('/api/media', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try { res.json({ media: await db.getClientMedia(clientId) }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/media', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  const { title, description, image_url, sort_order = 0 } = req.body;
+  if (!title || !description || !image_url) return res.status(400).json({ error: 'title, description, image_url required' });
+  try {
+    const id = await db.insertMedia(clientId, title, description, image_url, sort_order);
+    res.json({ ok: true, id });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.patch('/api/media/:id', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  const { title, description, image_url, sort_order = 0 } = req.body;
+  try {
+    await db.updateMedia(req.params.id, clientId, title, description, image_url, sort_order);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/media/:id', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  try {
+    await db.deleteMedia(req.params.id, clientId);
+    res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

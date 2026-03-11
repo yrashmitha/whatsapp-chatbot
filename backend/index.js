@@ -92,7 +92,7 @@ async function buildChatSession(phoneNumber, client) {
       .map(o => {
         const cf = o.custom_fields ? (typeof o.custom_fields === 'string' ? (() => { try { return JSON.parse(o.custom_fields); } catch { return {}; } })() : o.custom_fields) : {};
         const cfStr = Object.entries(cf).map(([k, v]) => `${k}: ${v}`).join(', ');
-        return `Order ID: ${o.order_id} | Status: ${o.status} | horoscope_received: ${!!o.horoscope_received} | receipt_received: ${!!o.receipt_received} | Date: ${String(o.created_at).split('T')[0]}${cfStr ? ' | ' + cfStr : ''}`;
+        return `Order ID: ${o.order_id} | Status: ${o.status} | horoscope_received: ${!!o.horoscope_received} | receipt_received: ${!!o.receipt_received} | Date: ${String(o.created_at).split('T')[0]}${cfStr ? ' | ' + cfStr : ''}${o.notes ? ' | Notes: ' + o.notes : ''}`;
       })
       .join('\n');
 
@@ -236,7 +236,7 @@ async function buildOrderStatusNote(phoneNumber) {
       ? (typeof o.custom_fields === 'string' ? (() => { try { return JSON.parse(o.custom_fields); } catch { return {}; } })() : o.custom_fields)
       : {};
     const cfStr = Object.entries(cf).map(([k, v]) => `${k}: ${v}`).join(', ');
-    return `[ORDER ${o.order_id}: status=${o.status}, horoscope_received=${!!o.horoscope_received}, receipt_received=${!!o.receipt_received}, date=${String(o.created_at).split('T')[0]}${cfStr ? ', ' + cfStr : ''}]`;
+    return `[ORDER ${o.order_id}: status=${o.status}, horoscope_received=${!!o.horoscope_received}, receipt_received=${!!o.receipt_received}, date=${String(o.created_at).split('T')[0]}${cfStr ? ', ' + cfStr : ''}${o.notes ? ', notes: ' + o.notes : ''}]`;
   });
   const note = lines.join('\n');
   const suffix = all.length > 5 ? `\n[NOTE: Showing last 5 orders only. Customer has ${all.length} orders total.]` : '';
@@ -1920,6 +1920,15 @@ app.patch('/api/orders/:id/fields', jwtAuth, async (req, res) => {
     return res.status(400).json({ error: 'custom_fields object required' });
   try {
     await db.updateOrderCustomFields(req.params.id, custom_fields);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PATCH /api/orders/:id/notes
+app.patch('/api/orders/:id/notes', jwtAuth, async (req, res) => {
+  const { notes } = req.body;
+  try {
+    await db.pgQuery(`UPDATE orders SET notes=$1 WHERE order_id=$2`, [notes ?? null, req.params.id]);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

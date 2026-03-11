@@ -22,6 +22,8 @@ export default function Orders() {
   const [statusFilter, setStatusFilter] = useState('');
   const [expandedOrder, setExpandedOrder] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null); // { id, orderId, fields }
+  const [editingNoteId, setEditingNoteId] = useState(null);
+  const [noteText, setNoteText] = useState('');
   const [productPopup, setProductPopup] = useState(null); // product object or 'loading'
   const toast = useToast();
   const qc = useQueryClient();
@@ -53,6 +55,12 @@ export default function Orders() {
     mutationFn: ({ orderId, custom_fields }) => api.patch(`/orders/${orderId}/fields`, { custom_fields }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['orders'] }); setEditingOrder(null); toast.success('Order updated'); },
     onError: () => toast.error('Failed to update order'),
+  });
+
+  const updateNotes = useMutation({
+    mutationFn: ({ orderId, notes }) => api.patch(`/orders/${orderId}/notes`, { notes }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['orders'] }); setEditingNoteId(null); toast.success('Note saved'); },
+    onError: () => toast.error('Failed to save note'),
   });
 
   const handleProductClick = async (cf, orderClientId) => {
@@ -131,6 +139,7 @@ export default function Orders() {
                   const cf = parseCustomFields(o.custom_fields);
                   const hasDetails = cf && Object.keys(cf).length > 0;
                   const isExpanded = expandedOrder === o.id;
+                  const hasNotes = !!o.notes;
 
                   return (
                     <React.Fragment key={o.id}>
@@ -151,72 +160,112 @@ export default function Orders() {
                         </td>
                         <td className="py-2.5 pr-4 text-slate-500 text-xs">{formatDateTime(o.created_at)}</td>
                         <td className="py-2.5 pr-4">
-                          {hasDetails ? (
-                            <button
-                              onClick={() => setExpandedOrder(isExpanded ? null : o.id)}
-                              className="text-xs text-violet-600 hover:text-violet-800 underline cursor-pointer bg-transparent border-0"
-                            >
-                              {isExpanded ? 'Hide' : 'View'}
-                            </button>
-                          ) : (
-                            <span className="text-xs text-slate-300">—</span>
-                          )}
+                          <button
+                            onClick={() => setExpandedOrder(isExpanded ? null : o.id)}
+                            className={`text-xs underline cursor-pointer bg-transparent border-0 ${hasDetails || hasNotes ? 'text-violet-600 hover:text-violet-800' : 'text-slate-400 hover:text-slate-600'}`}
+                          >
+                            {isExpanded ? 'Hide' : (hasDetails || hasNotes ? 'View' : 'Notes')}
+                          </button>
                         </td>
                         {superAdmin && <td className="py-2.5 pr-4 text-violet-500 text-xs">{o.client_id}</td>}
                       </tr>
-                      {isExpanded && hasDetails && (
+                      {isExpanded && (
                         <tr className="bg-violet-50 border-b border-violet-100">
                           <td colSpan={colCount} className="px-6 py-3">
-                            <div className="flex items-center justify-between mb-2">
-                              <div className="text-xs font-semibold text-slate-600">Order Details</div>
-                              {editingOrder?.id !== o.id && (
-                                <button onClick={() => setEditingOrder({ id: o.id, orderId: o.order_id, fields: { ...cf } })}
-                                  className="text-xs text-violet-600 hover:text-violet-800 cursor-pointer bg-transparent border-0">
-                                  Edit Details
-                                </button>
+                            {/* Notes section */}
+                            <div className="mb-3">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-xs font-semibold text-slate-600">Notes</span>
+                                {editingNoteId !== o.id && (
+                                  <button onClick={() => { setEditingNoteId(o.id); setNoteText(o.notes || ''); }}
+                                    className="text-xs text-violet-600 hover:text-violet-800 cursor-pointer bg-transparent border-0">
+                                    {o.notes ? 'Edit' : 'Add'}
+                                  </button>
+                                )}
+                              </div>
+                              {editingNoteId === o.id ? (
+                                <div>
+                                  <textarea
+                                    value={noteText}
+                                    onChange={e => setNoteText(e.target.value)}
+                                    rows={3}
+                                    autoFocus
+                                    className="w-full text-xs border border-violet-200 rounded px-2 py-1.5 outline-none focus:border-violet-400 bg-white resize-none"
+                                    placeholder="Delivery date, special instructions, reminders..."
+                                  />
+                                  <div className="flex gap-2 mt-1">
+                                    <button onClick={() => updateNotes.mutate({ orderId: o.order_id, notes: noteText })}
+                                      className="text-xs bg-violet-600 hover:bg-violet-700 text-white rounded px-3 py-1 cursor-pointer border-0">
+                                      Save
+                                    </button>
+                                    <button onClick={() => setEditingNoteId(null)}
+                                      className="text-xs text-slate-500 hover:text-slate-700 cursor-pointer bg-transparent border-0">
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className={`text-xs whitespace-pre-wrap ${o.notes ? 'text-slate-700' : 'text-slate-300'}`}>
+                                  {o.notes || 'No notes yet'}
+                                </div>
                               )}
                             </div>
-                            {editingOrder?.id === o.id ? (
+
+                            {/* Custom fields section */}
+                            {hasDetails && (
                               <div>
-                                <div className="grid grid-cols-2 gap-x-8 gap-y-2 mb-3">
-                                  {Object.entries(editingOrder.fields).map(([k, v]) => (
-                                    <div key={k} className="flex flex-col gap-0.5">
-                                      <label className="text-xs text-slate-400 capitalize">{k.replace(/_/g, ' ')}</label>
-                                      <input
-                                        value={String(v ?? '')}
-                                        onChange={e => setEditingOrder(prev => ({ ...prev, fields: { ...prev.fields, [k]: e.target.value } }))}
-                                        className="text-xs border border-violet-200 rounded px-2 py-1 outline-none focus:border-violet-400 bg-white"
-                                      />
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="text-xs font-semibold text-slate-600">Order Details</div>
+                                  {editingOrder?.id !== o.id && (
+                                    <button onClick={() => setEditingOrder({ id: o.id, orderId: o.order_id, fields: { ...cf } })}
+                                      className="text-xs text-violet-600 hover:text-violet-800 cursor-pointer bg-transparent border-0">
+                                      Edit Details
+                                    </button>
+                                  )}
+                                </div>
+                                {editingOrder?.id === o.id ? (
+                                  <div>
+                                    <div className="grid grid-cols-2 gap-x-8 gap-y-2 mb-3">
+                                      {Object.entries(editingOrder.fields).map(([k, v]) => (
+                                        <div key={k} className="flex flex-col gap-0.5">
+                                          <label className="text-xs text-slate-400 capitalize">{k.replace(/_/g, ' ')}</label>
+                                          <input
+                                            value={String(v ?? '')}
+                                            onChange={e => setEditingOrder(prev => ({ ...prev, fields: { ...prev.fields, [k]: e.target.value } }))}
+                                            className="text-xs border border-violet-200 rounded px-2 py-1 outline-none focus:border-violet-400 bg-white"
+                                          />
+                                        </div>
+                                      ))}
                                     </div>
-                                  ))}
-                                </div>
-                                <div className="flex gap-2">
-                                  <button
-                                    onClick={() => updateFields.mutate({ orderId: editingOrder.orderId, custom_fields: editingOrder.fields })}
-                                    className="text-xs bg-violet-600 hover:bg-violet-700 text-white rounded px-3 py-1 cursor-pointer border-0">
-                                    Save
-                                  </button>
-                                  <button onClick={() => setEditingOrder(null)}
-                                    className="text-xs text-slate-500 hover:text-slate-700 cursor-pointer bg-transparent border-0">
-                                    Cancel
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="grid grid-cols-2 gap-x-8 gap-y-1">
-                                {Object.entries(cf).filter(([k]) => k !== 'product_id').map(([k, v]) => (
-                                  <div key={k} className="flex gap-2 text-xs">
-                                    <span className="text-slate-400 capitalize shrink-0">{k.replace(/_/g, ' ')}:</span>
-                                    {k === 'product' && v ? (
-                                      <button onClick={() => handleProductClick(cf, o.client_id)}
-                                        className="text-violet-600 hover:text-violet-800 underline cursor-pointer bg-transparent border-0 text-xs text-left p-0">
-                                        {String(v)}
+                                    <div className="flex gap-2">
+                                      <button
+                                        onClick={() => updateFields.mutate({ orderId: editingOrder.orderId, custom_fields: editingOrder.fields })}
+                                        className="text-xs bg-violet-600 hover:bg-violet-700 text-white rounded px-3 py-1 cursor-pointer border-0">
+                                        Save
                                       </button>
-                                    ) : (
-                                      <span className="text-slate-700">{String(v ?? '—')}</span>
-                                    )}
+                                      <button onClick={() => setEditingOrder(null)}
+                                        className="text-xs text-slate-500 hover:text-slate-700 cursor-pointer bg-transparent border-0">
+                                        Cancel
+                                      </button>
+                                    </div>
                                   </div>
-                                ))}
+                                ) : (
+                                  <div className="grid grid-cols-2 gap-x-8 gap-y-1">
+                                    {Object.entries(cf).filter(([k]) => k !== 'product_id').map(([k, v]) => (
+                                      <div key={k} className="flex gap-2 text-xs">
+                                        <span className="text-slate-400 capitalize shrink-0">{k.replace(/_/g, ' ')}:</span>
+                                        {k === 'product' && v ? (
+                                          <button onClick={() => handleProductClick(cf, o.client_id)}
+                                            className="text-violet-600 hover:text-violet-800 underline cursor-pointer bg-transparent border-0 text-xs text-left p-0">
+                                            {String(v)}
+                                          </button>
+                                        ) : (
+                                          <span className="text-slate-700">{String(v ?? '—')}</span>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             )}
                           </td>

@@ -232,6 +232,9 @@ async function init() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='custom_fields') THEN
           ALTER TABLE orders ADD COLUMN custom_fields JSONB;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='notes') THEN
+          ALTER TABLE orders ADD COLUMN notes TEXT;
+        END IF;
         IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='package') THEN
           ALTER TABLE orders DROP COLUMN package;
         END IF;
@@ -352,6 +355,7 @@ async function init() {
     try { db.exec(`ALTER TABLE messages ADD COLUMN media_url TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE orders ADD COLUMN horoscope_received INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
     try { db.exec(`ALTER TABLE orders ADD COLUMN receipt_received INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
+    try { db.exec(`ALTER TABLE orders ADD COLUMN notes TEXT`); } catch (_) {}
 
     // ── Multi-tenant tables (SQLite) ─────────────────────────────────────────
     db.exec(`

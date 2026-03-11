@@ -14,10 +14,30 @@ function MediaModal({ open, onClose, clientId, onSaved, item }) {
   const [description, setDescription] = useState(item?.description || '');
   const [imageUrl, setImageUrl] = useState(item?.image_url || '');
   const [sortOrder, setSortOrder] = useState(item?.sort_order ?? 0);
+  const [tab, setTab] = useState('url'); // 'url' | 'upload'
+  const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const toast = useToast();
 
   if (!open) return null;
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const params = clientId ? { client_id: clientId } : {};
+      const form = new FormData();
+      form.append('image', file);
+      const r = await api.post('/media/upload', form, { params, headers: { 'Content-Type': 'multipart/form-data' } });
+      setImageUrl(r.data.url);
+      toast.success('Image uploaded');
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!title.trim() || !description.trim() || !imageUrl.trim()) return;
@@ -73,12 +93,28 @@ function MediaModal({ open, onClose, clientId, onSaved, item }) {
             <p className="text-xs text-slate-400 mt-1">Gemini reads this to decide when to send the image automatically.</p>
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Image URL</label>
-            <input
-              value={imageUrl} onChange={e => setImageUrl(e.target.value)}
-              placeholder="https://example.com/image.jpg"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-violet-400"
-            />
+            <div className="flex gap-2 mb-2">
+              <button
+                onClick={() => setTab('url')}
+                className={`text-xs px-3 py-1 rounded-full font-medium transition-colors ${tab === 'url' ? 'bg-violet-100 text-violet-700' : 'text-slate-500 hover:bg-slate-100'}`}
+              >Paste URL</button>
+              <button
+                onClick={() => setTab('upload')}
+                className={`text-xs px-3 py-1 rounded-full font-medium transition-colors ${tab === 'upload' ? 'bg-violet-100 text-violet-700' : 'text-slate-500 hover:bg-slate-100'}`}
+              >Upload file</button>
+            </div>
+            {tab === 'url' ? (
+              <input
+                value={imageUrl} onChange={e => setImageUrl(e.target.value)}
+                placeholder="https://example.com/image.jpg"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-violet-400"
+              />
+            ) : (
+              <label className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${uploading ? 'border-violet-300 bg-violet-50' : 'border-slate-200 hover:border-violet-300 hover:bg-slate-50'}`}>
+                <span className="text-xs text-slate-400">{uploading ? 'Uploading…' : 'Click to choose an image (max 10 MB)'}</span>
+                <input type="file" accept="image/*" className="hidden" onChange={handleFileChange} disabled={uploading} />
+              </label>
+            )}
             {imageUrl && (
               <img src={imageUrl} alt="preview" className="mt-2 rounded-lg max-h-32 object-cover border border-slate-200"
                 onError={e => { e.target.style.display = 'none'; }} />

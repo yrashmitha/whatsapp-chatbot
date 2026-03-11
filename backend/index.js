@@ -10,6 +10,24 @@ const multer  = require('multer');
 const bcrypt  = require('bcryptjs');
 const jwt     = require('jsonwebtoken');
 const upload  = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+
+// ─── Persistent uploads directory (Railway volume at /data) ───────────────────
+const UPLOADS_DIR = process.env.UPLOADS_DIR || '/data/uploads';
+if (!fs.existsSync(UPLOADS_DIR)) {
+  try { fs.mkdirSync(UPLOADS_DIR, { recursive: true }); } catch (_) {}
+}
+const uploadDisk = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, UPLOADS_DIR),
+    filename: (req, file, cb) => {
+      const ext  = path.extname(file.originalname).toLowerCase() || '.jpg';
+      const name = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${ext}`;
+      cb(null, name);
+    },
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+  fileFilter: (req, file, cb) => cb(null, /^image\//.test(file.mimetype)),
+});
 const buildSystemInstruction = require('./buildInstruction');
 const { buildOrderFieldsInstruction, buildContactInstruction } = require('./buildInstruction');
 const db           = require('./db');
@@ -575,6 +593,8 @@ if (fs.existsSync(FRONTEND_DIST)) {
   app.use(express.static(FRONTEND_DIST));
   console.log('[STARTUP] Serving React frontend from', FRONTEND_DIST);
 }
+// Serve uploaded media files from the persistent volume
+app.use('/uploads', express.static(UPLOADS_DIR));
 // Legacy HTML pages still accessible at /legacy/*
 app.use('/legacy', express.static(path.join(__dirname, 'public')));
 
@@ -1668,6 +1688,14 @@ app.patch('/api/customers/:phone/ai-mode', jwtAuth, async (req, res) => {
 });
 
 // ─── Media library endpoints ──────────────────────────────────────────────────
+// POST /api/media/upload — upload an image file to the persistent volume
+app.post('/api/media/upload', jwtAuth, uploadDisk.single('image'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No image file received' });
+  const base = process.env.PUBLIC_URL || '';
+  const url  = `${base}/uploads/${req.file.filename}`;
+  res.json({ ok: true, url });
+});
+
 app.get('/api/media', jwtAuth, async (req, res) => {
   const clientId = resolveClientId(req);
   if (!clientId) return res.status(400).json({ error: 'client_id required' });

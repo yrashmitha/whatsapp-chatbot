@@ -23,7 +23,7 @@ export default function Orders() {
   const [expandedOrder, setExpandedOrder] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null); // { id, orderId, fields }
   const [editingNoteId, setEditingNoteId] = useState(null);
-  const [noteText, setNoteText] = useState('');
+  const [noteText, setNoteText] = useState(`Today is ${formatDateTime(new Date(), 'yyyy-MM-dd')}.`);
   const [productPopup, setProductPopup] = useState(null); // product object or 'loading'
   const toast = useToast();
   const qc = useQueryClient();

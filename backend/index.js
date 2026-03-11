@@ -1717,7 +1717,7 @@ app.get('/api/messages/:phone', jwtAuth, async (req, res) => {
       ? (clientId ? [phone, clientId, before, limit] : [phone, before, limit])
       : (clientId ? [phone, clientId, limit] : [phone, limit]);
     const q = `
-      SELECT id, phone_number, message_text, sender_type, created_at, cost_usd
+      SELECT id, phone_number, message_text, sender_type, created_at, cost_usd, media_type, media_url
       FROM messages
       WHERE phone_number=$1 ${clientId ? 'AND client_id=$2' : ''}
       ${before ? `AND created_at < ${clientId ? '$3' : '$2'}` : ''}

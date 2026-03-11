@@ -401,6 +401,8 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   let botReply  = rawReply
     .replace(/\*\*([^*\n]+)\*\*/g, '*$1*') // convert markdown **bold** → WhatsApp *bold*
     .replace(/\[ORDER STATUS[^\]]*\]\s*/gi, '') // strip any echoed ORDER STATUS note wherever it appears
+    .replace(/\{"send_image_response"[^}]*\}\s*/gi, '') // strip leaked send_image function response JSON
+    .replace(/\n{3,}/g, '\n\n') // collapse excess blank lines left by stripping
     .trim();
 
   // If Gemini returned empty text (e.g. incomplete function call cycle), send a safe fallback

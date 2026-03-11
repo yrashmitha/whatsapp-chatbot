@@ -302,85 +302,92 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   }
   let candidate = result.response;
 
-  // ── Function calling loop (product search via pgvector) ──────────────────
+  // ── Function calling loop ──────────────────────────────────────────────────
   let fcLoopCount = 0;
-  const productImagesToSend = []; // track product images found in RAG
+  const productImagesToSend = []; // track images to send after text reply
   while (candidate.functionCalls()?.length > 0 && fcLoopCount++ < 8) {
-    const fc = candidate.functionCalls()[0];
-    if (fc.name === 'search_products' && client?.product_catalog_enabled && db.IS_PG) {
-      const maxPrice = (fc.args.max_price != null && fc.args.max_price > 0) ? fc.args.max_price : null;
-      console.log(`[RAG] search_products called with query: "${fc.args.query}"${maxPrice != null ? ` | max_price: ${maxPrice}` : ''}`);
-      let resultText = 'No matching products found.';
-      const limit = client.max_products_in_context || 5;
-      const formatProducts = (products) => products.map(p => {
-        const price = p.price_max ? `${p.price}–${p.price_max}` : (p.price || '?');
-        const attrs = p.attributes && typeof p.attributes === 'object' && Object.keys(p.attributes).length > 0
-          ? ' | ' + Object.entries(p.attributes).map(([k, v]) => `${k}: ${v}`).join(', ')
-          : '';
-        return `• [product_id:${p.id}] ${p.name}${p.sku ? ` (${p.sku})` : ''} | ${p.currency} ${price}${p.category ? ` | ${p.category}` : ''}${attrs}${p.description ? ` — ${p.description}` : ''}`;
-      }).join('\n');
+    const calls = candidate.functionCalls();
+    const functionResponses = [];
+    let anyHandled = false;
 
-      let products = [];
-      try {
-        const emb = await embedText(fc.args.query);
-        products = await db.vectorSearchProducts(client.id, emb, limit, maxPrice);
-        if (products.length > 0) {
-          console.log(`[RAG] Vector search returned ${products.length} products`);
-          resultText = formatProducts(products);
-        }
-      } catch (e) {
-        console.warn('[RAG] Vector search failed, falling back to FTS:', e.message);
-      }
+    for (const fc of calls) {
+      if (fc.name === 'search_products' && client?.product_catalog_enabled && db.IS_PG) {
+        const maxPrice = (fc.args.max_price != null && fc.args.max_price > 0) ? fc.args.max_price : null;
+        console.log(`[RAG] search_products called with query: "${fc.args.query}"${maxPrice != null ? ` | max_price: ${maxPrice}` : ''}`);
+        let resultText = 'No matching products found.';
+        const limit = client.max_products_in_context || 5;
+        const formatProducts = (products) => products.map(p => {
+          const price = p.price_max ? `${p.price}–${p.price_max}` : (p.price || '?');
+          const attrs = p.attributes && typeof p.attributes === 'object' && Object.keys(p.attributes).length > 0
+            ? ' | ' + Object.entries(p.attributes).map(([k, v]) => `${k}: ${v}`).join(', ')
+            : '';
+          return `• [product_id:${p.id}] ${p.name}${p.sku ? ` (${p.sku})` : ''} | ${p.currency} ${price}${p.category ? ` | ${p.category}` : ''}${attrs}${p.description ? ` — ${p.description}` : ''}`;
+        }).join('\n');
 
-      // FTS fallback: used when embedding fails or returns no results
-      if (!products.length) {
+        let products = [];
         try {
-          products = await db.searchProducts(client.id, fc.args.query, limit, maxPrice);
+          const emb = await embedText(fc.args.query);
+          products = await db.vectorSearchProducts(client.id, emb, limit, maxPrice);
           if (products.length > 0) {
-            console.log(`[RAG] FTS fallback returned ${products.length} products`);
+            console.log(`[RAG] Vector search returned ${products.length} products`);
             resultText = formatProducts(products);
           }
         } catch (e) {
-          console.warn('[RAG] FTS fallback failed:', e.message);
+          console.warn('[RAG] Vector search failed, falling back to FTS:', e.message);
         }
-      }
 
-      // Collect product images to send after text reply
-      for (const p of products) {
-        if (p.image_url) productImagesToSend.push({ url: p.image_url, caption: p.name });
-      }
-
-      const finalResult = products.length === 0
-        ? 'No matching products found. Do NOT suggest or mention any product — tell the customer this item is not available.'
-        : resultText;
-      result    = await chatSession.sendMessage([{ functionResponse: { name: 'search_products', response: { result: finalResult } } }]);
-      candidate = result.response;
-    } else if (fc.name === 'search_knowledge' && client?.knowledge_base_enabled && db.IS_PG) {
-      console.log(`[RAG] search_knowledge called with query: "${fc.args.query}"`);
-      let resultText = 'No relevant information found in the knowledge base.';
-      try {
-        const emb = await embedText(fc.args.query);
-        const chunks = await db.vectorSearchKnowledge(client.id, emb, 5);
-        if (chunks.length > 0) {
-          console.log(`[RAG] Knowledge base returned ${chunks.length} chunks`);
-          resultText = chunks.map(c => `[${c.title}]\n${c.content}`).join('\n\n---\n\n');
-        } else {
-          console.log(`[RAG] Knowledge base returned no results`);
+        if (!products.length) {
+          try {
+            products = await db.searchProducts(client.id, fc.args.query, limit, maxPrice);
+            if (products.length > 0) {
+              console.log(`[RAG] FTS fallback returned ${products.length} products`);
+              resultText = formatProducts(products);
+            }
+          } catch (e) {
+            console.warn('[RAG] FTS fallback failed:', e.message);
+          }
         }
-      } catch (e) {
-        console.warn('[RAG] Knowledge search failed:', e.message);
+
+        for (const p of products) {
+          if (p.image_url) productImagesToSend.push({ url: p.image_url, caption: p.name });
+        }
+
+        const finalResult = products.length === 0
+          ? 'No matching products found. Do NOT suggest or mention any product — tell the customer this item is not available.'
+          : resultText;
+        functionResponses.push({ functionResponse: { name: 'search_products', response: { result: finalResult } } });
+        anyHandled = true;
+
+      } else if (fc.name === 'search_knowledge' && client?.knowledge_base_enabled && db.IS_PG) {
+        console.log(`[RAG] search_knowledge called with query: "${fc.args.query}"`);
+        let resultText = 'No relevant information found in the knowledge base.';
+        try {
+          const emb = await embedText(fc.args.query);
+          const chunks = await db.vectorSearchKnowledge(client.id, emb, 5);
+          if (chunks.length > 0) {
+            console.log(`[RAG] Knowledge base returned ${chunks.length} chunks`);
+            resultText = chunks.map(c => `[${c.title}]\n${c.content}`).join('\n\n---\n\n');
+          } else {
+            console.log(`[RAG] Knowledge base returned no results`);
+          }
+        } catch (e) {
+          console.warn('[RAG] Knowledge search failed:', e.message);
+        }
+        functionResponses.push({ functionResponse: { name: 'search_knowledge', response: { result: resultText } } });
+        anyHandled = true;
+
+      } else if (fc.name === 'send_image') {
+        const { image_url, caption = '' } = fc.args;
+        console.log(`[MEDIA] send_image called: url="${image_url}" caption="${caption}"`);
+        if (image_url) productImagesToSend.push({ url: image_url, caption });
+        functionResponses.push({ functionResponse: { name: 'send_image', response: { ok: true } } });
+        anyHandled = true;
       }
-      result    = await chatSession.sendMessage([{ functionResponse: { name: 'search_knowledge', response: { result: resultText } } }]);
-      candidate = result.response;
-    } else if (fc.name === 'send_image') {
-      const { image_url, caption = '' } = fc.args;
-      console.log(`[MEDIA] send_image called: url="${image_url}" caption="${caption}"`);
-      if (image_url) productImagesToSend.push({ url: image_url, caption });
-      result    = await chatSession.sendMessage([{ functionResponse: { name: 'send_image', response: { ok: true } } }]);
-      candidate = result.response;
-    } else {
-      break;
     }
+
+    if (!anyHandled) break;
+    result    = await chatSession.sendMessage(functionResponses);
+    candidate = result.response;
   }
 
   // Filter out Gemini thinking parts (gemini-2.5-flash thinking leaks into .text())

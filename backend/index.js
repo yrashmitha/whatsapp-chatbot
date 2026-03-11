@@ -305,7 +305,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   // ── Function calling loop (product search via pgvector) ──────────────────
   let fcLoopCount = 0;
   const productImagesToSend = []; // track product images found in RAG
-  while (candidate.functionCalls()?.length > 0 && fcLoopCount++ < 3) {
+  while (candidate.functionCalls()?.length > 0 && fcLoopCount++ < 8) {
     const fc = candidate.functionCalls()[0];
     if (fc.name === 'search_products' && client?.product_catalog_enabled && db.IS_PG) {
       const maxPrice = (fc.args.max_price != null && fc.args.max_price > 0) ? fc.args.max_price : null;
@@ -389,7 +389,8 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     .trim();
 
   // If Gemini returned empty text (e.g. incomplete function call cycle), send a safe fallback
-  if (!botReply) {
+  // But skip the fallback if images were sent — the image IS the reply
+  if (!botReply && productImagesToSend.length === 0) {
     console.warn('[GEMINI] Empty reply after processing — using fallback');
     botReply = client?.error_message || "Sorry, I didn't get that. Could you please try again? 🙏";
   }

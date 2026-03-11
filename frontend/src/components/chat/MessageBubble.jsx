@@ -75,7 +75,10 @@ export default function MessageBubble({ msg }) {
           </div>
         )}
 
-        {text && <div className="whitespace-pre-wrap break-words">{text}</div>}
+        {/* Hide bare [Image: ...] / [PDF: ...] labels when media is already rendered */}
+        {text && !(hasImage && /^\[Image:[^\]]*\]$/.test(text.trim())) && !(hasPdf && /^\[PDF:[^\]]*\]$/.test(text.trim())) && (
+          <div className="whitespace-pre-wrap break-words">{text}</div>
+        )}
         <div className={`text-xs mt-1 ${isUser ? 'text-slate-400' : 'opacity-60'} text-right`}>
           {formatTime(msg.created_at)}
           {!isUser && !isAdmin && msg.cost_usd && parseFloat(msg.cost_usd) > 0 && (

@@ -383,7 +383,15 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     }
   }
 
-  let botReply  = (candidate.text() || '')
+  // Filter out Gemini thinking parts (gemini-2.5-flash thinking leaks into .text())
+  const rawParts = candidate.candidates?.[0]?.content?.parts || [];
+  const nonThoughtText = rawParts
+    .filter(p => !p.thought && typeof p.text === 'string')
+    .map(p => p.text)
+    .join('');
+  const rawReply = nonThoughtText || candidate.text() || '';
+
+  let botReply  = rawReply
     .replace(/\*\*([^*\n]+)\*\*/g, '*$1*') // convert markdown **bold** → WhatsApp *bold*
     .replace(/\[ORDER STATUS[^\]]*\]\s*/gi, '') // strip any echoed ORDER STATUS note wherever it appears
     .trim();

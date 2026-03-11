@@ -368,7 +368,8 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
           const chunks = await db.vectorSearchKnowledge(client.id, emb, 8);
           if (chunks.length > 0) {
             console.log(`[RAG] Knowledge base returned ${chunks.length} chunks`);
-            resultText = chunks.map(c => `[${c.title}]\n${c.content}`).join('\n\n---\n\n');
+            resultText = 'IMPORTANT: Answer using ONLY the exact information below. Do not change numbers, add details, or use any outside knowledge.\n\n'
+              + chunks.map(c => `[${c.title}]\n${c.content}`).join('\n\n---\n\n');
           } else {
             console.log(`[RAG] Knowledge base returned no results`);
           }

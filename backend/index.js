@@ -55,6 +55,7 @@ const model = genAI.getGenerativeModel({
     topP: 0.95,
     topK: 64,
     maxOutputTokens: 1024,
+    thinkingConfig: { thinkingBudget: 0 },
   }
 });
 
@@ -124,6 +125,7 @@ async function buildChatSession(phoneNumber, client) {
         topP: 0.95,
         topK: 64,
         maxOutputTokens: 1024,
+        thinkingConfig: { thinkingBudget: 0 },
       },
     });
     console.log(`[SESSION] Built client model for ${client.id} | mode=${client.system_prompt_mode} | orderFields=${client.order_fields?.length || 0} | contactNumber=${client.contact_number || 'none'} | instructionLen=${fullInstruction.length}`);
@@ -390,19 +392,9 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     candidate = result.response;
   }
 
-  // Filter out Gemini thinking parts (gemini-2.5-flash thinking leaks into .text())
-  const rawParts = candidate.candidates?.[0]?.content?.parts || [];
-  const nonThoughtText = rawParts
-    .filter(p => !p.thought && typeof p.text === 'string')
-    .map(p => p.text)
-    .join('');
-  const rawReply = nonThoughtText || candidate.text() || '';
-
-  let botReply  = rawReply
+  let botReply  = (candidate.text() || '')
     .replace(/\*\*([^*\n]+)\*\*/g, '*$1*') // convert markdown **bold** → WhatsApp *bold*
     .replace(/\[ORDER STATUS[^\]]*\]\s*/gi, '') // strip any echoed ORDER STATUS note wherever it appears
-    .replace(/\{"send_image_response"[^}]*\}\s*/gi, '') // strip leaked send_image function response JSON
-    .replace(/\n{3,}/g, '\n\n') // collapse excess blank lines left by stripping
     .trim();
 
   // If Gemini returned empty text (e.g. incomplete function call cycle), send a safe fallback

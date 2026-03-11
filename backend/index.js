@@ -503,7 +503,9 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     paymentReceived = true;
   }
 
-  await db.insertMessage(phoneNumber, botReply, 'bot', callCostUSD, client?.id ?? null);
+  // Strip [[MSG_BREAK]] markers before saving to DB (clean single text for history)
+  const botReplyForDb = botReply.replace(/\[\[MSG_BREAK\]\]/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  await db.insertMessage(phoneNumber, botReplyForDb, 'bot', callCostUSD, client?.id ?? null);
   console.log(`[DB] Saved bot reply for ${phoneNumber} cost=$${callCostUSD.toFixed(6)}`);
 
   // Sliding window: keep only last 40 entries in memory, drop oldest from front
@@ -599,6 +601,15 @@ async function sendWhatsAppMessage(to, text, client) {
   } catch (err) {
     console.error(`[WA] Send failed to ${to}:`, err?.response?.data ?? err.message);
     throw err;
+  }
+}
+
+// Split reply on [[MSG_BREAK]] and send as separate WhatsApp messages with a short delay
+async function sendBotReply(to, botReply, client) {
+  const parts = botReply.split('[[MSG_BREAK]]').map(p => p.trim()).filter(Boolean);
+  for (let i = 0; i < parts.length; i++) {
+    await sendWhatsAppMessage(to, parts[i], client);
+    if (i < parts.length - 1) await new Promise(r => setTimeout(r, 800));
   }
 }
 
@@ -807,7 +818,7 @@ app.post('/webhook', (req, res) => {
         await db.insertMessage(from, userLabel, 'user', null, client?.id ?? null, 'image', customerMediaUrl);
 
         const { botReply, imagesToSend } = await handleMessage(from, imageNote, imgSession.chat, { skipUserInsert: true, client });
-        if (botReply.trim()) await sendWhatsAppMessage(from, botReply, client);
+        if (botReply.trim()) await sendBotReply(from, botReply, client);
 
         for (const filename of imagesToSend) {
           const imgCaption = filename.toLowerCase().startsWith('horoscope')
@@ -895,7 +906,7 @@ app.post('/webhook', (req, res) => {
       if (!botReply.trim()) {
         console.warn(`[WEBHOOK-POST] Empty botReply from Gemini for ${from} — skipping send`);
       } else {
-        await sendWhatsAppMessage(from, botReply, client);
+        await sendBotReply(from, botReply, client);
       }
 
       for (const filename of imagesToSend) {
@@ -985,7 +996,7 @@ setInterval(async () => {
           { skipUserInsert: true, client, retryNote }
         );
 
-        await sendWhatsAppMessage(item.phone_number, botReply, client);
+        await sendBotReply(item.phone_number, botReply, client);
         await db.pgQuery(`UPDATE message_retry_queue SET resolved_at=NOW() WHERE id=$1`, [item.id]);
         console.log(`[RETRY-WORKER] Success for ${item.phone_number}`);
 

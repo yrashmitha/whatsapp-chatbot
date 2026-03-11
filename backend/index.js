@@ -161,7 +161,7 @@ async function buildChatSession(phoneNumber, client) {
   if (client?.knowledge_base_enabled && db.IS_PG) {
     const kbDecl = {
       name: 'search_knowledge',
-      description: 'Search the knowledge base for information. You MUST call this before answering ANY customer question about services, policies, coverage, pricing, terms, or any topic. Only answer based on what is returned — never invent or guess information not found in the results.',
+      description: 'Search the knowledge base for information. Call this MULTIPLE TIMES with different focused queries if the question has multiple aspects — each call may return different relevant chunks. You MUST search before answering any question about services, policies, coverage, pricing, or terms. Only answer based on what is returned — never invent information.',
       parameters: {
         type: 'OBJECT',
         properties: {
@@ -365,7 +365,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
         let resultText = 'No relevant information found in the knowledge base.';
         try {
           const emb = await embedText(fc.args.query);
-          const chunks = await db.vectorSearchKnowledge(client.id, emb, 5);
+          const chunks = await db.vectorSearchKnowledge(client.id, emb, 8);
           if (chunks.length > 0) {
             console.log(`[RAG] Knowledge base returned ${chunks.length} chunks`);
             resultText = chunks.map(c => `[${c.title}]\n${c.content}`).join('\n\n---\n\n');

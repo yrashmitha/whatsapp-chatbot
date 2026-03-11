@@ -2,7 +2,7 @@
  * Fixed-size text chunker with overlap.
  * Works for any text format regardless of structure.
  */
-function chunkText(text, chunkSize = 600, overlap = 100) {
+function chunkText(text, chunkSize = 1000, overlap = 150) {
   const clean = text.replace(/\s+/g, ' ').trim();
   if (!clean) return [];
   const chunks = [];

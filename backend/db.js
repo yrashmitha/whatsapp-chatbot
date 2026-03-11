@@ -769,7 +769,7 @@ async function vectorSearchKnowledge(clientId, embedding, limit = 5) {
     `SELECT id, title, content, 1 - (embedding <=> $2::vector) AS similarity
      FROM client_knowledge_chunks
      WHERE client_id = $1 AND embedding IS NOT NULL
-       AND (1 - (embedding <=> $2::vector)) > 0.4
+       AND (1 - (embedding <=> $2::vector)) > 0.35
      ORDER BY embedding <=> $2::vector
      LIMIT $3`,
     [clientId, JSON.stringify(embedding), limit]

@@ -23,7 +23,7 @@ export default function Orders() {
   const [expandedOrder, setExpandedOrder] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null); // { id, orderId, fields }
   const [editingNoteId, setEditingNoteId] = useState(null);
-  const [noteText, setNoteText] = useState(`Today is ${formatDateTime(new Date(), 'yyyy-MM-dd')}.`);
+  const [noteText, setNoteText] = useState('');
   const [productPopup, setProductPopup] = useState(null); // product object or 'loading'
   const toast = useToast();
   const qc = useQueryClient();
@@ -177,7 +177,7 @@ export default function Orders() {
                               <div className="flex items-center justify-between mb-1">
                                 <span className="text-xs font-semibold text-slate-600">Notes</span>
                                 {editingNoteId !== o.id && (
-                                  <button onClick={() => { setEditingNoteId(o.id); setNoteText(o.notes || ''); }}
+                                  <button onClick={() => { setEditingNoteId(o.id); setNoteText(o.notes || `Today is ${formatDateTime(new Date())}.`); }}
                                     className="text-xs text-violet-600 hover:text-violet-800 cursor-pointer bg-transparent border-0">
                                     {o.notes ? 'Edit' : 'Add'}
                                   </button>

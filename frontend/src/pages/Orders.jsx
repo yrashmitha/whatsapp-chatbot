@@ -205,7 +205,7 @@ export default function Orders() {
                                   </div>
                                 </div>
                               ) : (
-                                <div className={`text-xs whitespace-pre-wrap ${o.notes ? 'text-slate-700' : 'text-slate-300'}`}>
+                                <div className={`text-xs whitespace-pre-wrap ${o.notes ? 'text-slate-700' : 'text-slate-400 italic'}`}>
                                   {o.notes || 'No notes yet'}
                                 </div>
                               )}

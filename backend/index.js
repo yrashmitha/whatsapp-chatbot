@@ -778,7 +778,33 @@ app.post('/webhook', (req, res) => {
 
         const mediaId = msg.image?.id || '';
         const userLabel = `[Photo:${mediaId}]${caption ? ` ${caption}` : ''}`;
-        await db.insertMessage(from, userLabel, 'user', null, client?.id ?? null);
+
+        let customerMediaUrl = null;
+        if (mediaId) {
+          try {
+            const metaRes = await axios.get(
+              `https://graph.facebook.com/v18.0/${mediaId}`,
+              { headers: { Authorization: `Bearer ${waToken(client)}` } }
+            );
+            const dlUrl = metaRes.data?.url;
+            if (dlUrl) {
+              const imgRes = await axios.get(dlUrl, {
+                responseType: 'arraybuffer',
+                headers: { Authorization: `Bearer ${waToken(client)}` }
+              });
+              const mimeType = metaRes.data?.mime_type || 'image/jpeg';
+              const ext = mimeType.split('/')[1]?.split(';')[0] || 'jpg';
+              const fname = `wa-${from}-${Date.now()}.${ext}`;
+              fs.writeFileSync(path.join(UPLOADS_DIR, fname), imgRes.data);
+              customerMediaUrl = `/uploads/${fname}`;
+              console.log(`[MEDIA-DL] Customer image saved: ${fname}`);
+            }
+          } catch (e) {
+            console.warn('[MEDIA-DL] Failed to download customer image:', e.message);
+          }
+        }
+
+        await db.insertMessage(from, userLabel, 'user', null, client?.id ?? null, 'image', customerMediaUrl);
 
         const { botReply, imagesToSend } = await handleMessage(from, imageNote, imgSession.chat, { skipUserInsert: true, client });
         if (botReply.trim()) await sendWhatsAppMessage(from, botReply, client);
@@ -790,6 +816,39 @@ app.post('/webhook', (req, res) => {
           await sendWhatsAppImage(from, filename, imgCaption, client);
           await db.insertMessage(from, `[Image: ${filename}]`, 'bot', null, client?.id ?? null);
         }
+        return;
+      }
+
+      // ── Document messages (PDFs etc.) ───────────────────────────────────────
+      if (msg.type === 'document') {
+        const docMediaId = msg.document?.id;
+        const docFileName = msg.document?.filename || 'document.pdf';
+        let docStoredUrl = null;
+        if (docMediaId) {
+          try {
+            const metaRes = await axios.get(
+              `https://graph.facebook.com/v18.0/${docMediaId}`,
+              { headers: { Authorization: `Bearer ${waToken(client)}` } }
+            );
+            const dlUrl = metaRes.data?.url;
+            if (dlUrl) {
+              const docRes = await axios.get(dlUrl, {
+                responseType: 'arraybuffer',
+                headers: { Authorization: `Bearer ${waToken(client)}` }
+              });
+              const safeName = docFileName.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+              const fname = `wa-doc-${from}-${Date.now()}-${safeName}`;
+              fs.writeFileSync(path.join(UPLOADS_DIR, fname), docRes.data);
+              docStoredUrl = `/uploads/${fname}`;
+              console.log(`[MEDIA-DL] Customer document saved: ${fname}`);
+            }
+          } catch (e) {
+            console.warn('[MEDIA-DL] Failed to download customer document:', e.message);
+          }
+        }
+        await db.upsertCustomer(from, null, client?.id);
+        await db.insertMessage(from, `[Document: ${docFileName}]`, 'user', null, client?.id ?? null, 'pdf', docStoredUrl);
+        await sendWhatsAppMessage(from, 'ලිපිය ලැබුණා, ස්තූතියි! 🙏', client);
         return;
       }
 
@@ -855,7 +914,7 @@ app.post('/webhook', (req, res) => {
             { messaging_product: 'whatsapp', to: from, type: 'image', image: { link: url, caption } },
             { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
           );
-          await db.insertMessage(from, `[Product Image: ${caption}]`, 'bot', null, client?.id ?? null);
+          await db.insertMessage(from, `[Image: ${caption}]`, 'bot', null, client?.id ?? null, 'image', url);
           console.log(`[WA-IMG] Product image sent: ${caption}`);
         } catch (e) {
           console.warn(`[WA-IMG] Failed to send product image "${caption}":`, e?.response?.data ?? e.message);
@@ -1070,7 +1129,7 @@ app.post('/admin/send', adminAuth, async (req, res) => {
         { messaging_product: 'whatsapp', to: phone, type: 'image', image: { link: publicUrl, caption: text || '' } },
         { headers: { Authorization: `Bearer ${META_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } }
       );
-      await db.insertMessage(phone, `[Image]${text ? ': ' + text : ''}`, 'bot');
+      await db.insertMessage(phone, `[Image]${text ? ': ' + text : ''}`, 'bot', null, null, 'image', null);
       console.log(`[ADMIN] Template image sent to ${phone}: ${publicUrl}`);
     } else if (imageBase64 && imageType) {
       const isPdf = imageType === 'application/pdf';
@@ -1095,7 +1154,10 @@ app.post('/admin/send', adminAuth, async (req, res) => {
           { messaging_product: 'whatsapp', to: phone, type: 'document', document: { id: uploadData.id, filename: fileName || 'document.pdf', caption: text || '' } },
           { headers: { Authorization: `Bearer ${META_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } }
         );
-        await db.insertMessage(phone, `[PDF: ${fileName || 'document.pdf'}]${text ? ' ' + text : ''}`, 'bot');
+        const pdfSaveName = `admin-pdf-${Date.now()}-${(fileName || 'document.pdf').replace(/[^a-zA-Z0-9.\-_]/g, '_')}`;
+        fs.writeFileSync(path.join(UPLOADS_DIR, pdfSaveName), buffer);
+        const pdfHostedUrl = `/uploads/${pdfSaveName}`;
+        await db.insertMessage(phone, `[PDF: ${fileName || 'document.pdf'}]${text ? ' ' + text : ''}`, 'bot', null, null, 'pdf', pdfHostedUrl);
       } else {
         // Send as image
         await axios.post(
@@ -1103,7 +1165,7 @@ app.post('/admin/send', adminAuth, async (req, res) => {
           { messaging_product: 'whatsapp', to: phone, type: 'image', image: { id: uploadData.id, caption: text || '' } },
           { headers: { Authorization: `Bearer ${META_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } }
         );
-        await db.insertMessage(phone, `[Image]${text ? ': ' + text : ''}`, 'bot');
+        await db.insertMessage(phone, `[Image]${text ? ': ' + text : ''}`, 'bot', null, null, 'image', null);
       }
     } else if (text) {
       await sendWhatsAppMessage(phone, text);

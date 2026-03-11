@@ -571,19 +571,28 @@ function waToken(client)   { return (client && client.waToken)          || META_
 function waPhoneId(client) { return (client && client.phone_number_id)  || PHONE_NUMBER_ID;  }
 
 async function sendWhatsAppImage(to, filename, caption, client) {
+  const isPdf  = filename.toLowerCase().endsWith('.pdf');
   const mediaId = templateMediaIds.get(filename);
-  const image   = mediaId
-    ? { id: mediaId, caption }
-    : { link: `${process.env.PUBLIC_URL || 'https://whatsapp-chatbot-production-038d.up.railway.app'}/templates/${encodeURIComponent(filename)}`, caption };
+  const fileUrl = `${process.env.PUBLIC_URL || 'https://whatsapp-chatbot-production-038d.up.railway.app'}/templates/${encodeURIComponent(filename)}`;
 
-  console.log(`[WA-IMG] Sending "${filename}" to ${to} via ${mediaId ? 'media_id' : 'link'}`);
+  console.log(`[WA-IMG] Sending "${filename}" (${isPdf ? 'pdf' : 'image'}) to ${to} via ${mediaId ? 'media_id' : 'link'}`);
   try {
-    await axios.post(
-      `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
-      { messaging_product: 'whatsapp', to, type: 'image', image },
-      { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
-    );
-    console.log(`[WA-IMG] Image sent successfully to ${to}`);
+    if (isPdf) {
+      const document = mediaId ? { id: mediaId, filename, caption } : { link: fileUrl, filename, caption };
+      await axios.post(
+        `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
+        { messaging_product: 'whatsapp', to, type: 'document', document },
+        { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
+      );
+    } else {
+      const image = mediaId ? { id: mediaId, caption } : { link: fileUrl, caption };
+      await axios.post(
+        `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
+        { messaging_product: 'whatsapp', to, type: 'image', image },
+        { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
+      );
+    }
+    console.log(`[WA-IMG] Sent successfully to ${to}`);
   } catch (err) {
     console.error(`[WA-IMG] Send failed to ${to}:`, err?.response?.data ?? err.message);
   }
@@ -825,7 +834,8 @@ app.post('/webhook', (req, res) => {
             ? 'ලග්න කොටු 12 සහ නවාංශ කොටු 12 දෙකම පෙනෙන ලෙස photo send කරන්න 🙏'
             : 'මේවා මම ඉක්මනින්ම හොයාගත්ත කීප දෙනෙකුගේ screenshots 🙏';
           await sendWhatsAppImage(from, filename, imgCaption, client);
-          await db.insertMessage(from, `[Image: ${filename}]`, 'bot', null, client?.id ?? null);
+          const isPdf = filename.toLowerCase().endsWith('.pdf');
+          await db.insertMessage(from, isPdf ? `[PDF: ${filename}]` : `[Image: ${filename}]`, 'bot', null, client?.id ?? null, isPdf ? 'pdf' : 'image', `/templates/${encodeURIComponent(filename)}`);
         }
         return;
       }
@@ -914,7 +924,8 @@ app.post('/webhook', (req, res) => {
           ? 'ලග්න කොටු 12 සහ නවාංශ කොටු 12 දෙකම පෙනෙන ලෙස photo send කරන්න 🙏'
           : 'මේවා මම ඉක්මනින්ම හොයාගත්ත කීප දෙනෙකුගේ screenshots 🙏';
         await sendWhatsAppImage(from, filename, caption, client);
-        await db.insertMessage(from, `[Image: ${filename}]`, 'bot', null, client?.id ?? null);
+        const isPdf = filename.toLowerCase().endsWith('.pdf');
+        await db.insertMessage(from, isPdf ? `[PDF: ${filename}]` : `[Image: ${filename}]`, 'bot', null, client?.id ?? null, isPdf ? 'pdf' : 'image', `/templates/${encodeURIComponent(filename)}`);
       }
 
       // Send product images from RAG search

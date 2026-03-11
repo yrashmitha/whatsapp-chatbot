@@ -810,11 +810,15 @@ app.post('/webhook', (req, res) => {
           chatSessions.delete(sessionKey);
         }
       }
-      if (!chatSessions.has(sessionKey)) {
-        console.log(`[WEBHOOK-POST] New WhatsApp session for ${client.id}:${from}`);
+      const settingsFingerprint = `${client.ai_model}|${client.knowledge_base_enabled}|${client.product_catalog_enabled}`;
+      const existingSession = chatSessions.get(sessionKey);
+      if (!existingSession || existingSession.settingsFingerprint !== settingsFingerprint) {
+        if (existingSession) console.log(`[WEBHOOK-POST] Settings changed — rebuilding session for ${client.id}:${from}`);
+        else console.log(`[WEBHOOK-POST] New WhatsApp session for ${client.id}:${from}`);
         chatSessions.set(sessionKey, {
-          chat:        await buildChatSession(from, client),
-          phoneNumber: from,
+          chat:                await buildChatSession(from, client),
+          phoneNumber:         from,
+          settingsFingerprint,
         });
       }
       const session = chatSessions.get(sessionKey);

@@ -477,7 +477,7 @@ async function upsertCustomer(phoneNumber, name, clientId) {
       INSERT INTO customers (phone_number, name, client_id, updated_at) VALUES ($1, $2, $3, NOW())
       ON CONFLICT(phone_number) DO UPDATE SET
         name       = COALESCE(EXCLUDED.name, customers.name),
-        client_id  = COALESCE(customers.client_id, EXCLUDED.client_id),
+        client_id  = COALESCE(EXCLUDED.client_id, customers.client_id),
         updated_at = NOW()
     `, [phoneNumber, name, clientId || null]);
   } else {
@@ -485,7 +485,7 @@ async function upsertCustomer(phoneNumber, name, clientId) {
       INSERT INTO customers (phone_number, name, client_id, updated_at) VALUES (?, ?, ?, datetime('now'))
       ON CONFLICT(phone_number) DO UPDATE SET
         name       = COALESCE(excluded.name, name),
-        client_id  = COALESCE(client_id, excluded.client_id),
+        client_id  = COALESCE(excluded.client_id, client_id),
         updated_at = datetime('now')
     `).run(phoneNumber, name, clientId || null);
   }

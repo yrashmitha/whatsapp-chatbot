@@ -172,6 +172,14 @@ export default function Orders() {
                       {isExpanded && (
                         <tr className="bg-violet-50 border-b border-violet-100">
                           <td colSpan={colCount} className="px-6 py-3">
+                            {/* AI Summary section */}
+                            {o.ai_summary && (
+                              <div className="mb-3 p-3 bg-blue-50 rounded border border-blue-200">
+                                <div className="text-xs font-semibold text-blue-600 mb-1">AI Summary</div>
+                                <div className="text-xs text-slate-700 whitespace-pre-wrap">{o.ai_summary}</div>
+                              </div>
+                            )}
+
                             {/* Notes section */}
                             <div className="mb-3">
                               <div className="flex items-center justify-between mb-1">

@@ -235,6 +235,9 @@ async function init() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='notes') THEN
           ALTER TABLE orders ADD COLUMN notes TEXT;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='ai_summary') THEN
+          ALTER TABLE orders ADD COLUMN ai_summary TEXT;
+        END IF;
         IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='package') THEN
           ALTER TABLE orders DROP COLUMN package;
         END IF;
@@ -356,6 +359,7 @@ async function init() {
     try { db.exec(`ALTER TABLE orders ADD COLUMN horoscope_received INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
     try { db.exec(`ALTER TABLE orders ADD COLUMN receipt_received INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
     try { db.exec(`ALTER TABLE orders ADD COLUMN notes TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE orders ADD COLUMN ai_summary TEXT`); } catch (_) {}
 
     // ── Multi-tenant tables (SQLite) ─────────────────────────────────────────
     db.exec(`
@@ -625,6 +629,14 @@ async function updateOrderFlagsById(orderId, flags) {
     await pool.query(`UPDATE orders SET ${sets.join(',')} WHERE order_id=$${vals.length}`, vals);
   } else {
     db.prepare(`UPDATE orders SET ${sets.join(',')} WHERE order_id=?`).run(...vals);
+  }
+}
+
+async function updateOrderAISummary(orderId, summary) {
+  if (IS_PG) {
+    await pool.query('UPDATE orders SET ai_summary=$1 WHERE order_id=$2', [summary, orderId]);
+  } else {
+    db.prepare('UPDATE orders SET ai_summary=? WHERE order_id=?').run(summary, orderId);
   }
 }
 
@@ -912,4 +924,4 @@ async function pgQuery(sql, params) {
   }
 }
 
-module.exports = { init, insertMessage, upsertCustomer, insertOrder, getOrdersByPhone, getLatestOrder, countOrdersByYear, getAllCustomers, getMessagesByPhone, updateLatestOrderStatus, updateOrderStatusById, updateOrderCustomFields, updateOrderFlags, updateOrderFlagsById, deleteCustomer, deleteMessages, searchProducts, getAttributeSchema, vectorSearchProducts, saveProductEmbedding, vectorSearchKnowledge, insertKnowledgeChunks, deleteKnowledgeByTitle, getKnowledgeSections, getKnowledgeChunksByTitle, updateKnowledgeChunk, deleteKnowledgeChunk, getClientMedia, insertMedia, deleteMedia, updateMedia, getCustomerAiEnabled, setCustomerAiMode, IS_PG, pgQuery };
+module.exports = { init, insertMessage, upsertCustomer, insertOrder, getOrdersByPhone, getLatestOrder, countOrdersByYear, getAllCustomers, getMessagesByPhone, updateLatestOrderStatus, updateOrderStatusById, updateOrderAISummary, updateOrderCustomFields, updateOrderFlags, updateOrderFlagsById, deleteCustomer, deleteMessages, searchProducts, getAttributeSchema, vectorSearchProducts, saveProductEmbedding, vectorSearchKnowledge, insertKnowledgeChunks, deleteKnowledgeByTitle, getKnowledgeSections, getKnowledgeChunksByTitle, updateKnowledgeChunk, deleteKnowledgeChunk, getClientMedia, insertMedia, deleteMedia, updateMedia, getCustomerAiEnabled, setCustomerAiMode, IS_PG, pgQuery };

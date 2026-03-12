@@ -65,8 +65,9 @@ const PRICE_OUTPUT = 0.30  / 1_000_000;
 function calcCost(i, o) { return i * PRICE_INPUT + o * PRICE_OUTPUT; }
 
 // ─── Order ID generation ──────────────────────────────────────────────────────
-const ORDER_MARKER_REGEX  = /\[\[ORDER_COMPLETE:([\s\S]*?)\]\]/;
-const ORDER_UPDATE_REGEX  = /\[\[ORDER_UPDATE:([\s\S]*?)\]\]/;
+const ORDER_MARKER_REGEX   = /\[\[ORDER_COMPLETE:([\s\S]*?)\]\]/;
+const ORDER_UPDATE_REGEX   = /\[\[ORDER_UPDATE:([\s\S]*?)\]\]/;
+const UPDATE_SUMMARY_REGEX = /\[\[UPDATE_SUMMARY:([\s\S]*?)\]\]/;
 const PAYMENT_MARKER      = '[[PAYMENT_CHECK]]';
 const HOROSCOPE_MARKER    = '[[HOROSCOPE_RECEIVED]]';
 
@@ -124,7 +125,15 @@ async function buildChatSession(phoneNumber, client) {
         + 'If search returns no results, tell the customer you could not find information on that topic. '
         + 'You may call search_knowledge multiple times with different queries for complex questions.'
       : '';
-    const fullInstruction = baseInstruction + orderFieldsBlock + contactBlock + mediaBlock + kbBlock;
+    const summaryBlock = '\n\n━━━ AI SUMMARY / ORDER NOTES ━━━\n'
+      + 'When you place an order using [[ORDER_COMPLETE:{...}]], always include a "summary" field in the JSON with a detailed internal note. '
+      + 'This note is invisible to the customer and is used by the team for reference. '
+      + 'Include: customer\'s main request, any special requirements, priorities, urgency, and key conversation details. '
+      + 'Example: [[ORDER_COMPLETE:{"customer_name":"...", ..., "summary":"Customer needs horoscope for marriage decision, DOB missing, very urgent, follow up needed"}]]\n'
+      + 'You can also update this summary at any point during the conversation by outputting (invisible to customer):\n'
+      + '[[UPDATE_SUMMARY: updated detailed note here ]]\n'
+      + 'Use this when you learn new important details about the customer or their situation.';
+    const fullInstruction = baseInstruction + orderFieldsBlock + contactBlock + mediaBlock + kbBlock + summaryBlock;
     chatModel = genAI.getGenerativeModel({
       model: client.ai_model || 'gemini-2.5-flash',
       systemInstruction: fullInstruction,
@@ -463,6 +472,10 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
       orderId = await generateOrderId(client);
       await db.insertOrder(orderId, phoneNumber, client?.id ?? null, details);
       console.log(`[ORDER] Saved order ${orderId} for ${phoneNumber}`);
+      if (details.summary) {
+        await db.updateOrderAISummary(orderId, details.summary);
+        console.log(`[ORDER] AI summary saved for ${orderId}`);
+      }
       if (details.customer_name) {
         await db.upsertCustomer(phoneNumber, details.customer_name, client?.id);
         console.log(`[DB] Updated customer name: ${details.customer_name}`);
@@ -492,6 +505,21 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
         }
       }
     } catch (e) { console.error('[ORDER] ORDER_UPDATE parse failed:', e.message); }
+  }
+
+  const summaryMatch = botReply.match(UPDATE_SUMMARY_REGEX);
+  if (summaryMatch) {
+    botReply = botReply.replace(UPDATE_SUMMARY_REGEX, '').trim();
+    const summaryText = summaryMatch[1].trim();
+    try {
+      const latestOrder = await db.getLatestOrder(phoneNumber);
+      if (latestOrder) {
+        await db.updateOrderAISummary(latestOrder.order_id, summaryText);
+        console.log(`[ORDER] AI summary updated for ${latestOrder.order_id}`);
+      } else {
+        console.warn(`[ORDER] UPDATE_SUMMARY: no order found for ${phoneNumber}`);
+      }
+    } catch (e) { console.error('[ORDER] UPDATE_SUMMARY failed:', e.message); }
   }
 
   if (botReply.includes(HOROSCOPE_MARKER)) {

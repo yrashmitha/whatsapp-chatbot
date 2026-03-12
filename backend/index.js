@@ -225,6 +225,9 @@ async function buildChatSession(phoneNumber, client) {
   const fullHistory = [...initialHistory, ...mergedHistory];
   console.log(`[SESSION] Loaded ${mergedHistory.length} messages from DB into session context`);
 
+  const registeredTools = tools.flatMap(t => t.functionDeclarations?.map(d => d.name) || []);
+  console.log(`[SESSION] Tools registered for this session: [${registeredTools.join(', ')}]`);
+
   return chatModel.startChat({ history: fullHistory, tools });
 }
 
@@ -308,6 +311,8 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   // ── Function calling loop ──────────────────────────────────────────────────
   let fcLoopCount = 0;
   const productImagesToSend = []; // track images to send after text reply
+  const initialFcCalls = candidate.functionCalls();
+  console.log(`[FC] Gemini initial response has ${initialFcCalls?.length || 0} function call(s): [${(initialFcCalls || []).map(f => f.name).join(', ')}]`);
   while (candidate.functionCalls()?.length > 0 && fcLoopCount++ < 8) {
     const calls = candidate.functionCalls();
     const functionResponses = [];

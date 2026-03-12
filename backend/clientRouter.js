@@ -126,6 +126,7 @@ function buildClient(row) {
 
 /** Fallback client for SQLite / local dev */
 function buildLocalClient() {
+  console.warn('[clientRouter] WARNING: falling back to buildLocalClient — no DB client matched phone_number_id');
   return {
     id: 'astrology_001',
     name: 'පුරාණ ජෝතීර්වේදය',

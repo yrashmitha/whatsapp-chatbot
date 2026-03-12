@@ -35,8 +35,8 @@ const CLIENT_SELECT = `
 async function getClientByPhoneNumberId(phoneNumberId) {
   if (!phoneNumberId) return null;
 
-  const cached = cache.get(phoneNumberId);
-  if (cached && cached.expiresAt > Date.now()) return cached.client;
+  // const cached = cache.get(phoneNumberId);
+  // if (cached && cached.expiresAt > Date.now()) return cached.client;
 
   const res = await pgQuery(
     CLIENT_SELECT + `WHERE cc.phone_number_id = $1 AND c.active = TRUE LIMIT 1`,
@@ -49,7 +49,7 @@ async function getClientByPhoneNumberId(phoneNumberId) {
   }
 
   const client = buildClient(res.rows[0]);
-  cache.set(phoneNumberId, { client, expiresAt: Date.now() + CACHE_TTL_MS });
+  // cache.set(phoneNumberId, { client, expiresAt: Date.now() + CACHE_TTL_MS });
   return client;
 }
 
@@ -60,8 +60,8 @@ async function getClientById(clientId) {
   if (!clientId) return null;
 
   const cacheKey = `id:${clientId}`;
-  const cached = cache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) return cached.client;
+  // const cached = cache.get(cacheKey);
+  // if (cached && cached.expiresAt > Date.now()) return cached.client;
 
   const res = await pgQuery(
     CLIENT_SELECT + `WHERE c.id = $1 LIMIT 1`,
@@ -71,7 +71,7 @@ async function getClientById(clientId) {
   if (res.rows.length === 0) return null;
 
   const client = buildClient(res.rows[0]);
-  cache.set(cacheKey, { client, expiresAt: Date.now() + CACHE_TTL_MS });
+  // cache.set(cacheKey, { client, expiresAt: Date.now() + CACHE_TTL_MS });
   return client;
 }
 

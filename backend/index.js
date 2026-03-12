@@ -158,6 +158,7 @@ async function buildChatSession(phoneNumber, client) {
   }
 
   // Add knowledge base search tool if enabled
+  console.log(`[SESSION] knowledge_base_enabled=${client?.knowledge_base_enabled}, IS_PG=${db.IS_PG} → KB tool will ${client?.knowledge_base_enabled && db.IS_PG ? 'BE' : 'NOT BE'} added`);
   if (client?.knowledge_base_enabled && db.IS_PG) {
     const kbDecl = {
       name: 'search_knowledge',

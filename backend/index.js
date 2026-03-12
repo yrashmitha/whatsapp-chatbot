@@ -116,7 +116,15 @@ async function buildChatSession(phoneNumber, client) {
         + 'Use the send_image tool to deliver images to the customer. Send them at the right moment based on these descriptions:\n'
         + mediaItems.map(m => `- "${m.title}": ${m.description}\n  URL: ${m.image_url}`).join('\n');
     }
-    const fullInstruction = baseInstruction + orderFieldsBlock + contactBlock + mediaBlock;
+    const kbBlock = (client?.knowledge_base_enabled && db.IS_PG)
+      ? '\n\n━━━ KNOWLEDGE BASE — MANDATORY ━━━\n'
+        + 'You have a search_knowledge tool connected to a live knowledge base. '
+        + 'You MUST call search_knowledge BEFORE answering ANY customer question — no exceptions. '
+        + 'Never answer from your own memory or training data. '
+        + 'If search returns no results, tell the customer you could not find information on that topic. '
+        + 'You may call search_knowledge multiple times with different queries for complex questions.'
+      : '';
+    const fullInstruction = baseInstruction + orderFieldsBlock + contactBlock + mediaBlock + kbBlock;
     chatModel = genAI.getGenerativeModel({
       model: client.ai_model || 'gemini-2.5-flash',
       systemInstruction: fullInstruction,

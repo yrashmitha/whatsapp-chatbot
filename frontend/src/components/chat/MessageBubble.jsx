@@ -17,6 +17,7 @@ export default function MessageBubble({ msg }) {
 
   const hasImage = msg.media_type === 'image' && msg.media_url;
   const hasPdf   = msg.media_type === 'pdf'   && msg.media_url;
+  const hasAudio = msg.media_type === 'audio' && msg.media_url;
   const mediaUrl = resolveMediaUrl(msg.media_url);
 
   return (
@@ -75,8 +76,17 @@ export default function MessageBubble({ msg }) {
           </div>
         )}
 
-        {/* Hide bare [Image: ...] / [PDF: ...] labels when media is already rendered */}
-        {text && !(hasImage && /^\[Image:[^\]]*\]$/.test(text.trim())) && !(hasPdf && /^\[PDF:[^\]]*\]$/.test(text.trim())) && (
+        {/* Audio media */}
+        {hasAudio && (
+          <div className="mb-1">
+            <audio controls src={mediaUrl} className="w-full max-w-xs rounded" style={{ height: 36 }} />
+          </div>
+        )}
+
+        {/* Hide bare [Image/PDF/Audio: ...] labels when media is already rendered */}
+        {text && !(hasImage && /^\[Image:[^\]]*\]$/.test(text.trim()))
+               && !(hasPdf   && /^\[PDF:[^\]]*\]$/.test(text.trim()))
+               && !(hasAudio && /^\[Audio:[^\]]*\]$/.test(text.trim())) && (
           <div className="whitespace-pre-wrap break-words">{text}</div>
         )}
         <div className={`text-xs mt-1 ${isUser ? 'text-slate-400' : 'opacity-60'} text-right`}>

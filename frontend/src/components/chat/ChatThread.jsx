@@ -103,6 +103,13 @@ export default function ChatThread({ customer, clientId, onCustomerDeleted }) {
   });
   const aiEnabled = aiModeData?.ai_enabled ?? true;
 
+  const { data: addonsData } = useQuery({
+    queryKey: ['addons-status', clientId],
+    queryFn: () => api.get('/crm/addons-status', { params: clientId ? { client_id: clientId } : {} }).then(r => r.data),
+    enabled: !!clientId,
+  });
+  const crmMediaEnabled = addonsData?.addons?.includes('crm_media_send') ?? false;
+
   const toggleAiMutation = useMutation({
     mutationFn: (enabled) => api.patch(`/customers/${phone}/ai-mode`, { enabled },
       { params: clientId ? { client_id: clientId } : {} }
@@ -157,7 +164,7 @@ export default function ChatThread({ customer, clientId, onCustomerDeleted }) {
       </div>
 
       {/* Input */}
-      <MessageInput phone={phone} clientId={clientId} onSent={() => qc.invalidateQueries({ queryKey: ['messages', phone] })} />
+      <MessageInput phone={phone} clientId={clientId} crmMediaEnabled={crmMediaEnabled} onSent={() => qc.invalidateQueries({ queryKey: ['messages', phone] })} />
     </div>
   );
 }

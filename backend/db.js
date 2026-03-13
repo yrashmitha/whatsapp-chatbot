@@ -325,6 +325,16 @@ async function init() {
       );
       CREATE INDEX IF NOT EXISTS idx_client_media_client ON client_media (client_id, sort_order);
     `);
+    // ── Addon system ──────────────────────────────────────────────────────────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS client_addons (
+        client_id  TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+        addon_id   TEXT NOT NULL,
+        enabled    BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (client_id, addon_id)
+      );
+    `);
   } else {
     db.exec(`PRAGMA foreign_keys = ON;`);
     db.exec(`

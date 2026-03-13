@@ -52,13 +52,25 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
                   {c.last_message && (
                     <div className="text-xs text-slate-500 truncate mt-0.5">{c.last_message}</div>
                   )}
+                  {(c.has_image || c.has_document) && (
+                    <div className="flex gap-1 mt-1 flex-wrap">
+                      {c.has_image && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-500 font-medium">📷 Images</span>
+                      )}
+                      {c.has_document && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 font-medium">📄 Docs</span>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div className="shrink-0 text-right">
+                <div className="shrink-0 text-right flex flex-col items-end gap-0.5">
                   {c.last_message_at && (
                     <div className="text-xs text-slate-400">{timeAgo(c.last_message_at)}</div>
                   )}
                   {c.order_count > 0 && (
-                    <div className="text-xs text-violet-500 mt-0.5">{c.order_count} orders</div>
+                    <span className="text-xs font-semibold text-white bg-violet-500 rounded-full px-2 py-0.5">
+                      {c.order_count} {c.order_count === 1 ? 'order' : 'orders'}
+                    </span>
                   )}
                 </div>
               </div>

@@ -46,6 +46,7 @@ const buildSystemInstruction = require('./buildInstruction');
 const { buildOrderFieldsInstruction, buildContactInstruction } = require('./buildInstruction');
 const db           = require('./db');
 const clientRouter = require('./clientRouter');
+const pluginLoader = require('./pluginLoader');
 const { embedText, productToText } = require('./embedder');
 const { chunkText } = require('./chunker');
 
@@ -147,7 +148,15 @@ async function buildChatSession(phoneNumber, client) {
       + 'You can also update this summary at any point during the conversation by outputting (invisible to customer):\n'
       + '[[UPDATE_SUMMARY: updated detailed note here ]]\n'
       + 'Use this when you learn new important details about the customer or their situation.';
-    const fullInstruction = baseInstruction + orderFieldsBlock + contactBlock + mediaBlock + kbBlock + summaryBlock;
+    let fullInstruction = baseInstruction + orderFieldsBlock + contactBlock + mediaBlock + kbBlock + summaryBlock;
+    // Plugin hook: append extra instruction
+    const _pluginForInstr = pluginLoader.loadPlugin(client?.id, client?.plugin_enabled);
+    if (_pluginForInstr?.appendInstruction) {
+      try {
+        const extra = _pluginForInstr.appendInstruction(fullInstruction, client);
+        if (extra) fullInstruction += '\n\n' + extra;
+      } catch (e) { console.error(`[PLUGIN] appendInstruction error for ${client?.id}:`, e.message); }
+    }
     chatModel = genAI.getGenerativeModel({
       model: client.ai_model || 'gemini-2.5-flash',
       systemInstruction: fullInstruction,
@@ -227,6 +236,18 @@ async function buildChatSession(phoneNumber, client) {
     tools[0].functionDeclarations.push(sendImageDecl);
   } else {
     tools = [{ functionDeclarations: [sendImageDecl] }];
+  }
+  // Plugin hook: extra tools
+  const _pluginForTools = pluginLoader.loadPlugin(client?.id, client?.plugin_enabled);
+  if (_pluginForTools?.getExtraTools) {
+    try {
+      const extras = _pluginForTools.getExtraTools(client);
+      if (extras?.length) {
+        if (tools.length > 0) extras.forEach(t => tools[0].functionDeclarations.push(t));
+        else tools = [{ functionDeclarations: extras }];
+        console.log(`[PLUGIN] ${client.id}: added ${extras.length} extra tool(s)`);
+      }
+    } catch (e) { console.error(`[PLUGIN] getExtraTools error for ${client?.id}:`, e.message); }
   }
 
   // Load last 40 messages from DB so context survives server restarts
@@ -422,6 +443,19 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
         if (image_url) productImagesToSend.push({ url: image_url, caption });
         functionResponses.push({ functionResponse: { name: 'send_image', response: { ok: true } } });
         anyHandled = true;
+      } else {
+        // Plugin hook: handle custom tool call
+        const _pluginForTool = pluginLoader.loadPlugin(client?.id, client?.plugin_enabled);
+        if (_pluginForTool?.handleToolCall) {
+          try {
+            const pluginResult = await _pluginForTool.handleToolCall(fc.name, fc.args, client, { phoneNumber, db });
+            if (pluginResult !== null) {
+              console.log(`[PLUGIN] ${client?.id}: handled tool call "${fc.name}"`);
+              functionResponses.push({ functionResponse: { name: fc.name, response: pluginResult } });
+              anyHandled = true;
+            }
+          } catch (e) { console.error(`[PLUGIN] handleToolCall error for ${client?.id}:`, e.message); }
+        }
       }
     }
 
@@ -557,6 +591,14 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
       console.error(`[PAYMENT] Failed to update order:`, err.message);
     }
     paymentReceived = true;
+  }
+
+  // Plugin hook: process custom markers
+  const _pluginForMarkers = pluginLoader.loadPlugin(client?.id, client?.plugin_enabled);
+  if (_pluginForMarkers?.processMarkers) {
+    try {
+      botReply = await _pluginForMarkers.processMarkers(botReply, client, { phoneNumber, db, orderId: null });
+    } catch (e) { console.error(`[PLUGIN] processMarkers error for ${client?.id}:`, e.message); }
   }
 
   // Strip [[MSG_BREAK]] markers before saving to DB (clean single text for history)
@@ -1749,12 +1791,18 @@ app.get('/api/customers', jwtAuth, async (req, res) => {
              MAX(m.created_at) AS last_message_at,
              BOOL_OR(m.media_type = 'image') AS has_image,
              BOOL_OR(m.media_type IN ('pdf', 'document', 'audio', 'voice')) AS has_document,
-             (SELECT status FROM orders o2 WHERE o2.phone_number=cu.phone_number ORDER BY o2.created_at DESC LIMIT 1) AS latest_order_status
+             (SELECT status FROM orders o2 WHERE o2.phone_number=cu.phone_number ORDER BY o2.created_at DESC LIMIT 1) AS latest_order_status,
+             (SELECT COUNT(*) FROM messages m2
+              WHERE m2.phone_number = cu.phone_number
+                AND m2.client_id    = cu.client_id
+                AND m2.sender_type  = 'user'
+                AND m2.created_at   > COALESCE(cu.last_read_at, '1970-01-01T00:00:00Z')
+             ) AS unread_count
       FROM customers cu
       LEFT JOIN messages m ON m.phone_number=cu.phone_number
       LEFT JOIN orders   o ON o.phone_number=cu.phone_number
       ${where}
-      GROUP BY cu.phone_number, cu.name, cu.client_id, cu.updated_at
+      GROUP BY cu.phone_number, cu.name, cu.client_id, cu.updated_at, cu.last_read_at
       ORDER BY last_message_at DESC NULLS LAST
       LIMIT ${clientId ? '$2' : '$1'} OFFSET ${clientId ? '$3' : '$2'}`;
     const countQ = clientId
@@ -1841,6 +1889,20 @@ app.delete('/api/customers/:phone', jwtAuth, async (req, res) => {
     const phone = req.params.phone;
     for (const key of chatSessions.keys()) { if (key.endsWith(`:${phone}`)) chatSessions.delete(key); }
     await db.deleteCustomer(phone);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/customers/:phone/mark-read — reset unread badge
+app.post('/api/customers/:phone/mark-read', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  const { phone } = req.params;
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    await db.pgQuery(
+      `UPDATE customers SET last_read_at = NOW() WHERE phone_number = $1 AND client_id = $2`,
+      [phone, clientId]
+    );
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1951,7 +2013,6 @@ app.post('/api/crm/send-media', jwtAuth, uploadMedia.single('file'), async (req,
     res.status(500).json({ error: e?.response?.data?.error?.message || e.message });
   }
 });
-
 // GET /api/customers/:phone/ai-mode
 app.get('/api/customers/:phone/ai-mode', jwtAuth, async (req, res) => {
   const clientId = resolveClientId(req);
@@ -2320,7 +2381,7 @@ app.put('/api/settings/password', jwtAuth, async (req, res) => {
 app.put('/api/settings/prompt', jwtAuth, async (req, res) => {
   const clientId = resolveClientId(req);
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
-  const { prompt, error_message, order_fields, contact_number, knowledge_base_enabled, product_catalog_enabled } = req.body;
+  const { prompt, error_message, order_fields, contact_number, knowledge_base_enabled, product_catalog_enabled, plugin_enabled } = req.body;
   let parsedFields = [];
   if (Array.isArray(order_fields)) {
     parsedFields = order_fields
@@ -2334,10 +2395,20 @@ app.put('/api/settings/prompt', jwtAuth, async (req, res) => {
   }
   try {
     await db.pgQuery(
-      `UPDATE client_configs SET custom_prompt=$1, error_message=$2, order_fields=$3, contact_number=$4, knowledge_base_enabled=$5, product_catalog_enabled=$6, system_prompt_mode='custom', updated_at=NOW() WHERE client_id=$7`,
-      [prompt || null, error_message || null, JSON.stringify(parsedFields), contact_number || null, knowledge_base_enabled === true || knowledge_base_enabled === 'true', product_catalog_enabled === true || product_catalog_enabled === 'true', clientId]
+      `UPDATE client_configs SET custom_prompt=$1, error_message=$2, order_fields=$3, contact_number=$4, knowledge_base_enabled=$5, product_catalog_enabled=$6, system_prompt_mode='custom', updated_at=NOW(), plugin_enabled=COALESCE($8, plugin_enabled) WHERE client_id=$7`,
+      [prompt || null, error_message || null, JSON.stringify(parsedFields), contact_number || null,
+        knowledge_base_enabled === true || knowledge_base_enabled === 'true',
+        product_catalog_enabled === true || product_catalog_enabled === 'true',
+        clientId,
+        // superadmin: can enable or disable; client: can only disable (set false), not enable
+        plugin_enabled === false || plugin_enabled === 'false' ? false
+          : (req.user?.role === 'superadmin' && (plugin_enabled === true || plugin_enabled === 'true')) ? true
+          : null // null → COALESCE keeps existing DB value
+      ]
+
     );
     clientRouter.invalidateCache(clientId);
+    pluginLoader.invalidatePlugin(clientId);
     for (const key of chatSessions.keys()) {
       if (key.startsWith(`${clientId}:`)) chatSessions.delete(key);
     }
@@ -2351,7 +2422,7 @@ app.get('/api/settings', jwtAuth, async (req, res) => {
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
   try {
     const r = await db.pgQuery(
-      `SELECT custom_prompt, error_message, system_prompt_mode, temperature, brand_name, brand_color, order_fields, contact_number, knowledge_base_enabled, product_catalog_enabled FROM client_configs WHERE client_id=$1`,
+      `SELECT custom_prompt, error_message, system_prompt_mode, temperature, brand_name, brand_color, order_fields, contact_number, knowledge_base_enabled, product_catalog_enabled, plugin_enabled FROM client_configs WHERE client_id=$1`,
       [clientId]
     );
     const row = r.rows[0] || {};

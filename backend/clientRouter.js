@@ -17,7 +17,8 @@ const CLIENT_SELECT = `
     cc.ai_model, cc.system_prompt_mode, cc.custom_prompt, cc.error_message, cc.temperature,
     cc.brand_name, cc.brand_color, cc.logo_url,
     cc.order_id_prefix, cc.product_catalog_enabled, cc.knowledge_base_enabled, cc.max_products_in_context,
-    cc.catalog_search_mode, cc.order_flow_enabled, cc.admin_password_env, cc.order_fields, cc.contact_number
+    cc.catalog_search_mode, cc.order_flow_enabled, cc.admin_password_env, cc.order_fields, cc.contact_number,
+    cc.plugin_enabled
   FROM clients c
   JOIN client_configs cc ON cc.client_id = c.id
 `;
@@ -118,6 +119,7 @@ function buildClient(row) {
     active: !!row.active,
     product_catalog_enabled: !!row.product_catalog_enabled,
     knowledge_base_enabled: !!row.knowledge_base_enabled,
+    plugin_enabled: !!row.plugin_enabled,
     order_flow_enabled: row.order_flow_enabled !== false,
     order_fields: orderFields,
     contact_number: row.contact_number || null,

@@ -273,9 +273,11 @@ async function init() {
         ON client_knowledge_chunks (client_id);
     `);
 
-    // ── media_type / media_url columns on messages ───────────────────────────
+    // ── media_type / media_url / wamid / is_deleted columns on messages ──────
     await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_type TEXT`);
     await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_url  TEXT`);
+    await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS wamid TEXT`);
+    await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT FALSE`);
 
     // ── CRM auth tables ──────────────────────────────────────────────────────
     await pool.query(`
@@ -366,6 +368,8 @@ async function init() {
     try { db.exec(`ALTER TABLE messages ADD COLUMN cost_usd REAL`); } catch (_) {}
     try { db.exec(`ALTER TABLE messages ADD COLUMN media_type TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE messages ADD COLUMN media_url TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE messages ADD COLUMN wamid TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE messages ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
     try { db.exec(`ALTER TABLE orders ADD COLUMN horoscope_received INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
     try { db.exec(`ALTER TABLE orders ADD COLUMN receipt_received INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
     try { db.exec(`ALTER TABLE orders ADD COLUMN notes TEXT`); } catch (_) {}
@@ -474,14 +478,14 @@ async function init() {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-async function insertMessage(phoneNumber, text, senderType, costUsd = null, clientId = null, mediaType = null, mediaUrl = null) {
+async function insertMessage(phoneNumber, text, senderType, costUsd = null, clientId = null, mediaType = null, mediaUrl = null, wamid = null) {
   if (IS_PG) {
     await pool.query(
-      'INSERT INTO messages (phone_number, message_text, sender_type, cost_usd, client_id, media_type, media_url) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-      [phoneNumber, text, senderType, costUsd, clientId, mediaType, mediaUrl]
+      'INSERT INTO messages (phone_number, message_text, sender_type, cost_usd, client_id, media_type, media_url, wamid) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+      [phoneNumber, text, senderType, costUsd, clientId, mediaType, mediaUrl, wamid]
     );
   } else {
-    db.prepare('INSERT INTO messages (phone_number, message_text, sender_type, cost_usd, client_id, media_type, media_url) VALUES (?, ?, ?, ?, ?, ?, ?)').run(phoneNumber, text, senderType, costUsd, clientId, mediaType, mediaUrl);
+    db.prepare('INSERT INTO messages (phone_number, message_text, sender_type, cost_usd, client_id, media_type, media_url, wamid) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(phoneNumber, text, senderType, costUsd, clientId, mediaType, mediaUrl, wamid);
   }
 }
 
@@ -620,6 +624,21 @@ async function deleteMessages(phoneNumber) {
     await pool.query('DELETE FROM messages WHERE phone_number = $1', [phoneNumber]);
   } else {
     db.prepare('DELETE FROM messages WHERE phone_number = ?').run(phoneNumber);
+  }
+}
+
+async function deleteMessage(id, clientId) {
+  if (IS_PG) {
+    const res = await pool.query(
+      'UPDATE messages SET is_deleted = TRUE WHERE id = $1 AND client_id = $2 RETURNING wamid, sender_type',
+      [id, clientId]
+    );
+    return res.rows[0] || null;
+  } else {
+    const row = db.prepare('SELECT wamid, sender_type FROM messages WHERE id = ? AND client_id = ?').get(id, clientId);
+    if (!row) return null;
+    db.prepare('UPDATE messages SET is_deleted = 1 WHERE id = ?').run(id);
+    return row;
   }
 }
 
@@ -934,4 +953,4 @@ async function pgQuery(sql, params) {
   }
 }
 
-module.exports = { init, insertMessage, upsertCustomer, insertOrder, getOrdersByPhone, getLatestOrder, countOrdersByYear, getAllCustomers, getMessagesByPhone, updateLatestOrderStatus, updateOrderStatusById, updateOrderAISummary, updateOrderCustomFields, updateOrderFlags, updateOrderFlagsById, deleteCustomer, deleteMessages, searchProducts, getAttributeSchema, vectorSearchProducts, saveProductEmbedding, vectorSearchKnowledge, insertKnowledgeChunks, deleteKnowledgeByTitle, getKnowledgeSections, getKnowledgeChunksByTitle, updateKnowledgeChunk, deleteKnowledgeChunk, getClientMedia, insertMedia, deleteMedia, updateMedia, getCustomerAiEnabled, setCustomerAiMode, IS_PG, pgQuery };
+module.exports = { init, insertMessage, upsertCustomer, insertOrder, getOrdersByPhone, getLatestOrder, countOrdersByYear, getAllCustomers, getMessagesByPhone, updateLatestOrderStatus, updateOrderStatusById, updateOrderAISummary, updateOrderCustomFields, updateOrderFlags, updateOrderFlagsById, deleteCustomer, deleteMessages, deleteMessage, searchProducts, getAttributeSchema, vectorSearchProducts, saveProductEmbedding, vectorSearchKnowledge, insertKnowledgeChunks, deleteKnowledgeByTitle, getKnowledgeSections, getKnowledgeChunksByTitle, updateKnowledgeChunk, deleteKnowledgeChunk, getClientMedia, insertMedia, deleteMedia, updateMedia, getCustomerAiEnabled, setCustomerAiMode, IS_PG, pgQuery };

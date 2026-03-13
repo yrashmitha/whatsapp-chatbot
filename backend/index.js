@@ -657,12 +657,13 @@ async function sendWhatsAppImage(to, filename, caption, client) {
 async function sendWhatsAppMessage(to, text, client) {
   console.log(`[WA] Sending message to ${to} (${text.length} chars)`);
   try {
-    await axios.post(
+    const resp = await axios.post(
       `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
       { messaging_product: 'whatsapp', to, type: 'text', text: { body: text } },
       { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
     );
     console.log(`[WA] Message sent successfully to ${to}`);
+    return resp.data?.messages?.[0]?.id || null;
   } catch (err) {
     console.error(`[WA] Send failed to ${to}:`, err?.response?.data ?? err.message);
     throw err;
@@ -1747,7 +1748,8 @@ app.get('/api/customers', jwtAuth, async (req, res) => {
              COUNT(DISTINCT o.id) AS order_count,
              MAX(m.created_at) AS last_message_at,
              BOOL_OR(m.media_type = 'image') AS has_image,
-             BOOL_OR(m.media_type IN ('pdf', 'document', 'audio', 'voice')) AS has_document
+             BOOL_OR(m.media_type IN ('pdf', 'document', 'audio', 'voice')) AS has_document,
+             (SELECT status FROM orders o2 WHERE o2.phone_number=cu.phone_number ORDER BY o2.created_at DESC LIMIT 1) AS latest_order_status
       FROM customers cu
       LEFT JOIN messages m ON m.phone_number=cu.phone_number
       LEFT JOIN orders   o ON o.phone_number=cu.phone_number
@@ -1775,7 +1777,7 @@ app.get('/api/messages/:phone', jwtAuth, async (req, res) => {
       ? (clientId ? [phone, clientId, before, limit] : [phone, before, limit])
       : (clientId ? [phone, clientId, limit] : [phone, limit]);
     const q = `
-      SELECT id, phone_number, message_text, sender_type, created_at, cost_usd, media_type, media_url
+      SELECT id, phone_number, message_text, sender_type, created_at, cost_usd, media_type, media_url, wamid, is_deleted
       FROM messages
       WHERE phone_number=$1 ${clientId ? 'AND client_id=$2' : ''}
       ${before ? `AND created_at < ${clientId ? '$3' : '$2'}` : ''}
@@ -1795,15 +1797,16 @@ app.post('/api/send', jwtAuth, async (req, res) => {
   try {
     const client = clientId ? await clientRouter.getClientById(clientId) : null;
     if (type === 'text') {
-      await sendWhatsAppMessage(phone, message, client);
-      await db.insertMessage(phone, message, 'bot', null, clientId);
+      const wamid = await sendWhatsAppMessage(phone, message, client);
+      await db.insertMessage(phone, message, 'bot', null, clientId, null, null, wamid);
     } else if (type === 'image' && mediaUrl) {
-      await axios.post(
+      const imgResp = await axios.post(
         `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
         { messaging_product: 'whatsapp', to: phone, type: 'image', image: { link: mediaUrl, caption: message } },
         { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
       );
-      await db.insertMessage(phone, `[Image] ${message}`, 'bot', null, clientId);
+      const wamid = imgResp.data?.messages?.[0]?.id || null;
+      await db.insertMessage(phone, `[Image] ${message}`, 'bot', null, clientId, 'image', mediaUrl, wamid);
     }
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e?.response?.data?.error?.message || e.message }); }
@@ -1815,6 +1818,36 @@ app.delete('/api/customers/:phone/messages', jwtAuth, async (req, res) => {
     const phone = req.params.phone;
     for (const key of chatSessions.keys()) { if (key.endsWith(`:${phone}`)) chatSessions.delete(key); }
     await db.pgQuery(`DELETE FROM messages WHERE phone_number=$1`, [phone]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/messages/:id — soft-delete a single message + call WhatsApp delete API
+app.delete('/api/messages/:id', jwtAuth, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ error: 'Invalid message id' });
+  const clientId = resolveClientId(req);
+  try {
+    const deleted = await db.deleteMessage(id, clientId);
+    if (!deleted) return res.status(404).json({ error: 'Message not found' });
+
+    // Best-effort: call WhatsApp delete API for outbound messages with a wamid
+    if (deleted.wamid && deleted.sender_type !== 'user') {
+      try {
+        const client = clientId ? await clientRouter.getClientById(clientId) : null;
+        await axios.delete(
+          `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
+          {
+            data: { messaging_product: 'whatsapp', message_id: deleted.wamid },
+            headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' },
+          }
+        );
+        console.log(`[DELETE-MSG] WhatsApp message ${deleted.wamid} deleted`);
+      } catch (waErr) {
+        console.warn(`[DELETE-MSG] WhatsApp delete failed for wamid ${deleted.wamid}:`, waErr?.response?.data ?? waErr.message);
+      }
+    }
+
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1921,13 +1954,14 @@ app.post('/api/crm/send-media', jwtAuth, uploadMedia.single('file'), async (req,
       msgText = `[Audio: ${origName}]`;
     }
 
-    await axios.post(
+    const mediaResp = await axios.post(
       `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
       { messaging_product: 'whatsapp', to: phone, ...waPayload },
       { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
     );
+    const wamid = mediaResp.data?.messages?.[0]?.id || null;
 
-    await db.insertMessage(phone, msgText, 'bot', null, clientId, mediaType, fileUrl);
+    await db.insertMessage(phone, msgText, 'bot', null, clientId, mediaType, fileUrl, wamid);
     res.json({ ok: true, url: fileUrl });
   } catch (e) {
     console.error('[CRM MEDIA] send-media error:', e.message);

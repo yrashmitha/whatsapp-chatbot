@@ -325,6 +325,8 @@ async function init() {
       );
       CREATE INDEX IF NOT EXISTS idx_client_media_client ON client_media (client_id, sort_order);
     `);
+    // ── Plugin system ──────────────────────────────────────────────────────────
+    await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS plugin_enabled BOOLEAN NOT NULL DEFAULT FALSE`);
   } else {
     db.exec(`PRAGMA foreign_keys = ON;`);
     db.exec(`
@@ -436,6 +438,7 @@ async function init() {
     try { db.exec(`ALTER TABLE client_configs ADD COLUMN order_fields TEXT NOT NULL DEFAULT '[]'`); } catch (_) {}
     try { db.exec(`ALTER TABLE orders ADD COLUMN custom_fields TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE client_configs ADD COLUMN contact_number TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE client_configs ADD COLUMN plugin_enabled INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
     // SQLite cannot DROP columns — old columns (package, birth_date, etc.) remain but are ignored
 
     // ── Per-chat AI mode (SQLite) ────────────────────────────────────────────

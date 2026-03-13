@@ -28,6 +28,20 @@ const uploadDisk = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
   fileFilter: (req, file, cb) => cb(null, /^image\//.test(file.mimetype)),
 });
+// CRM media send: images, PDFs, audio up to 16 MB
+const uploadMedia = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, UPLOADS_DIR),
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase() || '';
+      cb(null, `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${ext}`);
+    },
+  }),
+  limits: { fileSize: 16 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    cb(null, /^(image\/|application\/pdf|audio\/)/.test(file.mimetype));
+  },
+});
 const buildSystemInstruction = require('./buildInstruction');
 const { buildOrderFieldsInstruction, buildContactInstruction } = require('./buildInstruction');
 const db           = require('./db');
@@ -685,12 +699,13 @@ async function sendWhatsAppImage(to, filename, caption, client) {
 async function sendWhatsAppMessage(to, text, client) {
   console.log(`[WA] Sending message to ${to} (${text.length} chars)`);
   try {
-    await axios.post(
+    const resp = await axios.post(
       `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
       { messaging_product: 'whatsapp', to, type: 'text', text: { body: text } },
       { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
     );
     console.log(`[WA] Message sent successfully to ${to}`);
+    return resp.data?.messages?.[0]?.id || null;
   } catch (err) {
     console.error(`[WA] Send failed to ${to}:`, err?.response?.data ?? err.message);
     throw err;
@@ -1774,6 +1789,9 @@ app.get('/api/customers', jwtAuth, async (req, res) => {
              COUNT(DISTINCT m.id) AS message_count,
              COUNT(DISTINCT o.id) AS order_count,
              MAX(m.created_at) AS last_message_at,
+             BOOL_OR(m.media_type = 'image') AS has_image,
+             BOOL_OR(m.media_type IN ('pdf', 'document', 'audio', 'voice')) AS has_document,
+             (SELECT status FROM orders o2 WHERE o2.phone_number=cu.phone_number ORDER BY o2.created_at DESC LIMIT 1) AS latest_order_status,
              (SELECT COUNT(*) FROM messages m2
               WHERE m2.phone_number = cu.phone_number
                 AND m2.client_id    = cu.client_id
@@ -1807,7 +1825,7 @@ app.get('/api/messages/:phone', jwtAuth, async (req, res) => {
       ? (clientId ? [phone, clientId, before, limit] : [phone, before, limit])
       : (clientId ? [phone, clientId, limit] : [phone, limit]);
     const q = `
-      SELECT id, phone_number, message_text, sender_type, created_at, cost_usd, media_type, media_url
+      SELECT id, phone_number, message_text, sender_type, created_at, cost_usd, media_type, media_url, wamid, is_deleted
       FROM messages
       WHERE phone_number=$1 ${clientId ? 'AND client_id=$2' : ''}
       ${before ? `AND created_at < ${clientId ? '$3' : '$2'}` : ''}
@@ -1827,15 +1845,16 @@ app.post('/api/send', jwtAuth, async (req, res) => {
   try {
     const client = clientId ? await clientRouter.getClientById(clientId) : null;
     if (type === 'text') {
-      await sendWhatsAppMessage(phone, message, client);
-      await db.insertMessage(phone, message, 'bot', null, clientId);
+      const wamid = await sendWhatsAppMessage(phone, message, client);
+      await db.insertMessage(phone, message, 'bot', null, clientId, null, null, wamid);
     } else if (type === 'image' && mediaUrl) {
-      await axios.post(
+      const imgResp = await axios.post(
         `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
         { messaging_product: 'whatsapp', to: phone, type: 'image', image: { link: mediaUrl, caption: message } },
         { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
       );
-      await db.insertMessage(phone, `[Image] ${message}`, 'bot', null, clientId);
+      const wamid = imgResp.data?.messages?.[0]?.id || null;
+      await db.insertMessage(phone, `[Image] ${message}`, 'bot', null, clientId, 'image', mediaUrl, wamid);
     }
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e?.response?.data?.error?.message || e.message }); }
@@ -1847,6 +1866,19 @@ app.delete('/api/customers/:phone/messages', jwtAuth, async (req, res) => {
     const phone = req.params.phone;
     for (const key of chatSessions.keys()) { if (key.endsWith(`:${phone}`)) chatSessions.delete(key); }
     await db.pgQuery(`DELETE FROM messages WHERE phone_number=$1`, [phone]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/messages/:id — soft-delete a message from CRM view
+// Note: WhatsApp Cloud API does not support recalling sent messages, so this is CRM-only
+app.delete('/api/messages/:id', jwtAuth, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ error: 'Invalid message id' });
+  const clientId = resolveClientId(req);
+  try {
+    const deleted = await db.deleteMessage(id, clientId);
+    if (!deleted) return res.status(404).json({ error: 'Message not found' });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1875,6 +1907,112 @@ app.post('/api/customers/:phone/mark-read', jwtAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ─── Addon management (superadmin only) ──────────────────────────────────────
+
+// Catalog of available addons
+const ADDON_CATALOG = [
+  {
+    id: 'crm_media_send',
+    name: 'CRM Media Send',
+    description: 'Allows CRM agents to send images, PDFs, and audio messages to WhatsApp customers directly from the chat interface.',
+  },
+];
+
+// GET /api/addons?client_id=X — list addons + enabled state for a client
+app.get('/api/addons', jwtAuth, async (req, res) => {
+  if (req.user.role !== 'superadmin') return res.status(403).json({ error: 'Forbidden' });
+  const clientId = req.query.client_id;
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    const r = await db.pgQuery(`SELECT addon_id, enabled FROM client_addons WHERE client_id=$1`, [clientId]);
+    const enabledMap = Object.fromEntries(r.rows.map(row => [row.addon_id, row.enabled]));
+    const addons = ADDON_CATALOG.map(a => ({ ...a, enabled: enabledMap[a.id] ?? false }));
+    res.json({ addons });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/addons/:addonId — toggle addon for a client (superadmin only)
+app.put('/api/addons/:addonId', jwtAuth, async (req, res) => {
+  if (req.user.role !== 'superadmin') return res.status(403).json({ error: 'Forbidden' });
+  const { addonId } = req.params;
+  const { client_id: clientId, enabled } = req.body;
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  if (!ADDON_CATALOG.find(a => a.id === addonId)) return res.status(404).json({ error: 'Unknown addon' });
+  try {
+    await db.pgQuery(
+      `INSERT INTO client_addons (client_id, addon_id, enabled) VALUES ($1,$2,$3)
+       ON CONFLICT (client_id, addon_id) DO UPDATE SET enabled=$3`,
+      [clientId, addonId, !!enabled]
+    );
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/crm/addons-status — returns enabled addon IDs for current client (used by frontend)
+app.get('/api/crm/addons-status', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.json({ addons: [] });
+  try {
+    const r = await db.pgQuery(
+      `SELECT addon_id FROM client_addons WHERE client_id=$1 AND enabled=TRUE`,
+      [clientId]
+    );
+    res.json({ addons: r.rows.map(row => row.addon_id) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/crm/send-media — CRM agent sends image/pdf/audio to a WhatsApp customer
+app.post('/api/crm/send-media', jwtAuth, uploadMedia.single('file'), async (req, res) => {
+  const clientId = resolveClientId(req);
+  const { phone, caption = '' } = req.body;
+  if (!phone) return res.status(400).json({ error: 'phone required' });
+  if (!req.file) return res.status(400).json({ error: 'file required' });
+  try {
+    // Verify addon is enabled for this client
+    const addonCheck = await db.pgQuery(
+      `SELECT enabled FROM client_addons WHERE client_id=$1 AND addon_id='crm_media_send' AND enabled=TRUE`,
+      [clientId]
+    );
+    if (!addonCheck.rows.length) return res.status(403).json({ error: 'crm_media_send addon not enabled' });
+
+    const client = clientId ? await clientRouter.getClientById(clientId) : null;
+    const base = process.env.PUBLIC_URL || '';
+    const fileUrl = `${base}/uploads/${req.file.filename}`;
+    const mime = req.file.mimetype;
+    const origName = req.file.originalname;
+
+    let waPayload;
+    let mediaType;
+    let msgText;
+
+    if (/^image\//.test(mime)) {
+      waPayload = { type: 'image', image: { link: fileUrl, ...(caption && { caption }) } };
+      mediaType = 'image';
+      msgText = caption || `[Image: ${origName}]`;
+    } else if (mime === 'application/pdf') {
+      waPayload = { type: 'document', document: { link: fileUrl, filename: origName, ...(caption && { caption }) } };
+      mediaType = 'pdf';
+      msgText = `[PDF: ${origName}]`;
+    } else {
+      waPayload = { type: 'audio', audio: { link: fileUrl } };
+      mediaType = 'audio';
+      msgText = `[Audio: ${origName}]`;
+    }
+
+    const mediaResp = await axios.post(
+      `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
+      { messaging_product: 'whatsapp', to: phone, ...waPayload },
+      { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
+    );
+    const wamid = mediaResp.data?.messages?.[0]?.id || null;
+
+    await db.insertMessage(phone, msgText, 'bot', null, clientId, mediaType, fileUrl, wamid);
+    res.json({ ok: true, url: fileUrl });
+  } catch (e) {
+    console.error('[CRM MEDIA] send-media error:', e.message);
+    res.status(500).json({ error: e?.response?.data?.error?.message || e.message });
+  }
+});
 // GET /api/customers/:phone/ai-mode
 app.get('/api/customers/:phone/ai-mode', jwtAuth, async (req, res) => {
   const clientId = resolveClientId(req);

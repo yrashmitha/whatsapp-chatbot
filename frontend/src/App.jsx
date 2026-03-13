@@ -9,6 +9,7 @@ import Products from './pages/Products';
 import KnowledgeBase from './pages/KnowledgeBase';
 import Media from './pages/Media';
 import Settings from './pages/Settings';
+import Addons from './pages/Addons';
 
 const qc = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -22,6 +23,7 @@ const router = createBrowserRouter([
   { path: '/knowledge', element: <ProtectedRoute><KnowledgeBase /></ProtectedRoute> },
   { path: '/media', element: <ProtectedRoute><Media /></ProtectedRoute> },
   { path: '/settings', element: <ProtectedRoute><Settings /></ProtectedRoute> },
+  { path: '/addons', element: <ProtectedRoute><Addons /></ProtectedRoute> },
   { path: '/', element: <Navigate to="/chat" replace /> },
   { path: '*', element: <Navigate to="/chat" replace /> },
 ]);

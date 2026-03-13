@@ -327,6 +327,8 @@ async function init() {
     `);
     // ── Plugin system ──────────────────────────────────────────────────────────
     await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS plugin_enabled BOOLEAN NOT NULL DEFAULT FALSE`);
+    // ── Unread message tracking ───────────────────────────────────────────────
+    await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS last_read_at TIMESTAMPTZ`);
   } else {
     db.exec(`PRAGMA foreign_keys = ON;`);
     db.exec(`
@@ -439,6 +441,7 @@ async function init() {
     try { db.exec(`ALTER TABLE orders ADD COLUMN custom_fields TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE client_configs ADD COLUMN contact_number TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE client_configs ADD COLUMN plugin_enabled INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
+    try { db.exec(`ALTER TABLE customers ADD COLUMN last_read_at TEXT`); } catch (_) {}
     // SQLite cannot DROP columns — old columns (package, birth_date, etc.) remain but are ignored
 
     // ── Per-chat AI mode (SQLite) ────────────────────────────────────────────

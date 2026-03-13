@@ -1773,12 +1773,18 @@ app.get('/api/customers', jwtAuth, async (req, res) => {
       SELECT cu.phone_number, cu.phone_number AS phone, cu.name, cu.client_id, cu.updated_at,
              COUNT(DISTINCT m.id) AS message_count,
              COUNT(DISTINCT o.id) AS order_count,
-             MAX(m.created_at) AS last_message_at
+             MAX(m.created_at) AS last_message_at,
+             (SELECT COUNT(*) FROM messages m2
+              WHERE m2.phone_number = cu.phone_number
+                AND m2.client_id    = cu.client_id
+                AND m2.sender_type  = 'user'
+                AND m2.created_at   > COALESCE(cu.last_read_at, '1970-01-01T00:00:00Z')
+             ) AS unread_count
       FROM customers cu
       LEFT JOIN messages m ON m.phone_number=cu.phone_number
       LEFT JOIN orders   o ON o.phone_number=cu.phone_number
       ${where}
-      GROUP BY cu.phone_number, cu.name, cu.client_id, cu.updated_at
+      GROUP BY cu.phone_number, cu.name, cu.client_id, cu.updated_at, cu.last_read_at
       ORDER BY last_message_at DESC NULLS LAST
       LIMIT ${clientId ? '$2' : '$1'} OFFSET ${clientId ? '$3' : '$2'}`;
     const countQ = clientId
@@ -1851,6 +1857,20 @@ app.delete('/api/customers/:phone', jwtAuth, async (req, res) => {
     const phone = req.params.phone;
     for (const key of chatSessions.keys()) { if (key.endsWith(`:${phone}`)) chatSessions.delete(key); }
     await db.deleteCustomer(phone);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/customers/:phone/mark-read — reset unread badge
+app.post('/api/customers/:phone/mark-read', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  const { phone } = req.params;
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    await db.pgQuery(
+      `UPDATE customers SET last_read_at = NOW() WHERE phone_number = $1 AND client_id = $2`,
+      [phone, clientId]
+    );
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

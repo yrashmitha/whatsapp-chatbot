@@ -1836,9 +1836,9 @@ app.delete('/api/messages/:id', jwtAuth, async (req, res) => {
       try {
         const client = clientId ? await clientRouter.getClientById(clientId) : null;
         await axios.delete(
-          `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
+          `https://graph.facebook.com/v18.0/${deleted.wamid}`,
           {
-            data: { messaging_product: 'whatsapp', message_id: deleted.wamid },
+            data: { messaging_product: 'whatsapp' },
             headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' },
           }
         );

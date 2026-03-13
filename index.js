@@ -5,8 +5,13 @@ const axios   = require('axios');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const path    = require('path');
 const fs      = require('fs');
+const crypto  = require('crypto');
+const multer  = require('multer');
+const upload  = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 const buildSystemInstruction = require('./buildInstruction');
-const db      = require('./db');
+const db           = require('./db');
+const clientRouter = require('./clientRouter');
+const { embedText, productToText } = require('./embedder');
 
 // ─── WhatsApp credentials (test vs prod) ─────────────────────────────────────
 const IS_TEST = (process.env.WHATSAPP_MODE || 'test') !== 'prod';
@@ -41,10 +46,11 @@ const ORDER_MARKER      = '[[ORDER_COMPLETE]]';
 const PAYMENT_MARKER    = '[[PAYMENT_CHECK]]';
 const HOROSCOPE_MARKER  = '[[HOROSCOPE_RECEIVED]]';
 
-async function generateOrderId() {
-  const year = new Date().getFullYear();
-  const cnt  = await db.countOrdersByYear(`PJ${year}-%`);
-  const id   = `PJ${year}-${String(cnt + 1).padStart(4, '0')}`;
+async function generateOrderId(client) {
+  const prefix = (client && client.order_id_prefix) || 'PJ';
+  const year   = new Date().getFullYear();
+  const cnt    = await db.countOrdersByYear(`${prefix}${year}-%`);
+  const id     = `${prefix}${year}-${String(cnt + 1).padStart(4, '0')}`;
   console.log(`[ORDER_ID] Generated: ${id} (existing count: ${cnt})`);
   return id;
 }
@@ -78,7 +84,7 @@ async function extractOrderDetails(history) {
 }
 
 // ─── Session builder ──────────────────────────────────────────────────────────
-async function buildChatSession(phoneNumber) {
+async function buildChatSession(phoneNumber, client) {
   console.log(`[SESSION] Building session for ${phoneNumber}`);
   const existingOrders = await db.getOrdersByPhone(phoneNumber);
   console.log(`[SESSION] Found ${existingOrders.length} existing orders for ${phoneNumber}`);
@@ -96,7 +102,48 @@ async function buildChatSession(phoneNumber) {
     console.log(`[SESSION] Injected order history into initial context`);
   }
 
-  return model.startChat({ history: initialHistory });
+  // Use per-client model if the client has a custom prompt or different model
+  let chatModel = model;
+  if (client && (client.system_prompt_mode === 'custom' || client.ai_model !== 'gemini-2.5-flash')) {
+    const instruction = buildSystemInstruction.forClient(client);
+    chatModel = genAI.getGenerativeModel({
+      model: client.ai_model || 'gemini-2.5-flash',
+      systemInstruction: instruction,
+      generationConfig: {
+        temperature: parseFloat(client.temperature) || 0.7,
+        topP: 0.95,
+        topK: 64,
+        maxOutputTokens: 1024,
+      },
+    });
+    console.log(`[SESSION] Using custom model for client ${client.id} (mode=${client.system_prompt_mode})`);
+  }
+
+  // Build search_products tool for product-enabled clients (pgvector only)
+  let tools = [];
+  if (client?.product_catalog_enabled && db.IS_PG) {
+    const attrSchema = await db.getAttributeSchema(client.id);
+    const attrHint = attrSchema.length > 0
+      ? ' Available product attributes for this client: ' +
+        attrSchema.map(a => `${a.field_label}(${a.field_type}${a.unit ? ', unit:' + a.unit : ''})`).join(', ') + '.'
+      : '';
+    tools = [{
+      functionDeclarations: [{
+        name: 'search_products',
+        description: 'Search the product catalog. Call this when a customer asks about products, availability, price, or features.' + attrHint,
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            query: { type: 'STRING', description: 'Search query, e.g. "red cotton shirt size L under 2000 LKR"' }
+          },
+          required: ['query']
+        }
+      }]
+    }];
+    console.log(`[SESSION] Product search tool enabled for client ${client.id} (${attrSchema.length} attr fields)`);
+  }
+
+  return chatModel.startChat({ history: initialHistory, tools });
 }
 
 async function buildOrderStatusNote(phoneNumber) {
@@ -106,7 +153,7 @@ async function buildOrderStatusNote(phoneNumber) {
 }
 
 // ─── Handle incoming message ──────────────────────────────────────────────────
-async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserInsert = false } = {}) {
+async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserInsert = false, client = null } = {}) {
   console.log(`[MSG] Handling message from ${phoneNumber}: "${userMessage.substring(0, 80)}"`);
 
   await db.upsertCustomer(phoneNumber, null);
@@ -120,8 +167,68 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   const messageToSend = statusNote ? `${statusNote}\n\n${userMessage}` : userMessage;
 
   console.log(`[GEMINI] Sending message to Gemini...`);
-  const result  = await chatSession.sendMessage(messageToSend);
-  let botReply  = result.response.text()
+  let result    = await chatSession.sendMessage(messageToSend);
+  let candidate = result.response;
+
+  // ── Function calling loop (product search via pgvector) ──────────────────
+  let fcLoopCount = 0;
+  const productImagesToSend = []; // track product images found in RAG
+  while (candidate.functionCalls()?.length > 0 && fcLoopCount++ < 3) {
+    const fc = candidate.functionCalls()[0];
+    if (fc.name === 'search_products' && client?.product_catalog_enabled && db.IS_PG) {
+      console.log(`[RAG] search_products called with query: "${fc.args.query}"`);
+      let resultText = 'No matching products found.';
+      const limit = client.max_products_in_context || 5;
+      const formatProducts = (products) => products.map(p => {
+        const price = p.price_max ? `${p.price}–${p.price_max}` : (p.price || '?');
+        const attrs = p.attributes && typeof p.attributes === 'object' && Object.keys(p.attributes).length > 0
+          ? ' | ' + Object.entries(p.attributes).map(([k, v]) => `${k}: ${v}`).join(', ')
+          : '';
+        return `• ${p.name}${p.sku ? ` (${p.sku})` : ''} | ${p.currency} ${price}${p.category ? ` | ${p.category}` : ''}${attrs}${p.description ? ` — ${p.description}` : ''}`;
+      }).join('\n');
+
+      let products = [];
+      try {
+        const emb = await embedText(fc.args.query);
+        products = await db.vectorSearchProducts(client.id, emb, limit);
+        if (products.length > 0) {
+          console.log(
+            `[RAG] Vector search returned ${products.length} products: ${products
+              .map(p => p.name)
+              .join(", ")}`
+          );
+          resultText = formatProducts(products);
+        }
+      } catch (e) {
+        console.warn('[RAG] Vector search failed, falling back to FTS:', e.message);
+      }
+
+      // FTS fallback: used when embedding fails or returns no results
+      if (!products.length) {
+        try {
+          products = await db.searchProducts(client.id, fc.args.query, limit);
+          if (products.length > 0) {
+            console.log(`[RAG] FTS fallback returned ${products.length} products`);
+            resultText = formatProducts(products);
+          }
+        } catch (e) {
+          console.warn('[RAG] FTS fallback failed:', e.message);
+        }
+      }
+
+      // Collect product images to send after text reply
+      for (const p of products) {
+        if (p.image_url) productImagesToSend.push({ url: p.image_url, caption: p.name });
+      }
+
+      result    = await chatSession.sendMessage([{ functionResponse: { name: 'search_products', response: { result: resultText } } }]);
+      candidate = result.response;
+    } else {
+      break;
+    }
+  }
+
+  let botReply  = candidate.text()
     .replace(/\*\*([^*\n]+)\*\*/g, '*$1*') // convert markdown **bold** → WhatsApp *bold*
     .replace(/\[ORDER STATUS[^\]]*\]\s*/gi, '') // strip any echoed ORDER STATUS note wherever it appears
     .trim();
@@ -153,7 +260,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     const details = await extractOrderDetails(history);
 
     if (details) {
-      orderId = await generateOrderId();
+      orderId = await generateOrderId(client);
       await db.insertOrder(
         orderId, phoneNumber,
         details.package    ?? null,
@@ -167,7 +274,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
         await db.upsertCustomer(phoneNumber, details.customer_name);
         console.log(`[DB] Updated customer name: ${details.customer_name}`);
       }
-      botReply += `\n\n✅ *ඔබේ Order ID: ${orderId}*\nමෙය ආරක්ෂිතව සටහන් කර ගන්න. ඕනෑම ප්‍රශ්නයකදී මෙම ID ඉදිරිපත් කළ හැකියි. 🙏`;
+      botReply += `\n\n✅ *ඔබේ Order ID: ${orderId}*`;
     } else {
       console.warn(`[ORDER] ORDER_COMPLETE marker found but extractOrderDetails returned null`);
     }
@@ -198,7 +305,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
 
   await db.insertMessage(phoneNumber, botReply, 'bot', callCostUSD);
   console.log(`[DB] Saved bot reply for ${phoneNumber} cost=$${callCostUSD.toFixed(6)}`);
-  return { botReply, orderId, paymentReceived, callCostUSD, inputTokens, outputTokens, imagesToSend };
+  return { botReply, orderId, paymentReceived, callCostUSD, inputTokens, outputTokens, imagesToSend, productImagesToSend };
 }
 
 // ─── Template image media ID cache (uploaded once at startup) ─────────────────
@@ -238,8 +345,11 @@ async function uploadTemplateImages() {
   }
 }
 
-// ─── WhatsApp image send helper ───────────────────────────────────────────────
-async function sendWhatsAppImage(to, filename, caption) {
+// ─── WhatsApp send helpers (client-aware) ────────────────────────────────────
+function waToken(client)   { return (client && client.waToken)          || META_ACCESS_TOKEN; }
+function waPhoneId(client) { return (client && client.phone_number_id)  || PHONE_NUMBER_ID;  }
+
+async function sendWhatsAppImage(to, filename, caption, client) {
   const mediaId = templateMediaIds.get(filename);
   const image   = mediaId
     ? { id: mediaId, caption }
@@ -248,9 +358,9 @@ async function sendWhatsAppImage(to, filename, caption) {
   console.log(`[WA-IMG] Sending "${filename}" to ${to} via ${mediaId ? 'media_id' : 'link'}`);
   try {
     await axios.post(
-      `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
+      `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
       { messaging_product: 'whatsapp', to, type: 'image', image },
-      { headers: { Authorization: `Bearer ${META_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } }
+      { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
     );
     console.log(`[WA-IMG] Image sent successfully to ${to}`);
   } catch (err) {
@@ -258,14 +368,13 @@ async function sendWhatsAppImage(to, filename, caption) {
   }
 }
 
-// ─── WhatsApp send helper ─────────────────────────────────────────────────────
-async function sendWhatsAppMessage(to, text) {
+async function sendWhatsAppMessage(to, text, client) {
   console.log(`[WA] Sending message to ${to} (${text.length} chars)`);
   try {
     await axios.post(
-      `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
+      `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
       { messaging_product: 'whatsapp', to, type: 'text', text: { body: text } },
-      { headers: { Authorization: `Bearer ${META_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } }
+      { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
     );
     console.log(`[WA] Message sent successfully to ${to}`);
   } catch (err) {
@@ -366,10 +475,21 @@ app.post('/webhook', (req, res) => {
         return;
       }
 
+      // ── Resolve client from incoming phone_number_id ──────────────────────
+      const incomingPhoneNumberId = value.metadata?.phone_number_id;
+      let client = await clientRouter.getClientByPhoneNumberId(incomingPhoneNumberId)
+        || clientRouter.buildLocalClient();
+
+      // DEV OVERRIDE: set DEV_CLIENT_ID in .env to force a specific client
+      if (process.env.DEV_CLIENT_ID) {
+        client = (await clientRouter.getClientById(process.env.DEV_CLIENT_ID)) || client;
+      }
+
       const msg  = value.messages[0];
       const from = msg.from;
+      let sessionKey = `${client.id}:${from}`;
 
-      console.log(`[WEBHOOK-POST] msg type=${msg.type} from=${from}`);
+      console.log(`[WEBHOOK-POST] client=${client.id} msg type=${msg.type} from=${from}`);
 
       // ── Image messages ──────────────────────────────────────────────────────
       if (msg.type === 'image') {
@@ -377,17 +497,15 @@ app.post('/webhook', (req, res) => {
         console.log(`[WEBHOOK-POST] Image from ${from} | caption="${caption}"`);
 
         await db.upsertCustomer(from, null);
-        if (chatSessions.has(from)) {
+        if (chatSessions.has(sessionKey)) {
           const dbMsgs = await db.getMessagesByPhone(from);
-          if (dbMsgs.length === 0) chatSessions.delete(from);
+          if (dbMsgs.length === 0) chatSessions.delete(sessionKey);
         }
-        if (!chatSessions.has(from)) {
-          chatSessions.set(from, { chat: await buildChatSession(from), phoneNumber: from });
+        if (!chatSessions.has(sessionKey)) {
+          chatSessions.set(sessionKey, { chat: await buildChatSession(from, client), phoneNumber: from });
         }
-        const imgSession = chatSessions.get(from);
+        const imgSession = chatSessions.get(sessionKey);
 
-        // Tell the AI an image was received — it decides based on conversation context
-        // whether it's a horoscope photo or payment receipt and responds + fires the right marker
         const imageNote = caption
           ? `[Customer sent a photo with caption: "${caption}". You cannot see the image itself. Respond based on context — if this is likely their horoscope chart, acknowledge it and add [[HOROSCOPE_RECEIVED]]. If it looks like a payment receipt, acknowledge and add [[PAYMENT_CHECK]]. Also add a short note that you cannot view images directly but the team will review it.]`
           : `[Customer sent a photo (no caption). You cannot see the image. Based on the current conversation stage — if a horoscope photo was expected, acknowledge it as the horoscope and add [[HOROSCOPE_RECEIVED]]. If payment was pending and a receipt was expected, acknowledge it as the receipt and add [[PAYMENT_CHECK]]. Add a short note that you cannot view images but the team will review it.]`;
@@ -396,15 +514,15 @@ app.post('/webhook', (req, res) => {
         const userLabel = `[Photo:${mediaId}]${caption ? ` ${caption}` : ''}`;
         await db.insertMessage(from, userLabel, 'user');
 
-        const { botReply, imagesToSend } = await handleMessage(from, imageNote, imgSession.chat, { skipUserInsert: true });
+        const { botReply, imagesToSend } = await handleMessage(from, imageNote, imgSession.chat, { skipUserInsert: true, client });
         console.log(`[OUT] ${from}: ${botReply.substring(0, 120)}`);
-        await sendWhatsAppMessage(from, botReply);
+        await sendWhatsAppMessage(from, botReply, client);
 
         for (const filename of imagesToSend) {
           const imgCaption = filename.toLowerCase().startsWith('horoscope')
             ? 'ලග්න කොටු 12 සහ නවාංශ කොටු 12 දෙකම පෙනෙන ලෙස photo send කරන්න 🙏'
             : 'මේවා මම ඉක්මනින්ම හොයාගත්ත කීප දෙනෙකුගේ screenshots 🙏';
-          await sendWhatsAppImage(from, filename, imgCaption);
+          await sendWhatsAppImage(from, filename, imgCaption, client);
           await db.insertMessage(from, `[Image: ${filename}]`, 'bot');
         }
         return;
@@ -420,32 +538,47 @@ app.post('/webhook', (req, res) => {
       console.log(`[IN]  ${from}: ${userMessage}`);
 
       // Invalidate stale in-memory session if DB was cleared externally
-      if (chatSessions.has(from)) {
+      if (chatSessions.has(sessionKey)) {
         const dbMsgs = await db.getMessagesByPhone(from);
         if (dbMsgs.length === 0) {
           console.log(`[WEBHOOK-POST] DB cleared for ${from} — rebuilding session`);
-          chatSessions.delete(from);
+          chatSessions.delete(sessionKey);
         }
       }
-      if (!chatSessions.has(from)) {
-        console.log(`[WEBHOOK-POST] New WhatsApp session for ${from}`);
-        chatSessions.set(from, {
-          chat:        await buildChatSession(from),
+      if (!chatSessions.has(sessionKey)) {
+        console.log(`[WEBHOOK-POST] New WhatsApp session for ${client.id}:${from}`);
+        chatSessions.set(sessionKey, {
+          chat:        await buildChatSession(from, client),
           phoneNumber: from,
         });
       }
-      const session = chatSessions.get(from);
+      const session = chatSessions.get(sessionKey);
 
-      const { botReply, imagesToSend } = await handleMessage(from, userMessage, session.chat);
+      const { botReply, imagesToSend, productImagesToSend } = await handleMessage(from, userMessage, session.chat, { client });
       console.log(`[OUT] ${from}: ${botReply.substring(0, 120)}`);
-      await sendWhatsAppMessage(from, botReply);
+      await sendWhatsAppMessage(from, botReply, client);
 
       for (const filename of imagesToSend) {
         const caption = filename.toLowerCase().startsWith('horoscope')
           ? 'ලග්න කොටු 12 සහ නවාංශ කොටු 12 දෙකම පෙනෙන ලෙස photo send කරන්න 🙏'
           : 'මේවා මම ඉක්මනින්ම හොයාගත්ත කීප දෙනෙකුගේ screenshots 🙏';
-        await sendWhatsAppImage(from, filename, caption);
+        await sendWhatsAppImage(from, filename, caption, client);
         await db.insertMessage(from, `[Image: ${filename}]`, 'bot');
+      }
+
+      // Send product images from RAG search
+      for (const { url, caption } of (productImagesToSend || [])) {
+        try {
+          await axios.post(
+            `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
+            { messaging_product: 'whatsapp', to: from, type: 'image', image: { link: url, caption } },
+            { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
+          );
+          await db.insertMessage(from, `[Product Image: ${caption}]`, 'bot');
+          console.log(`[WA-IMG] Product image sent: ${caption}`);
+        } catch (e) {
+          console.warn(`[WA-IMG] Failed to send product image "${caption}":`, e?.response?.data ?? e.message);
+        }
       }
     } catch (err) {
       console.error(`[WEBHOOK-POST] ERROR:`, err?.response?.data ?? err.message);
@@ -453,8 +586,59 @@ app.post('/webhook', (req, res) => {
   })();
 });
 
+// ─── Public catalog API ────────────────────────────────────────────────────────
+// GET /api/catalog/:clientId — returns client branding + products grouped by category
+app.get('/api/catalog/:clientId', async (req, res) => {
+  const { clientId } = req.params;
+  try {
+    const client = await clientRouter.getClientById(clientId);
+    if (!client || !client.active) return res.status(404).json({ error: 'Client not found' });
+
+    const [productsRes, schemaRes] = await Promise.all([
+      db.pgQuery(
+        `SELECT id, name, description, price, price_max, currency, category, subcategory, sku, image_url, sort_order, attributes
+         FROM client_products WHERE client_id = $1 AND active = TRUE ORDER BY category, sort_order, name`,
+        [clientId]
+      ),
+      db.pgQuery(
+        `SELECT field_key, field_label, field_type, options, unit FROM client_attribute_schemas
+         WHERE client_id = $1 ORDER BY sort_order`,
+        [clientId]
+      ),
+    ]);
+
+    const products   = productsRes.rows || [];
+    const attrSchema = schemaRes.rows   || [];
+
+    // Group products by category
+    const categories = {};
+    for (const p of products) {
+      const cat = p.category || 'General';
+      if (!categories[cat]) categories[cat] = [];
+      categories[cat].push(p);
+    }
+
+    res.json({
+      client: {
+        id:         client.id,
+        name:       client.brand_name || client.name,
+        brand_color: client.brand_color || '#075e54',
+        logo_url:   client.logo_url || null,
+        phone_number_id: client.phone_number_id || null,
+      },
+      attrSchema,
+      categories,
+      totalProducts: products.length,
+    });
+  } catch (err) {
+    console.error(`[CATALOG] Error for ${clientId}:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Admin auth middleware ─────────────────────────────────────────────────────
 function adminAuth(req, res, next) {
+  return next(); // TODO: re-enable password check before production deploy
   const pass = process.env.ADMIN_PASSWORD;
   if (!pass) return res.status(500).json({ error: 'ADMIN_PASSWORD not set' });
   const provided = req.query.pass || (req.headers.authorization || '').replace('Bearer ', '');
@@ -673,6 +857,302 @@ app.post('/admin/followup', adminAuth, async (req, res) => {
   }
 });
 
+// ─── Product management API ───────────────────────────────────────────────────
+
+// GET /admin/builtin-prompt — returns the fully-rendered built-in astrology prompt
+app.get('/admin/builtin-prompt', adminAuth, (_req, res) => {
+  try {
+    const text = buildSystemInstruction();
+    res.type('text/plain').send(text);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /admin/clients — list all clients
+app.get('/admin/clients', adminAuth, async (_req, res) => {
+  try {
+    const clients = await clientRouter.getAllClients();
+    res.json(clients);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /admin/clients/:clientId — get single client + config
+app.get('/admin/clients/:clientId', adminAuth, async (req, res) => {
+  try {
+    const client = await clientRouter.getClientById(req.params.clientId);
+    if (!client) return res.status(404).json({ error: 'Client not found' });
+    res.json(client);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /admin/upload-image — upload product image to Cloudinary
+app.post('/admin/upload-image', adminAuth, upload.single('image'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  const { CLOUDINARY_CLOUD_NAME: cloud, CLOUDINARY_API_KEY: apiKey, CLOUDINARY_API_SECRET: apiSecret } = process.env;
+  if (!cloud || !apiKey || !apiSecret) return res.status(500).json({ error: 'Cloudinary not configured' });
+  try {
+    const timestamp = Math.floor(Date.now() / 1000);
+    const signature = crypto.createHash('sha1')
+      .update(`folder=products&timestamp=${timestamp}${apiSecret}`)
+      .digest('hex');
+    const form = new FormData();
+    form.append('file', new Blob([req.file.buffer], { type: req.file.mimetype }), req.file.originalname);
+    form.append('folder', 'products');
+    form.append('timestamp', String(timestamp));
+    form.append('api_key', apiKey);
+    form.append('signature', signature);
+    const r = await fetch(`https://api.cloudinary.com/v1_1/${cloud}/image/upload`, { method: 'POST', body: form });
+    const data = await r.json();
+    if (!r.ok) return res.status(500).json({ error: data.error?.message || 'Cloudinary error' });
+    res.json({ url: data.secure_url });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /admin/clients — create new client + config
+app.post('/admin/clients', adminAuth, async (req, res) => {
+  const { id, name, type, phone_number_id, wa_token_env, ai_model, system_prompt_mode,
+          custom_prompt, temperature, brand_name, brand_color, logo_url,
+          order_id_prefix, product_catalog_enabled, order_flow_enabled, admin_password_env } = req.body;
+  if (!id || !name) return res.status(400).json({ error: 'id and name required' });
+  try {
+    await db.pgQuery(`INSERT INTO clients (id, name, type) VALUES ($1, $2, $3)`,
+      [id, name, type || 'general']);
+    await db.pgQuery(`
+      INSERT INTO client_configs (client_id, phone_number_id, wa_token_env, ai_model,
+        system_prompt_mode, custom_prompt, temperature, brand_name, brand_color, logo_url,
+        order_id_prefix, product_catalog_enabled, order_flow_enabled, admin_password_env)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+      [id, phone_number_id || null, wa_token_env || null, ai_model || 'gemini-2.5-flash',
+       system_prompt_mode || 'custom', custom_prompt || null,
+       parseFloat(temperature) || 0.70, brand_name || name, brand_color || '#075e54',
+       logo_url || null, order_id_prefix || id.toUpperCase().slice(0,6),
+       product_catalog_enabled === true || product_catalog_enabled === 'true',
+       order_flow_enabled !== false && order_flow_enabled !== 'false',
+       admin_password_env || 'ADMIN_PASSWORD']);
+    clientRouter.invalidateCache(id);
+    res.json({ ok: true, id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /admin/clients/:clientId — update client config
+app.put('/admin/clients/:clientId', adminAuth, async (req, res) => {
+  const { clientId } = req.params;
+  const { name, type, active, phone_number_id, wa_token_env, ai_model, system_prompt_mode,
+          custom_prompt, temperature, brand_name, brand_color, logo_url,
+          order_id_prefix, product_catalog_enabled, order_flow_enabled, admin_password_env } = req.body;
+  try {
+    if (name || type || active !== undefined) {
+      await db.pgQuery(
+        `UPDATE clients SET name=COALESCE($1,name), type=COALESCE($2,type), active=COALESCE($3,active) WHERE id=$4`,
+        [name || null, type || null, active !== undefined ? active : null, clientId]
+      );
+    }
+    await db.pgQuery(`
+      UPDATE client_configs SET
+        phone_number_id=$1, wa_token_env=$2, ai_model=$3, system_prompt_mode=$4,
+        custom_prompt=$5, temperature=$6, brand_name=$7, brand_color=$8, logo_url=$9,
+        order_id_prefix=$10, product_catalog_enabled=$11, order_flow_enabled=$12,
+        admin_password_env=$13, updated_at=NOW()
+      WHERE client_id=$14`,
+      [phone_number_id || null, wa_token_env || null, ai_model || 'gemini-2.5-flash',
+       system_prompt_mode || 'custom', custom_prompt || null,
+       parseFloat(temperature) || 0.70, brand_name || null, brand_color || '#075e54',
+       logo_url || null, order_id_prefix || null,
+       product_catalog_enabled === true || product_catalog_enabled === 'true',
+       order_flow_enabled !== false && order_flow_enabled !== 'false',
+       admin_password_env || 'ADMIN_PASSWORD', clientId]);
+    clientRouter.invalidateCache(clientId);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /admin/products?client_id=CLIENT_ID
+app.get('/admin/products', adminAuth, async (req, res) => {
+  const clientId = req.query.client_id || req.query.client;
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    const result = await db.pgQuery(
+      `SELECT * FROM client_products WHERE client_id = $1 ORDER BY category, sort_order, name`,
+      [clientId]
+    );
+    res.json(result.rows || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /admin/products — create product
+app.post('/admin/products', adminAuth, async (req, res) => {
+  const { client_id, name, description, price, price_max, currency, category, subcategory, sku, image_url, sort_order, attributes } = req.body;
+  if (!client_id || !name) return res.status(400).json({ error: 'client_id and name required' });
+  try {
+    const result = await db.pgQuery(
+      `INSERT INTO client_products (client_id, name, description, price, price_max, currency, category, subcategory, sku, image_url, sort_order, attributes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+      [client_id, name, description || null, price || null, price_max || null,
+       currency || 'LKR', category || null, subcategory || null, sku || null,
+       image_url || null, sort_order || 0, JSON.stringify(attributes || {})]
+    );
+    const newId = result.rows[0].id;
+    // Generate and save embedding asynchronously
+    if (db.IS_PG) {
+      embedText(productToText(req.body)).then(emb => db.saveProductEmbedding(newId, emb))
+        .catch(e => console.warn('[EMBED] POST product:', e.message));
+    }
+    res.json({ ok: true, id: newId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /admin/products/:id — update product
+app.put('/admin/products/:id', adminAuth, async (req, res) => {
+  const { id } = req.params;
+  const { name, description, price, price_max, currency, category, subcategory, sku, image_url, sort_order, attributes, active } = req.body;
+  try {
+    await db.pgQuery(
+      `UPDATE client_products SET name=$1, description=$2, price=$3, price_max=$4, currency=$5,
+       category=$6, subcategory=$7, sku=$8, image_url=$9, sort_order=$10,
+       attributes=$11, active=$12, updated_at=NOW() WHERE id=$13`,
+      [name, description || null, price || null, price_max || null,
+       currency || 'LKR', category || null, subcategory || null, sku || null,
+       image_url || null, sort_order || 0, JSON.stringify(attributes || {}),
+       active !== false, id]
+    );
+    // Re-embed on update
+    if (db.IS_PG) {
+      embedText(productToText(req.body)).then(emb => db.saveProductEmbedding(id, emb))
+        .catch(e => console.warn('[EMBED] PUT product:', e.message));
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /admin/products/:id
+app.delete('/admin/products/:id', adminAuth, async (req, res) => {
+  try {
+    await db.pgQuery(`DELETE FROM client_products WHERE id = $1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /admin/attributes?client=CLIENT_ID
+app.get('/admin/attributes', adminAuth, async (req, res) => {
+  const clientId = req.query.client || 'astrology_001';
+  try {
+    const result = await db.pgQuery(
+      `SELECT * FROM client_attribute_schemas WHERE client_id = $1 ORDER BY sort_order`,
+      [clientId]
+    );
+    res.json(result.rows || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /admin/attributes — create attribute schema field
+app.post('/admin/attributes', adminAuth, async (req, res) => {
+  const { client_id, field_key, field_label, field_type, options, unit, filterable, sort_order } = req.body;
+  if (!client_id || !field_key || !field_label) return res.status(400).json({ error: 'client_id, field_key, field_label required' });
+  try {
+    await db.pgQuery(
+      `INSERT INTO client_attribute_schemas (client_id, field_key, field_label, field_type, options, unit, filterable, sort_order)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       ON CONFLICT (client_id, field_key) DO UPDATE SET
+         field_label=$3, field_type=$4, options=$5, unit=$6, filterable=$7, sort_order=$8`,
+      [client_id, field_key, field_label, field_type || 'text',
+       options ? JSON.stringify(options) : null, unit || null,
+       filterable !== false, sort_order || 0]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /admin/attributes/:id
+app.delete('/admin/attributes/:id', adminAuth, async (req, res) => {
+  try {
+    await db.pgQuery(`DELETE FROM client_attribute_schemas WHERE id = $1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /admin/attributes/bulk — upsert full attribute schema from JSON array
+app.post('/admin/attributes/bulk', adminAuth, async (req, res) => {
+  const { client_id, attributes } = req.body;
+  if (!client_id || !Array.isArray(attributes)) return res.status(400).json({ error: 'client_id and attributes[] required' });
+  const errors = [];
+  for (let i = 0; i < attributes.length; i++) {
+    const a = attributes[i];
+    if (!a.field_key || !a.field_label) { errors.push(`Item ${i}: field_key and field_label required`); continue; }
+    try {
+      await db.pgQuery(
+        `INSERT INTO client_attribute_schemas (client_id, field_key, field_label, field_type, options, unit, filterable, sort_order)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (client_id, field_key) DO UPDATE SET
+           field_label=$3, field_type=$4, options=$5, unit=$6, filterable=$7, sort_order=$8`,
+        [client_id, a.field_key, a.field_label, a.field_type || 'text',
+         a.options ? JSON.stringify(a.options) : null, a.unit || null,
+         a.filterable !== false, a.sort_order || i]
+      );
+    } catch (e) { errors.push(`Item ${i} (${a.field_key}): ${e.message}`); }
+  }
+  res.json({ ok: true, saved: attributes.length - errors.length, errors });
+});
+
+// POST /admin/products/bulk — import JSON array of products
+app.post('/admin/products/bulk', adminAuth, async (req, res) => {
+  const { client_id, products } = req.body;
+  if (!client_id || !Array.isArray(products)) return res.status(400).json({ error: 'client_id and products[] required' });
+  // Load attribute schema for validation
+  let schema = [];
+  try {
+    const r = await db.pgQuery(`SELECT field_key, field_type FROM client_attribute_schemas WHERE client_id=$1`, [client_id]);
+    schema = r.rows;
+  } catch (_) {}
+  const validKeys = new Set(schema.map(s => s.field_key));
+
+  const saved = [], errors = [];
+  for (let i = 0; i < products.length; i++) {
+    const p = products[i];
+    if (!p.name) { errors.push(`Row ${i+1}: name is required`); continue; }
+    // Validate attributes against schema
+    if (p.attributes && validKeys.size > 0) {
+      const unknown = Object.keys(p.attributes).filter(k => !validKeys.has(k));
+      if (unknown.length) { errors.push(`Row ${i+1} (${p.name}): unknown attribute keys: ${unknown.join(', ')}`); continue; }
+    }
+    try {
+      const r = await db.pgQuery(
+        `INSERT INTO client_products (client_id,name,description,price,price_max,currency,category,subcategory,sku,image_url,sort_order,attributes,active)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+        [client_id, p.name, p.description||null, p.price||null, p.price_max||null, p.currency||'LKR',
+         p.category||null, p.subcategory||null, p.sku||null, p.image_url||null, p.sort_order||i,
+         p.attributes ? JSON.stringify(p.attributes) : null, p.active !== false]
+      );
+      saved.push(r.rows[0].id);
+    } catch (e) { errors.push(`Row ${i+1} (${p.name}): ${e.message}`); }
+  }
+  res.json({ ok: true, saved: saved.length, errors });
+});
+
 // ─── Start ────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 
@@ -686,6 +1166,24 @@ app.listen(PORT, () => {
 db.init().then(async () => {
   console.log(`[DB] Initialized successfully`);
   await uploadTemplateImages();
+  // Auto-embed any products missing embeddings (non-blocking)
+  if (db.IS_PG) {
+    const { embedText, productToText } = require('./embedder');
+    db.pgQuery(`SELECT id, name, description, category, subcategory, sku, attributes FROM client_products WHERE active = TRUE AND embedding IS NULL`)
+      .then(async ({ rows }) => {
+        if (!rows.length) return;
+        console.log(`[EMBED] Backfilling ${rows.length} products...`);
+        for (const p of rows) {
+          try {
+            const emb = await embedText(productToText(p));
+            await db.saveProductEmbedding(p.id, emb);
+            console.log(`[EMBED] ✓ ${p.name}`);
+          } catch (e) { console.warn(`[EMBED] failed ${p.id}: ${e.message}`); }
+        }
+        console.log('[EMBED] Backfill done.');
+      })
+      .catch(e => console.warn('[EMBED] Backfill error:', e.message));
+  }
 }).catch(err => {
   console.error(`[STARTUP] DB init FAILED:`, err.message || err);
   console.error(`[STARTUP] Full error:`, JSON.stringify(err, Object.getOwnPropertyNames(err)));

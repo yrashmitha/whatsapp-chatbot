@@ -52,14 +52,10 @@ async function init() {
         id                  SERIAL PRIMARY KEY,
         order_id            TEXT UNIQUE NOT NULL,
         phone_number        TEXT NOT NULL REFERENCES customers(phone_number) ON DELETE CASCADE,
-        package             TEXT,
-        birth_date          TEXT,
-        birth_time          TEXT,
-        birth_city          TEXT,
-        problems            TEXT,
         status              TEXT NOT NULL DEFAULT 'pending',
         horoscope_received  BOOLEAN NOT NULL DEFAULT FALSE,
         receipt_received    BOOLEAN NOT NULL DEFAULT FALSE,
+        custom_fields       JSONB,
         created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
     `);
@@ -186,6 +182,9 @@ async function init() {
       CREATE INDEX IF NOT EXISTS idx_attr_schema_client ON client_attribute_schemas (client_id, sort_order);
     `);
 
+    // qty column for products
+    await pool.query(`ALTER TABLE client_products ADD COLUMN IF NOT EXISTS qty INT NOT NULL DEFAULT 0`);
+
     // pgvector extension + embedding column
     await pool.query(`
       CREATE EXTENSION IF NOT EXISTS vector;
@@ -211,6 +210,132 @@ async function init() {
       CREATE INDEX IF NOT EXISTS idx_customers_client ON customers (client_id);
       CREATE INDEX IF NOT EXISTS idx_messages_client  ON messages  (client_id);
       CREATE INDEX IF NOT EXISTS idx_orders_client    ON orders    (client_id);
+
+      -- Backfill orders.client_id from customers table where null
+      UPDATE orders o SET client_id = c.client_id
+      FROM customers c WHERE c.phone_number = o.phone_number AND o.client_id IS NULL AND c.client_id IS NOT NULL;
+
+      -- Backfill messages.client_id from customers table where null
+      UPDATE messages m SET client_id = c.client_id
+      FROM customers c WHERE c.phone_number = m.phone_number AND m.client_id IS NULL AND c.client_id IS NOT NULL;
+    `);
+
+    // ── Dynamic order fields migration ──────────────────────────────────────
+    await pool.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='client_configs' AND column_name='order_fields') THEN
+          ALTER TABLE client_configs ADD COLUMN order_fields JSONB NOT NULL DEFAULT '[]';
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='client_configs' AND column_name='contact_number') THEN
+          ALTER TABLE client_configs ADD COLUMN contact_number TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='custom_fields') THEN
+          ALTER TABLE orders ADD COLUMN custom_fields JSONB;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='notes') THEN
+          ALTER TABLE orders ADD COLUMN notes TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='ai_summary') THEN
+          ALTER TABLE orders ADD COLUMN ai_summary TEXT;
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='package') THEN
+          ALTER TABLE orders DROP COLUMN package;
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='birth_date') THEN
+          ALTER TABLE orders DROP COLUMN birth_date;
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='birth_time') THEN
+          ALTER TABLE orders DROP COLUMN birth_time;
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='birth_city') THEN
+          ALTER TABLE orders DROP COLUMN birth_city;
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='problems') THEN
+          ALTER TABLE orders DROP COLUMN problems;
+        END IF;
+      END $$;
+    `);
+
+    // ── Knowledge base ───────────────────────────────────────────────────────
+    await pool.query(`
+      ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS knowledge_base_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+      CREATE TABLE IF NOT EXISTS client_knowledge_chunks (
+        id         SERIAL PRIMARY KEY,
+        client_id  TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+        title      TEXT NOT NULL,
+        content    TEXT NOT NULL,
+        embedding  VECTOR(768),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_knowledge_embedding
+        ON client_knowledge_chunks USING hnsw (embedding vector_cosine_ops);
+      CREATE INDEX IF NOT EXISTS idx_knowledge_client
+        ON client_knowledge_chunks (client_id);
+    `);
+
+    // ── media_type / media_url / wamid / is_deleted columns on messages ──────
+    await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_type TEXT`);
+    await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_url  TEXT`);
+    await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS wamid TEXT`);
+    await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT FALSE`);
+
+    // ── CRM auth tables ──────────────────────────────────────────────────────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS crm_users (
+        id            SERIAL PRIMARY KEY,
+        username      TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        role          TEXT NOT NULL DEFAULT 'client'
+      );
+      ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS crm_password_hash TEXT;
+      ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS error_message TEXT;
+      CREATE TABLE IF NOT EXISTS message_retry_queue (
+        id           SERIAL PRIMARY KEY,
+        phone_number TEXT NOT NULL,
+        client_id    TEXT NOT NULL,
+        message_text TEXT NOT NULL,
+        attempts     INT NOT NULL DEFAULT 0,
+        max_attempts INT NOT NULL DEFAULT 5,
+        retry_after  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        resolved_at  TIMESTAMPTZ
+      );
+      CREATE INDEX IF NOT EXISTS idx_retry_queue_pending
+        ON message_retry_queue (retry_after) WHERE resolved_at IS NULL;
+    `);
+
+    // ── Per-chat AI mode ─────────────────────────────────────────────────────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS customer_settings (
+        phone_number TEXT    NOT NULL,
+        client_id    TEXT    NOT NULL,
+        ai_enabled   BOOLEAN NOT NULL DEFAULT TRUE,
+        PRIMARY KEY (phone_number, client_id)
+      );
+    `);
+
+    // ── Media library ─────────────────────────────────────────────────────────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS client_media (
+        id          SERIAL PRIMARY KEY,
+        client_id   TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+        title       TEXT NOT NULL,
+        description TEXT NOT NULL,
+        image_url   TEXT NOT NULL,
+        sort_order  INT NOT NULL DEFAULT 0,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_client_media_client ON client_media (client_id, sort_order);
+    `);
+    // ── Addon system ──────────────────────────────────────────────────────────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS client_addons (
+        client_id  TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+        addon_id   TEXT NOT NULL,
+        enabled    BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (client_id, addon_id)
+      );
     `);
   } else {
     db.exec(`PRAGMA foreign_keys = ON;`);
@@ -232,21 +357,23 @@ async function init() {
         id                  INTEGER PRIMARY KEY AUTOINCREMENT,
         order_id            TEXT UNIQUE NOT NULL,
         phone_number        TEXT NOT NULL REFERENCES customers(phone_number) ON DELETE CASCADE,
-        package             TEXT,
-        birth_date          TEXT,
-        birth_time          TEXT,
-        birth_city          TEXT,
-        problems            TEXT,
         status              TEXT NOT NULL DEFAULT 'pending',
         horoscope_received  INTEGER NOT NULL DEFAULT 0,
         receipt_received    INTEGER NOT NULL DEFAULT 0,
+        custom_fields       TEXT,
         created_at          TEXT NOT NULL DEFAULT (datetime('now'))
       );
     `);
     // Migrate: add missing columns (existing DBs)
     try { db.exec(`ALTER TABLE messages ADD COLUMN cost_usd REAL`); } catch (_) {}
+    try { db.exec(`ALTER TABLE messages ADD COLUMN media_type TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE messages ADD COLUMN media_url TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE messages ADD COLUMN wamid TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE messages ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
     try { db.exec(`ALTER TABLE orders ADD COLUMN horoscope_received INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
     try { db.exec(`ALTER TABLE orders ADD COLUMN receipt_received INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
+    try { db.exec(`ALTER TABLE orders ADD COLUMN notes TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE orders ADD COLUMN ai_summary TEXT`); } catch (_) {}
 
     // ── Multi-tenant tables (SQLite) ─────────────────────────────────────────
     db.exec(`
@@ -319,49 +446,79 @@ async function init() {
     db.exec(`UPDATE customers SET client_id='astrology_001' WHERE client_id IS NULL`);
     db.exec(`UPDATE messages  SET client_id='astrology_001' WHERE client_id IS NULL`);
     db.exec(`UPDATE orders    SET client_id='astrology_001' WHERE client_id IS NULL`);
+    // Dynamic order fields migration
+    try { db.exec(`ALTER TABLE client_configs ADD COLUMN order_fields TEXT NOT NULL DEFAULT '[]'`); } catch (_) {}
+    try { db.exec(`ALTER TABLE orders ADD COLUMN custom_fields TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE client_configs ADD COLUMN contact_number TEXT`); } catch (_) {}
+    // SQLite cannot DROP columns — old columns (package, birth_date, etc.) remain but are ignored
+
+    // ── Per-chat AI mode (SQLite) ────────────────────────────────────────────
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS customer_settings (
+        phone_number TEXT    NOT NULL,
+        client_id    TEXT    NOT NULL,
+        ai_enabled   INTEGER NOT NULL DEFAULT 1,
+        PRIMARY KEY (phone_number, client_id)
+      );
+    `);
+
+    // ── Media library (SQLite) ────────────────────────────────────────────────
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS client_media (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        client_id   TEXT NOT NULL,
+        title       TEXT NOT NULL,
+        description TEXT NOT NULL,
+        image_url   TEXT NOT NULL,
+        sort_order  INTEGER NOT NULL DEFAULT 0,
+        created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
   }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-async function insertMessage(phoneNumber, text, senderType, costUsd = null) {
+async function insertMessage(phoneNumber, text, senderType, costUsd = null, clientId = null, mediaType = null, mediaUrl = null, wamid = null) {
   if (IS_PG) {
     await pool.query(
-      'INSERT INTO messages (phone_number, message_text, sender_type, cost_usd) VALUES ($1, $2, $3, $4)',
-      [phoneNumber, text, senderType, costUsd]
+      'INSERT INTO messages (phone_number, message_text, sender_type, cost_usd, client_id, media_type, media_url, wamid) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+      [phoneNumber, text, senderType, costUsd, clientId, mediaType, mediaUrl, wamid]
     );
   } else {
-    db.prepare('INSERT INTO messages (phone_number, message_text, sender_type, cost_usd) VALUES (?, ?, ?, ?)').run(phoneNumber, text, senderType, costUsd);
+    db.prepare('INSERT INTO messages (phone_number, message_text, sender_type, cost_usd, client_id, media_type, media_url, wamid) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(phoneNumber, text, senderType, costUsd, clientId, mediaType, mediaUrl, wamid);
   }
 }
 
-async function upsertCustomer(phoneNumber, name) {
+async function upsertCustomer(phoneNumber, name, clientId) {
   if (IS_PG) {
     await pool.query(`
-      INSERT INTO customers (phone_number, name, updated_at) VALUES ($1, $2, NOW())
+      INSERT INTO customers (phone_number, name, client_id, updated_at) VALUES ($1, $2, $3, NOW())
       ON CONFLICT(phone_number) DO UPDATE SET
         name       = COALESCE(EXCLUDED.name, customers.name),
+        client_id  = COALESCE(EXCLUDED.client_id, customers.client_id),
         updated_at = NOW()
-    `, [phoneNumber, name]);
+    `, [phoneNumber, name, clientId || null]);
   } else {
     db.prepare(`
-      INSERT INTO customers (phone_number, name, updated_at) VALUES (?, ?, datetime('now'))
+      INSERT INTO customers (phone_number, name, client_id, updated_at) VALUES (?, ?, ?, datetime('now'))
       ON CONFLICT(phone_number) DO UPDATE SET
         name       = COALESCE(excluded.name, name),
+        client_id  = COALESCE(excluded.client_id, client_id),
         updated_at = datetime('now')
-    `).run(phoneNumber, name);
+    `).run(phoneNumber, name, clientId || null);
   }
 }
 
-async function insertOrder(orderId, phoneNumber, pkg, birthDate, birthTime, birthCity, problems) {
+async function insertOrder(orderId, phoneNumber, clientId, customFields) {
   if (IS_PG) {
     await pool.query(
-      'INSERT INTO orders (order_id, phone_number, package, birth_date, birth_time, birth_city, problems) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-      [orderId, phoneNumber, pkg, birthDate, birthTime, birthCity, problems]
+      'INSERT INTO orders (order_id, phone_number, client_id, custom_fields) VALUES ($1,$2,$3,$4)',
+      [orderId, phoneNumber, clientId || null, customFields || null]
     );
   } else {
     db.prepare(
-      'INSERT INTO orders (order_id, phone_number, package, birth_date, birth_time, birth_city, problems) VALUES (?,?,?,?,?,?,?)'
-    ).run(orderId, phoneNumber, pkg, birthDate, birthTime, birthCity, problems);
+      'INSERT INTO orders (order_id, phone_number, client_id, custom_fields) VALUES (?,?,?,?)'
+    ).run(orderId, phoneNumber, clientId || null, customFields ? JSON.stringify(customFields) : null);
   }
 }
 
@@ -470,6 +627,21 @@ async function deleteMessages(phoneNumber) {
   }
 }
 
+async function deleteMessage(id, clientId) {
+  if (IS_PG) {
+    const res = await pool.query(
+      'UPDATE messages SET is_deleted = TRUE WHERE id = $1 AND client_id = $2 RETURNING wamid, sender_type',
+      [id, clientId]
+    );
+    return res.rows[0] || null;
+  } else {
+    const row = db.prepare('SELECT wamid, sender_type FROM messages WHERE id = ? AND client_id = ?').get(id, clientId);
+    if (!row) return null;
+    db.prepare('UPDATE messages SET is_deleted = 1 WHERE id = ?').run(id);
+    return row;
+  }
+}
+
 async function updateOrderFlagsById(orderId, flags) {
   const sets = [], vals = [];
   if (flags.horoscope_received !== undefined) {
@@ -486,6 +658,24 @@ async function updateOrderFlagsById(orderId, flags) {
     await pool.query(`UPDATE orders SET ${sets.join(',')} WHERE order_id=$${vals.length}`, vals);
   } else {
     db.prepare(`UPDATE orders SET ${sets.join(',')} WHERE order_id=?`).run(...vals);
+  }
+}
+
+async function updateOrderAISummary(orderId, summary) {
+  if (IS_PG) {
+    await pool.query('UPDATE orders SET ai_summary=$1 WHERE order_id=$2', [summary, orderId]);
+  } else {
+    db.prepare('UPDATE orders SET ai_summary=? WHERE order_id=?').run(summary, orderId);
+  }
+}
+
+async function updateOrderCustomFields(orderId, customFields) {
+  if (IS_PG) {
+    await pool.query('UPDATE orders SET custom_fields=$1 WHERE order_id=$2',
+      [customFields, orderId]);
+  } else {
+    db.prepare('UPDATE orders SET custom_fields=? WHERE order_id=?')
+      .run(JSON.stringify(customFields), orderId);
   }
 }
 
@@ -531,37 +721,46 @@ async function countOrdersByYear(pattern) {
  * Full-text search across client products.
  * Falls back to returning empty array on SQLite (products are PG-only for now).
  */
-async function searchProducts(clientId, query, limit = 10) {
+async function searchProducts(clientId, query, limit = 10, maxPrice = null) {
   if (IS_PG) {
     if (!query || !query.trim()) {
+      const params = [clientId, limit];
+      let priceClause = '';
+      if (maxPrice != null) { priceClause = `AND price <= $3`; params.push(maxPrice); }
       const res = await pool.query(
         `SELECT id, name, description, price, price_max, currency, category, subcategory, sku, image_url, attributes
-         FROM client_products WHERE client_id = $1 AND active = TRUE
+         FROM client_products WHERE client_id = $1 AND active = TRUE ${priceClause}
          ORDER BY sort_order, name LIMIT $2`,
-        [clientId, limit]
+        params
       );
       return res.rows;
     }
+    const params = [clientId, query.trim(), limit];
+    let priceClause = '';
+    if (maxPrice != null) { priceClause = `AND price <= $4`; params.push(maxPrice); }
     const res = await pool.query(
       `SELECT id, name, description, price, price_max, currency, category, subcategory, sku, image_url, attributes,
               ts_rank(search_vec, plainto_tsquery('english', $2)) AS rank
        FROM client_products WHERE client_id = $1 AND active = TRUE
          AND search_vec @@ plainto_tsquery('english', $2)
+         ${priceClause}
        ORDER BY rank DESC, sort_order LIMIT $3`,
-      [clientId, query.trim(), limit]
+      params
     );
     return res.rows;
   } else {
     // SQLite: simple LIKE search
     const q = query ? `%${query.trim()}%` : null;
+    const priceFilter = maxPrice != null ? `AND price <= ?` : '';
+    const priceParam = maxPrice != null ? [maxPrice] : [];
     const rows = q
       ? db.prepare(`SELECT id, name, description, price, price_max, currency, category, subcategory, sku, image_url, attributes
                     FROM client_products WHERE client_id = ? AND active = 1
-                    AND (name LIKE ? OR description LIKE ? OR category LIKE ?) ORDER BY sort_order, name LIMIT ?`)
-           .all(clientId, q, q, q, limit)
+                    AND (name LIKE ? OR description LIKE ? OR category LIKE ?) ${priceFilter} ORDER BY sort_order, name LIMIT ?`)
+           .all(clientId, q, q, q, ...priceParam, limit)
       : db.prepare(`SELECT id, name, description, price, price_max, currency, category, subcategory, sku, image_url, attributes
-                    FROM client_products WHERE client_id = ? AND active = 1 ORDER BY sort_order, name LIMIT ?`)
-           .all(clientId, limit);
+                    FROM client_products WHERE client_id = ? AND active = 1 ${priceFilter} ORDER BY sort_order, name LIMIT ?`)
+           .all(clientId, ...priceParam, limit);
     return rows.map(r => ({ ...r, attributes: JSON.parse(r.attributes || '{}') }));
   }
 }
@@ -585,17 +784,22 @@ async function getAttributeSchema(clientId) {
 
 // ─── Vector search ────────────────────────────────────────────────────────────
 
-async function vectorSearchProducts(clientId, embedding, limit = 10) {
+async function vectorSearchProducts(clientId, embedding, limit = 10, maxPrice = null) {
   if (!IS_PG) return []; // pgvector not available on SQLite
+  const params = [clientId, JSON.stringify(embedding), limit];
+  let priceClause = '';
+  if (maxPrice != null) { priceClause = `AND price <= $4`; params.push(maxPrice); }
   const res = await pool.query(
     `SELECT id, name, description, price, price_max, currency,
             category, subcategory, sku, image_url, attributes,
             1 - (embedding <=> $2::vector) AS similarity
      FROM client_products
      WHERE client_id = $1 AND active = TRUE AND embedding IS NOT NULL
+       AND (1 - (embedding <=> $2::vector)) > 0.5
+       ${priceClause}
      ORDER BY embedding <=> $2::vector
      LIMIT $3`,
-    [clientId, JSON.stringify(embedding), limit]
+    params
   );
   return res.rows;
 }
@@ -605,6 +809,134 @@ async function saveProductEmbedding(productId, embedding) {
   await pool.query(
     `UPDATE client_products SET embedding = $1::vector WHERE id = $2`,
     [JSON.stringify(embedding), productId]
+  );
+}
+
+// ─── Knowledge base functions ─────────────────────────────────────────────────
+
+async function vectorSearchKnowledge(clientId, embedding, limit = 5) {
+  if (!IS_PG) return [];
+  const res = await pool.query(
+    `SELECT id, title, content, 1 - (embedding <=> $2::vector) AS similarity
+     FROM client_knowledge_chunks
+     WHERE client_id = $1 AND embedding IS NOT NULL
+       AND (1 - (embedding <=> $2::vector)) > 0.35
+     ORDER BY embedding <=> $2::vector
+     LIMIT $3`,
+    [clientId, JSON.stringify(embedding), limit]
+  );
+  return res.rows;
+}
+
+async function insertKnowledgeChunks(clientId, title, chunks) {
+  if (!IS_PG || !chunks.length) return;
+  const values = [];
+  const params = [];
+  chunks.forEach(({ content, embedding }, i) => {
+    const base = i * 4;
+    values.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}::vector)`);
+    params.push(clientId, title, content, JSON.stringify(embedding));
+  });
+  await pool.query(
+    `INSERT INTO client_knowledge_chunks (client_id, title, content, embedding) VALUES ${values.join(', ')}`,
+    params
+  );
+}
+
+async function deleteKnowledgeByTitle(clientId, title) {
+  if (!IS_PG) return;
+  await pool.query(
+    `DELETE FROM client_knowledge_chunks WHERE client_id=$1 AND title=$2`,
+    [clientId, title]
+  );
+}
+
+async function getKnowledgeSections(clientId) {
+  if (!IS_PG) return [];
+  const res = await pool.query(
+    `SELECT title, COUNT(*) AS chunk_count, MIN(created_at) AS created_at
+     FROM client_knowledge_chunks WHERE client_id=$1
+     GROUP BY title ORDER BY MIN(created_at)`,
+    [clientId]
+  );
+  return res.rows;
+}
+
+async function getKnowledgeChunksByTitle(clientId, title) {
+  if (!IS_PG) return [];
+  const res = await pool.query(
+    `SELECT id, content, created_at FROM client_knowledge_chunks
+     WHERE client_id=$1 AND title=$2 ORDER BY id`,
+    [clientId, title]
+  );
+  return res.rows;
+}
+
+async function updateKnowledgeChunk(id, content, embedding) {
+  if (!IS_PG) return;
+  await pool.query(
+    `UPDATE client_knowledge_chunks SET content=$1, embedding=$2::vector WHERE id=$3`,
+    [content, JSON.stringify(embedding), id]
+  );
+}
+
+async function deleteKnowledgeChunk(id) {
+  if (!IS_PG) return;
+  await pool.query(`DELETE FROM client_knowledge_chunks WHERE id=$1`, [id]);
+}
+
+// ─── Media library ────────────────────────────────────────────────────────────
+async function getClientMedia(clientId) {
+  if (!IS_PG) return [];
+  const r = await pool.query(
+    `SELECT id, title, description, image_url, sort_order FROM client_media
+     WHERE client_id=$1 ORDER BY sort_order, created_at`,
+    [clientId]
+  );
+  return r.rows;
+}
+
+async function insertMedia(clientId, title, description, imageUrl, sortOrder = 0) {
+  if (!IS_PG) return null;
+  const r = await pool.query(
+    `INSERT INTO client_media (client_id, title, description, image_url, sort_order)
+     VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+    [clientId, title, description, imageUrl, sortOrder]
+  );
+  return r.rows[0].id;
+}
+
+async function deleteMedia(id, clientId) {
+  if (!IS_PG) return;
+  await pool.query(`DELETE FROM client_media WHERE id=$1 AND client_id=$2`, [id, clientId]);
+}
+
+async function updateMedia(id, clientId, title, description, imageUrl, sortOrder) {
+  if (!IS_PG) return;
+  await pool.query(
+    `UPDATE client_media SET title=$3, description=$4, image_url=$5, sort_order=$6
+     WHERE id=$1 AND client_id=$2`,
+    [id, clientId, title, description, imageUrl, sortOrder]
+  );
+}
+
+// ─── Per-chat AI mode ─────────────────────────────────────────────────────────
+async function getCustomerAiEnabled(phone, clientId) {
+  if (!IS_PG) return true; // local dev always AI on
+  const r = await pool.query(
+    `SELECT ai_enabled FROM customer_settings WHERE phone_number=$1 AND client_id=$2`,
+    [phone, clientId]
+  );
+  return r.rows.length === 0 ? true : !!r.rows[0].ai_enabled;
+}
+
+async function setCustomerAiMode(phone, clientId, enabled) {
+  if (!IS_PG) return;
+  await pool.query(
+    `INSERT INTO customer_settings (phone_number, client_id, ai_enabled)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (phone_number, client_id) DO UPDATE SET ai_enabled=$3`,
+    [phone, clientId, enabled]
   );
 }
 
@@ -621,4 +953,4 @@ async function pgQuery(sql, params) {
   }
 }
 
-module.exports = { init, insertMessage, upsertCustomer, insertOrder, getOrdersByPhone, getLatestOrder, countOrdersByYear, getAllCustomers, getMessagesByPhone, updateLatestOrderStatus, updateOrderStatusById, updateOrderFlags, updateOrderFlagsById, deleteCustomer, deleteMessages, searchProducts, getAttributeSchema, vectorSearchProducts, saveProductEmbedding, IS_PG, pgQuery };
+module.exports = { init, insertMessage, upsertCustomer, insertOrder, getOrdersByPhone, getLatestOrder, countOrdersByYear, getAllCustomers, getMessagesByPhone, updateLatestOrderStatus, updateOrderStatusById, updateOrderAISummary, updateOrderCustomFields, updateOrderFlags, updateOrderFlagsById, deleteCustomer, deleteMessages, deleteMessage, searchProducts, getAttributeSchema, vectorSearchProducts, saveProductEmbedding, vectorSearchKnowledge, insertKnowledgeChunks, deleteKnowledgeByTitle, getKnowledgeSections, getKnowledgeChunksByTitle, updateKnowledgeChunk, deleteKnowledgeChunk, getClientMedia, insertMedia, deleteMedia, updateMedia, getCustomerAiEnabled, setCustomerAiMode, IS_PG, pgQuery };

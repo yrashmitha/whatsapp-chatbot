@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Product Manager</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f0f2f5;
+      min-height: 100vh;
+    }
+
+    .topbar {
+      background: #075e54;
+      color: #fff;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .topbar h1 { font-size: 17px; font-weight: 700; white-space: nowrap; }
+    .topbar-right { display: flex; align-items: center; gap: 12px; }
+    .topbar a { color: rgba(255,255,255,0.8); font-size: 13px; text-decoration: none; }
+    .topbar a:hover { color: #fff; }
+
+    .client-select-wrap { display: flex; align-items: center; gap: 8px; }
+    .client-select-wrap label { font-size: 13px; opacity: 0.85; white-space: nowrap; }
+    .client-select-wrap select {
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: none;
+      font-size: 13px;
+      background: rgba(255,255,255,0.15);
+      color: #fff;
+      cursor: pointer;
+      min-width: 160px;
+    }
+    .client-select-wrap select option { background: #075e54; color: #fff; }
+
+    .container { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+
+    /* Toolbar */
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .toolbar input[type=search] {
+      padding: 8px 12px;
+      border: 1px solid #d0d0d0;
+      border-radius: 7px;
+      font-size: 13px;
+      width: 240px;
+    }
+    .btn-primary {
+      background: #075e54;
+      color: #fff;
+      border: none;
+      padding: 9px 18px;
+      border-radius: 7px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn-primary:hover { background: #128c7e; }
+
+    /* Table */
+    .table-wrap {
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      overflow: hidden;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead { background: #f5f5f5; }
+    th { padding: 11px 14px; text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: #666; border-bottom: 1px solid #eee; }
+    td { padding: 11px 14px; border-bottom: 1px solid #f2f2f2; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #fafafa; }
+
+    .td-name { font-weight: 600; color: #111; }
+    .td-sku  { font-size: 11px; color: #888; margin-top: 2px; }
+    .td-cat  { font-size: 12px; color: #555; }
+    .td-price { font-weight: 600; color: #075e54; white-space: nowrap; }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .badge-active   { background: #e8f5e9; color: #2e7d32; }
+    .badge-inactive { background: #ffebee; color: #c62828; }
+
+    .action-btns { display: flex; gap: 6px; }
+    .btn-edit {
+      background: #f0f0f0;
+      border: none;
+      padding: 5px 12px;
+      border-radius: 5px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .btn-edit:hover { background: #e0e0e0; }
+    .btn-del {
+      background: #ffebee;
+      border: none;
+      padding: 5px 10px;
+      border-radius: 5px;
+      font-size: 12px;
+      color: #c62828;
+      cursor: pointer;
+    }
+    .btn-del:hover { background: #ffd7d7; }
+
+    .empty { text-align: center; padding: 48px 20px; color: #aaa; }
+    .empty .icon { font-size: 40px; margin-bottom: 10px; }
+    .empty p { font-size: 14px; }
+
+    /* Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.45);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: #fff;
+      border-radius: 12px;
+      width: 100%;
+      max-width: 640px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+    }
+    .modal-hdr {
+      padding: 18px 22px 14px;
+      border-bottom: 1px solid #eee;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .modal-hdr h2 { font-size: 16px; font-weight: 700; color: #075e54; }
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 22px;
+      cursor: pointer;
+      color: #999;
+      line-height: 1;
+    }
+    .modal-close:hover { color: #333; }
+    .modal-body { padding: 20px 22px; }
+    .modal-footer {
+      padding: 14px 22px 18px;
+      border-top: 1px solid #eee;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .form-grid .full { grid-column: 1 / -1; }
+    .field { display: flex; flex-direction: column; gap: 5px; }
+    .field label { font-size: 12px; font-weight: 600; color: #555; }
+    .field label .req { color: #e53935; }
+    .field input, .field textarea, .field select {
+      padding: 9px 11px;
+      border: 1px solid #d0d0d0;
+      border-radius: 7px;
+      font-size: 13px;
+      color: #222;
+      transition: border-color 0.15s;
+      font-family: inherit;
+    }
+    .field input:focus, .field textarea:focus, .field select:focus {
+      outline: none;
+      border-color: #075e54;
+    }
+    .field textarea { min-height: 80px; resize: vertical; }
+    .field .hint { font-size: 11px; color: #999; }
+
+    .section-hdr {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #888;
+      margin: 18px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .section-hdr:first-child { margin-top: 0; }
+
+    .btn-save {
+      background: #075e54;
+      color: #fff;
+      border: none;
+      padding: 10px 24px;
+      border-radius: 7px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .btn-save:hover { background: #128c7e; }
+    .btn-save:disabled { background: #aaa; cursor: default; }
+    .btn-cancel {
+      background: #fff;
+      color: #555;
+      border: 1px solid #ccc;
+      padding: 10px 18px;
+      border-radius: 7px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .btn-cancel:hover { background: #f5f5f5; }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #323232;
+      color: #fff;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      z-index: 999;
+    }
+    .toast.show { opacity: 1; }
+
+    /* Attr modal */
+    .attr-list-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; background: #f9f9f9;
+      border: 1px solid #eee; border-radius: 7px; margin-bottom: 6px;
+    }
+    .attr-key  { min-width: 110px; font-size: 12px; font-weight: 700; color: #111; }
+    .attr-lbl  { min-width: 100px; font-size: 12px; color: #333; }
+    .attr-type { font-size: 11px; color: #888; background: #eee; padding: 2px 7px; border-radius: 8px; }
+    .attr-opts { flex: 1; font-size: 11px; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .attr-actions { display: flex; gap: 5px; margin-left: auto; }
+
+    /* Dynamic attr fields in product modal */
+    .dyn-attr-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
+    .dyn-attr-field label { font-size: 12px; font-weight: 600; color: #555; }
+    .dyn-attr-field input, .dyn-attr-field select {
+      padding: 9px 11px; border: 1px solid #d0d0d0; border-radius: 7px;
+      font-size: 13px; color: #222; font-family: inherit;
+    }
+    .dyn-attr-field input:focus, .dyn-attr-field select:focus {
+      outline: none; border-color: #075e54;
+    }
+
+    @media (max-width: 640px) {
+      .form-grid { grid-template-columns: 1fr; }
+      .form-grid .full { grid-column: 1; }
+      .topbar { flex-direction: column; align-items: flex-start; }
+      .toolbar input[type=search] { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>Product Manager</h1>
+  <div class="topbar-right">
+    <div class="client-select-wrap">
+      <label>Client:</label>
+      <select id="clientSelect" onchange="onClientChange()">
+        <option value="">— select client —</option>
+      </select>
+    </div>
+    <a href="/onboard.html">Clients</a>
+    <a href="/admin.html">Chat Admin</a>
+  </div>
+</div>
+
+<div class="container">
+  <div class="toolbar">
+    <input type="search" id="searchInput" placeholder="Search products..." oninput="renderTable()" />
+    <button class="btn-primary" onclick="openModal(null)">+ Add Product</button>
+    <button class="btn-cancel" onclick="openImportModal()" style="padding:9px 14px;font-size:13px;">Import JSON</button>
+    <button class="btn-cancel" onclick="openAttrModal()" style="padding:9px 14px;font-size:13px;">⚙ Attributes</button>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Product</th>
+          <th>Category</th>
+          <th>Price</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="productTable">
+        <tr><td colspan="5"><div class="empty"><div class="icon">👆</div><p>Select a client to view products.</p></div></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Add / Edit Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-hdr">
+      <h2 id="modalTitle">Add Product</h2>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="section-hdr">Basic Info</div>
+      <div class="form-grid">
+        <div class="field full">
+          <label>Product Name <span class="req">*</span></label>
+          <input id="fName" placeholder="e.g. Blue Cotton T-Shirt">
+        </div>
+        <div class="field full">
+          <label>Description</label>
+          <textarea id="fDesc" placeholder="Short description of the product..."></textarea>
+        </div>
+        <div class="field">
+          <label>SKU</label>
+          <input id="fSku" placeholder="e.g. TSHIRT-BLU-L">
+        </div>
+        <div class="field full">
+          <label>Product Image</label>
+          <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;">
+            <div id="imgPreviewWrap" style="display:none;width:80px;height:80px;border-radius:8px;overflow:hidden;border:1px solid #eee;flex-shrink:0;">
+              <img id="imgPreview" style="width:100%;height:100%;object-fit:cover;">
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:6px;">
+              <input id="fImage" placeholder="https://... (paste URL or upload below)">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <label style="background:#f0f0f0;border:1px solid #ccc;padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600;">
+                  📁 Upload Image
+                  <input type="file" id="fImageFile" accept="image/*" style="display:none;" onchange="uploadProductImage(this)">
+                </label>
+                <span id="imgUploadStatus" style="font-size:12px;color:#888;"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-hdr">Category</div>
+      <div class="form-grid">
+        <div class="field">
+          <label>Category</label>
+          <input id="fCat" placeholder="e.g. Clothing">
+        </div>
+        <div class="field">
+          <label>Subcategory</label>
+          <input id="fSubcat" placeholder="e.g. T-Shirts">
+        </div>
+      </div>
+
+      <div class="section-hdr">Pricing</div>
+      <div class="form-grid">
+        <div class="field">
+          <label>Price <span class="req">*</span></label>
+          <input id="fPrice" type="number" min="0" step="0.01" placeholder="0.00">
+        </div>
+        <div class="field">
+          <label>Max Price <span class="hint" style="font-weight:400;">(for ranges)</span></label>
+          <input id="fPriceMax" type="number" min="0" step="0.01" placeholder="leave blank if single price">
+        </div>
+        <div class="field">
+          <label>Currency</label>
+          <input id="fCurrency" placeholder="LKR" value="LKR">
+        </div>
+        <div class="field">
+          <label>Stock</label>
+          <input id="fStock" type="number" min="0" placeholder="leave blank = unlimited">
+        </div>
+      </div>
+
+      <div id="dynAttrsSection" style="display:none;">
+        <div class="section-hdr">Custom Attributes</div>
+        <div id="dynAttrFields"></div>
+      </div>
+      <div id="rawAttrsSection">
+        <div class="section-hdr">Custom Attributes <span style="font-weight:400;text-transform:none;font-size:11px;color:#aaa;">(JSON)</span></div>
+        <div class="field">
+          <textarea id="fAttrs" style="min-height:80px;font-family:monospace;font-size:12px;" placeholder='{"color": "blue", "size": "L"}'></textarea>
+          <span class="hint">Must be valid JSON. Leave blank if no attributes.</span>
+        </div>
+      </div>
+
+      <div class="section-hdr">Visibility</div>
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#f9f9f9;border-radius:7px;border:1px solid #eee;">
+        <input type="checkbox" id="fActive" checked style="width:16px;height:16px;accent-color:#075e54;cursor:pointer;">
+        <label for="fActive" style="font-size:13px;font-weight:500;cursor:pointer;">Active (visible in catalog and AI search)</label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-save" id="saveBtn" onclick="saveProduct()">Save</button>
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- Attribute Schema Modal -->
+<div class="modal-overlay" id="attrModalOverlay">
+  <div class="modal" style="max-width:720px;">
+    <div class="modal-hdr">
+      <h2>Attribute Schema</h2>
+      <button class="modal-close" onclick="closeAttrModal()">×</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- JSON bulk paste -->
+      <div style="margin-bottom:18px;">
+        <h4 style="font-size:13px;font-weight:700;margin-bottom:6px;color:#075e54;">Paste JSON to import all attributes at once</h4>
+        <textarea id="attrJsonInput" style="width:100%;min-height:140px;font-family:monospace;font-size:12px;padding:10px;border:1px solid #d0d0d0;border-radius:7px;resize:vertical;"
+          placeholder='[
+  {"field_key":"color","field_label":"Color","field_type":"select","options":["Red","Blue","Green"],"filterable":true},
+  {"field_key":"size","field_label":"Size","field_type":"select","options":["S","M","L","XL"],"filterable":true},
+  {"field_key":"material","field_label":"Material","field_type":"text","filterable":false},
+  {"field_key":"weight","field_label":"Weight","field_type":"number","unit":"kg","filterable":false}
+]'></textarea>
+        <div style="margin-top:8px;display:flex;gap:8px;align-items:center;">
+          <button class="btn-save" onclick="importAttrJson()" style="padding:8px 18px;">Import JSON</button>
+          <span id="attrImportStatus" style="font-size:12px;color:#2e7d32;"></span>
+        </div>
+      </div>
+
+      <!-- Existing list -->
+      <div style="border-top:1px solid #eee;padding-top:16px;margin-bottom:18px;">
+        <h4 style="font-size:13px;font-weight:700;margin-bottom:10px;color:#333;">Current Attributes</h4>
+        <div id="attrListWrap">
+          <p style="color:#aaa;font-size:13px;">No attributes yet.</p>
+        </div>
+      </div>
+
+      <!-- Single add/edit form -->
+      <div style="border-top:1px solid #eee;padding-top:16px;">
+        <h4 id="attrFormTitle" style="font-size:13px;font-weight:700;margin-bottom:14px;color:#075e54;">Add Single Attribute</h4>
+        <div class="form-grid">
+          <div class="field">
+            <label>Key <span class="req">*</span></label>
+            <input id="aKey" placeholder="e.g. color" />
+          </div>
+          <div class="field">
+            <label>Label <span class="req">*</span></label>
+            <input id="aLabel" placeholder="e.g. Color" />
+          </div>
+          <div class="field">
+            <label>Type</label>
+            <select id="aType">
+              <option>text</option><option>number</option><option>select</option>
+              <option>boolean</option><option>multiselect</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Unit</label>
+            <input id="aUnit" placeholder="e.g. kg, cm" />
+          </div>
+          <div class="field full">
+            <label>Options <span style="font-weight:400;color:#999;">(comma-separated)</span></label>
+            <input id="aOptions" placeholder="Red, Blue, Green" />
+          </div>
+          <div class="field">
+            <label>Filterable by AI?</label>
+            <select id="aFilterable">
+              <option value="true">Yes</option>
+              <option value="false">No</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-save" id="attrSaveBtn" onclick="saveAttribute()">Add Attribute</button>
+      <button class="btn-cancel" id="attrCancelBtn" style="display:none;" onclick="cancelEditAttr()">Cancel</button>
+      <button class="btn-cancel" onclick="closeAttrModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Product Bulk Import Modal -->
+<div class="modal-overlay" id="importModalOverlay">
+  <div class="modal" style="max-width:720px;">
+    <div class="modal-hdr">
+      <h2>Import Products (JSON)</h2>
+      <button class="modal-close" onclick="closeImportModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:#555;margin-bottom:10px;">
+        Paste a JSON array of products. Attribute keys must match the attribute schema defined for this client.
+      </p>
+      <textarea id="importJsonInput" style="width:100%;min-height:200px;font-family:monospace;font-size:12px;padding:10px;border:1px solid #d0d0d0;border-radius:7px;resize:vertical;"
+        placeholder='[
+  {
+    "name": "Blue Cotton T-Shirt",
+    "description": "Comfortable everyday tee",
+    "sku": "TSH-BLU-M",
+    "price": 1500,
+    "currency": "LKR",
+    "category": "Clothing",
+    "subcategory": "T-Shirts",
+    "attributes": {"color": "Blue", "size": "M", "material": "Cotton"}
+  },
+  {
+    "name": "Red Polo Shirt",
+    "price": 2200,
+    "currency": "LKR",
+    "category": "Clothing",
+    "attributes": {"color": "Red", "size": "L"}
+  }
+]'></textarea>
+      <div id="importErrors" style="margin-top:10px;font-size:12px;color:#c62828;display:none;white-space:pre-wrap;background:#fff5f5;padding:10px;border-radius:6px;border:1px solid #ffcdd2;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-save" id="importBtn" onclick="runImport()">Import Products</button>
+      <button class="btn-cancel" onclick="closeImportModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── Auth ──────────────────────────────────────────────────────────────────────
+  let PASS = localStorage.getItem('admin_pass') || '';
+  if (!PASS) {
+    PASS = prompt('Admin password:') || '';
+    if (PASS) localStorage.setItem('admin_pass', PASS);
+  }
+
+  async function apiFetch(path, opts = {}) {
+    const sep = path.includes('?') ? '&' : '?';
+    const res = await fetch(`${path}${sep}pass=${encodeURIComponent(PASS)}`, {
+      headers: { 'Content-Type': 'application/json' },
+      ...opts,
+    });
+    if (res.status === 401) {
+      localStorage.removeItem('admin_pass');
+      alert('Wrong password. Reload to retry.');
+      throw new Error('Unauthorized');
+    }
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
+  }
+
+  function toast(msg, duration = 3000) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), duration);
+  }
+
+  // ── State ─────────────────────────────────────────────────────────────────────
+  let products    = [];
+  let attrSchema  = [];
+  let editingId   = null;
+  let editingAttrId = null;
+  let clientId    = '';
+
+  // ── Load clients into dropdown ─────────────────────────────────────────────
+  async function loadClients() {
+    try {
+      const clients = await apiFetch('/admin/clients');
+      const sel = document.getElementById('clientSelect');
+      clients.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = `${c.name || c.id} (${c.id})`;
+        sel.appendChild(opt);
+      });
+      // Auto-select from URL param
+      const params = new URLSearchParams(location.search);
+      if (params.get('client')) {
+        sel.value = params.get('client');
+        onClientChange();
+      }
+    } catch (e) {
+      if (e.message !== 'Unauthorized') toast('Failed to load clients');
+    }
+  }
+
+  function onClientChange() {
+    clientId = document.getElementById('clientSelect').value;
+    if (clientId) {
+      loadProducts();
+      loadAttrSchema();
+    } else {
+      products = [];
+      attrSchema = [];
+      renderTable();
+    }
+  }
+
+  // ── Load products ─────────────────────────────────────────────────────────
+  async function loadProducts() {
+    if (!clientId) return;
+    try {
+      products = await apiFetch(`/admin/products?client_id=${encodeURIComponent(clientId)}`);
+      renderTable();
+    } catch (e) {
+      if (e.message !== 'Unauthorized') toast('Failed to load products: ' + e.message);
+    }
+  }
+
+  // ── Render table ──────────────────────────────────────────────────────────
+  function renderTable() {
+    const q   = document.getElementById('searchInput').value.trim().toLowerCase();
+    const rows = q
+      ? products.filter(p =>
+          (p.name || '').toLowerCase().includes(q) ||
+          (p.category || '').toLowerCase().includes(q) ||
+          (p.sku || '').toLowerCase().includes(q) ||
+          (p.description || '').toLowerCase().includes(q))
+      : products;
+
+    const tbody = document.getElementById('productTable');
+
+    if (!clientId) {
+      tbody.innerHTML = '<tr><td colspan="5"><div class="empty"><div class="icon">👆</div><p>Select a client to view products.</p></div></td></tr>';
+      return;
+    }
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="5"><div class="empty"><div class="icon">📭</div><p>No products yet. Click <strong>+ Add Product</strong> to add one.</p></div></td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = rows.map(p => {
+      const price = p.price_max
+        ? `${p.currency || ''} ${p.price}–${p.price_max}`
+        : (p.price != null ? `${p.currency || ''} ${p.price}` : '—');
+      return `
+        <tr>
+          <td>
+            <div class="td-name">${esc(p.name)}</div>
+            ${p.sku ? `<div class="td-sku">SKU: ${esc(p.sku)}</div>` : ''}
+          </td>
+          <td class="td-cat">${esc(p.category || '')}${p.subcategory ? ` / ${esc(p.subcategory)}` : ''}</td>
+          <td class="td-price">${esc(price)}</td>
+          <td><span class="badge ${p.active !== false ? 'badge-active' : 'badge-inactive'}">${p.active !== false ? 'Active' : 'Inactive'}</span></td>
+          <td>
+            <div class="action-btns">
+              <button class="btn-edit" onclick="openModal(${p.id})">Edit</button>
+              <button class="btn-del"  onclick="deleteProduct(${p.id}, '${esc(p.name)}')">Del</button>
+            </div>
+          </td>
+        </tr>`;
+    }).join('');
+  }
+
+  function esc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Modal open/close ──────────────────────────────────────────────────────
+  function openModal(id) {
+    if (!clientId) { toast('Select a client first'); return; }
+    editingId = id;
+    const p = id ? products.find(x => x.id === id) : null;
+
+    document.getElementById('modalTitle').textContent = p ? `Edit: ${p.name}` : 'Add Product';
+    document.getElementById('fName').value     = p?.name        || '';
+    document.getElementById('fDesc').value     = p?.description || '';
+    document.getElementById('fSku').value      = p?.sku         || '';
+    document.getElementById('fImage').value    = p?.image_url   || '';
+    showImgPreview(p?.image_url || '');
+    document.getElementById('fCat').value      = p?.category    || '';
+    document.getElementById('fSubcat').value   = p?.subcategory || '';
+    document.getElementById('fPrice').value    = p?.price       ?? '';
+    document.getElementById('fPriceMax').value = p?.price_max   ?? '';
+    document.getElementById('fCurrency').value = p?.currency    || 'LKR';
+    document.getElementById('fStock').value    = p?.stock_qty   ?? '';
+    document.getElementById('fActive').checked = p?.active !== false;
+
+    const attrs = p?.attributes
+      ? (typeof p.attributes === 'string' ? JSON.parse(p.attributes) : p.attributes)
+      : {};
+
+    // Show dynamic fields if schema exists, else raw JSON fallback
+    if (attrSchema.length > 0) {
+      document.getElementById('dynAttrsSection').style.display = '';
+      document.getElementById('rawAttrsSection').style.display = 'none';
+      const container = document.getElementById('dynAttrFields');
+      container.innerHTML = attrSchema.map(s => {
+        const val = attrs[s.field_key] ?? '';
+        const opts = Array.isArray(s.options) ? s.options : (s.options ? s.options.split(',').map(x=>x.trim()) : []);
+        let input;
+        if (s.field_type === 'select' && opts.length) {
+          input = `<select class="dyn-attr-val" data-key="${esc(s.field_key)}">
+            <option value="">— select —</option>
+            ${opts.map(o => `<option value="${esc(o)}" ${val===o?'selected':''}>${esc(o)}</option>`).join('')}
+          </select>`;
+        } else if (s.field_type === 'boolean') {
+          input = `<select class="dyn-attr-val" data-key="${esc(s.field_key)}">
+            <option value="">—</option>
+            <option value="true" ${val==='true'||val===true?'selected':''}>Yes</option>
+            <option value="false" ${val==='false'||val===false?'selected':''}>No</option>
+          </select>`;
+        } else if (s.field_type === 'number') {
+          input = `<input type="number" class="dyn-attr-val" data-key="${esc(s.field_key)}" value="${esc(String(val))}" placeholder="${s.unit||''}">`;
+        } else {
+          input = `<input type="text" class="dyn-attr-val" data-key="${esc(s.field_key)}" value="${esc(String(val))}">`;
+        }
+        return `<div class="dyn-attr-field"><label>${esc(s.field_label)}${s.unit?` (${esc(s.unit)})`:''}</label>${input}</div>`;
+      }).join('');
+    } else {
+      document.getElementById('dynAttrsSection').style.display = 'none';
+      document.getElementById('rawAttrsSection').style.display = '';
+      document.getElementById('fAttrs').value = Object.keys(attrs).length
+        ? JSON.stringify(attrs, null, 2) : '';
+    }
+
+    document.getElementById('saveBtn').disabled = false;
+    document.getElementById('saveBtn').textContent = p ? 'Save Changes' : 'Add Product';
+    document.getElementById('modalOverlay').classList.add('open');
+    document.getElementById('fName').focus();
+  }
+
+  function closeModal() {
+    document.getElementById('modalOverlay').classList.remove('open');
+    editingId = null;
+  }
+
+  // Close on backdrop click
+  document.getElementById('modalOverlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeModal();
+  });
+
+  // ── Save product ──────────────────────────────────────────────────────────
+  async function saveProduct() {
+    const name = document.getElementById('fName').value.trim();
+    if (!name) { toast('Product name is required'); return; }
+
+    let attributes = null;
+    if (attrSchema.length > 0) {
+      attributes = {};
+      document.querySelectorAll('.dyn-attr-val').forEach(el => {
+        if (el.value.trim()) attributes[el.dataset.key] = el.value.trim();
+      });
+      if (!Object.keys(attributes).length) attributes = null;
+    } else {
+      const attrsRaw = document.getElementById('fAttrs').value.trim();
+      if (attrsRaw) {
+        try { attributes = JSON.parse(attrsRaw); }
+        catch { toast('Attributes must be valid JSON'); return; }
+      }
+    }
+
+    const body = {
+      client_id:   clientId,
+      name,
+      description: document.getElementById('fDesc').value.trim()     || null,
+      sku:         document.getElementById('fSku').value.trim()       || null,
+      image_url:   document.getElementById('fImage').value.trim()     || null,
+      category:    document.getElementById('fCat').value.trim()       || null,
+      subcategory: document.getElementById('fSubcat').value.trim()    || null,
+      price:       parseFloat(document.getElementById('fPrice').value)    || null,
+      price_max:   parseFloat(document.getElementById('fPriceMax').value) || null,
+      currency:    document.getElementById('fCurrency').value.trim()  || 'LKR',
+      stock_qty:   parseInt(document.getElementById('fStock').value)  || null,
+      active:      document.getElementById('fActive').checked,
+      attributes,
+    };
+
+    const btn = document.getElementById('saveBtn');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    try {
+      if (editingId) {
+        await apiFetch(`/admin/products/${editingId}`, { method: 'PUT', body: JSON.stringify(body) });
+        toast('Product updated');
+      } else {
+        await apiFetch('/admin/products', { method: 'POST', body: JSON.stringify(body) });
+        toast('Product added');
+      }
+      closeModal();
+      await loadProducts();
+    } catch (e) {
+      toast('Error: ' + e.message);
+      btn.disabled = false;
+      btn.textContent = editingId ? 'Save Changes' : 'Add Product';
+    }
+  }
+
+  // ── Delete product ────────────────────────────────────────────────────────
+  async function deleteProduct(id, name) {
+    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+    try {
+      await apiFetch(`/admin/products/${id}`, { method: 'DELETE' });
+      toast('Product deleted');
+      await loadProducts();
+    } catch (e) {
+      toast('Error: ' + e.message);
+    }
+  }
+
+  // ── Attribute Schema ──────────────────────────────────────────────────────
+  async function loadAttrSchema() {
+    if (!clientId) return;
+    try {
+      attrSchema = await apiFetch(`/admin/attributes?client=${encodeURIComponent(clientId)}`);
+    } catch (_) { attrSchema = []; }
+  }
+
+  function renderAttrList() {
+    const wrap = document.getElementById('attrListWrap');
+    if (!attrSchema.length) {
+      wrap.innerHTML = '<p style="color:#aaa;font-size:13px;">No attributes yet. Add one below.</p>';
+      return;
+    }
+    wrap.innerHTML = attrSchema.map(s => {
+      const opts = Array.isArray(s.options) ? s.options.join(', ') : (s.options || '');
+      return `<div class="attr-list-item">
+        <span class="attr-key">${esc(s.field_key)}</span>
+        <span class="attr-lbl">${esc(s.field_label)}</span>
+        <span class="attr-type">${esc(s.field_type)}</span>
+        ${s.unit ? `<span style="font-size:11px;color:#888;">${esc(s.unit)}</span>` : ''}
+        ${opts ? `<span class="attr-opts" title="${esc(opts)}">${esc(opts)}</span>` : '<span class="attr-opts"></span>'}
+        <span style="font-size:11px;color:${s.filterable?'#2e7d32':'#ccc'};">${s.filterable?'AI':'—'}</span>
+        <div class="attr-actions">
+          <button class="btn-edit" onclick="editAttr(${s.id})">Edit</button>
+          <button class="btn-del" onclick="deleteAttr(${s.id}, '${esc(s.field_key)}')">Del</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function openAttrModal() {
+    if (!clientId) { toast('Select a client first'); return; }
+    resetAttrForm();
+    renderAttrList();
+    document.getElementById('attrModalOverlay').classList.add('open');
+  }
+
+  function closeAttrModal() {
+    document.getElementById('attrModalOverlay').classList.remove('open');
+    editingAttrId = null;
+  }
+
+  function resetAttrForm() {
+    editingAttrId = null;
+    document.getElementById('aKey').value = '';
+    document.getElementById('aKey').readOnly = false;
+    document.getElementById('aKey').style.background = '';
+    document.getElementById('aLabel').value = '';
+    document.getElementById('aType').value = 'text';
+    document.getElementById('aUnit').value = '';
+    document.getElementById('aOptions').value = '';
+    document.getElementById('aFilterable').value = 'true';
+    document.getElementById('attrFormTitle').textContent = 'Add New Attribute';
+    document.getElementById('attrSaveBtn').textContent = 'Add Attribute';
+    document.getElementById('attrCancelBtn').style.display = 'none';
+  }
+
+  function editAttr(id) {
+    const s = attrSchema.find(a => a.id === id);
+    if (!s) return;
+    editingAttrId = id;
+    document.getElementById('aKey').value = s.field_key;
+    document.getElementById('aKey').readOnly = true;
+    document.getElementById('aKey').style.background = '#f5f5f5';
+    document.getElementById('aLabel').value = s.field_label;
+    document.getElementById('aType').value = s.field_type;
+    document.getElementById('aUnit').value = s.unit || '';
+    const opts = Array.isArray(s.options) ? s.options.join(', ') : (s.options || '');
+    document.getElementById('aOptions').value = opts;
+    document.getElementById('aFilterable').value = s.filterable ? 'true' : 'false';
+    document.getElementById('attrFormTitle').textContent = `Edit: ${s.field_key}`;
+    document.getElementById('attrSaveBtn').textContent = 'Save Changes';
+    document.getElementById('attrCancelBtn').style.display = '';
+  }
+
+  function cancelEditAttr() {
+    resetAttrForm();
+  }
+
+  async function saveAttribute() {
+    const key   = document.getElementById('aKey').value.trim().replace(/\s+/g, '_');
+    const label = document.getElementById('aLabel').value.trim();
+    const type  = document.getElementById('aType').value;
+    const unit  = document.getElementById('aUnit').value.trim() || null;
+    const optStr = document.getElementById('aOptions').value.trim();
+    const options = optStr ? optStr.split(',').map(s => s.trim()).filter(Boolean) : null;
+    const filterable = document.getElementById('aFilterable').value === 'true';
+    if (!key || !label) { toast('Key and Label are required'); return; }
+    try {
+      await apiFetch('/admin/attributes', {
+        method: 'POST',
+        body: JSON.stringify({ client_id: clientId, field_key: key, field_label: label, field_type: type, options, unit, filterable }),
+      });
+      toast('Attribute saved');
+      attrSchema = await apiFetch(`/admin/attributes?client=${encodeURIComponent(clientId)}`);
+      resetAttrForm();
+      renderAttrList();
+    } catch (e) { toast('Error: ' + e.message); }
+  }
+
+  async function deleteAttr(id, key) {
+    if (!confirm(`Delete attribute "${key}"?`)) return;
+    try {
+      await apiFetch(`/admin/attributes/${id}`, { method: 'DELETE' });
+      toast('Attribute deleted');
+      attrSchema = await apiFetch(`/admin/attributes?client=${encodeURIComponent(clientId)}`);
+      renderAttrList();
+    } catch (e) { toast('Error: ' + e.message); }
+  }
+
+  document.getElementById('attrModalOverlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeAttrModal();
+  });
+
+  // ── JSON Attribute Import ──────────────────────────────────────────────────
+  async function importAttrJson() {
+    const raw = document.getElementById('attrJsonInput').value.trim();
+    const status = document.getElementById('attrImportStatus');
+    if (!raw) { status.textContent = ''; toast('Paste JSON first'); return; }
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch (e) { status.textContent = ''; toast('Invalid JSON: ' + e.message); return; }
+    if (!Array.isArray(parsed)) { toast('JSON must be an array [...]'); return; }
+    status.textContent = 'Saving...';
+    try {
+      const result = await apiFetch('/admin/attributes/bulk', {
+        method: 'POST',
+        body: JSON.stringify({ client_id: clientId, attributes: parsed }),
+      });
+      attrSchema = await apiFetch(`/admin/attributes?client=${encodeURIComponent(clientId)}`);
+      renderAttrList();
+      document.getElementById('attrJsonInput').value = '';
+      status.style.color = result.errors.length ? '#e65100' : '#2e7d32';
+      status.textContent = `Saved ${result.saved}` + (result.errors.length ? ` | ${result.errors.length} error(s): ${result.errors.join('; ')}` : ' attributes');
+    } catch (e) { status.textContent = ''; toast('Error: ' + e.message); }
+  }
+
+  // ── Product Bulk Import ────────────────────────────────────────────────────
+  function openImportModal() {
+    if (!clientId) { toast('Select a client first'); return; }
+    document.getElementById('importErrors').style.display = 'none';
+    document.getElementById('importErrors').textContent = '';
+    document.getElementById('importBtn').disabled = false;
+    document.getElementById('importBtn').textContent = 'Import Products';
+    document.getElementById('importModalOverlay').classList.add('open');
+  }
+
+  function closeImportModal() {
+    document.getElementById('importModalOverlay').classList.remove('open');
+  }
+
+  async function runImport() {
+    const raw = document.getElementById('importJsonInput').value.trim();
+    if (!raw) { toast('Paste product JSON first'); return; }
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch (e) { toast('Invalid JSON: ' + e.message); return; }
+    if (!Array.isArray(parsed)) { toast('JSON must be an array [...]'); return; }
+
+    const btn = document.getElementById('importBtn');
+    btn.disabled = true;
+    btn.textContent = `Importing ${parsed.length} products...`;
+    const errDiv = document.getElementById('importErrors');
+    errDiv.style.display = 'none';
+
+    try {
+      const result = await apiFetch('/admin/products/bulk', {
+        method: 'POST',
+        body: JSON.stringify({ client_id: clientId, products: parsed }),
+      });
+      if (result.errors.length) {
+        errDiv.textContent = result.errors.join('\n');
+        errDiv.style.display = '';
+        toast(`Saved ${result.saved}, ${result.errors.length} failed`);
+        btn.disabled = false;
+        btn.textContent = 'Import Products';
+      } else {
+        toast(`Imported ${result.saved} products`);
+        closeImportModal();
+        document.getElementById('importJsonInput').value = '';
+        await loadProducts();
+      }
+    } catch (e) {
+      toast('Error: ' + e.message);
+      btn.disabled = false;
+      btn.textContent = 'Import Products';
+    }
+  }
+
+  document.getElementById('importModalOverlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeImportModal();
+  });
+
+  // ── Image upload ──────────────────────────────────────────────────────────
+  async function uploadProductImage(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const status = document.getElementById('imgUploadStatus');
+    status.textContent = 'Uploading...';
+    status.style.color = '#888';
+    const form = new FormData();
+    form.append('image', file);
+    try {
+      const sep = PASS ? `?pass=${encodeURIComponent(PASS)}` : '';
+      const res = await fetch(`/admin/upload-image${sep}`, { method: 'POST', body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Upload failed');
+      document.getElementById('fImage').value = data.url;
+      showImgPreview(data.url);
+      status.textContent = 'Uploaded';
+      status.style.color = '#2e7d32';
+    } catch (e) {
+      status.textContent = 'Error: ' + e.message;
+      status.style.color = '#c62828';
+    }
+    input.value = '';
+  }
+
+  function showImgPreview(url) {
+    if (!url) { document.getElementById('imgPreviewWrap').style.display = 'none'; return; }
+    document.getElementById('imgPreview').src = url;
+    document.getElementById('imgPreviewWrap').style.display = '';
+  }
+
+  // Show preview when URL is typed manually
+  document.getElementById('fImage').addEventListener('input', e => showImgPreview(e.target.value));
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  loadClients();
+</script>
+</body>
+</html>

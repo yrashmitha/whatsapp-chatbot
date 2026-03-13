@@ -1822,7 +1822,8 @@ app.delete('/api/customers/:phone/messages', jwtAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// DELETE /api/messages/:id — soft-delete a single message + call WhatsApp delete API
+// DELETE /api/messages/:id — soft-delete a message from CRM view
+// Note: WhatsApp Cloud API does not support recalling sent messages, so this is CRM-only
 app.delete('/api/messages/:id', jwtAuth, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) return res.status(400).json({ error: 'Invalid message id' });
@@ -1830,24 +1831,6 @@ app.delete('/api/messages/:id', jwtAuth, async (req, res) => {
   try {
     const deleted = await db.deleteMessage(id, clientId);
     if (!deleted) return res.status(404).json({ error: 'Message not found' });
-
-    // Best-effort: call WhatsApp delete API for outbound messages with a wamid
-    if (deleted.wamid && deleted.sender_type !== 'user') {
-      try {
-        const client = clientId ? await clientRouter.getClientById(clientId) : null;
-        await axios.delete(
-          `https://graph.facebook.com/v18.0/${deleted.wamid}`,
-          {
-            data: { messaging_product: 'whatsapp' },
-            headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' },
-          }
-        );
-        console.log(`[DELETE-MSG] WhatsApp message ${deleted.wamid} deleted`);
-      } catch (waErr) {
-        console.warn(`[DELETE-MSG] WhatsApp delete failed for wamid ${deleted.wamid}:`, waErr?.response?.data ?? waErr.message);
-      }
-    }
-
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

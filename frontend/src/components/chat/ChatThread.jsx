@@ -73,7 +73,7 @@ export default function ChatThread({ customer, clientId, onCustomerDeleted }) {
   }, [observerCb]);
 
   const handleDeleteMessage = async (msgId) => {
-    if (!confirm('Delete this message for everyone?')) return;
+    if (!confirm('Hide this message from CRM? (Customer will still see it on WhatsApp)')) return;
     try {
       await api.delete(`/messages/${msgId}`, { params: clientId ? { client_id: clientId } : {} });
       qc.invalidateQueries({ queryKey: ['messages', phone] });

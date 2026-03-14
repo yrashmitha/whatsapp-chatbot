@@ -3,6 +3,7 @@ import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tansta
 import api from '../../lib/api';
 import MessageBubble from './MessageBubble';
 import MessageInput from './MessageInput';
+import AstroChartModal from './AstroChartModal';
 import Spinner from '../ui/Spinner';
 import Button from '../ui/Button';
 import { useToast } from '../ui/Toast';
@@ -12,6 +13,8 @@ export default function ChatThread({ customer, clientId, onCustomerDeleted }) {
   const { phone, name } = customer;
   const [ordersOpen, setOrdersOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [astroModalOpen, setAstroModalOpen] = useState(false);
+  const [messagePrefill, setMessagePrefill] = useState('');
   const toast = useToast();
   const qc = useQueryClient();
   const topRef = useRef();
@@ -202,6 +205,15 @@ export default function ChatThread({ customer, clientId, onCustomerDeleted }) {
           {totalCost > 0 && <div className="text-xs text-slate-400">${totalCost.toFixed(6)}</div>}
         </div>
         <div className="flex gap-2 items-center">
+          {addonsData?.addons?.includes('astro_vedic_chart') && customerOrders.some(o => o.status === 'pending') && (
+            <button
+              onClick={() => setAstroModalOpen(true)}
+              className="text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-amber-100 text-amber-700 hover:bg-amber-200"
+              title="Generate astrology message for this customer"
+            >
+              ✨ Astro
+            </button>
+          )}
           <button
             onClick={() => toggleAiMutation.mutate(!aiEnabled)}
             disabled={toggleAiMutation.isPending}
@@ -273,7 +285,27 @@ export default function ChatThread({ customer, clientId, onCustomerDeleted }) {
       </div>
 
       {/* Input */}
-      <MessageInput phone={phone} clientId={clientId} crmMediaEnabled={crmMediaEnabled} onSent={() => qc.invalidateQueries({ queryKey: ['messages', phone] })} />
+      <MessageInput
+        phone={phone}
+        clientId={clientId}
+        crmMediaEnabled={crmMediaEnabled}
+        prefill={messagePrefill}
+        onPrefillConsumed={() => setMessagePrefill('')}
+        onSent={() => qc.invalidateQueries({ queryKey: ['messages', phone] })}
+      />
+
+      {/* Astro Chart Modal */}
+      {astroModalOpen && (
+        <AstroChartModal
+          phone={phone}
+          clientId={clientId}
+          onClose={() => setAstroModalOpen(false)}
+          onResult={(text) => {
+            setMessagePrefill(text);
+            setAstroModalOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }

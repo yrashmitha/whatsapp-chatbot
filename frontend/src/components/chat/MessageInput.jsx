@@ -1,12 +1,19 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import api from '../../lib/api';
 import { useToast } from '../ui/Toast';
 
-export default function MessageInput({ phone, clientId, crmMediaEnabled, onSent }) {
+export default function MessageInput({ phone, clientId, crmMediaEnabled, prefill, onPrefillConsumed, onSent }) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const toast = useToast();
   const fileRef = useRef();
+
+  useEffect(() => {
+    if (prefill) {
+      setText(prefill);
+      onPrefillConsumed?.();
+    }
+  }, [prefill]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const params = clientId ? { client_id: clientId } : {};
 

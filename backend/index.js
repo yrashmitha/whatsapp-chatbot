@@ -1916,6 +1916,11 @@ const ADDON_CATALOG = [
     name: 'CRM Media Send',
     description: 'Allows CRM agents to send images, PDFs, and audio messages to WhatsApp customers directly from the chat interface.',
   },
+  {
+    id: 'astro_vedic_chart',
+    name: 'Vedic Astro Chart',
+    description: 'Generates personalized astrology-based WhatsApp messages for customers using their vedic birth chart, to help recover pending orders.',
+  },
 ];
 
 // GET /api/addons?client_id=X — list addons + enabled state for a client
@@ -2013,6 +2018,101 @@ app.post('/api/crm/send-media', jwtAuth, uploadMedia.single('file'), async (req,
     res.status(500).json({ error: e?.response?.data?.error?.message || e.message });
   }
 });
+// ─── Plugin routes ────────────────────────────────────────────────────────────
+
+const DEFAULT_ASTRO_PROMPT = `You are a warm astrology consultant. Based on the following vedic birth chart data, write a short, personalized WhatsApp message (2-3 sentences) to the customer to encourage them to complete their pending reading booking. Mention one specific planetary placement or nakshatra from their chart. Keep the tone friendly, spiritual, and encouraging. Do not mention prices. Reply only with the message text, no labels or preamble.\n\nChart data:\n{chart_json}`;
+
+// GET /api/plugins/:pluginId/config — get plugin config for current client
+app.get('/api/plugins/:pluginId/config', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  const { pluginId } = req.params;
+  try {
+    const config = await db.getPluginConfig(clientId, pluginId);
+    const defaults = pluginId === 'astro_vedic_chart'
+      ? { name: 'Vedic Astro Chart', prompt: DEFAULT_ASTRO_PROMPT }
+      : { name: pluginId, prompt: '' };
+    res.json({ ...defaults, ...config });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/plugins/:pluginId/config — update plugin config (superadmin only)
+app.put('/api/plugins/:pluginId/config', jwtAuth, async (req, res) => {
+  if (req.user.role !== 'superadmin') return res.status(403).json({ error: 'Forbidden' });
+  const clientId = req.body.client_id || resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  const { pluginId } = req.params;
+  const { name, prompt } = req.body;
+  try {
+    const existing = await db.getPluginConfig(clientId, pluginId);
+    await db.upsertPluginConfig(clientId, pluginId, { ...existing, ...(name !== undefined && { name }), ...(prompt !== undefined && { prompt }) });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/plugins/:pluginId/customer-data/:phone — get saved customer data for a plugin
+app.get('/api/plugins/:pluginId/customer-data/:phone', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  const { pluginId, phone } = req.params;
+  try {
+    const data = await db.getPluginCustomerData(clientId, phone, pluginId);
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/plugins/astro-chart — generate astro message for a customer
+app.post('/api/plugins/astro-chart', jwtAuth, async (req, res) => {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+
+  // Check addon enabled
+  const addonCheck = await db.pgQuery(
+    `SELECT enabled FROM client_addons WHERE client_id=$1 AND addon_id='astro_vedic_chart' AND enabled=TRUE`,
+    [clientId]
+  );
+  if (!addonCheck.rows.length) return res.status(403).json({ error: 'astro_vedic_chart addon not enabled' });
+
+  const { phone, birth_date, birth_time, lat, lng, birth_place_name } = req.body;
+  if (!phone || !birth_date || !birth_time || lat == null || lng == null) {
+    return res.status(400).json({ error: 'phone, birth_date, birth_time, lat, lng required' });
+  }
+
+  try {
+    // Save birth place for future pre-fill
+    if (birth_place_name) {
+      await db.upsertPluginCustomerData(clientId, phone, 'astro_vedic_chart', { birth_place_name, lat, lng });
+    }
+
+    // Parse birth date/time
+    const [year, month, day] = birth_date.split('-').map(Number);
+    const [hour, minute] = birth_time.split(':').map(Number);
+
+    // Call freeastroapi
+    const astroResp = await axios.post(
+      'https://api.freeastroapi.com/api/v1/vedic/chart',
+      { year, month, day, hour, minute, lat: parseFloat(lat), lng: parseFloat(lng), tz_str: 'Asia/Colombo', city: birth_place_name || '' },
+      { headers: { 'x-api-key': process.env.FREEASTRO_API_KEY, 'Content-Type': 'application/json' } }
+    );
+    const chartData = astroResp.data;
+
+    // Get plugin prompt
+    const config = await db.getPluginConfig(clientId, 'astro_vedic_chart');
+    const promptTemplate = config.prompt || DEFAULT_ASTRO_PROMPT;
+    const prompt = promptTemplate.replace('{chart_json}', JSON.stringify(chartData, null, 2));
+
+    // Call Gemini
+    const pluginModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const geminiResult = await pluginModel.generateContent(prompt);
+    const text = geminiResult.response.text();
+
+    res.json({ text });
+  } catch (e) {
+    console.error('[ASTRO] error:', e?.response?.data || e.message);
+    res.status(500).json({ error: e?.response?.data?.detail || e.message });
+  }
+});
+
 // GET /api/customers/:phone/ai-mode
 app.get('/api/customers/:phone/ai-mode', jwtAuth, async (req, res) => {
   const clientId = resolveClientId(req);

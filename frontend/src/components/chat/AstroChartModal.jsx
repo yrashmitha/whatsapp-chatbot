@@ -1,0 +1,184 @@
+import { useState, useEffect, useRef, useCallback } from 'react';
+import api from '../../lib/api';
+import { useToast } from '../ui/Toast';
+
+export default function AstroChartModal({ phone, clientId, onClose, onResult }) {
+  const toast = useToast();
+  const geoRef = useRef();
+
+  const [birthDate, setBirthDate] = useState('');
+  const [birthTime, setBirthTime] = useState('');
+  const [geoQuery, setGeoQuery] = useState('');
+  const [geoSuggestions, setGeoSuggestions] = useState([]);
+  const [selectedPlace, setSelectedPlace] = useState(null); // { name, lat, lng }
+  const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(true);
+  const debounceRef = useRef(null);
+
+  // Load birth data from latest order + saved place
+  useEffect(() => {
+    async function load() {
+      try {
+        const params = clientId ? { client_id: clientId } : {};
+        const [ordersRes, savedRes] = await Promise.all([
+          api.get('/orders', { params: { search: phone, limit: 1, ...params } }),
+          api.get(`/plugins/astro_vedic_chart/customer-data/${phone}`, { params }),
+        ]);
+        const latestOrder = ordersRes.data?.orders?.[0];
+        if (latestOrder?.custom_fields) {
+          const cf = latestOrder.custom_fields;
+          setBirthDate(cf.birth_date || '');
+          setBirthTime(cf.birth_time || '');
+        }
+        const saved = savedRes.data;
+        if (saved?.birth_place_name) {
+          setGeoQuery(saved.birth_place_name);
+          setSelectedPlace({ name: saved.birth_place_name, lat: saved.lat, lng: saved.lng });
+        }
+      } catch (_) {}
+      setFetching(false);
+      setTimeout(() => geoRef.current?.focus(), 50);
+    }
+    load();
+  }, [phone, clientId]);
+
+  // Debounced Nominatim geo search
+  const searchGeo = useCallback((q) => {
+    clearTimeout(debounceRef.current);
+    if (!q.trim()) { setGeoSuggestions([]); return; }
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const r = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5`,
+          { headers: { 'User-Agent': 'pj-crm/1.0' } }
+        );
+        const data = await r.json();
+        setGeoSuggestions(data.map(d => ({ name: d.display_name, lat: parseFloat(d.lat), lng: parseFloat(d.lon) })));
+      } catch (_) { setGeoSuggestions([]); }
+    }, 400);
+  }, []);
+
+  const handleGeoInput = (e) => {
+    setGeoQuery(e.target.value);
+    setSelectedPlace(null);
+    searchGeo(e.target.value);
+  };
+
+  const selectPlace = (place) => {
+    setSelectedPlace(place);
+    setGeoQuery(place.name);
+    setGeoSuggestions([]);
+  };
+
+  const handleSubmit = async () => {
+    if (!selectedPlace) return toast.error('Please select a birth place');
+    if (!birthDate || !birthTime) return toast.error('Birth date and time are required');
+    setLoading(true);
+    try {
+      const params = clientId ? { client_id: clientId } : {};
+      const r = await api.post('/plugins/astro-chart', {
+        phone,
+        birth_date: birthDate,
+        birth_time: birthTime,
+        lat: selectedPlace.lat,
+        lng: selectedPlace.lng,
+        birth_place_name: selectedPlace.name,
+        ...(clientId && { client_id: clientId }),
+      }, { params });
+      onResult(r.data.text);
+      onClose();
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Failed to generate astro message');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-semibold text-slate-800">✨ Vedic Astro Chart</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 bg-transparent border-0 cursor-pointer text-xl leading-none">×</button>
+        </div>
+
+        {fetching ? (
+          <div className="flex justify-center py-8">
+            <span className="w-6 h-6 border-2 border-violet-400/30 border-t-violet-500 rounded-full animate-spin block" />
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <div>
+              <label className="text-xs font-medium text-slate-500 block mb-1">Birth Date (YYYY-MM-DD)</label>
+              <input
+                type="text"
+                value={birthDate}
+                onChange={e => setBirthDate(e.target.value)}
+                placeholder="1990-05-15"
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-slate-500 block mb-1">Birth Time (HH:MM, 24h)</label>
+              <input
+                type="text"
+                value={birthTime}
+                onChange={e => setBirthTime(e.target.value)}
+                placeholder="10:30"
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+              />
+            </div>
+
+            <div className="relative">
+              <label className="text-xs font-medium text-slate-500 block mb-1">Birth Place</label>
+              <input
+                ref={geoRef}
+                type="text"
+                value={geoQuery}
+                onChange={handleGeoInput}
+                placeholder="Type a city name…"
+                autoComplete="off"
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+              />
+              {geoSuggestions.length > 0 && (
+                <ul className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
+                  {geoSuggestions.map((s, i) => (
+                    <li key={i}>
+                      <button
+                        onClick={() => selectPlace(s)}
+                        className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-violet-50 cursor-pointer bg-transparent border-0"
+                      >
+                        {s.name}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {selectedPlace && (
+                <p className="text-xs text-emerald-600 mt-1">
+                  ✓ {selectedPlace.lat.toFixed(4)}, {selectedPlace.lng.toFixed(4)}
+                </p>
+              )}
+            </div>
+
+            <p className="text-xs text-slate-400">Timezone: Asia/Colombo (GMT+5:30)</p>
+
+            <button
+              onClick={handleSubmit}
+              disabled={loading || !selectedPlace || !birthDate || !birthTime}
+              className="mt-1 w-full py-2.5 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm font-medium rounded-xl flex items-center justify-center gap-2 cursor-pointer border-0 transition-colors"
+            >
+              {loading ? (
+                <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin block" /> Generating…</>
+              ) : '✨ Generate Message'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -341,6 +341,24 @@ async function init() {
         PRIMARY KEY (client_id, addon_id)
       );
     `);
+    // ── Plugin config + customer data ─────────────────────────────────────────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS plugin_configs (
+        client_id  TEXT NOT NULL,
+        plugin_id  TEXT NOT NULL,
+        config     JSONB NOT NULL DEFAULT '{}',
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (client_id, plugin_id)
+      );
+      CREATE TABLE IF NOT EXISTS plugin_customer_data (
+        client_id    TEXT NOT NULL,
+        phone_number TEXT NOT NULL,
+        plugin_id    TEXT NOT NULL,
+        data         JSONB NOT NULL DEFAULT '{}',
+        updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (client_id, phone_number, plugin_id)
+      );
+    `);
   } else {
     db.exec(`PRAGMA foreign_keys = ON;`);
     db.exec(`
@@ -478,6 +496,24 @@ async function init() {
         image_url   TEXT NOT NULL,
         sort_order  INTEGER NOT NULL DEFAULT 0,
         created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+    // ── Plugin config + customer data (SQLite) ────────────────────────────────
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS plugin_configs (
+        client_id  TEXT NOT NULL,
+        plugin_id  TEXT NOT NULL,
+        config     TEXT NOT NULL DEFAULT '{}',
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (client_id, plugin_id)
+      );
+      CREATE TABLE IF NOT EXISTS plugin_customer_data (
+        client_id    TEXT NOT NULL,
+        phone_number TEXT NOT NULL,
+        plugin_id    TEXT NOT NULL,
+        data         TEXT NOT NULL DEFAULT '{}',
+        updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (client_id, phone_number, plugin_id)
       );
     `);
   }
@@ -946,6 +982,67 @@ async function setCustomerAiMode(phone, clientId, enabled) {
   );
 }
 
+// ─── Plugin helpers ───────────────────────────────────────────────────────────
+async function getPluginConfig(clientId, pluginId) {
+  if (IS_PG) {
+    const r = await pool.query(
+      `SELECT config FROM plugin_configs WHERE client_id=$1 AND plugin_id=$2`,
+      [clientId, pluginId]
+    );
+    return r.rows[0]?.config ?? {};
+  } else {
+    const row = db.prepare(`SELECT config FROM plugin_configs WHERE client_id=? AND plugin_id=?`).get(clientId, pluginId);
+    return row ? JSON.parse(row.config) : {};
+  }
+}
+
+async function upsertPluginConfig(clientId, pluginId, config) {
+  if (IS_PG) {
+    await pool.query(
+      `INSERT INTO plugin_configs (client_id, plugin_id, config, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (client_id, plugin_id) DO UPDATE SET config=$3, updated_at=NOW()`,
+      [clientId, pluginId, config]
+    );
+  } else {
+    db.prepare(
+      `INSERT INTO plugin_configs (client_id, plugin_id, config, updated_at)
+       VALUES (?, ?, ?, datetime('now'))
+       ON CONFLICT (client_id, plugin_id) DO UPDATE SET config=excluded.config, updated_at=datetime('now')`
+    ).run(clientId, pluginId, JSON.stringify(config));
+  }
+}
+
+async function getPluginCustomerData(clientId, phone, pluginId) {
+  if (IS_PG) {
+    const r = await pool.query(
+      `SELECT data FROM plugin_customer_data WHERE client_id=$1 AND phone_number=$2 AND plugin_id=$3`,
+      [clientId, phone, pluginId]
+    );
+    return r.rows[0]?.data ?? {};
+  } else {
+    const row = db.prepare(`SELECT data FROM plugin_customer_data WHERE client_id=? AND phone_number=? AND plugin_id=?`).get(clientId, phone, pluginId);
+    return row ? JSON.parse(row.data) : {};
+  }
+}
+
+async function upsertPluginCustomerData(clientId, phone, pluginId, data) {
+  if (IS_PG) {
+    await pool.query(
+      `INSERT INTO plugin_customer_data (client_id, phone_number, plugin_id, data, updated_at)
+       VALUES ($1, $2, $3, $4, NOW())
+       ON CONFLICT (client_id, phone_number, plugin_id) DO UPDATE SET data=$4, updated_at=NOW()`,
+      [clientId, phone, pluginId, data]
+    );
+  } else {
+    db.prepare(
+      `INSERT INTO plugin_customer_data (client_id, phone_number, plugin_id, data, updated_at)
+       VALUES (?, ?, ?, ?, datetime('now'))
+       ON CONFLICT (client_id, phone_number, plugin_id) DO UPDATE SET data=excluded.data, updated_at=datetime('now')`
+    ).run(clientId, phone, pluginId, JSON.stringify(data));
+  }
+}
+
 // Raw query helper — PG uses pool, SQLite does a best-effort sync query
 async function pgQuery(sql, params) {
   if (IS_PG) return pool.query(sql, params);
@@ -959,4 +1056,4 @@ async function pgQuery(sql, params) {
   }
 }
 
-module.exports = { init, insertMessage, upsertCustomer, insertOrder, getOrdersByPhone, getLatestOrder, countOrdersByYear, getAllCustomers, getMessagesByPhone, updateLatestOrderStatus, updateOrderStatusById, updateOrderAISummary, updateOrderCustomFields, updateOrderFlags, updateOrderFlagsById, deleteCustomer, deleteMessages, deleteMessage, searchProducts, getAttributeSchema, vectorSearchProducts, saveProductEmbedding, vectorSearchKnowledge, insertKnowledgeChunks, deleteKnowledgeByTitle, getKnowledgeSections, getKnowledgeChunksByTitle, updateKnowledgeChunk, deleteKnowledgeChunk, getClientMedia, insertMedia, deleteMedia, updateMedia, getCustomerAiEnabled, setCustomerAiMode, IS_PG, pgQuery };
+module.exports = { init, insertMessage, upsertCustomer, insertOrder, getOrdersByPhone, getLatestOrder, countOrdersByYear, getAllCustomers, getMessagesByPhone, updateLatestOrderStatus, updateOrderStatusById, updateOrderAISummary, updateOrderCustomFields, updateOrderFlags, updateOrderFlagsById, deleteCustomer, deleteMessages, deleteMessage, searchProducts, getAttributeSchema, vectorSearchProducts, saveProductEmbedding, vectorSearchKnowledge, insertKnowledgeChunks, deleteKnowledgeByTitle, getKnowledgeSections, getKnowledgeChunksByTitle, updateKnowledgeChunk, deleteKnowledgeChunk, getClientMedia, insertMedia, deleteMedia, updateMedia, getCustomerAiEnabled, setCustomerAiMode, getPluginConfig, upsertPluginConfig, getPluginCustomerData, upsertPluginCustomerData, IS_PG, pgQuery };

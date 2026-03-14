@@ -2036,16 +2036,23 @@ app.get('/api/plugins/:pluginId/config', jwtAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// PUT /api/plugins/:pluginId/config — update plugin config (superadmin only)
+// PUT /api/plugins/:pluginId/config — update plugin config (superadmin or own client)
 app.put('/api/plugins/:pluginId/config', jwtAuth, async (req, res) => {
-  if (req.user.role !== 'superadmin') return res.status(403).json({ error: 'Forbidden' });
   const clientId = req.body.client_id || resolveClientId(req);
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  // Allow superadmin for any client; allow client users to update their own config only
+  if (req.user.role !== 'superadmin' && req.user.clientId !== clientId) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
   const { pluginId } = req.params;
-  const { name, prompt } = req.body;
+  const { name, prompt, api_key } = req.body;
   try {
     const existing = await db.getPluginConfig(clientId, pluginId);
-    await db.upsertPluginConfig(clientId, pluginId, { ...existing, ...(name !== undefined && { name }), ...(prompt !== undefined && { prompt }) });
+    const update = { ...existing };
+    if (name !== undefined) update.name = name;
+    if (prompt !== undefined) update.prompt = prompt;
+    if (api_key !== undefined) update.api_key = api_key;
+    await db.upsertPluginConfig(clientId, pluginId, update);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -2079,6 +2086,9 @@ app.post('/api/plugins/astro-chart', jwtAuth, async (req, res) => {
   }
 
   try {
+    // Get plugin config first (need api_key before calling freeastroapi)
+    const config = await db.getPluginConfig(clientId, 'astro_vedic_chart');
+
     // Save birth place for future pre-fill
     if (birth_place_name) {
       await db.upsertPluginCustomerData(clientId, phone, 'astro_vedic_chart', { birth_place_name, lat, lng });
@@ -2092,12 +2102,9 @@ app.post('/api/plugins/astro-chart', jwtAuth, async (req, res) => {
     const astroResp = await axios.post(
       'https://api.freeastroapi.com/api/v1/vedic/chart',
       { year, month, day, hour, minute, lat: parseFloat(lat), lng: parseFloat(lng), tz_str: 'Asia/Colombo', city: birth_place_name || '' },
-      { headers: { 'x-api-key': process.env.FREEASTRO_API_KEY, 'Content-Type': 'application/json' } }
+      { headers: { 'x-api-key': config.api_key || process.env.FREEASTRO_API_KEY, 'Content-Type': 'application/json' } }
     );
     const chartData = astroResp.data;
-
-    // Get plugin prompt
-    const config = await db.getPluginConfig(clientId, 'astro_vedic_chart');
     const promptTemplate = config.prompt || DEFAULT_ASTRO_PROMPT;
     const prompt = promptTemplate.replace('{chart_json}', JSON.stringify(chartData, null, 2));
 

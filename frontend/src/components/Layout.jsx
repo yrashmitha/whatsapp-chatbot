@@ -73,7 +73,7 @@ export default function Layout({ children }) {
     ...(settings?.knowledge_base_enabled ? [NAV_KNOWLEDGE] : []),
     NAV_MEDIA,
     ...(superAdmin ? [NAV_ADDONS] : []),
-    ...(superAdmin ? [NAV_PLUGINS] : []),
+    NAV_PLUGINS,
     NAV_SETTINGS,
   ];
 

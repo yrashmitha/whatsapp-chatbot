@@ -2108,27 +2108,35 @@ app.post('/api/plugins/astro-chart', jwtAuth, async (req, res) => {
     }
 
     // Call freeastroapi
+    const apiKey = config.api_key || process.env.FREEASTRO_API_KEY;
+    const astroPayload = {
+      year, month, day, hour, minute,
+      lat: parseFloat(lat), lng: parseFloat(lng),
+      city: birth_place_name || '',
+      tz_str: 'Asia/Colombo',
+      ayanamsha: 'lahiri',
+      house_system: 'whole_sign',
+      node_type: 'mean',
+    };
+    console.log('[ASTRO] api_key source:', config.api_key ? 'plugin_config' : 'env');
+    console.log('[ASTRO] freeastroapi request:', JSON.stringify(astroPayload));
     const astroResp = await axios.post(
       'https://api.freeastroapi.com/api/v1/vedic/chart',
-      {
-        year, month, day, hour, minute,
-        lat: parseFloat(lat), lng: parseFloat(lng),
-        city: birth_place_name || '',
-        tz_str: 'Asia/Colombo',
-        ayanamsha: 'lahiri',
-        house_system: 'whole_sign',
-        node_type: 'mean',
-      },
-      { headers: { 'x-api-key': config.api_key || process.env.FREEASTRO_API_KEY, 'Content-Type': 'application/json' } }
+      astroPayload,
+      { headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' } }
     );
     const chartData = astroResp.data;
+    console.log('[ASTRO] freeastroapi response:', JSON.stringify(chartData));
+
     const promptTemplate = config.prompt || DEFAULT_ASTRO_PROMPT;
     const prompt = promptTemplate.replace('{chart_json}', JSON.stringify(chartData, null, 2));
+    console.log('[ASTRO] Gemini prompt:\n', prompt);
 
     // Call Gemini
     const pluginModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
     const geminiResult = await pluginModel.generateContent(prompt);
     const text = geminiResult.response.text();
+    console.log('[ASTRO] Gemini response:', text);
 
     res.json({ text });
   } catch (e) {

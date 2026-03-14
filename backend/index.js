@@ -2095,18 +2095,30 @@ app.post('/api/plugins/astro-chart', jwtAuth, async (req, res) => {
     }
 
     // Parse birth date/time
-    const [year, month, day] = birth_date.split('-').map(Number);
-    const [hour, minute] = birth_time.split(':').map(Number);
+    const [year, month, day] = birth_date.split('-').map(s => parseInt(s, 10));
+    const [hour, minute] = birth_time.split(':').map(s => parseInt(s, 10));
 
     // Validate parsed values
-    if (!year || !month || !day || isNaN(year) || isNaN(month) || isNaN(day) || isNaN(hour) || isNaN(minute)) {
-      return res.status(400).json({ error: 'Invalid birth date or time. Use YYYY-MM-DD and HH:MM format.' });
+    if (
+      isNaN(year) || isNaN(month) || isNaN(day) || isNaN(hour) || isNaN(minute) ||
+      year < 1900 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31 ||
+      hour < 0 || hour > 23 || minute < 0 || minute > 59
+    ) {
+      return res.status(400).json({ error: `Invalid birth date or time. Received date="${birth_date}", time="${birth_time}". Use YYYY-MM-DD and HH:MM format.` });
     }
 
     // Call freeastroapi
     const astroResp = await axios.post(
       'https://api.freeastroapi.com/api/v1/vedic/chart',
-      { year, month, day, hour, minute, lat: parseFloat(lat), lng: parseFloat(lng), tz_str: 'Asia/Colombo', city: birth_place_name || '' },
+      {
+        year, month, day, hour, minute,
+        lat: parseFloat(lat), lng: parseFloat(lng),
+        city: birth_place_name || '',
+        tz_str: 'auto',
+        ayanamsha: 'lahiri',
+        house_system: 'whole_sign',
+        node_type: 'mean',
+      },
       { headers: { 'x-api-key': config.api_key || process.env.FREEASTRO_API_KEY, 'Content-Type': 'application/json' } }
     );
     const chartData = astroResp.data;

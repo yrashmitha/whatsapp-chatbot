@@ -54,6 +54,7 @@ export default function AstroChartModal({ phone, clientId, onClose, onResult }) 
   const [rawDate, setRawDate] = useState('');
   const [rawTime, setRawTime] = useState('');
   const [rawPlace, setRawPlace] = useState('');
+  const [rawLagna, setRawLagna] = useState('');
 
   useEffect(() => {
     async function load() {
@@ -70,6 +71,7 @@ export default function AstroChartModal({ phone, clientId, onClose, onResult }) 
           const rawT = cf.birth_time || '';
           setRawDate(rawD);
           setRawTime(rawT);
+          setRawLagna(cf.lagna || cf.birth_lagna || '');
           setBirthDate(parseSinhalaDate(rawD));
           const parsed = parseSinhalaTime(rawT);
           if (/^\d{2}:\d{2}$/.test(parsed)) {
@@ -162,12 +164,20 @@ export default function AstroChartModal({ phone, clientId, onClose, onResult }) 
         ) : (
           <div className="flex flex-col gap-3">
 
+            {/* DB summary row */}
+            {(rawDate || rawTime || rawPlace || rawLagna) && (
+              <div className="bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 flex flex-col gap-0.5">
+                <p className="text-xs font-medium text-slate-400 mb-0.5">Saved in DB</p>
+                {rawDate && <p className="text-xs text-slate-600">📅 Date: <span className="font-mono">{rawDate}</span></p>}
+                {rawTime && <p className="text-xs text-slate-600">🕐 Time: <span className="font-mono">{rawTime}</span></p>}
+                {rawPlace && <p className="text-xs text-slate-600">📍 Place: <span className="font-mono">{rawPlace}</span></p>}
+                {rawLagna && <p className="text-xs text-slate-600">⭐ Lagna: <span className="font-mono">{rawLagna}</span></p>}
+              </div>
+            )}
+
             {/* Birth Date */}
             <div>
               <label className="text-xs font-medium text-slate-500 block mb-1">Birth Date (YYYY-MM-DD)</label>
-              {rawDate ? (
-                <p className="text-xs text-slate-400 mb-1">Saved in DB: <span className="font-mono text-slate-500">{rawDate}</span></p>
-              ) : null}
               <input
                 type="text"
                 value={birthDate}
@@ -180,9 +190,6 @@ export default function AstroChartModal({ phone, clientId, onClose, onResult }) 
             {/* Birth Time */}
             <div>
               <label className="text-xs font-medium text-slate-500 block mb-1">Birth Time (24h)</label>
-              {rawTime ? (
-                <p className="text-xs text-slate-400 mb-1">Saved in DB: <span className="font-mono text-slate-500">{rawTime}</span></p>
-              ) : null}
               <div className="flex gap-2">
                 <div className="flex-1">
                   <select
@@ -212,9 +219,6 @@ export default function AstroChartModal({ phone, clientId, onClose, onResult }) 
             {/* Birth Place */}
             <div className="relative">
               <label className="text-xs font-medium text-slate-500 block mb-1">Birth Place</label>
-              {rawPlace ? (
-                <p className="text-xs text-slate-400 mb-1">Saved in DB: <span className="font-mono text-slate-500">{rawPlace}</span></p>
-              ) : null}
               <input
                 ref={geoRef}
                 type="text"

@@ -2,6 +2,41 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../../lib/api';
 import { useToast } from '../ui/Toast';
 
+const SINHALA_MONTHS = {
+  'ජනවාරි': '01', 'පෙබරවාරි': '02', 'මාර්තු': '03', 'අප්‍රේල්': '04',
+  'මැයි': '05', 'ජූනි': '06', 'ජූලි': '07', 'අගෝස්තු': '08',
+  'සැප්තැම්බර්': '09', 'ඔක්තෝබර්': '10', 'නොවැම්බර්': '11', 'දෙසැම්බර්': '12',
+};
+
+function parseSinhalaDate(raw) {
+  if (!raw) return '';
+  // Already in YYYY-MM-DD format
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  // Format: "2004 පෙබරවාරි 14"
+  const parts = raw.trim().split(/\s+/);
+  if (parts.length === 3) {
+    const [year, monthName, day] = parts;
+    const month = SINHALA_MONTHS[monthName];
+    if (month) return `${year}-${month}-${day.padStart(2, '0')}`;
+  }
+  return raw; // return as-is so user can correct manually
+}
+
+function parseSinhalaTime(raw) {
+  if (!raw) return '';
+  // Already in HH:MM format
+  if (/^\d{1,2}:\d{2}$/.test(raw)) return raw;
+  // Format: "පෙ.ව. 10.42" (AM) or "ප.ව. 10.42" (PM)
+  const isPM = raw.includes('ප.ව.') && !raw.includes('පෙ.ව.');
+  const timePart = raw.replace(/[^\d.]/g, '').trim(); // keep only digits and dot
+  const [h, m] = timePart.split('.').map(Number);
+  if (isNaN(h) || isNaN(m)) return raw;
+  let hour = h;
+  if (isPM && hour < 12) hour += 12;
+  if (!isPM && hour === 12) hour = 0;
+  return `${String(hour).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
 export default function AstroChartModal({ phone, clientId, onClose, onResult }) {
   const toast = useToast();
   const geoRef = useRef();
@@ -27,8 +62,8 @@ export default function AstroChartModal({ phone, clientId, onClose, onResult }) 
         const latestOrder = ordersRes.data?.orders?.[0];
         if (latestOrder?.custom_fields) {
           const cf = latestOrder.custom_fields;
-          setBirthDate(cf.birth_date || '');
-          setBirthTime(cf.birth_time || '');
+          setBirthDate(parseSinhalaDate(cf.birth_date || ''));
+          setBirthTime(parseSinhalaTime(cf.birth_time || ''));
         }
         const saved = savedRes.data;
         if (saved?.birth_place_name) {

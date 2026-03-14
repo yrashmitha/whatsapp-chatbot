@@ -10,25 +10,21 @@ const SINHALA_MONTHS = {
 
 function parseSinhalaDate(raw) {
   if (!raw) return '';
-  // Already in YYYY-MM-DD format
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-  // Format: "2004 පෙබරවාරි 14"
   const parts = raw.trim().split(/\s+/);
   if (parts.length === 3) {
     const [year, monthName, day] = parts;
     const month = SINHALA_MONTHS[monthName];
     if (month) return `${year}-${month}-${day.padStart(2, '0')}`;
   }
-  return raw; // return as-is so user can correct manually
+  return raw;
 }
 
 function parseSinhalaTime(raw) {
   if (!raw) return '';
-  // Already in HH:MM format
   if (/^\d{1,2}:\d{2}$/.test(raw)) return raw;
-  // Format: "පෙ.ව. 10.42" (AM) or "ප.ව. 10.42" (PM)
-  const isPM = raw.includes('ප.ව.') && !raw.includes('පෙ.ව.');
-  const timePart = raw.replace(/[^\d.]/g, '').trim(); // keep only digits and dot
+  const isPM = raw.includes('ප.ව') && !raw.includes('පෙ.ව');
+  const timePart = raw.replace(/[^\d.]/g, '').trim();
   const [h, m] = timePart.split('.').map(Number);
   if (isNaN(h) || isNaN(m)) return raw;
   let hour = h;
@@ -37,20 +33,28 @@ function parseSinhalaTime(raw) {
   return `${String(hour).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
+const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
+const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
+
 export default function AstroChartModal({ phone, clientId, onClose, onResult }) {
   const toast = useToast();
   const geoRef = useRef();
 
   const [birthDate, setBirthDate] = useState('');
-  const [birthTime, setBirthTime] = useState('');
+  const [birthHour, setBirthHour] = useState('10');
+  const [birthMinute, setBirthMinute] = useState('00');
   const [geoQuery, setGeoQuery] = useState('');
   const [geoSuggestions, setGeoSuggestions] = useState([]);
-  const [selectedPlace, setSelectedPlace] = useState(null); // { name, lat, lng }
+  const [selectedPlace, setSelectedPlace] = useState(null);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
   const debounceRef = useRef(null);
 
-  // Load birth data from latest order + saved place
+  // Raw values from DB for display
+  const [rawDate, setRawDate] = useState('');
+  const [rawTime, setRawTime] = useState('');
+  const [rawPlace, setRawPlace] = useState('');
+
   useEffect(() => {
     async function load() {
       try {
@@ -62,11 +66,21 @@ export default function AstroChartModal({ phone, clientId, onClose, onResult }) 
         const latestOrder = ordersRes.data?.orders?.[0];
         if (latestOrder?.custom_fields) {
           const cf = latestOrder.custom_fields;
-          setBirthDate(parseSinhalaDate(cf.birth_date || ''));
-          setBirthTime(parseSinhalaTime(cf.birth_time || ''));
+          const rawD = cf.birth_date || '';
+          const rawT = cf.birth_time || '';
+          setRawDate(rawD);
+          setRawTime(rawT);
+          setBirthDate(parseSinhalaDate(rawD));
+          const parsed = parseSinhalaTime(rawT);
+          if (/^\d{2}:\d{2}$/.test(parsed)) {
+            const [h, m] = parsed.split(':');
+            setBirthHour(h);
+            setBirthMinute(m);
+          }
         }
         const saved = savedRes.data;
         if (saved?.birth_place_name) {
+          setRawPlace(saved.birth_place_name);
           setGeoQuery(saved.birth_place_name);
           setSelectedPlace({ name: saved.birth_place_name, lat: saved.lat, lng: saved.lng });
         }
@@ -77,7 +91,6 @@ export default function AstroChartModal({ phone, clientId, onClose, onResult }) 
     load();
   }, [phone, clientId]);
 
-  // Debounced Nominatim geo search
   const searchGeo = useCallback((q) => {
     clearTimeout(debounceRef.current);
     if (!q.trim()) { setGeoSuggestions([]); return; }
@@ -105,9 +118,11 @@ export default function AstroChartModal({ phone, clientId, onClose, onResult }) 
     setGeoSuggestions([]);
   };
 
+  const birthTime = `${birthHour}:${birthMinute}`;
+
   const handleSubmit = async () => {
     if (!selectedPlace) return toast.error('Please select a birth place');
-    if (!birthDate || !birthTime) return toast.error('Birth date and time are required');
+    if (!birthDate) return toast.error('Birth date is required');
     setLoading(true);
     try {
       const params = clientId ? { client_id: clientId } : {};
@@ -146,8 +161,13 @@ export default function AstroChartModal({ phone, clientId, onClose, onResult }) 
           </div>
         ) : (
           <div className="flex flex-col gap-3">
+
+            {/* Birth Date */}
             <div>
               <label className="text-xs font-medium text-slate-500 block mb-1">Birth Date (YYYY-MM-DD)</label>
+              {rawDate ? (
+                <p className="text-xs text-slate-400 mb-1">Saved in DB: <span className="font-mono text-slate-500">{rawDate}</span></p>
+              ) : null}
               <input
                 type="text"
                 value={birthDate}
@@ -157,19 +177,44 @@ export default function AstroChartModal({ phone, clientId, onClose, onResult }) 
               />
             </div>
 
+            {/* Birth Time */}
             <div>
-              <label className="text-xs font-medium text-slate-500 block mb-1">Birth Time (HH:MM, 24h)</label>
-              <input
-                type="text"
-                value={birthTime}
-                onChange={e => setBirthTime(e.target.value)}
-                placeholder="10:30"
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
-              />
+              <label className="text-xs font-medium text-slate-500 block mb-1">Birth Time (24h)</label>
+              {rawTime ? (
+                <p className="text-xs text-slate-400 mb-1">Saved in DB: <span className="font-mono text-slate-500">{rawTime}</span></p>
+              ) : null}
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <select
+                    value={birthHour}
+                    onChange={e => setBirthHour(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 bg-white"
+                  >
+                    {HOURS.map(h => (
+                      <option key={h} value={h}>{h}h</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex-1">
+                  <select
+                    value={birthMinute}
+                    onChange={e => setBirthMinute(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 bg-white"
+                  >
+                    {MINUTES.map(m => (
+                      <option key={m} value={m}>{m}m</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
 
+            {/* Birth Place */}
             <div className="relative">
               <label className="text-xs font-medium text-slate-500 block mb-1">Birth Place</label>
+              {rawPlace ? (
+                <p className="text-xs text-slate-400 mb-1">Saved in DB: <span className="font-mono text-slate-500">{rawPlace}</span></p>
+              ) : null}
               <input
                 ref={geoRef}
                 type="text"
@@ -204,7 +249,7 @@ export default function AstroChartModal({ phone, clientId, onClose, onResult }) 
 
             <button
               onClick={handleSubmit}
-              disabled={loading || !selectedPlace || !birthDate || !birthTime}
+              disabled={loading || !selectedPlace || !birthDate}
               className="mt-1 w-full py-2.5 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm font-medium rounded-xl flex items-center justify-center gap-2 cursor-pointer border-0 transition-colors"
             >
               {loading ? (

@@ -7,6 +7,7 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, prefill
   const [sending, setSending] = useState(false);
   const toast = useToast();
   const fileRef = useRef();
+  const textareaRef = useRef();
 
   useEffect(() => {
     if (prefill) {
@@ -14,6 +15,14 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, prefill
       onPrefillConsumed?.();
     }
   }, [prefill]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-resize textarea
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [text]);
 
   const params = clientId ? { client_id: clientId } : {};
 
@@ -84,13 +93,14 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, prefill
         </>
       )}
       <textarea
+        ref={textareaRef}
         value={text}
         onChange={e => setText(e.target.value)}
         onKeyDown={handleKey}
         rows={1}
         placeholder="Type a message… (Enter to send)"
-        className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-none max-h-32 overflow-y-auto"
-        style={{ lineHeight: '1.5' }}
+        className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-none overflow-hidden"
+        style={{ lineHeight: '1.5', maxHeight: '200px', overflowY: 'auto' }}
       />
       <button
         onClick={() => send(text)}

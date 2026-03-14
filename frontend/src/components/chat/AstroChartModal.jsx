@@ -23,7 +23,9 @@ function parseSinhalaDate(raw) {
 function parseSinhalaTime(raw) {
   if (!raw) return '';
   if (/^\d{1,2}:\d{2}$/.test(raw)) return raw;
-  const isPM = raw.includes('ප.ව') && !raw.includes('පෙ.ව');
+  // රාත්‍රී = night (PM), දහවල් = midday (PM), ප.ව = afternoon (PM), පෙ.ව / උදේ = morning (AM)
+  const isPM = raw.includes('රාත්‍රී') || raw.includes('රාත්රී') || raw.includes('දහවල්') ||
+               (raw.includes('ප.ව') && !raw.includes('පෙ.ව'));
   const timePart = raw.replace(/[^\d.]/g, '').trim();
   const [h, m] = timePart.split('.').map(Number);
   if (isNaN(h) || isNaN(m)) return raw;
@@ -65,13 +67,16 @@ export default function AstroChartModal({ phone, clientId, onClose, onResult }) 
           api.get(`/plugins/astro_vedic_chart/customer-data/${phone}`, { params }),
         ]);
         const latestOrder = ordersRes.data?.orders?.[0];
+        let orderPlace = '';
         if (latestOrder?.custom_fields) {
           const cf = latestOrder.custom_fields;
           const rawD = cf.birth_date || '';
           const rawT = cf.birth_time || '';
+          orderPlace = cf.birth_place || cf.birth_city || cf.place_of_birth || '';
           setRawDate(rawD);
           setRawTime(rawT);
           setRawLagna(cf.lagna || cf.birth_lagna || '');
+          if (orderPlace) setRawPlace(orderPlace);
           setBirthDate(parseSinhalaDate(rawD));
           const parsed = parseSinhalaTime(rawT);
           if (/^\d{2}:\d{2}$/.test(parsed)) {
@@ -82,9 +87,13 @@ export default function AstroChartModal({ phone, clientId, onClose, onResult }) 
         }
         const saved = savedRes.data;
         if (saved?.birth_place_name) {
+          // Saved geo (from previous generation) takes priority — has lat/lng
           setRawPlace(saved.birth_place_name);
           setGeoQuery(saved.birth_place_name);
           setSelectedPlace({ name: saved.birth_place_name, lat: saved.lat, lng: saved.lng });
+        } else if (orderPlace) {
+          // Fall back to order custom_fields place — pre-fill search but no lat/lng yet
+          setGeoQuery(orderPlace);
         }
       } catch (_) {}
       setFetching(false);

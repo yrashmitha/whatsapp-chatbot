@@ -2114,7 +2114,7 @@ app.post('/api/plugins/astro-chart', jwtAuth, async (req, res) => {
         year, month, day, hour, minute,
         lat: parseFloat(lat), lng: parseFloat(lng),
         city: birth_place_name || '',
-        tz_str: 'auto',
+        tz_str: 'Asia/Colombo',
         ayanamsha: 'lahiri',
         house_system: 'whole_sign',
         node_type: 'mean',

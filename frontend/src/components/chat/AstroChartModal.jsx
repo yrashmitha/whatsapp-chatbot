@@ -173,20 +173,10 @@ export default function AstroChartModal({ phone, clientId, onClose, onResult }) 
         ) : (
           <div className="flex flex-col gap-3">
 
-            {/* DB summary row */}
-            {(rawDate || rawTime || rawPlace || rawLagna) && (
-              <div className="bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 flex flex-col gap-0.5">
-                <p className="text-xs font-medium text-slate-400 mb-0.5">Saved in DB</p>
-                {rawDate && <p className="text-xs text-slate-600">📅 Date: <span className="font-mono">{rawDate}</span></p>}
-                {rawTime && <p className="text-xs text-slate-600">🕐 Time: <span className="font-mono">{rawTime}</span></p>}
-                {rawPlace && <p className="text-xs text-slate-600">📍 Place: <span className="font-mono">{rawPlace}</span></p>}
-                {rawLagna && <p className="text-xs text-slate-600">⭐ Lagna: <span className="font-mono">{rawLagna}</span></p>}
-              </div>
-            )}
-
             {/* Birth Date */}
             <div>
               <label className="text-xs font-medium text-slate-500 block mb-1">Birth Date (YYYY-MM-DD)</label>
+              {rawDate && <p className="text-xs text-amber-600 mb-1">From order: <span className="font-mono">{rawDate}</span></p>}
               <input
                 type="text"
                 value={birthDate}
@@ -199,6 +189,7 @@ export default function AstroChartModal({ phone, clientId, onClose, onResult }) 
             {/* Birth Time */}
             <div>
               <label className="text-xs font-medium text-slate-500 block mb-1">Birth Time (24h)</label>
+              {rawTime && <p className="text-xs text-amber-600 mb-1">From order: <span className="font-mono">{rawTime}</span></p>}
               <div className="flex gap-2">
                 <div className="flex-1">
                   <select
@@ -225,9 +216,18 @@ export default function AstroChartModal({ phone, clientId, onClose, onResult }) 
               </div>
             </div>
 
+            {/* Lagna (read-only from order) */}
+            {rawLagna && (
+              <div>
+                <label className="text-xs font-medium text-slate-500 block mb-1">Lagna</label>
+                <div className="px-3 py-2 text-sm border border-slate-200 rounded-xl bg-slate-50 text-slate-700">{rawLagna}</div>
+              </div>
+            )}
+
             {/* Birth Place */}
             <div className="relative">
               <label className="text-xs font-medium text-slate-500 block mb-1">Birth Place</label>
+              {rawPlace && <p className="text-xs text-amber-600 mb-1">From order: <span className="font-mono">{rawPlace}</span></p>}
               <input
                 ref={geoRef}
                 type="text"

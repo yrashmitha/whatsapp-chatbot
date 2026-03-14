@@ -1,15 +1,26 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore, isSuperAdmin } from '../stores/auth';
 import Layout from '../components/Layout';
 import CustomerList from '../components/chat/CustomerList';
 import ChatThread from '../components/chat/ChatThread';
+import api from '../lib/api';
 
 export default function Chat() {
   const { user, selectedClientId } = useAuthStore();
   const superAdmin = isSuperAdmin(user);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const qc = useQueryClient();
 
   const clientId = superAdmin ? (selectedClientId || null) : user?.clientId;
+
+  useEffect(() => {
+    if (!selectedCustomer?.phone) return;
+    const params = clientId ? { client_id: clientId } : {};
+    api.post(`/customers/${selectedCustomer.phone}/mark-read`, {}, { params })
+      .then(() => qc.invalidateQueries({ queryKey: ['customers'] }))
+      .catch(() => {});
+  }, [selectedCustomer?.phone]);
 
   return (
     <Layout>

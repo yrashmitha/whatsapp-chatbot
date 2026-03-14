@@ -22,6 +22,7 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
     queryKey: ['customers', params],
     queryFn: () => api.get('/customers', { params }).then(r => r.data),
     keepPreviousData: true,
+    refetchInterval: 60_000,
   });
 
   const customers = data?.customers || [];
@@ -79,6 +80,11 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
                 <div className="shrink-0 text-right flex flex-col items-end gap-0.5">
                   {c.last_message_at && (
                     <div className="text-xs text-slate-400">{timeAgo(c.last_message_at)}</div>
+                  )}
+                  {c.unread_count > 0 && (
+                    <span className="min-w-5 h-5 flex items-center justify-center rounded-full bg-green-500 text-white text-xs font-bold px-1">
+                      {c.unread_count > 99 ? '99+' : c.unread_count}
+                    </span>
                   )}
                   {c.order_count > 0 && (
                     <span className="text-xs font-semibold text-white bg-violet-500 rounded-full px-2 py-0.5">

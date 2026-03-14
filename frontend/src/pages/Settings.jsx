@@ -24,6 +24,7 @@ export default function Settings() {
   const [contactNumber, setContactNumber] = useState('');
   const [knowledgeBaseEnabled, setKnowledgeBaseEnabled] = useState(false);
   const [productCatalogEnabled, setProductCatalogEnabled] = useState(false);
+  const [pluginEnabled, setPluginEnabled] = useState(false);
   const [promptLoading, setPromptLoading] = useState(false);
 
   // Order fields
@@ -49,6 +50,7 @@ export default function Settings() {
       setContactNumber(settingsData.contact_number || '');
       setKnowledgeBaseEnabled(!!settingsData.knowledge_base_enabled);
       setProductCatalogEnabled(!!settingsData.product_catalog_enabled);
+      setPluginEnabled(!!settingsData.plugin_enabled);
       setOrderFields(settingsData.order_fields || []);
     }
   }, [settingsData]);
@@ -80,7 +82,7 @@ export default function Settings() {
     if (!clientId) { toast.error('Select a client first'); return; }
     setPromptLoading(true);
     try {
-      await api.put('/settings/prompt', { prompt, error_message: errorMsg, contact_number: contactNumber, knowledge_base_enabled: knowledgeBaseEnabled, product_catalog_enabled: productCatalogEnabled, order_fields: orderFields }, { params });
+      await api.put('/settings/prompt', { prompt, error_message: errorMsg, contact_number: contactNumber, knowledge_base_enabled: knowledgeBaseEnabled, product_catalog_enabled: productCatalogEnabled, order_fields: orderFields, plugin_enabled: pluginEnabled }, { params });
       qc.invalidateQueries({ queryKey: ['settings', clientId] });
       toast.success('Settings saved');
     } catch {
@@ -221,6 +223,28 @@ export default function Settings() {
                         <p className="text-xs text-slate-400">Let the AI search your knowledge base documents to answer customer questions.</p>
                       </div>
                     </label>
+                    {/* Custom Module — visible to all, superadmin can enable/disable, client can only disable */}
+                    <div className="flex items-center gap-3">
+                      <div className={`w-4 h-4 rounded-full shrink-0 ${pluginEnabled ? 'bg-green-500' : 'bg-slate-300'}`} />
+                      <div className="flex-1">
+                        <p className="text-xs font-medium text-slate-600">Custom Module</p>
+                        <p className="text-xs text-slate-400">{pluginEnabled ? 'Active — custom logic is running for this account.' : 'Inactive — no custom module is loaded.'}</p>
+                      </div>
+                      {superAdmin ? (
+                        <input
+                          type="checkbox"
+                          checked={pluginEnabled}
+                          onChange={e => setPluginEnabled(e.target.checked)}
+                          className="w-4 h-4 accent-violet-600 cursor-pointer"
+                        />
+                      ) : pluginEnabled ? (
+                        <button
+                          type="button"
+                          onClick={() => setPluginEnabled(false)}
+                          className="text-xs text-red-500 underline"
+                        >Disable</button>
+                      ) : null}
+                    </div>
                   </div>
 
                   {/* Order Fields */}

@@ -2098,6 +2098,11 @@ app.post('/api/plugins/astro-chart', jwtAuth, async (req, res) => {
     const [year, month, day] = birth_date.split('-').map(Number);
     const [hour, minute] = birth_time.split(':').map(Number);
 
+    // Validate parsed values
+    if (!year || !month || !day || isNaN(year) || isNaN(month) || isNaN(day) || isNaN(hour) || isNaN(minute)) {
+      return res.status(400).json({ error: 'Invalid birth date or time. Use YYYY-MM-DD and HH:MM format.' });
+    }
+
     // Call freeastroapi
     const astroResp = await axios.post(
       'https://api.freeastroapi.com/api/v1/vedic/chart',
@@ -2116,7 +2121,11 @@ app.post('/api/plugins/astro-chart', jwtAuth, async (req, res) => {
     res.json({ text });
   } catch (e) {
     console.error('[ASTRO] error:', e?.response?.data || e.message);
-    res.status(500).json({ error: e?.response?.data?.detail || e.message });
+    const detail = e?.response?.data?.detail;
+    const errMsg = Array.isArray(detail)
+      ? detail.map(d => `${d.loc?.slice(-1)?.[0] || 'field'}: ${d.msg}`).join('; ')
+      : (typeof detail === 'string' ? detail : e.message);
+    res.status(500).json({ error: errMsg });
   }
 });
 

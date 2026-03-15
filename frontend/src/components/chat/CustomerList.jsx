@@ -1,16 +1,43 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '../../lib/api';
-import { timeAgo, STATUS_COLORS } from '../../lib/utils';
+import { timeAgo } from '../../lib/utils';
 import Spinner from '../ui/Spinner';
 
 const STATUS_LABEL = {
   pending:          'Pending',
+  started:          'Started',
+  delivered:        'Delivered',
+  done:             'Done',
+  cancelled:        'Cancelled',
   payment_received: 'Payment Rcvd',
   paid:             'Paid',
   complete:         'Complete',
-  cancelled:        'Cancelled',
 };
+
+// rgba-based so they work in both light and dark modes
+const STATUS_BADGE = {
+  pending:          { background: 'rgba(245,158,11,0.15)',  color: '#f59e0b' },
+  started:          { background: 'rgba(59,130,246,0.15)',  color: '#60a5fa' },
+  delivered:        { background: 'rgba(139,92,246,0.15)', color: '#a78bfa' },
+  done:             { background: 'rgba(16,185,129,0.15)', color: '#34d399' },
+  cancelled:        { background: 'rgba(239,68,68,0.15)',  color: '#f87171' },
+  payment_received: { background: 'rgba(59,130,246,0.15)',  color: '#60a5fa' },
+  paid:             { background: 'rgba(139,92,246,0.15)', color: '#a78bfa' },
+  complete:         { background: 'rgba(16,185,129,0.15)', color: '#34d399' },
+};
+
+function Avatar({ name, phone }) {
+  const char = (name?.[0] || phone?.[0] || '?').toUpperCase();
+  return (
+    <div
+      className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold"
+      style={{ background: 'rgba(99,102,241,0.18)', color: 'var(--accent)' }}
+    >
+      {char}
+    </div>
+  );
+}
 
 export default function CustomerList({ clientId, selectedPhone, onSelect }) {
   const [search, setSearch] = useState('');
@@ -30,13 +57,20 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
   return (
     <div className="flex flex-col h-full">
       {/* Search */}
-      <div className="p-3 border-b border-slate-100">
+      <div className="p-3" style={{ borderBottom: '1px solid var(--border)' }}>
         <input
           type="text"
           value={search}
           onChange={e => { setSearch(e.target.value); setPage(1); }}
           placeholder="Search customers…"
-          className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+          className="w-full px-3 py-1.5 text-sm rounded-lg outline-none"
+          style={{
+            background: 'var(--bg-base)',
+            color: 'var(--text-1)',
+            border: '1px solid var(--border)',
+          }}
+          onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+          onBlur={e => e.target.style.borderColor = 'var(--border)'}
         />
       </div>
 
@@ -45,65 +79,105 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
         {isLoading ? (
           <div className="flex justify-center py-8"><Spinner /></div>
         ) : customers.length === 0 ? (
-          <div className="text-center py-8 text-sm text-slate-400">No customers found</div>
+          <div className="text-center py-8 text-sm" style={{ color: 'var(--text-3)' }}>No customers found</div>
         ) : (
-          customers.map(c => (
-            <button
-              key={c.phone}
-              onClick={() => onSelect(c)}
-              className={`w-full text-left px-4 py-3 border-b border-slate-50 hover:bg-slate-50 transition-colors cursor-pointer bg-transparent
-                ${selectedPhone === c.phone ? 'bg-violet-50 border-l-2 border-l-violet-500' : ''}`}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-slate-800 truncate">{c.name || c.phone}</div>
-                  {c.name && <div className="text-xs text-slate-400 truncate">{c.phone}</div>}
-                  {c.last_message && (
-                    <div className="text-xs text-slate-500 truncate mt-0.5">{c.last_message}</div>
-                  )}
-                  {(c.has_image || c.has_document || c.latest_order_status) && (
-                    <div className="flex gap-1 mt-1 flex-wrap">
-                      {c.has_image && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-500 font-medium">📷 Images</span>
+          customers.map(c => {
+            const isSelected = selectedPhone === c.phone;
+            return (
+              <button
+                key={c.phone}
+                onClick={() => onSelect(c)}
+                className="w-full text-left px-3 py-2.5 transition-colors cursor-pointer bg-transparent border-0"
+                style={{
+                  borderBottom: '1px solid var(--border-sub)',
+                  borderLeft: isSelected ? '2px solid var(--accent)' : '2px solid transparent',
+                  background: isSelected
+                    ? 'rgba(99,102,241,0.10)'
+                    : 'transparent',
+                }}
+                onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(99,102,241,0.05)'; }}
+                onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
+              >
+                <div className="flex items-start gap-2.5">
+                  <Avatar name={c.name} phone={c.phone} />
+                  <div className="flex-1 min-w-0 flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate" style={{ color: 'var(--text-1)' }}>
+                        {c.name || c.phone}
+                      </div>
+                      {c.name && (
+                        <div className="text-xs truncate" style={{ color: 'var(--text-3)' }}>{c.phone}</div>
                       )}
-                      {c.has_document && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 font-medium">📄 Docs</span>
+                      {c.last_message && (
+                        <div className="text-xs truncate mt-0.5" style={{ color: 'var(--text-2)' }}>{c.last_message}</div>
                       )}
-                      {c.latest_order_status && (
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium border ${STATUS_COLORS[c.latest_order_status] || 'bg-slate-100 text-slate-600'}`}>
-                          {STATUS_LABEL[c.latest_order_status] || c.latest_order_status}
+                      {(c.has_image || c.has_document || c.latest_order_status) && (
+                        <div className="flex gap-1 mt-1 flex-wrap">
+                          {c.has_image && (
+                            <span
+                              className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                              style={{ background: 'rgba(59,130,246,0.15)', color: '#60a5fa' }}
+                            >📷 Images</span>
+                          )}
+                          {c.has_document && (
+                            <span
+                              className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                              style={{ background: 'rgba(245,158,11,0.15)', color: '#fbbf24' }}
+                            >📄 Docs</span>
+                          )}
+                          {c.latest_order_status && (
+                            <span
+                              className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                              style={STATUS_BADGE[c.latest_order_status] || { background: 'rgba(148,163,184,0.15)', color: 'var(--text-2)' }}
+                            >
+                              {STATUS_LABEL[c.latest_order_status] || c.latest_order_status}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {c.client_id && (
+                        <div className="text-xs mt-0.5" style={{ color: 'var(--accent)' }}>{c.client_id}</div>
+                      )}
+                    </div>
+                    <div className="shrink-0 text-right flex flex-col items-end gap-0.5">
+                      {c.last_message_at && (
+                        <div className="text-xs" style={{ color: 'var(--text-3)' }}>{timeAgo(c.last_message_at)}</div>
+                      )}
+                      {c.unread_count > 0 && (
+                        <span className="min-w-5 h-5 flex items-center justify-center rounded-full bg-green-500 text-white text-xs font-bold px-1">
+                          {c.unread_count > 99 ? '99+' : c.unread_count}
+                        </span>
+                      )}
+                      {c.order_count > 0 && (
+                        <span
+                          className="text-xs font-semibold text-white rounded-full px-2 py-0.5"
+                          style={{ background: 'var(--accent)' }}
+                        >
+                          {c.order_count} {c.order_count === 1 ? 'order' : 'orders'}
                         </span>
                       )}
                     </div>
-                  )}
+                  </div>
                 </div>
-                <div className="shrink-0 text-right flex flex-col items-end gap-0.5">
-                  {c.last_message_at && (
-                    <div className="text-xs text-slate-400">{timeAgo(c.last_message_at)}</div>
-                  )}
-                  {c.unread_count > 0 && (
-                    <span className="min-w-5 h-5 flex items-center justify-center rounded-full bg-green-500 text-white text-xs font-bold px-1">
-                      {c.unread_count > 99 ? '99+' : c.unread_count}
-                    </span>
-                  )}
-                  {c.order_count > 0 && (
-                    <span className="text-xs font-semibold text-white bg-violet-500 rounded-full px-2 py-0.5">
-                      {c.order_count} {c.order_count === 1 ? 'order' : 'orders'}
-                    </span>
-                  )}
-                </div>
-              </div>
-              {c.client_id && (
-                <div className="text-xs text-violet-400 mt-0.5">{c.client_id}</div>
-              )}
-            </button>
-          ))
+              </button>
+            );
+          })
         )}
         {data?.total > 30 && (
           <div className="flex justify-center gap-2 py-3">
-            <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="text-xs text-violet-600 disabled:opacity-40 cursor-pointer bg-transparent border-0">← Prev</button>
-            <span className="text-xs text-slate-400">Page {page}</span>
-            <button disabled={customers.length < 30} onClick={() => setPage(p => p + 1)} className="text-xs text-violet-600 disabled:opacity-40 cursor-pointer bg-transparent border-0">Next →</button>
+            <button
+              disabled={page === 1}
+              onClick={() => setPage(p => p - 1)}
+              className="text-xs disabled:opacity-40 cursor-pointer bg-transparent border-0"
+              style={{ color: 'var(--accent)' }}
+            >← Prev</button>
+            <span className="text-xs" style={{ color: 'var(--text-3)' }}>Page {page}</span>
+            <button
+              disabled={customers.length < 30}
+              onClick={() => setPage(p => p + 1)}
+              className="text-xs disabled:opacity-40 cursor-pointer bg-transparent border-0"
+              style={{ color: 'var(--accent)' }}
+            >Next →</button>
           </div>
         )}
       </div>

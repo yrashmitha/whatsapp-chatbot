@@ -63,11 +63,35 @@ async function exportOrders(req, res) {
        FROM orders o LEFT JOIN customers cu ON cu.phone_number=o.phone_number
        ${where} ORDER BY o.created_at DESC`, params
     );
-    const cols = ['order_id','phone_number','customer_name','status','custom_fields','notes','created_at','client_id'];
-    const csv  = [cols.join(','), ...r.rows.map(row =>
-      cols.map(c => `"${String(row[c] ?? '').replace(/"/g, '""')}"`).join(',')
-    )].join('\n');
-    res.setHeader('Content-Type', 'text/csv');
+    // Collect all unique custom_field keys across all rows (skip internal product_id key)
+    const cfKeySet = new Set();
+    for (const row of r.rows) {
+      const cf = typeof row.custom_fields === 'string'
+        ? JSON.parse(row.custom_fields || '{}')
+        : (row.custom_fields || {});
+      Object.keys(cf).filter(k => k !== 'product_id').forEach(k => cfKeySet.add(k));
+    }
+    const cfKeys = [...cfKeySet];
+
+    const fixedCols = ['order_id', 'phone_number', 'customer_name', 'status', 'notes', 'created_at', 'client_id'];
+    const escape = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const allHeaders = [...fixedCols, ...cfKeys].map(escape).join(',');
+
+    const dataRows = r.rows.map(row => {
+      const cf = typeof row.custom_fields === 'string'
+        ? JSON.parse(row.custom_fields || '{}')
+        : (row.custom_fields || {});
+      return [
+        ...fixedCols.map(c => escape(row[c])),
+        ...cfKeys.map(k => escape(cf[k])),
+      ].join(',');
+    });
+
+    // UTF-8 BOM ensures Excel/Sheets renders Sinhala and other Unicode text correctly
+    const BOM = '\uFEFF';
+    const csv = BOM + [allHeaders, ...dataRows].join('\n');
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="orders-${Date.now()}.csv"`);
     res.send(csv);
   } catch (e) { res.status(500).json({ error: e.message }); }

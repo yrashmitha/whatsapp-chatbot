@@ -155,6 +155,7 @@ export default function Orders() {
                             onChange={e => updateStatus.mutate({ orderId: o.order_id, status: e.target.value })}
                             className={`text-xs font-medium rounded-md px-2 py-1 border cursor-pointer outline-none ${STATUS_COLORS[o.status] || 'bg-slate-100 text-slate-600 border-slate-200'}`}
                           >
+                            {!STATUS_OPTIONS.includes(o.status) && <option value={o.status}>{o.status}</option>}
                             {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                           </select>
                         </td>

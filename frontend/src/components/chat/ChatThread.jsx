@@ -255,6 +255,7 @@ export default function ChatThread({ customer, clientId, onCustomerDeleted }) {
                       onChange={e => updateStatusMutation.mutate({ orderId: o.order_id, status: e.target.value })}
                       className={`text-xs font-medium rounded-md px-2 py-0.5 border cursor-pointer outline-none ${STATUS_COLORS[o.status] || 'bg-slate-100 text-slate-600 border-slate-200'}`}
                     >
+                      {!STATUS_OPTIONS.includes(o.status) && <option value={o.status}>{o.status}</option>}
                       {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>

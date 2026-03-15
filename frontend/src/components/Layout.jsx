@@ -97,7 +97,7 @@ export default function Layout({ children }) {
         </div>
 
         {/* Nav items */}
-        <nav className="flex items-center gap-0.5 flex-1 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+        <nav className="flex items-center gap-0.5 flex-1 overflow-x-auto">
           {navItems.map(({ to, label, icon }) => (
             <NavLink
               key={to}
@@ -140,7 +140,7 @@ export default function Layout({ children }) {
       </header>
 
       {/* ── Page content ── */}
-      <main className="flex-1 overflow-hidden">{children}</main>
+      <main className="flex-1 overflow-hidden flex flex-col min-w-0">{children}</main>
     </div>
   );
 }

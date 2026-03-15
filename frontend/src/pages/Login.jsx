@@ -2,14 +2,16 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authApi } from '../lib/api';
 import { useAuthStore } from '../stores/auth';
+import { useThemeStore } from '../stores/theme';
 
 export default function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const login = useAuthStore(s => s.login);
+  const [error, setError]       = useState('');
+  const [loading, setLoading]   = useState(false);
+  const login    = useAuthStore(s => s.login);
   const navigate = useNavigate();
+  const { theme, toggle } = useThemeStore();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -26,44 +28,88 @@ export default function Login() {
     }
   };
 
+  const inputStyle = {
+    width: '100%',
+    padding: '10px 12px',
+    fontSize: '14px',
+    border: '1px solid var(--border)',
+    borderRadius: '10px',
+    outline: 'none',
+    background: 'var(--bg-base)',
+    color: 'var(--text-1)',
+    transition: 'border-color 0.15s',
+  };
+
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+    <div
+      className="min-h-screen flex items-center justify-center p-4"
+      style={{ background: 'var(--bg-base)' }}
+    >
       <div className="w-full max-w-sm">
+
+        {/* Logo + brand */}
         <div className="text-center mb-8">
-          <div className="text-3xl mb-2">💬</div>
-          <h1 className="text-2xl font-bold text-slate-800">CRM Login</h1>
-          <p className="text-sm text-slate-500 mt-1">Sign in to manage your business</p>
+          <div
+            className="w-14 h-14 rounded-2xl mx-auto mb-4 flex items-center justify-center text-2xl font-black text-white"
+            style={{
+              background: 'linear-gradient(135deg, #6366f1, #38bdf8)',
+              boxShadow: '0 0 32px rgba(99,102,241,0.35)',
+            }}
+          >N</div>
+          <h1
+            className="text-2xl font-bold"
+            style={{
+              background: 'linear-gradient(135deg,#818cf8,#38bdf8)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+            }}
+          >Agent Nova</h1>
+          <p className="text-sm mt-1" style={{ color: 'var(--text-3)' }}>
+            AI-Powered WhatsApp Automation
+          </p>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+        {/* Card */}
+        <div
+          className="rounded-2xl p-8"
+          style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}
+        >
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Username</label>
+              <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-2)' }}>
+                Username
+              </label>
               <input
                 type="text"
                 value={username}
                 onChange={e => setUsername(e.target.value)}
-                placeholder="Your client ID or superadmin"
+                placeholder="Client ID or superadmin"
                 required
                 autoFocus
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition-colors"
+                style={inputStyle}
+                onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+                onBlur={e => e.target.style.borderColor = 'var(--border)'}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Password</label>
+              <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-2)' }}>
+                Password
+              </label>
               <input
                 type="password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 placeholder="••••••••"
                 required
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition-colors"
+                style={inputStyle}
+                onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+                onBlur={e => e.target.style.borderColor = 'var(--border)'}
               />
             </div>
 
             {error && (
-              <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+              <div className="text-xs rounded-lg px-3 py-2" style={{ color: '#f87171', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
                 {error}
               </div>
             )}
@@ -71,11 +117,23 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white font-medium rounded-lg transition-colors cursor-pointer border-0"
+              className="w-full py-2.5 font-medium rounded-lg text-sm text-white border-0 cursor-pointer transition-opacity disabled:opacity-60"
+              style={{ background: 'linear-gradient(135deg,#6366f1,#38bdf8)' }}
             >
               {loading ? 'Signing in…' : 'Sign In'}
             </button>
           </form>
+        </div>
+
+        {/* Theme toggle */}
+        <div className="text-center mt-4">
+          <button
+            onClick={toggle}
+            className="text-xs border-0 bg-transparent cursor-pointer transition-colors"
+            style={{ color: 'var(--text-3)' }}
+          >
+            {theme === 'dark' ? '☀ Switch to Light mode' : '☽ Switch to Dark mode'}
+          </button>
         </div>
       </div>
     </div>

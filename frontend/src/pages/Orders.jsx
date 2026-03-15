@@ -6,7 +6,7 @@ import Pagination from '../components/ui/Pagination';
 import Spinner from '../components/ui/Spinner';
 import { useToast } from '../components/ui/Toast';
 import api from '../lib/api';
-import { formatDateTime, STATUS_COLORS, STATUS_OPTIONS } from '../lib/utils';
+import { formatDateTime, STATUS_COLORS, STATUS_OPTIONS, STATUS_FILTER_OPTIONS } from '../lib/utils';
 
 function parseCustomFields(raw) {
   if (!raw) return null;
@@ -110,7 +110,7 @@ export default function Orders() {
           <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
             className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-violet-400">
             <option value="">All statuses</option>
-            {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+            {STATUS_FILTER_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
           <div className="ml-auto">
             <button onClick={handleExport} className="text-sm bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg px-4 py-1.5 cursor-pointer transition-colors">

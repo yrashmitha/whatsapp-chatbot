@@ -52,3 +52,6 @@ export const STATUS_COLORS = {
 };
 
 export const STATUS_OPTIONS = ['pending', 'started', 'delivered', 'done', 'cancelled'];
+
+// All statuses including legacy values — used in filter dropdowns so old orders remain filterable
+export const STATUS_FILTER_OPTIONS = ['pending', 'started', 'delivered', 'done', 'cancelled', 'payment_received', 'paid', 'complete'];

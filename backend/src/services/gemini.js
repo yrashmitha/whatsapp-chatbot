@@ -478,10 +478,27 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     .replace(/\[ORDER STATUS[^\]]*\]\s*/gi, '') // strip any echoed ORDER STATUS note wherever it appears
     .trim();
 
-  // If Gemini returned empty text (e.g. incomplete function call cycle), send a safe fallback
-  // But skip the fallback if images were sent — the image IS the reply
+  // If Gemini returned only thought parts or exited the function loop without text,
+  // send one extra nudge to get a plain-text answer before falling back to the error message.
   if (!botReply && productImagesToSend.length === 0) {
-    console.warn('[GEMINI] Empty reply after processing — using fallback');
+    console.warn('[GEMINI] Empty reply — nudging Gemini for plain text response');
+    try {
+      const nudge = await chatSession.sendMessage('Please provide your response as plain text now.');
+      const nudgeParts = nudge.response.candidates?.[0]?.content?.parts || [];
+      botReply = nudgeParts
+        .filter(p => !p.thought && typeof p.text === 'string')
+        .map(p => p.text)
+        .join('')
+        .trim();
+      if (!botReply) botReply = nudge.response.text?.() || '';
+      console.log(`[GEMINI] Nudge reply: "${botReply.substring(0, 80)}"`);
+    } catch (e) {
+      console.error('[GEMINI] Nudge failed:', e.message);
+    }
+  }
+
+  if (!botReply && productImagesToSend.length === 0) {
+    console.warn('[GEMINI] Still empty after nudge — using fallback message');
     botReply = client?.error_message || "Sorry, I didn't get that. Could you please try again? 🙏";
   }
 

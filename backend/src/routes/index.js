@@ -86,7 +86,6 @@ function mountRoutes(app) {
       req.path.startsWith('/admin') ||
       req.path.startsWith('/auth') ||
       req.path.startsWith('/webhook') ||
-      req.path.startsWith('/chat') ||
       req.path.startsWith('/legacy');
     if (isBackendRoute) return res.status(404).json({ error: 'Not found' });
     // Don't serve HTML for asset requests — they must exist as static files

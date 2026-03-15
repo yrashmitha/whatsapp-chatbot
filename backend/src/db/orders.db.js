@@ -104,64 +104,6 @@ async function updateOrderStatusById(orderId, status) {
 }
 
 /**
- * Update horoscope_received / receipt_received flags by order_id.
- *
- * @param {string}  orderId                        - Unique order ID
- * @param {Object}  flags
- * @param {boolean} [flags.horoscope_received]     - New horoscope flag value
- * @param {boolean} [flags.receipt_received]       - New receipt flag value
- * @returns {Promise<void>}
- */
-async function updateOrderFlagsById(orderId, flags) {
-  const sets = [], vals = [];
-  if (flags.horoscope_received !== undefined) {
-    sets.push(IS_PG ? `horoscope_received=$${sets.length+1}` : 'horoscope_received=?');
-    vals.push(flags.horoscope_received ? (IS_PG ? true : 1) : (IS_PG ? false : 0));
-  }
-  if (flags.receipt_received !== undefined) {
-    sets.push(IS_PG ? `receipt_received=$${sets.length+1}` : 'receipt_received=?');
-    vals.push(flags.receipt_received ? (IS_PG ? true : 1) : (IS_PG ? false : 0));
-  }
-  if (sets.length === 0) return;
-  vals.push(orderId);
-  if (IS_PG) {
-    await pool.query(`UPDATE orders SET ${sets.join(',')} WHERE order_id=$${vals.length}`, vals);
-  } else {
-    db.prepare(`UPDATE orders SET ${sets.join(',')} WHERE order_id=?`).run(...vals);
-  }
-}
-
-/**
- * Update horoscope_received / receipt_received flags on the most recent order
- * for a phone number.
- *
- * @param {string}  phoneNumber                    - E.164 customer phone number
- * @param {Object}  flags
- * @param {boolean} [flags.horoscope_received]     - New horoscope flag value
- * @param {boolean} [flags.receipt_received]       - New receipt flag value
- * @returns {Promise<void>}
- */
-async function updateOrderFlags(phoneNumber, flags) {
-  const sets  = [];
-  const vals  = [];
-  if (flags.horoscope_received !== undefined) { sets.push(IS_PG ? `horoscope_received=$${sets.length+1}` : 'horoscope_received=?'); vals.push(flags.horoscope_received ? (IS_PG ? true : 1) : (IS_PG ? false : 0)); }
-  if (flags.receipt_received   !== undefined) { sets.push(IS_PG ? `receipt_received=$${sets.length+1}`   : 'receipt_received=?');   vals.push(flags.receipt_received   ? (IS_PG ? true : 1) : (IS_PG ? false : 0)); }
-  if (sets.length === 0) return;
-  if (IS_PG) {
-    vals.push(phoneNumber);
-    await pool.query(
-      `UPDATE orders SET ${sets.join(',')} WHERE id=(SELECT id FROM orders WHERE phone_number=$${vals.length} ORDER BY created_at DESC LIMIT 1)`,
-      vals
-    );
-  } else {
-    vals.push(phoneNumber);
-    db.prepare(
-      `UPDATE orders SET ${sets.join(',')} WHERE id=(SELECT id FROM orders WHERE phone_number=? ORDER BY created_at DESC LIMIT 1)`
-    ).run(...vals);
-  }
-}
-
-/**
  * Save an AI-generated summary for an order.
  *
  * @param {string} orderId - Unique order ID
@@ -218,8 +160,6 @@ module.exports = {
   getLatestOrder,
   updateLatestOrderStatus,
   updateOrderStatusById,
-  updateOrderFlagsById,
-  updateOrderFlags,
   updateOrderAISummary,
   updateOrderCustomFields,
   countOrdersByYear,

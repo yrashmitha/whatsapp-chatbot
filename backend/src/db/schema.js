@@ -35,8 +35,6 @@ async function init() {
         order_id            TEXT UNIQUE NOT NULL,
         phone_number        TEXT NOT NULL REFERENCES customers(phone_number) ON DELETE CASCADE,
         status              TEXT NOT NULL DEFAULT 'pending',
-        horoscope_received  BOOLEAN NOT NULL DEFAULT FALSE,
-        receipt_received    BOOLEAN NOT NULL DEFAULT FALSE,
         custom_fields       JSONB,
         created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
@@ -48,13 +46,13 @@ async function init() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='messages' AND column_name='cost_usd') THEN
           ALTER TABLE messages ADD COLUMN cost_usd NUMERIC(12,8);
         END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='horoscope_received') THEN
-          ALTER TABLE orders ADD COLUMN horoscope_received BOOLEAN NOT NULL DEFAULT FALSE;
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='receipt_received') THEN
-          ALTER TABLE orders ADD COLUMN receipt_received BOOLEAN NOT NULL DEFAULT FALSE;
-        END IF;
       END $$;
+    `);
+
+    // ── Remove legacy pj-specific order columns ───────────────────────────────
+    await pool.query(`
+      ALTER TABLE orders DROP COLUMN IF EXISTS horoscope_received;
+      ALTER TABLE orders DROP COLUMN IF EXISTS receipt_received;
     `);
 
     // Migrate existing deployments: backfill missing customers, then add FK constraints
@@ -362,8 +360,6 @@ async function init() {
         order_id            TEXT UNIQUE NOT NULL,
         phone_number        TEXT NOT NULL REFERENCES customers(phone_number) ON DELETE CASCADE,
         status              TEXT NOT NULL DEFAULT 'pending',
-        horoscope_received  INTEGER NOT NULL DEFAULT 0,
-        receipt_received    INTEGER NOT NULL DEFAULT 0,
         custom_fields       TEXT,
         created_at          TEXT NOT NULL DEFAULT (datetime('now'))
       );
@@ -374,8 +370,7 @@ async function init() {
     try { db.exec(`ALTER TABLE messages ADD COLUMN media_url TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE messages ADD COLUMN wamid TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE messages ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
-    try { db.exec(`ALTER TABLE orders ADD COLUMN horoscope_received INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
-    try { db.exec(`ALTER TABLE orders ADD COLUMN receipt_received INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
+    // NOTE: SQLite cannot DROP columns — horoscope_received and receipt_received are ignored if present
     try { db.exec(`ALTER TABLE orders ADD COLUMN notes TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE orders ADD COLUMN ai_summary TEXT`); } catch (_) {}
 

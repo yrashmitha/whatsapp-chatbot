@@ -186,10 +186,6 @@
     }
     .order-card .order-id { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
     .order-card .order-detail { font-size: 12px; opacity: 0.85; }
-    .order-card .flag-row { display:flex; gap:6px; margin-top:6px; justify-content:center; flex-wrap:wrap; }
-    .flag-badge { font-size:11px; opacity:0.9; }
-    .btn-flag { font-size:10px; background:rgba(255,255,255,0.2); color:#fff; border:1px solid rgba(255,255,255,0.4); border-radius:6px; padding:2px 8px; cursor:pointer; }
-    .btn-flag:hover { background:rgba(255,255,255,0.35); }
     .order-card .status-row { display:flex; align-items:center; gap:6px; margin-top:8px; justify-content:center; }
     .order-card select.status-select { font-size:12px; border-radius:6px; border:none; padding:3px 6px; cursor:pointer; }
     .order-card .btn-status { font-size:11px; background:#25d366; color:#fff; border:none; border-radius:6px; padding:3px 10px; cursor:pointer; }
@@ -613,25 +609,9 @@
       const opts = statusOptions.map(s =>
         `<option value="${s}" ${s === o.status ? 'selected' : ''}>${s}</option>`
       ).join('');
-      const horo = o.horoscope_received ? '📜 Horoscope ✅' : '📜 Horoscope ❌';
-      const rcpt = o.receipt_received   ? '💳 Receipt ✅'   : '💳 Receipt ❌';
-      const horoBtn = o.horoscope_received
-        ? `<button class="btn-flag" onclick="toggleFlag('${o.order_id}','horoscope_received',false)">Unmark Horoscope</button>`
-        : `<button class="btn-flag" onclick="toggleFlag('${o.order_id}','horoscope_received',true)">Mark Horoscope ✅</button>`;
-      const rcptBtn = o.receipt_received
-        ? `<button class="btn-flag" onclick="toggleFlag('${o.order_id}','receipt_received',false)">Unmark Receipt</button>`
-        : `<button class="btn-flag" onclick="toggleFlag('${o.order_id}','receipt_received',true)">Mark Receipt ✅</button>`;
       return `
       <div class="order-card" id="card-${o.order_id}">
         <div class="order-id">✅ ${o.order_id}</div>
-        <div class="order-detail">
-          ${o.package || ''} · ${o.birth_date || ''} · ${o.birth_city || ''}
-        </div>
-        <div class="flag-row">
-          <span class="flag-badge">${horo}</span>
-          <span class="flag-badge">${rcpt}</span>
-        </div>
-        <div class="flag-row">${horoBtn}${rcptBtn}</div>
         <div class="status-row">
           <span class="status-badge status-${o.status}" id="sbadge-${o.order_id}">${o.status}</span>
           <select class="status-select" id="sel-${o.order_id}">${opts}</select>
@@ -719,19 +699,6 @@
     document.getElementById('fileInput').value = '';
     document.getElementById('imgPreview').style.display = 'none';
     document.getElementById('imgThumb').src = '';
-  }
-
-  async function toggleFlag(orderId, field, value) {
-    try {
-      await apiFetch(`/admin/order/${encodeURIComponent(orderId)}/flags`, {
-        method: 'PATCH',
-        body: JSON.stringify({ [field]: value }),
-      });
-      toast(`${field} → ${value ? '✅' : '❌'}`);
-      await selectCustomer(activePhone);
-    } catch (e) {
-      if (e.message !== 'Unauthorized') toast('Update failed: ' + e.message);
-    }
   }
 
   async function updateOrderStatus(orderId) {

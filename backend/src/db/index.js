@@ -16,7 +16,6 @@ const { upsertCustomer, getAllCustomers,
         setCustomerAiMode }                         = require('./customers.db');
 const { insertOrder, getOrdersByPhone, getLatestOrder,
         updateLatestOrderStatus, updateOrderStatusById,
-        updateOrderFlagsById, updateOrderFlags,
         updateOrderAISummary, updateOrderCustomFields,
         countOrdersByYear }                         = require('./orders.db');
 const { searchProducts, vectorSearchProducts,
@@ -54,8 +53,6 @@ module.exports = {
   getLatestOrder,
   updateLatestOrderStatus,
   updateOrderStatusById,
-  updateOrderFlagsById,
-  updateOrderFlags,
   updateOrderAISummary,
   updateOrderCustomFields,
   countOrdersByYear,

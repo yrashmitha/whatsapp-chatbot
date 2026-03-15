@@ -15,7 +15,6 @@ const {
   sendAdminMessage,
   deleteCustomer,
   deleteMessages,
-  updateOrderFlags,
   updateOrderStatus,
   proxyMedia,
   generateFollowup,
@@ -47,7 +46,6 @@ router.delete('/customer/:phone',              adminAuth, deleteCustomer);
 router.delete('/customer/:phone/messages',     adminAuth, deleteMessages);
 
 // Orders
-router.patch('/order/:orderId/flags',          adminAuth, updateOrderFlags);
 router.patch('/order/:orderId/status',         adminAuth, updateOrderStatus);
 
 // Media proxy

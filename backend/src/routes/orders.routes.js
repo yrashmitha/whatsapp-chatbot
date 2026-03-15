@@ -11,7 +11,6 @@ const {
   listOrders,
   exportOrders,
   updateStatus,
-  updateFlags,
   updateFields,
   updateNotes,
 } = require('../controllers/orders.controller');
@@ -19,7 +18,6 @@ const {
 router.get('/',              jwtAuth, listOrders);
 router.get('/export',        jwtAuth, exportOrders);
 router.patch('/:id/status',  jwtAuth, updateStatus);
-router.patch('/:id/flags',   jwtAuth, updateFlags);
 router.patch('/:id/fields',  jwtAuth, updateFields);
 router.patch('/:id/notes',   jwtAuth, updateNotes);
 

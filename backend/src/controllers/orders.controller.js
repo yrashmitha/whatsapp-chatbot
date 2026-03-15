@@ -58,13 +58,12 @@ async function exportOrders(req, res) {
     const where = clientId ? 'WHERE o.client_id=$1' : '';
     const params = clientId ? [clientId] : [];
     const r = await db.pgQuery(
-      `SELECT o.order_id, o.phone_number, cu.name AS customer_name, o.package, o.status,
-              o.birth_date, o.birth_time, o.birth_city, o.problems,
-              o.horoscope_received, o.receipt_received, o.created_at, o.client_id
+      `SELECT o.order_id, o.phone_number, cu.name AS customer_name, o.status,
+              o.custom_fields, o.notes, o.created_at, o.client_id
        FROM orders o LEFT JOIN customers cu ON cu.phone_number=o.phone_number
        ${where} ORDER BY o.created_at DESC`, params
     );
-    const cols = ['order_id','phone_number','customer_name','package','status','birth_date','birth_time','birth_city','problems','horoscope_received','receipt_received','created_at','client_id'];
+    const cols = ['order_id','phone_number','customer_name','status','custom_fields','notes','created_at','client_id'];
     const csv  = [cols.join(','), ...r.rows.map(row =>
       cols.map(c => `"${String(row[c] ?? '').replace(/"/g, '""')}"`).join(',')
     )].join('\n');
@@ -82,28 +81,12 @@ async function exportOrders(req, res) {
  * @returns {Promise<void>}
  */
 async function updateStatus(req, res) {
+  const ALLOWED = ['pending','started','delivered','done','cancelled','payment_received','paid','complete'];
+  const { status } = req.body;
+  if (!status || !ALLOWED.includes(status))
+    return res.status(400).json({ error: `Invalid status. Allowed: ${ALLOWED.join(', ')}` });
   try {
-    await db.pgQuery(`UPDATE orders SET status=$1 WHERE order_id=$2`, [req.body.status, req.params.id]);
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-}
-
-/**
- * PATCH /api/orders/:id/flags — update horoscope_received / receipt_received flags.
- *
- * @param {import('express').Request}  req
- * @param {import('express').Response} res
- * @returns {Promise<void>}
- */
-async function updateFlags(req, res) {
-  const { horoscope_received, receipt_received } = req.body;
-  try {
-    const sets = [], params = [];
-    if (horoscope_received !== undefined) { params.push(horoscope_received); sets.push(`horoscope_received=$${params.length}`); }
-    if (receipt_received   !== undefined) { params.push(receipt_received);   sets.push(`receipt_received=$${params.length}`); }
-    if (!sets.length) return res.status(400).json({ error: 'Nothing to update' });
-    params.push(req.params.id);
-    await db.pgQuery(`UPDATE orders SET ${sets.join(',')} WHERE order_id=$${params.length}`, params);
+    await db.pgQuery(`UPDATE orders SET status=$1 WHERE order_id=$2`, [status, req.params.id]);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
@@ -140,4 +123,4 @@ async function updateNotes(req, res) {
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 
-module.exports = { listOrders, exportOrders, updateStatus, updateFlags, updateFields, updateNotes };
+module.exports = { listOrders, exportOrders, updateStatus, updateFields, updateNotes };

@@ -186,26 +186,6 @@ async function deleteMessages(req, res) {
 }
 
 /**
- * PATCH /admin/order/:orderId/flags — toggle horoscope_received / receipt_received flags.
- *
- * @param {import('express').Request}  req
- * @param {import('express').Response} res
- * @returns {Promise<void>}
- */
-async function updateOrderFlags(req, res) {
-  const { orderId } = req.params;
-  const { horoscope_received, receipt_received } = req.body;
-  console.log(`[ADMIN] PATCH /admin/order/${orderId}/flags`, req.body);
-  try {
-    await db.updateOrderFlagsById(orderId, { horoscope_received, receipt_received });
-    res.json({ ok: true });
-  } catch (err) {
-    console.error(`[ADMIN] flags update error:`, err.message);
-    res.status(500).json({ error: err.message });
-  }
-}
-
-/**
  * PATCH /admin/order/:orderId/status — update order status.
  *
  * @param {import('express').Request}  req
@@ -672,7 +652,7 @@ async function bulkProducts(req, res) {
 
 module.exports = {
   listTemplates, listCustomers, getMessages, sendAdminMessage,
-  deleteCustomer, deleteMessages, updateOrderFlags, updateOrderStatus,
+  deleteCustomer, deleteMessages, updateOrderStatus,
   proxyMedia, generateFollowup, getBuiltinPrompt,
   listClients, getClient, uploadImage, createClient, updateClient,
   listProducts, createProduct, updateProduct, deleteProduct,

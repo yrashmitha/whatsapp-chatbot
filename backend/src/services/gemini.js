@@ -2,7 +2,7 @@
  * @module services/gemini
  * @description Gemini AI service layer.
  * Manages model instances, chat sessions, message handling (including
- * function-calling loops, order markers, payment markers), and cost tracking.
+ * function-calling loops, order markers), and cost tracking.
  */
 
 'use strict';
@@ -47,18 +47,13 @@ const PRICE_OUTPUT = 0.30  / 1_000_000;
  */
 function calcCost(i, o) { return i * PRICE_INPUT + o * PRICE_OUTPUT; }
 
-// ─── Order / payment marker definitions ──────────────────────────────────────
+// ─── Order marker definitions ─────────────────────────────────────────────────
 /** @type {RegExp} Matches [[ORDER_COMPLETE:{...}]] markers */
 const ORDER_MARKER_REGEX   = /\[\[ORDER_COMPLETE:([\s\S]*?)\]\]/;
 /** @type {RegExp} Matches [[ORDER_UPDATE:{...}]] markers */
 const ORDER_UPDATE_REGEX   = /\[\[ORDER_UPDATE:([\s\S]*?)\]\]/;
 /** @type {RegExp} Matches [[UPDATE_SUMMARY:...]] markers */
 const UPDATE_SUMMARY_REGEX = /\[\[UPDATE_SUMMARY:([\s\S]*?)\]\]/;
-/** @type {string} Payment check marker literal */
-const PAYMENT_MARKER      = '[[PAYMENT_CHECK]]';
-/** @type {string} Horoscope received marker literal */
-const HOROSCOPE_MARKER    = '[[HOROSCOPE_RECEIVED]]';
-
 /**
  * Generate a unique order ID in the format <PREFIX><YEAR>-<NNNN>.
  *
@@ -90,7 +85,7 @@ async function buildOrderStatusNote(phoneNumber) {
       ? (typeof o.custom_fields === 'string' ? (() => { try { return JSON.parse(o.custom_fields); } catch { return {}; } })() : o.custom_fields)
       : {};
     const cfStr = Object.entries(cf).map(([k, v]) => `${k}: ${v}`).join(', ');
-    return `[ORDER ${o.order_id}: status=${o.status}, horoscope_received=${!!o.horoscope_received}, receipt_received=${!!o.receipt_received}, date=${String(o.created_at).split('T')[0]}${cfStr ? ', ' + cfStr : ''}${o.notes ? ', notes: ' + o.notes : ''}]`;
+    return `[ORDER ${o.order_id}: status=${o.status}, date=${String(o.created_at).split('T')[0]}${cfStr ? ', ' + cfStr : ''}${o.notes ? ', notes: ' + o.notes : ''}]`;
   });
   const note = lines.join('\n');
   const suffix = all.length > 5 ? `\n[NOTE: Showing last 5 orders only. Customer has ${all.length} orders total.]` : '';
@@ -116,7 +111,7 @@ async function buildChatSession(phoneNumber, client) {
       .map(o => {
         const cf = o.custom_fields ? (typeof o.custom_fields === 'string' ? (() => { try { return JSON.parse(o.custom_fields); } catch { return {}; } })() : o.custom_fields) : {};
         const cfStr = Object.entries(cf).map(([k, v]) => `${k}: ${v}`).join(', ');
-        return `Order ID: ${o.order_id} | Status: ${o.status} | horoscope_received: ${!!o.horoscope_received} | receipt_received: ${!!o.receipt_received} | Date: ${String(o.created_at).split('T')[0]}${cfStr ? ' | ' + cfStr : ''}${o.notes ? ' | Notes: ' + o.notes : ''}`;
+        return `Order ID: ${o.order_id} | Status: ${o.status} | Date: ${String(o.created_at).split('T')[0]}${cfStr ? ' | ' + cfStr : ''}${o.notes ? ' | Notes: ' + o.notes : ''}`;
       })
       .join('\n');
 
@@ -576,28 +571,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     } catch (e) { console.error('[ORDER] UPDATE_SUMMARY failed:', e.message); }
   }
 
-  if (botReply.includes(HOROSCOPE_MARKER)) {
-    botReply = botReply.replace(HOROSCOPE_MARKER, '').replace(/\n{3,}/g, '\n\n').trim();
-    try {
-      await db.updateOrderFlags(phoneNumber, { horoscope_received: true });
-      console.log(`[HOROSCOPE] horoscope_received=true for ${phoneNumber}`);
-    } catch (err) {
-      console.error(`[HOROSCOPE] Failed to update flag:`, err.message);
-    }
-  }
-
   let paymentReceived = false;
-  if (botReply.includes(PAYMENT_MARKER)) {
-    botReply = botReply.replace(PAYMENT_MARKER, '').replace(/\n{3,}/g, '\n\n').trim();
-    try {
-      await db.updateLatestOrderStatus(phoneNumber, 'payment_received');
-      await db.updateOrderFlags(phoneNumber, { receipt_received: true });
-      console.log(`[PAYMENT] Status=payment_received, receipt_received=true for ${phoneNumber}`);
-    } catch (err) {
-      console.error(`[PAYMENT] Failed to update order:`, err.message);
-    }
-    paymentReceived = true;
-  }
 
   // Plugin hook: process custom markers
   const _pluginForMarkers = pluginLoader.loadPlugin(client?.id, client?.plugin_enabled);
@@ -642,6 +616,4 @@ module.exports = {
   ORDER_MARKER_REGEX,
   ORDER_UPDATE_REGEX,
   UPDATE_SUMMARY_REGEX,
-  PAYMENT_MARKER,
-  HOROSCOPE_MARKER,
 };

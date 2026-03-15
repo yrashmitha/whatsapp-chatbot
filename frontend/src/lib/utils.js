@@ -51,7 +51,7 @@ export const STATUS_COLORS = {
   complete:         'bg-emerald-100 text-emerald-800',
 };
 
-export const STATUS_OPTIONS = ['pending', 'started', 'delivered', 'done', 'cancelled'];
+export const STATUS_OPTIONS = ['pending', 'started', 'delivered', 'done', 'cancelled', 'payment_received'];
 
 // All statuses including legacy values — used in filter dropdowns so old orders remain filterable
 export const STATUS_FILTER_OPTIONS = ['pending', 'started', 'delivered', 'done', 'cancelled', 'payment_received', 'paid', 'complete'];

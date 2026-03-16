@@ -214,7 +214,7 @@ async function downloadHoroscope(req, res) {
   const { orderId } = req.params;
   try {
     const r = await db.pgQuery(
-      'SELECT custom_fields, horoscope_data FROM orders WHERE order_id=$1', [orderId]
+      'SELECT phone_number, custom_fields, horoscope_data FROM orders WHERE order_id=$1', [orderId]
     );
     if (!r.rows.length) return res.status(404).json({ error: 'Order not found' });
     const hd = (typeof r.rows[0].horoscope_data === 'string')
@@ -237,7 +237,10 @@ async function downloadHoroscope(req, res) {
     });
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    res.setHeader('Content-Disposition', `attachment; filename="horoscope-${orderId}.docx"`);
+    const phone    = (r.rows[0].phone_number || orderId).replace(/\s+/g, '');
+    const birthday = (cf.birth_date || '').replace(/\s+/g, '-').replace(/[^\w\-]/g, '').slice(0, 20) || 'birthday';
+    const filename = `${phone}-${birthday}.docx`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buffer);
   } catch (e) { res.status(500).json({ error: e.message }); }
 }

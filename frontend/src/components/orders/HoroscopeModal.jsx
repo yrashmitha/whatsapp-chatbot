@@ -117,13 +117,17 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
   const [editingQIdx, setEditingQIdx] = useState(null);
   const [editingQText, setEditingQText] = useState('');
   const newQuestionRef = useRef(null);
+  const editingInputRef = useRef(null);
 
   const addQuestion = () => {
-    const q = newQuestion.trim();
+    const q = (newQuestionRef.current?.value ?? newQuestion).trim();
     if (!q) return;
     setSpecialQuestions(prev => [...prev, q]);
     setNewQuestion('');
-    if (newQuestionRef.current) newQuestionRef.current.style.height = 'auto';
+    if (newQuestionRef.current) {
+      newQuestionRef.current.value = '';
+      newQuestionRef.current.style.height = 'auto';
+    }
   };
 
   const removeQuestion = (i) => {
@@ -134,7 +138,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
   const startEdit = (i) => { setEditingQIdx(i); setEditingQText(specialQuestions[i]); };
 
   const saveEdit = (i) => {
-    const t = editingQText.trim();
+    const t = (editingInputRef.current?.value ?? editingQText).trim();
     if (t) setSpecialQuestions(prev => prev.map((q, idx) => idx === i ? t : q));
     setEditingQIdx(null);
   };
@@ -317,6 +321,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
                   <li key={i} className="flex items-start gap-2 bg-slate-50 rounded-lg px-3 py-1.5 text-xs text-slate-700">
                     {editingQIdx === i ? (
                       <input
+                        ref={editingInputRef}
                         autoFocus
                         className="flex-1 text-xs border border-violet-300 rounded px-1 py-0.5 outline-none bg-white"
                         value={editingQText}

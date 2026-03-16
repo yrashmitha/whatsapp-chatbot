@@ -422,11 +422,10 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
   const geminiModel = genAI.getGenerativeModel({
     model: 'gemini-2.5-flash',
     generationConfig: { temperature: 0.4, topP: 0.8, topK: 40 },
-  });
-
-  const chat = geminiModel.startChat({
     systemInstruction: systemPrompt + '\n\nමෙම කේන්ද්‍ර දත්ත සම්පූර්ණ වාර්තාව සඳහා පදනම වේ:\n\n' + birthDataForAi,
   });
+
+  const chat = geminiModel.startChat({});
 
   // 7. Determine sections
   const isVip = String(effectiveFields.product || '').toUpperCase().includes('VIP');
@@ -447,10 +446,9 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
     const specialModel = genAI.getGenerativeModel({
       model: 'gemini-2.5-flash',
       generationConfig: { temperature: 0.4, topP: 0.8, topK: 40 },
-    });
-    const specialChat = specialModel.startChat({
       systemInstruction: systemPrompt + '\n\n' + birthDataForAi,
     });
+    const specialChat = specialModel.startChat({});
     for (const question of questions) {
       console.log('[HOROSCOPE] Special question:', question);
       const qResult = await specialChat.sendMessage(

@@ -321,6 +321,9 @@ async function init() {
         PRIMARY KEY (client_id, addon_id)
       );
     `);
+    // ── Horoscope reading data ────────────────────────────────────────────────
+    await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS horoscope_data JSONB`);
+
     // ── Plugin config + customer data ─────────────────────────────────────────
     await pool.query(`
       CREATE TABLE IF NOT EXISTS plugin_configs (
@@ -475,6 +478,9 @@ async function init() {
         created_at  TEXT NOT NULL DEFAULT (datetime('now'))
       );
     `);
+    // ── Horoscope reading data (SQLite) ──────────────────────────────────────
+    try { db.exec(`ALTER TABLE orders ADD COLUMN horoscope_data TEXT`); } catch (_) {}
+
     // ── Plugin config + customer data (SQLite) ────────────────────────────────
     db.exec(`
       CREATE TABLE IF NOT EXISTS plugin_configs (

@@ -10,6 +10,8 @@ import api from '../lib/api';
 import { formatDateTime, STATUS_COLORS, STATUS_OPTIONS, STATUS_FILTER_OPTIONS } from '../lib/utils';
 import ChatThread from '../components/chat/ChatThread';
 import CreateOrderDrawer from '../components/chat/CreateOrderDrawer';
+import HoroscopeModal from '../components/orders/HoroscopeModal';
+import HoroscopeEditorDrawer from '../components/orders/HoroscopeEditorDrawer';
 
 function parseCustomFields(raw) {
   if (!raw) return null;
@@ -32,6 +34,8 @@ export default function Orders() {
   const [productPopup, setProductPopup] = useState(null); // product object or 'loading'
   const [drawerCustomer, setDrawerCustomer] = useState(null); // { phone, name }
   const [showCreate, setShowCreate] = useState(false);
+  const [horoscopeOrder, setHoroscopeOrder] = useState(null);   // order object for generate modal
+  const [editorOrder, setEditorOrder]       = useState(null);   // order object for editor drawer
   const toast = useToast();
   const qc = useQueryClient();
 
@@ -46,13 +50,27 @@ export default function Orders() {
     ...(clientId && { client_id: clientId }),
   };
 
+  const [hasGenerating, setHasGenerating] = useState(false);
+
   const { data, isLoading } = useQuery({
     queryKey: ['orders', params],
     queryFn: () => api.get('/orders', { params }).then(r => r.data),
     keepPreviousData: true,
+    refetchInterval: hasGenerating ? 8000 : false,
   });
 
   const orders = data?.orders || [];
+
+  // Update hasGenerating whenever orders data changes
+  React.useEffect(() => {
+    const anyGenerating = orders.some(o => {
+      const hd = o.horoscope_data && typeof o.horoscope_data === 'string'
+        ? (() => { try { return JSON.parse(o.horoscope_data); } catch { return {}; } })()
+        : (o.horoscope_data || {});
+      return hd.generating === true;
+    });
+    setHasGenerating(anyGenerating);
+  }, [orders]);
 
   const updateStatus = useMutation({
     mutationFn: ({ orderId, status }) => api.patch(`/orders/${orderId}/status`, { status }),
@@ -160,6 +178,12 @@ export default function Orders() {
                   const hasDetails = cf && Object.keys(cf).length > 0;
                   const isExpanded = expandedOrder === o.id;
                   const hasNotes = !!o.notes;
+                  const hd = o.horoscope_data && typeof o.horoscope_data === 'string'
+                    ? (() => { try { return JSON.parse(o.horoscope_data); } catch { return {}; } })()
+                    : (o.horoscope_data || null);
+                  const isGenerating = hd?.generating === true;
+                  const horoscopeError = hd?.error || null;
+                  const horoscopeDone = hd?.sections && Object.keys(hd.sections).length > 0;
 
                   return (
                     <React.Fragment key={o.id}>
@@ -185,12 +209,46 @@ export default function Orders() {
                         </td>
                         <td className="py-2.5 pr-4 text-slate-500 text-xs">{formatDateTime(o.created_at)}</td>
                         <td className="py-2.5 pr-4">
-                          <button
-                            onClick={() => setExpandedOrder(isExpanded ? null : o.id)}
-                            className={`text-xs underline cursor-pointer bg-transparent border-0 ${hasDetails || hasNotes ? 'text-violet-600 hover:text-violet-800' : 'text-slate-400 hover:text-slate-600'}`}
-                          >
-                            {isExpanded ? 'Hide' : (hasDetails || hasNotes ? 'View' : 'Notes')}
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => setExpandedOrder(isExpanded ? null : o.id)}
+                              className={`text-xs underline cursor-pointer bg-transparent border-0 ${hasDetails || hasNotes ? 'text-violet-600 hover:text-violet-800' : 'text-slate-400 hover:text-slate-600'}`}
+                            >
+                              {isExpanded ? 'Hide' : (hasDetails || hasNotes ? 'View' : 'Notes')}
+                            </button>
+                            {o.status === 'payment_received' && (
+                              <>
+                                {isGenerating ? (
+                                  <span className="flex items-center gap-1 text-xs text-violet-600 font-medium">
+                                    <span className="w-3 h-3 border-2 border-violet-300 border-t-violet-600 rounded-full animate-spin inline-block" />
+                                    Generating…
+                                  </span>
+                                ) : horoscopeError ? (
+                                  <>
+                                    <span title={horoscopeError} className="text-xs px-1.5 py-0.5 rounded border-0 bg-red-100 text-red-600 cursor-default">⚠ Error</span>
+                                    <button
+                                      onClick={() => setHoroscopeOrder(o)}
+                                      title="Retry generation"
+                                      className="text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 bg-violet-100 text-violet-700 hover:bg-violet-200"
+                                    >🔮</button>
+                                  </>
+                                ) : (
+                                  <button
+                                    onClick={() => setHoroscopeOrder(o)}
+                                    title="Generate horoscope reading"
+                                    className="text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 bg-violet-100 text-violet-700 hover:bg-violet-200"
+                                  >🔮</button>
+                                )}
+                                {horoscopeDone && (
+                                  <button
+                                    onClick={() => setEditorOrder(o)}
+                                    title="View/edit horoscope"
+                                    className="text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
+                                  >✏</button>
+                                )}
+                              </>
+                            )}
+                          </div>
                         </td>
                         {superAdmin && <td className="py-2.5 pr-4 text-violet-500 text-xs">{o.client_id}</td>}
                       </tr>
@@ -366,6 +424,20 @@ export default function Orders() {
         open={showCreate}
         onClose={() => setShowCreate(false)}
         clientId={clientId}
+      />
+      {horoscopeOrder && (
+        <HoroscopeModal
+          order={horoscopeOrder}
+          clientId={clientId}
+          onClose={() => setHoroscopeOrder(null)}
+          onGenerated={() => qc.invalidateQueries({ queryKey: ['orders'] })}
+        />
+      )}
+      <HoroscopeEditorDrawer
+        order={editorOrder}
+        clientId={clientId}
+        open={!!editorOrder}
+        onClose={() => setEditorOrder(null)}
       />
       <Drawer
         open={!!drawerCustomer}

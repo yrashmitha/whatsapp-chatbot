@@ -1,0 +1,483 @@
+'use strict';
+
+/**
+ * @module services/horoscope
+ * @description Full Vedic horoscope reading generation service.
+ * Calls freeastroapi for chart data, then calls Gemini in a multi-turn
+ * chat session for 10 sections, and generates a Word document.
+ */
+
+const axios  = require('axios');
+const db     = require('../db');
+const { genAI } = require('./gemini');
+const {
+  Document, Packer, Paragraph, TextRun, AlignmentType, PageBreak,
+  HeadingLevel, Footer, PageNumber, NumberFormat, Header,
+} = require('docx');
+
+// ─── Sinhala parsers (shared with AstroChartModal on the FE) ─────────────────
+
+const SINHALA_MONTHS = {
+  'ජනවාරි': 1, 'පෙබරවාරි': 2, 'මාර්තු': 3, 'අප්‍රේල්': 4,
+  'මැයි': 5,   'ජූනි': 6,     'ජූලි': 7,   'අගෝස්තු': 8,
+  'සැප්තැම්බර්': 9, 'ඔක්තෝබර්': 10, 'නොවැම්බර්': 11, 'දෙසැම්බර්': 12,
+};
+
+function parseSinhalaDate(raw) {
+  if (!raw) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const [y, m, d] = raw.split('-').map(Number);
+    return { year: y, month: m, day: d };
+  }
+  const parts = raw.trim().split(/\s+/);
+  if (parts.length === 3) {
+    const year  = parseInt(parts[0], 10);
+    const month = SINHALA_MONTHS[parts[1]] || parseInt(parts[1], 10);
+    const day   = parseInt(parts[2], 10);
+    if (!isNaN(year) && !isNaN(month) && !isNaN(day)) return { year, month, day };
+  }
+  return null;
+}
+
+function parseSinhalaTime(raw) {
+  if (!raw) return null;
+  if (/^\d{1,2}:\d{2}$/.test(raw)) {
+    const [h, m] = raw.split(':').map(Number);
+    return { hour: h, minute: m };
+  }
+  const isPM = raw.includes('රාත්‍රී') || raw.includes('රාත්රී') ||
+               raw.includes('දහවල්') ||
+               (raw.includes('ප.ව') && !raw.includes('පෙ.ව')) ||
+               raw.includes('සවස');
+  const timePart = raw.replace(/[^\d.]/g, '').trim();
+  const [h, m] = timePart.split('.').map(Number);
+  if (isNaN(h) || isNaN(m)) return null;
+  let hour = h;
+  if (isPM && hour < 12) hour += 12;
+  if (!isPM && hour === 12) hour = 0;
+  return { hour, minute: m };
+}
+
+// ─── 10 sections ─────────────────────────────────────────────────────────────
+
+const SECTIONS = [
+  'පෞරුෂය',
+  'අධ්‍යාපනය',
+  'වෘත්තීය ජීවිතය සහ ආර්ථික ශක්තිය',
+  'ප්‍රේමය සහ විවාහ ජීවිතය',
+  'දේපළ, භූමිය, නිවාස සහ වාහන භාග්‍යය',
+  'ශාරීරික සෞඛ්‍යය, මාරක අපල, හදිසි අනතුරු',
+  'දරු පල',
+  'මෙතෙක් දැක්වූ කරුණු අනුව ජීවන ගමනේ සමස්ත සාරාංශය',
+  'වර්තමාන දශාව අනුව පලාපල',
+  'ජීවිතයේ අභියෝග ජයගැනීම සඳහා වූ පොදු ශාස්ත්‍රීය සහ බෞද්ධ පිළියම්',
+];
+
+const VIP_SECTION = 'විශේෂ VIP උපදේශනය: ග්‍රහ අපල සඳහා වන සුවිශේෂී ස්තෝත්‍රය සහ වත්පිළිවෙත්';
+
+const SECTION_GUIDES = {
+  'පෞරුෂය': 'ජන්මියාගේ සහජ හැකියාවන්, සැඟවුණු දක්ෂතා සහ දුර්වලතා විස්තර කරන්න. සමාජය ඔහුව දකින ආකාරය සහ ඔහුගේ සැබෑ ඇතුළාන්තය අතර ඇති වෙනස, කෝපය පාලනය කරගන්නා ආකාරය, සහ අන් අයව පහසුවෙන් විශ්වාස කිරීමේ පුරුද්දක් ඇත්නම් ඒ ගැන ගැඹුරින් පවසන්න.',
+  'අධ්‍යාපනය': 'ධාරණ ශක්තිය, ඉගෙනීමට ඇති උනන්දුව, තරග විභාග වලින් ජය ලැබීමේ හැකියාව ගැන සඳහන් කරන්න. අධ්‍යාපනයට බාධා ඇතිවන කාල සීමාවන්, ගැළපෙනම විෂය ධාරාවන් සහ උසස් අධ්‍යාපනයට හෝ විදේශ අධ්‍යාපනයට ඇති වාසනාව ගැන පැහැදිලි කරන්න.',
+  'වෘත්තීය ජීවිතය සහ ආර්ථික ශක්තිය': 'වඩාත්ම සාර්ථක විය හැකි වෘත්තීය ක්ෂේත්‍ර, අනුන් යටතේ කරන රැකියාවක් ද නැතිනම් ස්වයං රැකියාවක්/ව්‍යාපාරයක් ද වඩාත් සුදුසු යන්න සෘජුව කියන්න. රැකියා ස්ථානයේ ඇතිවිය හැකි රහස් සතුරු කරදර, ඊර්ෂ්‍යාවන්, විදෙස් රැකියා හෝ විදේශගත වීමේ වාසනාව, ධනය ඉපයීමේ හැකියාව, මුදල් ඉතිරි නොවන ස්වභාවයක් හෝ ණය තුරුස් වීමේ අවදානමක් ඇත්නම් ඒ ගැන පැහැදිලිව පාරිභෝගිකයාව දැනුවත් කරන්න.',
+  'ප්‍රේමය සහ විවාහ ජීවිතය': 'විවාහය ප්‍රමාද වේද නැද්ද යන්න, සහකරුගේ හෝ සහකාරියගේ ස්වභාවය සහ ගතිගුණ ගැන පවසන්න. ප්‍රේම සබඳතා බිඳවැටීමේ අවදානම්, විවාහයෙන් පසු ජීවිතය, පවුල් පසුබිම් ගැටලු සහ අදාළ ග්‍රහ දෝෂ (ඇත්නම් පමණක් බිය නොගන්වා) ගැන විස්තර කරන්න.',
+  'දේපළ, භූමිය, නිවාස සහ වාහන භාග්‍යය': 'ස්වකීය දහදිය මහන්සියෙන් ගෙවල් දොරවල් සෑදීමේ හෝ වාහන මිලදී ගැනීමේ භාග්‍යය ගැන පවසන්න. පාරම්පරික උරුමයන් ලැබේද යන්න සහ දේපළ සම්බන්ධයෙන් පවුලේ අය සමඟ නඩුහබ හෝ බාධා ඇතිවීමේ අවදානමක් ඇත්නම් ඒ ගැන පවසන්න.',
+  'ශාරීරික සෞඛ්‍යය, මාරක අපල, හදිසි අනතුරු': 'පෙළඹිය හැකි ලෙඩ රෝග (උදා: ආමාශ, ස්නායු, අස්ථි සම්බන්ධ රෝග), මානසික පීඩනයන්, සහ හදිසි අනතුරු අවදානම් ගැන කල්තියා අනතුරු අඟවන්න. බිය ගැන්වීමකින් තොරව මනුෂ්‍යයෙකු සේ ජීවිත කාලය පුරාම පරිස්සම් විය යුතු සෞඛ්‍ය පුරුදු ගැන උපදෙස් දෙන්න.',
+  'දරු පල': 'දරු පල ප්‍රමාදවීම් (ඇත්නම් පමණක්) ඉතා සංවේදීව ඉඟි කරන්න. දරුවන්ගේ අනාගත සාර්ථකත්වය, දරුවන්ගෙන් දෙමව්පියන්ට ලැබෙන සතුට සහ දරුවන්ගේ සාමාන්‍ය ස්වභාවය ගැන විස්තර කරන්න.',
+  'මෙතෙක් දැක්වූ කරුණු අනුව ජීවන ගමනේ සමස්ත සාරාංශය': 'ඉහත සියලු කරුණු කැටි කර, විදේශයක ස්ථිර පදිංචියට (PR) ඇති වාසනාව ඇතුළුව, ජීවිතයේ සාර්ථකම සහ ධනය ගලාගෙන එන ස්වර්ණමය කාල සීමාවන් මෙන්ම වඩාත්ම පරිස්සම් විය යුතු අඳුරු කාල සීමාවන් පෙන්වා දෙමින් ජීවන ගමනේ සමස්ත සාරාංශයක් ලබා දෙන්න.',
+  'වර්තමාන දශාව අනුව පලාපල': 'දැනට ගතවන මහ දශාව සහ අන්තර් දශාව අනුව, මේ මොහොතේ (වර්තමාන වර්ෂයේ) සහ ඉදිරි වසර කිහිපය තුළ අපේක්ෂා කළ හැකි සුවිශේෂී වෙනස්කම් මොනවාද යන්න සහ මේ කාලයේදී විශේෂයෙන් පරිස්සම් විය යුතු දේවල් ගැන සෘජු උපදෙස් දෙන්න.',
+  'ජීවිතයේ අභියෝග ජයගැනීම සඳහා වූ පොදු ශාස්ත්‍රීය සහ බෞද්ධ පිළියම්': 'මිථ්‍යා සහ අධික වියදම් යන ශාන්තිකර්ම බැහැර කර, මෙම කේන්ද්‍රයට ආවේණික වූ ප්‍රධානතම ග්‍රහ දෝෂ (අපල) සඳහා නිවසේදීම කළ හැකි ප්‍රායෝගික බෞද්ධ වත්පිළිවෙත්, බෝධි පූජා ක්‍රම, දානමාන සහ ජීවන රටාවේ වෙනස් කරගත යුතු පුරුදු පෙළගස්වන්න.',
+};
+
+const FIXED_INSTRUCTIONS = `කරුණාකර පහත උපදෙස් දැඩිව පිළිපදින්න:
+1. කතාවක් මෙන් ලියන්න (Narrative Flow): 'ලග්න කේන්ද්‍රය අනුව', 'නවාංශකය අනුව', 'සුබ පල', 'අසුබ පල' ලෙස දැඩි මාතෘකා යටතේ කරුණු නොබෙදන්න. ඒ වෙනුවට එම සියලු දත්ත එකට මුසු කර, කියවීමට පහසු, ගලාගෙන යන ඡේද කිහිපයක් ලෙස ගැඹුරු විග්‍රහයක් කරන්න. කේන්ද්‍රයේ ඇති සුබ පල මෙන්ම අසුබ පල (අදාළ මාතෘකාවට අදාල ඒවා පමණක්) කිසිවක් වසන් නොකර සෘජුව සහ පැහැදිලිව සඳහන් කරන්න
+2. කිසිදු ශාන්තිකර්මයක් හෝ පිළියමක් මෙහි ඇතුළත් නොකරන්න (ඒවා වෙනම කොටසකින් ලබා දෙනු ඇත). මෙහිදී කළ යුත්තේ ශාස්ත්‍රීය විග්‍රහය පමණි.
+3. සෘජුවම කරුණට පිවිසෙන්න. හැඳින්වීම් අනවශ්‍යයි.
+4. අතිශය වැදගත්: මීට පෙර අංශ (Sections) විස්තර කිරීමේදී ඔබ භාවිතා කළ වාක්‍ය, වාක්‍ය ඛණ්ඩ හෝ අදහස් ඒ ආකාරයෙන්ම නැවත භාවිතා කිරීමෙන් සම්පූර්ණයෙන්ම වළකින්න. අදාළ මාතෘකාවට පමණක් සුවිශේෂී වූ නව කරුණු පමණක් ඉදිරිපත් කරන්න.
+5. අසුබ පල සඟවන්න එපා, නමුත් මනුෂ්‍යවාදීව පවසන්න (Honest but Empathetic): කේන්ද්‍රයේ පාප, නීච, අස්ත ග්‍රහයන් හෝ 6, 8, 12 ස්ථානවල බලපෑම් ඇත්නම්, එයින් සිදුවිය හැකි විවාහ බාධා, ලෙඩ රෝග, ධන හානි හෝ රැකියා ගැටලු වැනි අසුබ පල අනිවාර්යයෙන්ම පැහැදිලිව සඳහන් කරන්න (අදාළ මාතෘකාවට අදාල ඒවා පමණක්). ඒවා කිසිසේත් වසන් නොකරන්න. **නමුත්**, එම අසුබ පල පැවසූ වහාම, ජන්මියාගේ හිත නොකැඩෙන පරිදි කේන්ද්‍රයේ ඇති වෙනත් සුබ ග්‍රහ බලයන් හෝ ජන්මියාගේ සහජ වීර්යය පෙන්වා දී, 'මෙම අභියෝග සහ පෙර කර්ම බාධක ඔබේ නොපසුබට උත්සාහයෙන්, බුද්ධියෙන් සහ ඉවසීමෙන් සාර්ථකව මඟහරවා ගත හැකියි' යනුවෙන් සිත සනසන සහ ධෛර්යවත් කරන වචන අනිවාර්යයෙන් භාවිතා කරන්න.`;
+
+function buildSectionPrompt(sec) {
+  const guide = SECTION_GUIDES[sec] || '';
+  const specificPromptText = guide
+    ? `**මෙම අංශය සඳහා අනිවාර්යයෙන්ම ඇතුළත් කළ යුතු කරුණු:** ${guide}\n`
+    : '';
+
+  let limitText;
+  if (sec.includes('සාරාංශය')) {
+    limitText = 'වචන 400කට වඩා අඩු, ඉතා සංක්ෂිප්ත සාරාංශයක් ලබා දෙන්න. කිසිදු පිළියමක් මෙහි ඇතුළත් නොකරන්න.';
+  } else if (sec.includes('දරු පල')) {
+    limitText = (
+      'ලග්න කේන්ද්‍රයේ සහ නවාංශකයේ 5 වැන්න සහ 5 අධිපතිගේ \'සැබෑ බලය\' සසඳා බලන්න. ' +
+      'අනවශ්‍ය ලෙස \'ප්‍රමාද වීම්\' ගැන සඳහන් නොකර, ගුරුගේ දෘෂ්ටිය පවතී නම් එය ඉතා සුබ පලයක් ලෙස දක්වන්න. ' +
+      'කිසිදු ශාන්තිකර්මයක් හෝ පිළියමක් මෙහි ඇතුළත් නොකරන්න.'
+    );
+  } else if (sec.includes('පොදු ශාස්ත්‍රීය සහ බෞද්ධ පිළියම්')) {
+    limitText = (
+      'මෙම කේන්ද්‍රයේ ඇති ප්‍රධානතම දුර්වලතා හෝ අපල හඳුනාගෙන, මුළු ජීවිතයටම බලපාන පරිදි සවිස්තරාත්මක ශාස්ත්‍රීය සහ බෞද්ධ පිළියම් ලබා දෙන්න. \n' +
+      'අනිවාර්ය ආකෘතිය (Formatting): ' +
+      '1. ග්‍රහයාගේ නම හෝ යෝගය අනිවාර්යයෙන්ම \'###\' සලකුණෙන් ආරම්භ කර ප්‍රධාන අනු-මාතෘකාවක් ලෙස දක්වන්න (උදා: ### ගුරු චණ්ඩාල යෝගය සමනය කිරීම සඳහා). ' +
+      '2. එම මාතෘකාවට ඉදිරියෙන් කිසිදු විටෙක Bullet points (- හෝ *) නොයොදන්න. ' +
+      '3. මාතෘකාව යටතේ ඇති පිළියම් (වර්ණය, මල්, දෛනික පුරුදු) පමණක් එක් පේළියකට එක බැගින් \'-\' සලකුණ යොදා Bullet points ලෙස ඉදිරිපත් කරන්න.' +
+      'ශාස්ත්‍රීය පිළියම් සහ බෞද්ධ වත්පිළිවෙත් (Remedial Measures): අසුබ පල පවතින විට හෝ පවතින ශක්තීන් වර්ධනය කර ගැනීමට පිළියම් ලබා දීමේදී, පහත සඳහන් ව්‍යුහය අනුගමනය කරමින් ඉතාමත් සවිස්තරාත්මකව කරුණු දක්වන්න:\n' +
+      'ග්‍රහයාට අදාළ විශේෂිත වතාවත්: අදාළ ග්‍රහයාගේ වර්ණය සහ බලපෑම අනුව (උදා: කුජ වෙනුවෙන් රතු මල්, ශනි වෙනුවෙන් නිල් මල්) බෝධි පූජා හෝ දේව වන්දනා නිර්දේශ කරන්න.\n' +
+      'ශාස්ත්‍රීය සහ භෞතික හේතු දැක්වීම: පිළියම මඟින් පුද්ගලයාගේ ජීව විද්‍යාත්මක හෝ මානසික මට්ටමට සිදුවන බලපෑම පැහැදිලි කරන්න.\n' +
+      'උදාහරණ: රවි 11 වැන්නේ සිටින බැවින් සූර්ය වන්දනාවේ යෙදීමෙන් සිරුරට ලැබෙන හිරු රැස් මඟින් අලස බව දුරු වී ක්‍රියාශීලී බව වර්ධනය වේ.\n' +
+      'විශේෂිත පිරිත් සහ සූත්‍ර: මානසික ඒකාග්‍රතාවය සහ ග්‍රහ අපල සමනය සඳහා බෞද්ධ දර්ශනයට අනුකූල පිරිත් (උදා: අභිසම්භිධාන පිරිත, මෝර පිරිත) නිර්දේශ කරන්න.\n' +
+      'දේව ආශිර්වාදය සහ මනෝවිද්‍යාත්මක ශක්තිය: බිය හෝ මැලි බව දුරු කර ගැනීමට ගැළපෙන දේව වන්දනා (උදා: කතරගම දෙවියන්, ගණ දෙවියන්) සහ ඒවා තුළින් ලැබෙන ආත්ම විශ්වාසය විස්තර කරන්න.\n' +
+      'දෛනික ප්‍රායෝගික පුරුදු: ස්නානය කරන ජලයට කහ එකතු කිරීම වැනි සරල නමුත් ශාස්ත්‍රීය පදනමක් සහිත පවිත්‍රතා ක්‍රමවේද ඇතුළත් කරන්න.\n'
+    );
+  } else if (sec.includes('විශේෂ VIP')) {
+    limitText = (
+      'මෙම කේන්ද්‍රයේ දැනට පවතින ප්‍රබලම ග්‍රහ අපල (උදා: සෙනසුරු ඒරාෂ්ටකය, රාහු දශාව) හඳුනාගන්න. ' +
+      'එම අපල දුරු කිරීම සඳහා ගායනා කළ හැකි (Rhythmic/Melodic) ස්තෝත්‍ර පද පේළි 8-16 කින් යුත් (මෙය ' +
+      'mp3 එකක් ලෙස ලබා දෙනු ඇත.)\n' +
+      'සුවිශේෂී \'ශාන්ති ස්තෝත්‍රයක්\' නිර්මාණය කරන්න.\n' +
+      'පහත ආකෘතිය භාවිතා කරන්න:\n' +
+      '1. ### විශේෂ ශාන්ති ස්තෝත්‍රය (පද මාලාව මෙහි දක්වන්න)\n' +
+      '2. ### ස්තෝත්‍රයේ තේරුම (පේලියෙන් පේලිය අර්තය දක්වන්න)\n' +
+      '4. ### භාවිතා කළ යුතු ආකාරය (දිනකට කී වතාවක්ද, වේලාව සහ වර්ණය දක්වන්න)\n' +
+      '4. ස්තෝත්‍රය කියවන අතරතුර කළ යුතු \'විශේෂ මානසික ඒකායන භාවනාව\' කෙටියෙන් දක්වන්න.'
+    );
+  } else {
+    limitText = 'වෘත්තීය මට්ටමේ, ගලාගෙන යන ශාස්ත්‍රීය විග්‍රහයක් ලබා දෙන්න.';
+  }
+
+  return (
+    `ඔබ දැන් විශ්ලේෂණය කළ යුත්තේ කේන්ද්‍රයේ [${sec}] යන අංශය පිළිබඳව පමනයි, මෙම විස්තර කිරීමෙදී වෙනත් කිසිදු අංශයක් ගැන විස්තර දමන්න එපා (උදා:- විවාහය ගැන කියද්දී දරු පල කියන්න් එපා ). ${limitText}\n\n` +
+    `${specificPromptText}\n` +
+    FIXED_INSTRUCTIONS
+  );
+}
+
+function buildSpecialQuestionPrompt(question, systemPrompt, birthDataJson) {
+  return (
+    `${systemPrompt}\n\n` +
+    `${birthDataJson}\n\n` +
+    `මෙම විශේෂ ප්‍රශ්නයට සෘජු පිළිතුරක් අවශ්‍යයි: '${question}'\n\n` +
+    'උපදෙස් (අනිවාර්යයෙන්ම පිළිපදින්න):\n' +
+    '1. අතිශය වැදගත් (Strict Rule): පාරිභෝගිකයා අසා ඇති ගැටලුවට පමණක් සෘජුවම පිළිතුරු දෙන්න. ගැටලුවට අදාළ නැති අනෙකුත් ග්‍රහයන්, රාශි (1 සිට 12 දක්වා), පෞරුෂය, විවාහය හෝ දරු පල ආදිය කිසිසේත් විස්තර නොකරන්න.\n' +
+    '2. ගැටලුවට අදාළ වන ග්‍රහ පිහිටීම් පමණක් යොදාගෙන කෙලින්ම පිළිතුර ගොඩනඟන්න (උදා: විදෙස් ගමන් ගැන ඇසුවොත් 9, 12 භාව සහ රාහු පමණක් විස්තර කිරීම).\n' +
+    '3. වර්තමාන කාලය 2026 ලෙස සලකා, ඊට අදාළ දශා කාලයන් පමණක් දක්වමින් ප්‍රශ්නයට අදාළ සාර්ථකම කාලය පවසන්න.\n' +
+    '4. කතා කරන භාෂාවෙන් (Conversational tone), කෙටි සහ පැහැදිලි ඡේද ලෙස ලියන්න. කිසිදු විටෙක වාක්‍ය අගට \'නේද?\' යන්න නොයොදන්න.\n' +
+    '5. සෑම ප්‍රධාන උප-මාතෘකාවක්ම \'###\' සලකුණෙන් ආරම්භ කරන්න. පිළියම් ලබා දීම අත්‍යවශ්‍ය නම් පමණක් අදාළ පේළිය ආරම්භයේ \'-\' සලකුණ යොදා Bullet points ලෙස ඉදිරිපත් කරන්න.\n' +
+    '6. Sinhala only, 300-500 words.\n' +
+    '7. ශාස්ත්‍රීය පිළියම් සහ බෞද්ධ වත්පිළිවෙත් (Remedial Measures): අසුබ පල පවතින විට හෝ පවතින ශක්තීන් වර්ධනය කර ගැනීමට පිළියම් ලබා දීමේදී, ග්‍රහයාගේ වර්ණය සහ බලපෑම අනුව (උදා: කුජ වෙනුවෙන් රතු මල්, ශනි වෙනුවෙන් නිල් මල්) බෝධි පූජා හෝ දේව වන්දනා නිර්දේශ කරන්න.\n' +
+    'සෘජු ප්‍රවේශය: කෙලින්ම විෂය කරුණ විග්‍රහ කිරීම අරඹන්න.'
+  );
+}
+
+// ─── Word document builder ────────────────────────────────────────────────────
+
+function parseContentToRuns(line) {
+  // Parse **bold** markers into TextRun array
+  const runs = [];
+  const marker = '**';
+  if (!line.includes(marker) && !line.includes('*')) {
+    runs.push(new TextRun({ text: line, size: 24, font: 'Abhaya Libre' }));
+    return runs;
+  }
+  // Normalise: replace ** with single *
+  const normalised = line.replace(/\*\*/g, '*');
+  const parts = normalised.split('*');
+  parts.forEach((part, i) => {
+    if (part) runs.push(new TextRun({ text: part, bold: i % 2 !== 0, size: 24, font: 'Abhaya Libre' }));
+  });
+  return runs;
+}
+
+function contentToParagraphs(content) {
+  const paragraphs = [];
+  if (!content) return paragraphs;
+
+  const blocks = content.replace(/\n\n/g, '[[PARA]]').split('[[PARA]]');
+
+  for (const block of blocks) {
+    const lines = block.split('\n');
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) continue;
+
+      if (line.startsWith('###')) {
+        // Sub-heading
+        const text = line.replace(/^###\s*/, '').replace(/\*/g, '').trim();
+        paragraphs.push(new Paragraph({
+          children: [new TextRun({ text, bold: true, size: 32, font: 'Abhaya Libre' })],
+          alignment: AlignmentType.LEFT,
+          spacing: { before: 240, after: 120 },
+        }));
+      } else if (line.startsWith('- ') || line.startsWith('* ')) {
+        // Bullet point
+        const text = line.slice(2).trim();
+        paragraphs.push(new Paragraph({
+          children: parseContentToRuns(text),
+          bullet: { level: 0 },
+          alignment: AlignmentType.LEFT,
+          spacing: { after: 80 },
+        }));
+      } else if (/^\d+[.)]\s/.test(line)) {
+        // Numbered list
+        const text = line.replace(/^\d+[.)]\s*/, '');
+        paragraphs.push(new Paragraph({
+          children: parseContentToRuns(text),
+          numbering: { reference: 'default-numbering', level: 0 },
+          alignment: AlignmentType.LEFT,
+          spacing: { after: 80 },
+        }));
+      } else {
+        // Normal justified paragraph
+        paragraphs.push(new Paragraph({
+          children: parseContentToRuns(line),
+          alignment: AlignmentType.JUSTIFY,
+          spacing: { after: 160 },
+        }));
+      }
+    }
+  }
+  return paragraphs;
+}
+
+async function buildHoroscopeDoc({ customerName, sections, specialAnswers, specialNote }) {
+  const children = [];
+
+  // Title
+  children.push(
+    new Paragraph({
+      children: [new TextRun({ text: 'නමෝ බුද්ධාය!', bold: true, size: 48, font: 'Abhaya Libre' })],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 400 },
+    })
+  );
+
+  const currentSections = Object.keys(sections || {});
+
+  currentSections.forEach((sec, idx) => {
+    if (idx > 0) {
+      children.push(new Paragraph({ children: [new PageBreak()] }));
+    }
+
+    // Section heading
+    children.push(new Paragraph({
+      children: [new TextRun({ text: sec, bold: true, size: 36, font: 'Abhaya Libre' })],
+      alignment: AlignmentType.LEFT,
+      spacing: { after: 240 },
+    }));
+
+    const bodyParagraphs = contentToParagraphs(sections[sec] || '');
+    children.push(...bodyParagraphs);
+  });
+
+  // Special questions
+  if (specialAnswers && specialAnswers.length > 0) {
+    children.push(new Paragraph({ children: [new PageBreak()] }));
+    children.push(new Paragraph({
+      children: [new TextRun({ text: 'විශේෂ උපදේශනය සහ විසඳුම් සේවාව (2026 සිට ඉදිරියට)', bold: true, size: 36, font: 'Abhaya Libre' })],
+      alignment: AlignmentType.LEFT,
+      spacing: { after: 240 },
+    }));
+
+    specialAnswers.forEach((qa, i) => {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: `ගැටලුව ${i + 1}: ${qa.question}`, bold: true, size: 26, font: 'Abhaya Libre' })],
+        spacing: { before: 400, after: 160 },
+      }));
+      children.push(...contentToParagraphs(qa.answer || ''));
+      children.push(new Paragraph({
+        children: [new TextRun({ text: '─'.repeat(40), size: 20, font: 'Abhaya Libre' })],
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 160, after: 160 },
+      }));
+    });
+  }
+
+  // Special note page
+  if (specialNote && specialNote.trim()) {
+    children.push(new Paragraph({ children: [new PageBreak()] }));
+    const noteLines = specialNote.split('\n');
+    for (const noteLine of noteLines) {
+      const trimmed = noteLine.trim();
+      if (!trimmed) { children.push(new Paragraph({ children: [] })); continue; }
+      const isHeading = trimmed.includes('විශේෂ ශාස්ත්‍රීය සටහන');
+      children.push(new Paragraph({
+        children: [new TextRun({ text: trimmed, bold: isHeading, size: isHeading ? 36 : 24, font: 'Abhaya Libre' })],
+        alignment: isHeading ? AlignmentType.CENTER : AlignmentType.JUSTIFY,
+        spacing: { after: 160 },
+      }));
+    }
+  }
+
+  // Signature
+  children.push(new Paragraph({
+    children: [new TextRun({ text: 'මෙයට,', bold: true, size: 24, font: 'Abhaya Libre' })],
+    alignment: AlignmentType.RIGHT,
+    spacing: { before: 600 },
+  }));
+  children.push(new Paragraph({
+    children: [new TextRun({ text: 'පුරාණ ජෝතිර්වේදය හදහන් සේවය', bold: true, size: 24, font: 'Abhaya Libre' })],
+    alignment: AlignmentType.RIGHT,
+  }));
+
+  const doc = new Document({
+    numbering: {
+      config: [{
+        reference: 'default-numbering',
+        levels: [{ level: 0, format: 'decimal', text: '%1.', alignment: AlignmentType.LEFT }],
+      }],
+    },
+    sections: [{
+      properties: {},
+      footers: {
+        default: new Footer({
+          children: [new Paragraph({
+            children: [
+              new TextRun({ text: 'පුරාණ ජෝතිර්වේදය හදහන් සේවය | පිටුව: ', size: 20, font: 'Abhaya Libre' }),
+              new TextRun({ children: [PageNumber.CURRENT], size: 20, font: 'Abhaya Libre' }),
+            ],
+            alignment: AlignmentType.CENTER,
+          })],
+        }),
+      },
+      children,
+    }],
+  });
+
+  return await Packer.toBuffer(doc);
+}
+
+// ─── Main generation function ─────────────────────────────────────────────────
+
+async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, birth_place_name, overrideAstro) {
+  // 1. Fetch order
+  const orderRes = await db.pgQuery(
+    'SELECT custom_fields, horoscope_data FROM orders WHERE order_id=$1',
+    [orderId]
+  );
+  if (!orderRes.rows.length) throw new Error('Order not found');
+  const row = orderRes.rows[0];
+
+  const existingCf = (typeof row.custom_fields === 'string')
+    ? JSON.parse(row.custom_fields || '{}')
+    : (row.custom_fields || {});
+
+  const existingHd = (typeof row.horoscope_data === 'string')
+    ? JSON.parse(row.horoscope_data || '{}')
+    : (row.horoscope_data || {});
+
+  // Merge: overrides (from modal edits) take precedence
+  const effectiveFields = { ...existingCf, ...(birthOverrides || {}) };
+
+  // 2. Parse birth date/time
+  const dateInfo = parseSinhalaDate(effectiveFields.birth_date || '');
+  const timeInfo = parseSinhalaTime(effectiveFields.birth_time || '');
+
+  if (!dateInfo) throw new Error(`Cannot parse birth_date: "${effectiveFields.birth_date}"`);
+  if (!timeInfo) throw new Error(`Cannot parse birth_time: "${effectiveFields.birth_time}"`);
+
+  const { year, month, day } = dateInfo;
+  const { hour, minute } = timeInfo;
+
+  // 3. Get plugin config
+  const config = await db.getPluginConfig(clientId, 'horoscope_reading');
+  const apiKey = config.api_key || process.env.FREEASTRO_API_KEY;
+  const systemPrompt = config.system_prompt || '';
+  const specialNote = config.special_note || '';
+
+  // 4. Astro chart — reuse or fetch
+  let chartData;
+  if (existingHd.chart_data && !overrideAstro) {
+    chartData = existingHd.chart_data;
+    console.log('[HOROSCOPE] Reusing saved chart_data for', orderId);
+  } else {
+    const astroPayload = {
+      year, month, day, hour, minute,
+      lat: parseFloat(lat), lng: parseFloat(lng),
+      tz_str: 'Asia/Colombo',
+      ayanamsha: 'lahiri',
+      house_system: 'whole_sign',
+      node_type: 'mean',
+      vargas: [1, 9, 7],
+    };
+    console.log('[HOROSCOPE] Calling freeastroapi for', orderId);
+    const astroResp = await require('axios').post(
+      'https://api.freeastroapi.com/api/v1/vedic/calculate',
+      astroPayload,
+      { headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' } }
+    );
+    chartData = astroResp.data;
+    // Save chart immediately so it's available even if Gemini fails
+    await db.pgQuery(
+      `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), '{chart_data}', $1::jsonb) WHERE order_id=$2`,
+      [JSON.stringify(chartData), orderId]
+    );
+    console.log('[HOROSCOPE] Chart data saved for', orderId);
+  }
+
+  // 5. Build birth data JSON for AI
+  const birthDataForAi = JSON.stringify({ ...effectiveFields, chart_data: chartData }, null, 2);
+
+  // 6. Create Gemini chat session
+  const geminiModel = genAI.getGenerativeModel({
+    model: 'gemini-2.5-flash',
+    generationConfig: { temperature: 0.4, topP: 0.8, topK: 40 },
+  });
+
+  const chat = geminiModel.startChat({
+    systemInstruction: systemPrompt + '\n\nමෙම කේන්ද්‍ර දත්ත සම්පූර්ණ වාර්තාව සඳහා පදනම වේ:\n\n' + birthDataForAi,
+  });
+
+  // 7. Determine sections
+  const isVip = String(effectiveFields.product || '').toUpperCase().includes('VIP');
+  const activeSections = isVip ? [...SECTIONS, VIP_SECTION] : [...SECTIONS];
+
+  const sectionsMap = {};
+  for (const sec of activeSections) {
+    console.log('[HOROSCOPE] Generating section:', sec);
+    const result = await chat.sendMessage(buildSectionPrompt(sec));
+    sectionsMap[sec] = result.response.text();
+  }
+
+  // 8. Special questions (needs field)
+  const specialAnswers = [];
+  const needsRaw = effectiveFields.needs;
+  if (needsRaw && String(needsRaw).trim()) {
+    const questions = String(needsRaw).split('\n').map(q => q.trim()).filter(Boolean);
+    const specialModel = genAI.getGenerativeModel({
+      model: 'gemini-2.5-flash',
+      generationConfig: { temperature: 0.4, topP: 0.8, topK: 40 },
+    });
+    const specialChat = specialModel.startChat({
+      systemInstruction: systemPrompt + '\n\n' + birthDataForAi,
+    });
+    for (const question of questions) {
+      console.log('[HOROSCOPE] Special question:', question);
+      const qResult = await specialChat.sendMessage(
+        buildSpecialQuestionPrompt(question, systemPrompt, birthDataForAi)
+      );
+      specialAnswers.push({ question, answer: qResult.response.text() });
+    }
+  }
+
+  // 9. Save all results
+  const horoscopeData = {
+    chart_data: chartData,
+    sections: sectionsMap,
+    special_answers: specialAnswers,
+    generated_at: new Date().toISOString(),
+    birth_place_name: birth_place_name || '',
+    lat: parseFloat(lat),
+    lng: parseFloat(lng),
+  };
+  await db.pgQuery(
+    'UPDATE orders SET horoscope_data=$1 WHERE order_id=$2',
+    [JSON.stringify(horoscopeData), orderId]
+  );
+  console.log('[HOROSCOPE] All sections saved for', orderId);
+
+  return horoscopeData;
+}
+
+module.exports = {
+  generateHoroscope,
+  buildHoroscopeDoc,
+  parseSinhalaDate,
+  parseSinhalaTime,
+  SECTIONS,
+};

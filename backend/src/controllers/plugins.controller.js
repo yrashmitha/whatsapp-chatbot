@@ -8,6 +8,7 @@
 
 const db   = require('../db');
 const { generateAstroMessage, DEFAULT_ASTRO_PROMPT } = require('../services/astro');
+const { generateHoroscope, buildHoroscopeDoc, SECTIONS } = require('../services/horoscope');
 const resolveClientId = require('../middleware/resolveClientId');
 
 /**
@@ -23,9 +24,14 @@ async function getPluginConfig(req, res) {
   const { pluginId } = req.params;
   try {
     const config = await db.getPluginConfig(clientId, pluginId);
-    const defaults = pluginId === 'astro_vedic_chart'
-      ? { name: 'Vedic Astro Chart', prompt: DEFAULT_ASTRO_PROMPT }
-      : { name: pluginId, prompt: '' };
+    let defaults;
+    if (pluginId === 'astro_vedic_chart') {
+      defaults = { name: 'Vedic Astro Chart', prompt: DEFAULT_ASTRO_PROMPT };
+    } else if (pluginId === 'horoscope_reading') {
+      defaults = { name: 'Horoscope Reading', system_prompt: '', special_note: '', api_key: '' };
+    } else {
+      defaults = { name: pluginId, prompt: '' };
+    }
     res.json({ ...defaults, ...config });
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
@@ -44,13 +50,15 @@ async function updatePluginConfig(req, res) {
     return res.status(403).json({ error: 'Forbidden' });
   }
   const { pluginId } = req.params;
-  const { name, prompt, api_key } = req.body;
+  const { name, prompt, api_key, system_prompt, special_note } = req.body;
   try {
     const existing = await db.getPluginConfig(clientId, pluginId);
     const update = { ...existing };
-    if (name !== undefined) update.name = name;
-    if (prompt !== undefined) update.prompt = prompt;
-    if (api_key !== undefined) update.api_key = api_key;
+    if (name !== undefined)          update.name          = name;
+    if (prompt !== undefined)        update.prompt        = prompt;
+    if (api_key !== undefined)       update.api_key       = api_key;
+    if (system_prompt !== undefined) update.system_prompt = system_prompt;
+    if (special_note !== undefined)  update.special_note  = special_note;
     await db.upsertPluginConfig(clientId, pluginId, update);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -125,4 +133,114 @@ async function generateAstroChart(req, res) {
   }
 }
 
-module.exports = { getPluginConfig, updatePluginConfig, getPluginCustomerData, generateAstroChart };
+/**
+ * POST /api/plugins/horoscope/generate — generate full horoscope reading for an order.
+ */
+async function generateHoroscopeReading(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+
+  const { order_id, lat, lng, birth_place_name, birth_overrides, override_astro } = req.body;
+  if (!order_id || lat == null || lng == null) {
+    return res.status(400).json({ error: 'order_id, lat, lng required' });
+  }
+
+  const addonCheck = await db.pgQuery(
+    `SELECT enabled FROM client_addons WHERE client_id=$1 AND addon_id='horoscope_reading' AND enabled=TRUE`,
+    [clientId]
+  );
+  if (!addonCheck.rows.length) return res.status(403).json({ error: 'horoscope_reading addon not enabled' });
+
+  // Mark as generating immediately so the frontend can show progress
+  if (db.IS_PG) {
+    await db.pgQuery(
+      `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), '{generating}', 'true'::jsonb) WHERE order_id=$1`,
+      [order_id]
+    ).catch(() => {});
+  }
+
+  // Return immediately — generation runs in background
+  res.json({ ok: true, generating: true });
+
+  generateHoroscope(
+    clientId, order_id,
+    birth_overrides || {},
+    lat, lng,
+    birth_place_name || '',
+    !!override_astro
+  ).catch(async (e) => {
+    console.error('[HOROSCOPE] generate error:', e.message);
+    const detail = e?.response?.data?.detail;
+    const msg = Array.isArray(detail)
+      ? detail.map(d => `${d.loc?.slice(-1)?.[0] || 'field'}: ${d.msg}`).join('; ')
+      : (typeof detail === 'string' ? detail : e.message);
+    // Save error state so the frontend can show it
+    if (db.IS_PG) {
+      await db.pgQuery(
+        `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}') - 'generating', '{error}', $1::jsonb) WHERE order_id=$2`,
+        [JSON.stringify(msg), order_id]
+      ).catch(() => {});
+    }
+  });
+}
+
+/**
+ * PATCH /api/plugins/horoscope/sections/:orderId — update saved section text.
+ */
+async function updateHoroscopeSections(req, res) {
+  const { orderId } = req.params;
+  const { sections, special_answers } = req.body;
+  try {
+    const existing = await db.pgQuery(
+      'SELECT horoscope_data FROM orders WHERE order_id=$1', [orderId]
+    );
+    if (!existing.rows.length) return res.status(404).json({ error: 'Order not found' });
+    const hd = (typeof existing.rows[0].horoscope_data === 'string')
+      ? JSON.parse(existing.rows[0].horoscope_data || '{}')
+      : (existing.rows[0].horoscope_data || {});
+    if (sections)        hd.sections        = { ...(hd.sections || {}), ...sections };
+    if (special_answers) hd.special_answers = special_answers;
+    await db.pgQuery('UPDATE orders SET horoscope_data=$1 WHERE order_id=$2', [JSON.stringify(hd), orderId]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+/**
+ * GET /api/plugins/horoscope/download/:orderId — stream .docx for an order.
+ */
+async function downloadHoroscope(req, res) {
+  const { orderId } = req.params;
+  try {
+    const r = await db.pgQuery(
+      'SELECT custom_fields, horoscope_data FROM orders WHERE order_id=$1', [orderId]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Order not found' });
+    const hd = (typeof r.rows[0].horoscope_data === 'string')
+      ? JSON.parse(r.rows[0].horoscope_data || '{}')
+      : (r.rows[0].horoscope_data || {});
+    if (!hd.sections) return res.status(404).json({ error: 'No horoscope data yet' });
+
+    const cf = (typeof r.rows[0].custom_fields === 'string')
+      ? JSON.parse(r.rows[0].custom_fields || '{}')
+      : (r.rows[0].custom_fields || {});
+
+    const clientId = resolveClientId(req);
+    const config = clientId ? await db.getPluginConfig(clientId, 'horoscope_reading') : {};
+
+    const buffer = await buildHoroscopeDoc({
+      customerName: cf.customer_name || '',
+      sections: hd.sections,
+      specialAnswers: hd.special_answers || [],
+      specialNote: config.special_note || '',
+    });
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="horoscope-${orderId}.docx"`);
+    res.send(buffer);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+module.exports = {
+  getPluginConfig, updatePluginConfig, getPluginCustomerData, generateAstroChart,
+  generateHoroscopeReading, updateHoroscopeSections, downloadHoroscope,
+};

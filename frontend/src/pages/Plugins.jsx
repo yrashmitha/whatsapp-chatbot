@@ -11,14 +11,23 @@ const ALL_PLUGINS = [
     defaultName: 'Vedic Astro Chart',
     description: "Generates personalized astrology-based WhatsApp messages using the customer's vedic birth chart.",
   },
+  {
+    id: 'horoscope_reading',
+    defaultName: 'Horoscope Reading',
+    description: 'Generates full 10-section Vedic horoscope Word documents for payment_received orders.',
+  },
 ];
 
 function PluginCard({ pluginMeta, clientId, superAdmin }) {
   const toast = useToast();
+  const isHoroscope = pluginMeta.id === 'horoscope_reading';
+
   const [config, setConfig] = useState(null);
   const [name, setName] = useState('');
   const [prompt, setPrompt] = useState('');
   const [apiKey, setApiKey] = useState('');
+  const [systemPrompt, setSystemPrompt] = useState('');
+  const [specialNote, setSpecialNote]   = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -30,20 +39,30 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         setName(r.data.name || pluginMeta.defaultName);
         setPrompt(r.data.prompt || '');
         setApiKey(r.data.api_key || '');
+        setSystemPrompt(r.data.system_prompt || '');
+        setSpecialNote(r.data.special_note || '');
       })
       .catch(() => {
         setConfig({});
         setName(pluginMeta.defaultName);
         setPrompt('');
         setApiKey('');
+        setSystemPrompt('');
+        setSpecialNote('');
       });
   }, [pluginMeta.id, clientId]);
 
   const save = async () => {
     setSaving(true);
     try {
-      const body = { client_id: clientId, prompt, api_key: apiKey };
+      const body = { client_id: clientId, api_key: apiKey };
       if (superAdmin) body.name = name;
+      if (isHoroscope) {
+        body.system_prompt = systemPrompt;
+        body.special_note  = specialNote;
+      } else {
+        body.prompt = prompt;
+      }
       await api.put(`/plugins/${pluginMeta.id}/config`, body);
       toast.success('Plugin config saved');
     } catch {
@@ -93,18 +112,51 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         <p className="text-xs text-slate-400 mt-1">Get your key at freeastroapi.com</p>
       </div>
 
-      <div>
-        <label className="text-xs font-medium text-slate-500 block mb-1">Gemini Prompt</label>
-        <p className="text-xs text-slate-400 mb-1.5">
-          Use <code className="font-mono bg-slate-100 px-1 rounded">{'{chart_json}'}</code> where chart data will be inserted.
-        </p>
-        <textarea
-          value={prompt}
-          onChange={e => setPrompt(e.target.value)}
-          rows={8}
-          className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
-        />
-      </div>
+      {!isHoroscope && (
+        <div>
+          <label className="text-xs font-medium text-slate-500 block mb-1">Gemini Prompt</label>
+          <p className="text-xs text-slate-400 mb-1.5">
+            Use <code className="font-mono bg-slate-100 px-1 rounded">{'{chart_json}'}</code> where chart data will be inserted.
+          </p>
+          <textarea
+            value={prompt}
+            onChange={e => setPrompt(e.target.value)}
+            rows={8}
+            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
+          />
+        </div>
+      )}
+
+      {isHoroscope && (
+        <>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">System Prompt</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              This becomes the Gemini system instruction for all 10 sections. Include your astrologer persona, language guidelines, etc.
+            </p>
+            <textarea
+              value={systemPrompt}
+              onChange={e => setSystemPrompt(e.target.value)}
+              rows={12}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
+              placeholder="ඔබ දක්ෂ වෛදික ජ්‍යෝතිෂ විශේෂඥයෙකි…"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Special Note (Final Page)</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              Static text added as the last page of every Word document (e.g. disclaimer, contact info).
+            </p>
+            <textarea
+              value={specialNote}
+              onChange={e => setSpecialNote(e.target.value)}
+              rows={6}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
+              placeholder="විශේෂ ශාස්ත්‍රීය සටහන…"
+            />
+          </div>
+        </>
+      )}
 
       <div className="flex justify-end">
         <button

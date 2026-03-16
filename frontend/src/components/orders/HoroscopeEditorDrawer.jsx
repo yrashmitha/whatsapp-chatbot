@@ -185,22 +185,14 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
         {tab === 'edit' && (
           <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
             {allSectionKeys.map((sec, idx) => (
-              <div key={sec} style={{ border: '1px solid #cbd5e1', borderRadius: 10, overflow: 'hidden' }}>
+              <div key={sec} style={{ border: '1px solid #cbd5e1', borderRadius: 10, overflow: 'hidden', marginBottom: 4 }}>
                 <div
-                  role="button"
                   onClick={() => setExpandedSection(expandedSection === sec ? null : sec)}
-                  style={{
-                    padding: '10px 14px',
-                    background: expandedSection === sec ? '#ede9fe' : '#f8fafc',
-                    cursor: 'pointer',
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    userSelect: 'none',
-                  }}
+                  style={{ padding: '10px 14px', background: expandedSection === sec ? '#ede9fe' : '#f1f5f9', fontSize: 13, fontWeight: 600, color: '#1e293b', cursor: 'pointer', userSelect: 'none' }}
                 >
-                  <span style={{ color: '#1e293b', fontSize: 13, fontWeight: 600 }}>{getSectionLabel(sec, idx)}</span>
-                  <span style={{ color: '#64748b', fontSize: 11 }}>
-                    {expandedSection === sec ? '▲' : '▼'}
-                    {sections[sec] ? ` · ${sections[sec].length} chars` : ' · empty'}
+                  {getSectionLabel(sec, idx)}
+                  <span style={{ float: 'right', fontWeight: 400, fontSize: 11, color: '#64748b' }}>
+                    {expandedSection === sec ? '▲' : '▼'}{sections[sec] ? ` · ${sections[sec].length} chars` : ' · empty'}
                   </span>
                 </div>
                 {expandedSection === sec && (

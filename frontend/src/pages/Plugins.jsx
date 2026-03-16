@@ -188,7 +188,7 @@ export default function Plugins() {
 
   return (
     <Layout>
-      <div className="p-6 max-w-2xl">
+      <div className="p-6 max-w-2xl overflow-y-auto h-full">
         <h1 className="text-lg font-bold text-slate-800 mb-1">Plugins</h1>
         <p className="text-sm text-slate-500 mb-6">
           Configure plugin settings and custom prompts.

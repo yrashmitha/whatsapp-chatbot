@@ -28,6 +28,11 @@ const ADDON_CATALOG = [
     name: 'Vedic Astro Chart',
     description: 'Generates personalized astrology-based WhatsApp messages for customers using their vedic birth chart, to help recover pending orders.',
   },
+  {
+    id: 'horoscope_reading',
+    name: 'Horoscope Reading',
+    description: 'Generates full 10-section Vedic horoscope Word documents for payment_received orders.',
+  },
 ];
 
 /**

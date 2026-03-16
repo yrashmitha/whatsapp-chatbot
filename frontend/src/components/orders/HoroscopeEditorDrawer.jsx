@@ -15,7 +15,35 @@ const SECTION_LABELS = [
   'Life Summary',
   'Current Dasha Period',
   'Remedies',
+  'VIP Section',
 ];
+
+// Expected Sinhala section key order (strip ZWJ for comparison)
+const SECTION_ORDER_STRIPPED = [
+  'පෞරුෂය',
+  'අධ්‍යාපනය',
+  'වෘත්තීය ජීවිතය සහ ආර්ථික ශක්තිය',
+  'ප්‍රේමය සහ විවාහ ජීවිතය',
+  'දේපළ, භූමිය, නිවාස සහ වාහන භාග්‍යය',
+  'ශාරීරික සෞඛ්‍යය, මාරක අපල, හදිසි අනතුරු',
+  'දරු පල',
+  'මෙතෙක් දැක්වූ කරුණු අනුව ජීවන ගමනේ සමස්ත සාරාංශය',
+  'වර්තමාන දශාව අනුව පලාපල',
+  'ජීවිතයේ අභියෝග ජයගැනීම සඳහා වූ පොදු ශාස්ත්‍රීය සහ බෞද්ධ පිළියම්',
+].map(s => s.replace(/\u200D/g, ''));
+
+function sortSectionKeys(keys) {
+  return [...keys].sort((a, b) => {
+    const sa = a.replace(/\u200D/g, '');
+    const sb = b.replace(/\u200D/g, '');
+    const ia = SECTION_ORDER_STRIPPED.findIndex(s => s === sa || sa.startsWith(s.slice(0, 6)));
+    const ib = SECTION_ORDER_STRIPPED.findIndex(s => s === sb || sb.startsWith(s.slice(0, 6)));
+    if (ia === -1 && ib === -1) return 0;
+    if (ia === -1) return 1;
+    if (ib === -1) return -1;
+    return ia - ib;
+  });
+}
 
 export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }) {
   const toast = useToast();
@@ -30,7 +58,7 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
 
   const savedSections = hd.sections || {};
   const savedSpecial  = hd.special_answers || [];
-  const sectionKeys   = Object.keys(savedSections).length > 0 ? Object.keys(savedSections) : [];
+  const sectionKeys   = Object.keys(savedSections).length > 0 ? sortSectionKeys(Object.keys(savedSections)) : [];
 
   // Build tab list: S1..SN then Q1..QN
   const sectionTabs = sectionKeys.map((key, i) => ({
@@ -40,7 +68,7 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
     key,
     type: 'section',
   }));
-  const questionTabs = savedSpecial.map((qa, i) => ({
+  const questionTabs = savedSpecial.map((_, i) => ({
     id: `q-${i}`,
     label: `Q${i + 1}`,
     title: `Question ${i + 1}`,
@@ -198,9 +226,22 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
                     />
                   ) : (
                     <>
-                      <p style={{ margin: '0 0 8px 0', padding: '8px 12px', background: '#f1f5f9', borderRadius: 8, fontSize: 13, color: '#334155' }}>
-                        {specialAnswers[activeTabData.key]?.question}
-                      </p>
+                      <p style={{ margin: '0 0 4px 0', fontSize: 11, color: '#64748b', fontWeight: 600 }}>Question text (editable):</p>
+                      <textarea
+                        key={`q-text-${activeTabData.id}`}
+                        style={{ width: '100%', padding: '8px 12px', fontSize: 13, border: '1px solid #cbd5e1', borderRadius: 8, outline: 'none', background: '#f8fafc', color: '#1e293b', resize: 'none', lineHeight: 1.5, boxSizing: 'border-box', marginBottom: 12, overflow: 'hidden' }}
+                        rows={2}
+                        value={specialAnswers[activeTabData.key]?.question || ''}
+                        onChange={e => {
+                          const updated = [...specialAnswers];
+                          updated[activeTabData.key] = { ...updated[activeTabData.key], question: e.target.value };
+                          setSpecialAnswers(updated);
+                          e.target.style.height = 'auto';
+                          e.target.style.height = e.target.scrollHeight + 'px';
+                        }}
+                        placeholder="Question text…"
+                      />
+                      <p style={{ margin: '0 0 4px 0', fontSize: 11, color: '#64748b', fontWeight: 600 }}>Answer:</p>
                       <textarea
                         key={activeTabData.id}
                         style={{ width: '100%', padding: '10px 12px', fontSize: 13, fontFamily: 'monospace', border: '1px solid #cbd5e1', borderRadius: 8, outline: 'none', background: '#ffffff', color: '#1e293b', resize: 'vertical', lineHeight: 1.6, boxSizing: 'border-box' }}

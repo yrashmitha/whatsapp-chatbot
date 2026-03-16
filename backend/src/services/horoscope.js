@@ -330,7 +330,7 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
       default: {
         document: {
           run: { font: 'Abhaya Libre', size: 24 },
-          paragraph: { alignment: AlignmentType.JUSTIFIED, spacing: { after: 160 } },
+          paragraph: { alignment: AlignmentType.JUSTIFIED, spacing: { after: 160, line: 360, lineRule: 'auto' } },
         },
       },
     },

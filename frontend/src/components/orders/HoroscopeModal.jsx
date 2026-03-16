@@ -114,15 +114,30 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
   // Special questions
   const [specialQuestions, setSpecialQuestions] = useState([]);
   const [newQuestion, setNewQuestion] = useState('');
+  const [editingQIdx, setEditingQIdx] = useState(null);
+  const [editingQText, setEditingQText] = useState('');
+  const newQuestionRef = useRef(null);
 
   const addQuestion = () => {
     const q = newQuestion.trim();
     if (!q) return;
     setSpecialQuestions(prev => [...prev, q]);
     setNewQuestion('');
+    if (newQuestionRef.current) newQuestionRef.current.style.height = 'auto';
   };
 
-  const removeQuestion = (i) => setSpecialQuestions(prev => prev.filter((_, idx) => idx !== i));
+  const removeQuestion = (i) => {
+    setSpecialQuestions(prev => prev.filter((_, idx) => idx !== i));
+    if (editingQIdx === i) setEditingQIdx(null);
+  };
+
+  const startEdit = (i) => { setEditingQIdx(i); setEditingQText(specialQuestions[i]); };
+
+  const saveEdit = (i) => {
+    const t = editingQText.trim();
+    if (t) setSpecialQuestions(prev => prev.map((q, idx) => idx === i ? t : q));
+    setEditingQIdx(null);
+  };
 
   const [generating, setGenerating] = useState(false);
 
@@ -274,11 +289,20 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
           <div>
             <label className={labelCls}>Special Questions <span className="text-slate-400 font-normal">(optional)</span></label>
             <div className="flex gap-2 mb-2">
-              <input
+              <textarea
+                ref={newQuestionRef}
                 className={inputCls}
+                style={{ resize: 'none', overflow: 'hidden', minHeight: '38px', lineHeight: '1.5' }}
+                rows={1}
                 value={newQuestion}
-                onChange={e => setNewQuestion(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addQuestion())}
+                onChange={e => {
+                  setNewQuestion(e.target.value);
+                  e.target.style.height = 'auto';
+                  e.target.style.height = e.target.scrollHeight + 'px';
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addQuestion(); }
+                }}
                 placeholder="Type a question and press Enter or Add…"
               />
               <button
@@ -291,7 +315,18 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
               <ul className="flex flex-col gap-1">
                 {specialQuestions.map((q, i) => (
                   <li key={i} className="flex items-start gap-2 bg-slate-50 rounded-lg px-3 py-1.5 text-xs text-slate-700">
-                    <span className="flex-1">{i + 1}. {q}</span>
+                    {editingQIdx === i ? (
+                      <input
+                        autoFocus
+                        className="flex-1 text-xs border border-violet-300 rounded px-1 py-0.5 outline-none bg-white"
+                        value={editingQText}
+                        onChange={e => setEditingQText(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') saveEdit(i); if (e.key === 'Escape') setEditingQIdx(null); }}
+                        onBlur={() => saveEdit(i)}
+                      />
+                    ) : (
+                      <span className="flex-1 cursor-pointer hover:text-violet-700" onClick={() => startEdit(i)} title="Click or press Enter to edit">{i + 1}. {q}</span>
+                    )}
                     <button type="button" onClick={() => removeQuestion(i)} className="text-slate-400 hover:text-red-500 bg-transparent border-0 cursor-pointer leading-none shrink-0">×</button>
                   </li>
                 ))}

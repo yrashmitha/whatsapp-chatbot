@@ -5,6 +5,26 @@ import { useToast } from '../ui/Toast';
 const HOURS   = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
 const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
 
+const SINHALA_MONTHS = {
+  'ජනවාරි':1,'පෙබරවාරි':2,'මාර්තු':3,'අප්‍රේල්':4,
+  'මැයි':5,'ජූනි':6,'ජූලි':7,'අගෝස්තු':8,
+  'සැප්තැම්බර්':9,'ඔක්තෝබර්':10,'නොවැම්බර්':11,'දෙසැම්බර්':12,
+};
+
+function toISODate(raw) {
+  if (!raw) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw.trim())) return raw.trim();
+  const parts = raw.trim().split(/\s+/);
+  if (parts.length === 3) {
+    const y = parseInt(parts[0], 10);
+    const m = SINHALA_MONTHS[parts[1]] || parseInt(parts[1], 10);
+    const d = parseInt(parts[2], 10);
+    if (!isNaN(y) && !isNaN(m) && !isNaN(d))
+      return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  }
+  return '';
+}
+
 export default function HoroscopeModal({ order, clientId, onClose, onGenerated }) {
   const toast = useToast();
   const geoRef = useRef();
@@ -25,7 +45,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
 
   // Editable birth fields
   const [customerName, setCustomerName] = useState(cf.customer_name || '');
-  const [birthDate, setBirthDate]       = useState(cf.birth_date || '');
+  const [birthDate, setBirthDate]       = useState(toISODate(cf.birth_date || ''));
   const [birthHour, setBirthHour]       = useState('07');
   const [birthMinute, setBirthMinute]   = useState('00');
   const [overrideAstro, setOverrideAstro] = useState(false);
@@ -166,10 +186,13 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
           {/* Birth date */}
           <div>
             <label className={labelCls}>Birth Date</label>
-            {cf.birth_date && cf.birth_date !== birthDate && (
-              <p className="text-xs text-amber-600 mb-1">Original: <span className="font-mono">{cf.birth_date}</span></p>
-            )}
-            <input className={inputCls} value={birthDate} onChange={e => setBirthDate(e.target.value)} placeholder="1969 අප්‍රේල් 09 or YYYY-MM-DD" />
+            {cf.birth_date && <p className="text-xs text-amber-600 mb-1">From order: <span className="font-mono">{cf.birth_date}</span></p>}
+            <input
+              type="date"
+              className={inputCls}
+              value={birthDate}
+              onChange={e => setBirthDate(e.target.value)}
+            />
           </div>
 
           {/* Birth time */}

@@ -230,7 +230,7 @@ function contentToParagraphs(content) {
         // Normal justified paragraph
         paragraphs.push(new Paragraph({
           children: parseContentToRuns(line),
-          alignment: AlignmentType.JUSTIFY,
+          alignment: AlignmentType.JUSTIFIED,
           spacing: { after: 160 },
         }));
       }
@@ -308,7 +308,7 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
       const isHeading = trimmed.includes('විශේෂ ශාස්ත්‍රීය සටහන');
       children.push(new Paragraph({
         children: [new TextRun({ text: trimmed, bold: isHeading, size: isHeading ? 36 : 24, font: 'Abhaya Libre' })],
-        alignment: isHeading ? AlignmentType.CENTER : AlignmentType.JUSTIFY,
+        alignment: isHeading ? AlignmentType.CENTER : AlignmentType.JUSTIFIED,
         spacing: { after: 160 },
       }));
     }
@@ -330,7 +330,7 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
       default: {
         document: {
           run: { font: 'Abhaya Libre', size: 24 },
-          paragraph: { alignment: AlignmentType.JUSTIFY, spacing: { after: 160 } },
+          paragraph: { alignment: AlignmentType.JUSTIFIED, spacing: { after: 160 } },
         },
       },
     },

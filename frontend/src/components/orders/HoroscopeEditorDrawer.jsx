@@ -183,29 +183,19 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
 
         {/* Edit tab */}
         {tab === 'edit' && (
-          <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
             {allSectionKeys.map((sec, idx) => (
-              <div key={sec} style={{ border: '1px solid #cbd5e1', borderRadius: 10, overflow: 'hidden', marginBottom: 4 }}>
-                <div
-                  onClick={() => setExpandedSection(expandedSection === sec ? null : sec)}
-                  style={{ padding: '10px 14px', background: expandedSection === sec ? '#ede9fe' : '#f1f5f9', fontSize: 13, fontWeight: 600, color: '#1e293b', cursor: 'pointer', userSelect: 'none' }}
-                >
+              <div key={idx} style={{ marginBottom: 20 }}>
+                <p style={{ margin: '0 0 6px 0', padding: '8px 12px', background: '#6366f1', color: '#ffffff', borderRadius: 8, fontSize: 13, fontWeight: 700 }}>
                   {getSectionLabel(sec, idx)}
-                  <span style={{ float: 'right', fontWeight: 400, fontSize: 11, color: '#64748b' }}>
-                    {expandedSection === sec ? '▲' : '▼'}{sections[sec] ? ` · ${sections[sec].length} chars` : ' · empty'}
-                  </span>
-                </div>
-                {expandedSection === sec && (
-                  <div style={{ padding: '10px 12px', background: '#ffffff' }}>
-                    <textarea
-                      style={textareaStyle}
-                      value={sections[sec] || ''}
-                      onChange={e => setSections(prev => ({ ...prev, [sec]: e.target.value }))}
-                      rows={12}
-                      placeholder={`Enter content for "${sec}"…`}
-                    />
-                  </div>
-                )}
+                </p>
+                <textarea
+                  style={textareaStyle}
+                  value={sections[sec] || ''}
+                  onChange={e => setSections(prev => ({ ...prev, [sec]: e.target.value }))}
+                  rows={10}
+                  placeholder={`Enter content for section ${idx + 1}…`}
+                />
               </div>
             ))}
 

@@ -7,6 +7,8 @@
 
 const db = require('../db');
 const resolveClientId = require('../middleware/resolveClientId');
+const { generateOrderId } = require('../services/gemini');
+const clientRouter = require('../services/clientRouter');
 
 /**
  * GET /api/orders — paginated order list with optional status and search filters.
@@ -163,4 +165,25 @@ async function updateNotes(req, res) {
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 
-module.exports = { listOrders, exportOrders, updateStatus, updateFields, updateNotes };
+async function createOrder(req, res) {
+  const clientId = resolveClientId(req);
+  const { phone_number, custom_fields, notes } = req.body;
+  if (!phone_number) return res.status(400).json({ error: 'phone_number required' });
+  if (!custom_fields || typeof custom_fields !== 'object') return res.status(400).json({ error: 'custom_fields object required' });
+  try {
+    const client = clientId ? await clientRouter.getClientById(clientId) : null;
+    const orderId = await generateOrderId(client);
+    // Ensure customer row exists (FK constraint on orders.phone_number)
+    await db.pgQuery(
+      `INSERT INTO customers (phone_number, client_id) VALUES ($1, $2) ON CONFLICT (phone_number) DO NOTHING`,
+      [phone_number, clientId || null]
+    );
+    await db.insertOrder(orderId, phone_number, clientId || null, custom_fields);
+    if (notes) {
+      await db.pgQuery(`UPDATE orders SET notes=$1 WHERE order_id=$2`, [notes, orderId]);
+    }
+    res.json({ ok: true, order_id: orderId });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+module.exports = { listOrders, exportOrders, updateStatus, updateFields, updateNotes, createOrder };

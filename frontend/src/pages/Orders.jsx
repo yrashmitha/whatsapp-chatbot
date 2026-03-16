@@ -9,6 +9,7 @@ import { useToast } from '../components/ui/Toast';
 import api from '../lib/api';
 import { formatDateTime, STATUS_COLORS, STATUS_OPTIONS, STATUS_FILTER_OPTIONS } from '../lib/utils';
 import ChatThread from '../components/chat/ChatThread';
+import CreateOrderDrawer from '../components/chat/CreateOrderDrawer';
 
 function parseCustomFields(raw) {
   if (!raw) return null;
@@ -30,6 +31,7 @@ export default function Orders() {
   const [noteText, setNoteText] = useState('');
   const [productPopup, setProductPopup] = useState(null); // product object or 'loading'
   const [drawerCustomer, setDrawerCustomer] = useState(null); // { phone, name }
+  const [showCreate, setShowCreate] = useState(false);
   const toast = useToast();
   const qc = useQueryClient();
 
@@ -125,7 +127,12 @@ export default function Orders() {
           <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }}
             className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-violet-400"
             title="To date" />
-          <div className="ml-auto">
+          <div className="ml-auto flex gap-2">
+            <button onClick={() => setShowCreate(true)}
+              className="text-sm text-white rounded-lg px-4 py-1.5 cursor-pointer border-0"
+              style={{ background: 'var(--accent)' }}>
+              + New Order
+            </button>
             <button onClick={handleExport} className="text-sm bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg px-4 py-1.5 cursor-pointer transition-colors">
               Export CSV
             </button>
@@ -355,6 +362,11 @@ export default function Orders() {
           </div>
         </div>
       )}
+      <CreateOrderDrawer
+        open={showCreate}
+        onClose={() => setShowCreate(false)}
+        clientId={clientId}
+      />
       <Drawer
         open={!!drawerCustomer}
         onClose={() => setDrawerCustomer(null)}

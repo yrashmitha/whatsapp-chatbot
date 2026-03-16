@@ -1,0 +1,154 @@
+import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import api from '../../lib/api';
+import Drawer from '../ui/Drawer';
+import Spinner from '../ui/Spinner';
+import { useToast } from '../ui/Toast';
+
+export default function CreateOrderDrawer({ open, onClose, customer, clientId }) {
+  const toast = useToast();
+  const qc = useQueryClient();
+
+  const [phone, setPhone] = useState('');
+  const [fields, setFields] = useState({});
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // Reset form when drawer opens
+  const handleOpen = () => {
+    setPhone(customer?.phone || '');
+    setFields({});
+    setNotes('');
+  };
+
+  // Fetch client's order field definitions
+  const { data: settings, isLoading: loadingSettings } = useQuery({
+    queryKey: ['settings', clientId],
+    queryFn: () => api.get('/settings', { params: clientId ? { client_id: clientId } : {} }).then(r => r.data),
+    enabled: open && !!clientId,
+  });
+  const orderFields = settings?.order_fields || [];
+
+  const setField = (key, val) => setFields(prev => ({ ...prev, [key]: val }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const phoneVal = (customer?.phone || phone).trim();
+    if (!phoneVal) { toast.error('Phone number required'); return; }
+    setSaving(true);
+    try {
+      const custom_fields = {
+        customer_name: fields.customer_name ?? (customer?.name || ''),
+        ...Object.fromEntries(orderFields.map(f => [f.key, fields[f.key] ?? ''])),
+      };
+      const res = await api.post('/orders', {
+        phone_number: phoneVal,
+        custom_fields,
+        ...(clientId && { client_id: clientId }),
+        ...(notes && { notes }),
+      });
+      toast.success(`Order ${res.data.order_id} created`);
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      qc.invalidateQueries({ queryKey: ['chat-orders', phoneVal] });
+      onClose();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Failed to create order');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputStyle = {
+    width: '100%',
+    padding: '7px 10px',
+    fontSize: '13px',
+    border: '1px solid var(--border)',
+    borderRadius: '8px',
+    outline: 'none',
+    background: 'var(--bg-base)',
+    color: 'var(--text-1)',
+  };
+
+  const labelStyle = { fontSize: '11px', fontWeight: 500, color: 'var(--text-2)', marginBottom: 4, display: 'block' };
+
+  return (
+    <Drawer
+      open={open}
+      onClose={onClose}
+      title="Create Order"
+      width="440px"
+    >
+      {/* Trigger reset on open via key trick — handled by parent re-mounting isn't needed; use onTransitionEnd instead */}
+      <form
+        onSubmit={handleSubmit}
+        className="flex flex-col gap-4 p-4 overflow-y-auto flex-1"
+        style={{ minHeight: 0 }}
+      >
+        {/* Phone */}
+        <div>
+          <label style={labelStyle}>Phone Number *</label>
+          <input
+            style={{ ...inputStyle, ...(customer?.phone ? { opacity: 0.7 } : {}) }}
+            value={customer?.phone || phone}
+            onChange={e => !customer?.phone && setPhone(e.target.value)}
+            readOnly={!!customer?.phone}
+            placeholder="e.g. 94771234567"
+            required
+          />
+        </div>
+
+        {/* Customer name */}
+        <div>
+          <label style={labelStyle}>Customer Name</label>
+          <input
+            style={inputStyle}
+            value={fields.customer_name ?? (customer?.name || '')}
+            onChange={e => setField('customer_name', e.target.value)}
+            placeholder="Full name (optional)"
+          />
+        </div>
+
+        {/* Dynamic order fields */}
+        {loadingSettings ? (
+          <div className="flex justify-center py-4"><Spinner /></div>
+        ) : (
+          orderFields.map(f => (
+            <div key={f.key}>
+              <label style={labelStyle}>
+                {f.label}
+                {f.required && <span style={{ color: '#f87171', marginLeft: 2 }}>*</span>}
+              </label>
+              <input
+                style={inputStyle}
+                value={fields[f.key] ?? ''}
+                onChange={e => setField(f.key, e.target.value)}
+                placeholder={f.description || ''}
+                required={f.required}
+              />
+            </div>
+          ))
+        )}
+
+        {/* Notes */}
+        <div>
+          <label style={labelStyle}>Notes (internal)</label>
+          <textarea
+            style={{ ...inputStyle, resize: 'vertical', minHeight: 60 }}
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            placeholder="Delivery date, special instructions..."
+          />
+        </div>
+
+        <button
+          type="submit"
+          disabled={saving}
+          className="w-full py-2.5 text-sm font-medium text-white rounded-lg border-0 cursor-pointer disabled:opacity-60"
+          style={{ background: 'linear-gradient(135deg, var(--accent), var(--accent-2, #38bdf8))' }}
+        >
+          {saving ? 'Creating…' : 'Create Order'}
+        </button>
+      </form>
+    </Drawer>
+  );
+}

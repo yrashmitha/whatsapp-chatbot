@@ -13,9 +13,11 @@ const {
   updateStatus,
   updateFields,
   updateNotes,
+  createOrder,
 } = require('../controllers/orders.controller');
 
 router.get('/',              jwtAuth, listOrders);
+router.post('/',             jwtAuth, createOrder);
 router.get('/export',        jwtAuth, exportOrders);
 router.patch('/:id/status',  jwtAuth, updateStatus);
 router.patch('/:id/fields',  jwtAuth, updateFields);

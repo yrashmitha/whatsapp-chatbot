@@ -4,6 +4,7 @@ import api from '../../lib/api';
 import MessageBubble from './MessageBubble';
 import MessageInput from './MessageInput';
 import AstroChartModal from './AstroChartModal';
+import CreateOrderDrawer from './CreateOrderDrawer';
 import Spinner from '../ui/Spinner';
 import Button from '../ui/Button';
 import { useToast } from '../ui/Toast';
@@ -14,6 +15,7 @@ export default function ChatThread({ customer, clientId, onCustomerDeleted }) {
   const [ordersOpen, setOrdersOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [astroModalOpen, setAstroModalOpen] = useState(false);
+  const [createOrderOpen, setCreateOrderOpen] = useState(false);
   const [messagePrefill, setMessagePrefill] = useState('');
   const toast = useToast();
   const qc = useQueryClient();
@@ -215,6 +217,13 @@ export default function ChatThread({ customer, clientId, onCustomerDeleted }) {
             </button>
           )}
           <button
+            onClick={() => setCreateOrderOpen(true)}
+            className="text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
+            title="Create order for this customer"
+          >
+            + Order
+          </button>
+          <button
             onClick={() => toggleAiMutation.mutate(!aiEnabled)}
             disabled={toggleAiMutation.isPending}
             className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${
@@ -293,6 +302,14 @@ export default function ChatThread({ customer, clientId, onCustomerDeleted }) {
         prefill={messagePrefill}
         onPrefillConsumed={() => setMessagePrefill('')}
         onSent={() => qc.invalidateQueries({ queryKey: ['messages', phone] })}
+      />
+
+      {/* Create Order Drawer */}
+      <CreateOrderDrawer
+        open={createOrderOpen}
+        onClose={() => setCreateOrderOpen(false)}
+        customer={{ phone, name }}
+        clientId={clientId}
       />
 
       {/* Astro Chart Modal */}

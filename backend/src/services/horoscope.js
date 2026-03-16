@@ -366,7 +366,7 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
 
 // ─── Main generation function ─────────────────────────────────────────────────
 
-async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, birth_place_name, overrideAstro, specialQuestions = []) {
+async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, birth_place_name, overrideAstro, specialQuestions = [], isVip = false) {
   // 1. Fetch order
   const orderRes = await db.pgQuery(
     'SELECT custom_fields, horoscope_data FROM orders WHERE order_id=$1',
@@ -445,7 +445,6 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
   const chat = geminiModel.startChat({});
 
   // 7. Determine sections
-  const isVip = String(effectiveFields.product || '').toUpperCase().includes('VIP');
   const activeSections = isVip ? [...SECTIONS, VIP_SECTION] : [...SECTIONS];
 
   const sectionsMap = {};

@@ -88,6 +88,9 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
     setGeoSuggestions([]);
   };
 
+  // Package selection
+  const [packageType, setPackageType] = useState('1000');
+
   // Special questions
   const [specialQuestions, setSpecialQuestions] = useState([]);
   const [newQuestion, setNewQuestion] = useState('');
@@ -115,6 +118,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
         birth_place_name: selectedPlace.name,
         override_astro: overrideAstro,
         special_questions: specialQuestions,
+        package_type: packageType,
         birth_overrides: {
           customer_name: customerName,
           birth_date: birthDate,
@@ -218,6 +222,29 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
                 ✓ {selectedPlace.lat.toFixed(4)}, {selectedPlace.lng.toFixed(4)}
               </p>
             )}
+          </div>
+
+          {/* Package selection */}
+          <div>
+            <label className={labelCls}>Package</label>
+            <div className="flex gap-4">
+              {['1000', '1500'].map(pkg => (
+                <label key={pkg} className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="package_type"
+                    value={pkg}
+                    checked={packageType === pkg}
+                    onChange={() => setPackageType(pkg)}
+                    className="w-4 h-4 accent-violet-600"
+                  />
+                  <span className="text-sm text-slate-700 font-medium">
+                    Rs. {pkg}
+                    {pkg === '1500' && <span className="ml-1 text-xs text-violet-600 font-semibold">+ VIP Section</span>}
+                  </span>
+                </label>
+              ))}
+            </div>
           </div>
 
           {/* Special questions */}

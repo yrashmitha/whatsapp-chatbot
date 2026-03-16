@@ -4,20 +4,6 @@ import Drawer from '../ui/Drawer';
 import { useToast } from '../ui/Toast';
 import api from '../../lib/api';
 
-const SECTIONS = [
-  'පෞරුෂය',
-  'අධ්‍යාපනය',
-  'වෘත්තීය ජීවිතය සහ ආර්ථික ශක්තිය',
-  'ප්‍රේමය සහ විවාහ ජීවිතය',
-  'දේපළ, භූමිය, නිවාස සහ වාහන භාග්‍යය',
-  'ශාරීරික සෞඛ්‍යය, මාරක අපල, හදිසි අනතුරු',
-  'දරු පල',
-  'මෙතෙක් දැක්වූ කරුණු අනුව ජීවන ගමනේ සමස්ත සාරාංශය',
-  'වර්තමාන දශාව අනුව පලාපල',
-  'ජීවිතයේ අභියෝග ජයගැනීම සඳහා වූ පොදු ශාස්ත්‍රීය සහ බෞද්ධ පිළියම්',
-];
-
-// English labels shown as primary header text (Sinhala fonts may not render in browser)
 const SECTION_LABELS = [
   'Personality',
   'Education',
@@ -31,13 +17,6 @@ const SECTION_LABELS = [
   'Remedies',
 ];
 
-function getSectionLabel(sec, index) {
-  const canonical = SECTIONS.findIndex(s => s === sec || s.includes(sec.slice(0, 4)));
-  const idx = canonical >= 0 ? canonical : index;
-  const label = SECTION_LABELS[idx];
-  return label ? `Section ${idx + 1} — ${label}` : `Section ${index + 1}`;
-}
-
 export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }) {
   const toast = useToast();
   const qc    = useQueryClient();
@@ -49,28 +28,42 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
     try { return JSON.parse(order.horoscope_data); } catch { return {}; }
   })();
 
-  const savedSections    = hd.sections || {};
-  const savedSpecial     = hd.special_answers || [];
-  // Use saved keys directly to avoid Unicode/ZWJ mismatch issues
-  const allSectionKeys = Object.keys(savedSections).length > 0
-    ? Object.keys(savedSections)
-    : SECTIONS;
+  const savedSections = hd.sections || {};
+  const savedSpecial  = hd.special_answers || [];
+  const sectionKeys   = Object.keys(savedSections).length > 0 ? Object.keys(savedSections) : [];
+
+  // Build tab list: S1..SN then Q1..QN
+  const sectionTabs = sectionKeys.map((key, i) => ({
+    id: `s-${i}`,
+    label: `S${i + 1}`,
+    title: SECTION_LABELS[i] ? `Section ${i + 1} — ${SECTION_LABELS[i]}` : `Section ${i + 1}`,
+    key,
+    type: 'section',
+  }));
+  const questionTabs = savedSpecial.map((qa, i) => ({
+    id: `q-${i}`,
+    label: `Q${i + 1}`,
+    title: `Question ${i + 1}`,
+    key: i,
+    type: 'question',
+  }));
+  const allTabs = [...sectionTabs, ...questionTabs];
 
   // Editor state
-  const [tab, setTab]                 = useState('edit'); // 'edit' | 'preview'
-  const [sections, setSections]       = useState({ ...savedSections });
+  const [outerTab, setOuterTab]     = useState('edit');
+  const [activeTab, setActiveTab]   = useState(allTabs[0]?.id || null);
+  const [sections, setSections]     = useState({ ...savedSections });
   const [specialAnswers, setSpecialAnswers] = useState(savedSpecial.map(qa => ({ ...qa })));
-  const [expandedSection, setExpandedSection] = useState(allSectionKeys[0] || null);
-  const [saving, setSaving]           = useState(false);
+  const [saving, setSaving]         = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [loadingPreview, setLoadingPreview] = useState(false);
 
-  // Reset when order changes
   useEffect(() => {
     setSections({ ...savedSections });
     setSpecialAnswers(savedSpecial.map(qa => ({ ...qa })));
-    setExpandedSection(allSectionKeys[0] || null);
-    setTab('edit');
+    const newTabs = [...sectionKeys.map((_, i) => `s-${i}`), ...savedSpecial.map((_, i) => `q-${i}`)];
+    setActiveTab(newTabs[0] || null);
+    setOuterTab('edit');
   }, [order?.order_id]);
 
   const handleSave = async () => {
@@ -124,18 +117,11 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
       });
       if (!res.ok) throw new Error('Failed to fetch document');
       const blob = await res.blob();
-
-      // Dynamically import docx-preview to avoid SSR issues
       const { renderAsync } = await import('docx-preview');
       previewRef.current.innerHTML = '';
       await renderAsync(blob, previewRef.current, null, {
-        className: 'docx-preview',
-        inWrapper: true,
-        ignoreWidth: false,
-        ignoreHeight: false,
-        ignoreFonts: false,
-        breakPages: true,
-        useBase64URL: true,
+        className: 'docx-preview', inWrapper: true, ignoreWidth: false,
+        ignoreHeight: false, ignoreFonts: false, breakPages: true, useBase64URL: true,
       });
     } catch (e) {
       toast.error('Failed to load preview');
@@ -144,154 +130,137 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
     }
   };
 
-  // Auto-load preview when switching to preview tab
   useEffect(() => {
-    if (tab === 'preview' && order?.horoscope_data) {
-      handlePreviewLoad();
-    }
-  }, [tab]);
+    if (outerTab === 'preview' && order?.horoscope_data) handlePreviewLoad();
+  }, [outerTab]);
 
-  const tabBtnCls = (active) =>
-    `px-4 py-2 text-sm font-medium border-b-2 cursor-pointer bg-transparent transition-colors ${
-      active ? 'border-violet-600 text-violet-600' : 'border-transparent text-slate-500 hover:text-slate-700'
-    }`;
+  const outerTabCls = (active) => ({
+    padding: '8px 16px', fontSize: 13, fontWeight: active ? 600 : 400,
+    borderBottom: active ? '2px solid #6366f1' : '2px solid transparent',
+    color: active ? '#6366f1' : '#64748b',
+    cursor: 'pointer', background: 'none', border: 'none',
+    borderBottomStyle: 'solid', borderBottomWidth: 2,
+    borderBottomColor: active ? '#6366f1' : 'transparent',
+    userSelect: 'none',
+  });
 
-  const textareaStyle = {
-    width: '100%',
-    padding: '8px 10px',
-    fontSize: '13px',
-    fontFamily: 'monospace',
-    border: '1px solid #cbd5e1',
-    borderRadius: '8px',
-    outline: 'none',
-    background: '#ffffff',
-    color: '#1e293b',
-    resize: 'vertical',
-    minHeight: '120px',
-    lineHeight: 1.6,
-  };
+  const innerTabCls = (active) => ({
+    padding: '6px 10px', fontSize: 12, fontWeight: active ? 700 : 500,
+    background: active ? '#6366f1' : '#f1f5f9',
+    color: active ? '#ffffff' : '#475569',
+    borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap',
+    border: 'none', userSelect: 'none', flexShrink: 0,
+  });
+
+  const activeTabData = allTabs.find(t => t.id === activeTab);
 
   return (
     <Drawer open={open} onClose={onClose} title={`Horoscope Editor — #${order?.order_id}`} width="800px">
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
 
-        {/* Tabs */}
-        <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', flexShrink: 0, paddingLeft: 8 }}>
-          <button className={tabBtnCls(tab === 'edit')}    onClick={() => setTab('edit')}>✏ Edit Sections</button>
-          <button className={tabBtnCls(tab === 'preview')} onClick={() => setTab('preview')}>👁 Preview Word File</button>
+        {/* Outer tabs: Edit | Preview */}
+        <div style={{ display: 'flex', borderBottom: '2px solid #e2e8f0', flexShrink: 0, paddingLeft: 8 }}>
+          <p style={outerTabCls(outerTab === 'edit')}    onClick={() => setOuterTab('edit')}>✏ Edit Sections</p>
+          <p style={outerTabCls(outerTab === 'preview')} onClick={() => setOuterTab('preview')}>👁 Preview Word File</p>
         </div>
 
-        {/* Edit tab */}
-        {tab === 'edit' && (
-          <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
-            {allSectionKeys.map((sec, idx) => (
-              <div key={idx} style={{ marginBottom: 20 }}>
-                <p style={{ margin: '0 0 6px 0', padding: '8px 12px', background: '#6366f1', color: '#ffffff', borderRadius: 8, fontSize: 13, fontWeight: 700 }}>
-                  {getSectionLabel(sec, idx)}
-                </p>
-                <textarea
-                  style={textareaStyle}
-                  value={sections[sec] || ''}
-                  onChange={e => setSections(prev => ({ ...prev, [sec]: e.target.value }))}
-                  rows={10}
-                  placeholder={`Enter content for section ${idx + 1}…`}
-                />
-              </div>
-            ))}
+        {/* ── Edit tab ── */}
+        {outerTab === 'edit' && (
+          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
 
-            {/* Special answers */}
-            {specialAnswers.length > 0 && (
-              <div style={{ marginTop: 8 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 8 }}>
-                  විශේෂ ප්‍රශ්න
-                </div>
-                {specialAnswers.map((qa, i) => (
-                  <div key={i} style={{ border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden', marginBottom: 8 }}>
-                    <div style={{ padding: '10px 14px', background: '#f1f5f9', fontSize: 12, fontWeight: 500, color: '#1e293b' }}>
-                      {i + 1}. {qa.question}
-                    </div>
-                    <div style={{ padding: '10px 12px', background: '#f8fafc' }}>
+            {/* Inner section tab bar */}
+            <div style={{ flexShrink: 0, padding: '8px 12px', borderBottom: '1px solid #e2e8f0', overflowX: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+              {allTabs.map(t => (
+                <p key={t.id} style={innerTabCls(activeTab === t.id)} onClick={() => setActiveTab(t.id)}>
+                  {t.label}
+                </p>
+              ))}
+              {allTabs.length === 0 && (
+                <span style={{ fontSize: 12, color: '#94a3b8' }}>No sections generated yet.</span>
+              )}
+            </div>
+
+            {/* Section content */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
+              {activeTabData ? (
+                <>
+                  <p style={{ margin: '0 0 8px 0', fontSize: 13, fontWeight: 700, color: '#6366f1' }}>
+                    {activeTabData.title}
+                  </p>
+                  {activeTabData.type === 'section' ? (
+                    <textarea
+                      key={activeTabData.id}
+                      style={{ width: '100%', padding: '10px 12px', fontSize: 13, fontFamily: 'monospace', border: '1px solid #cbd5e1', borderRadius: 8, outline: 'none', background: '#ffffff', color: '#1e293b', resize: 'vertical', lineHeight: 1.6, boxSizing: 'border-box' }}
+                      value={sections[activeTabData.key] || ''}
+                      onChange={e => setSections(prev => ({ ...prev, [activeTabData.key]: e.target.value }))}
+                      rows={22}
+                      placeholder={`Enter content for ${activeTabData.title}…`}
+                    />
+                  ) : (
+                    <>
+                      <p style={{ margin: '0 0 8px 0', padding: '8px 12px', background: '#f1f5f9', borderRadius: 8, fontSize: 13, color: '#334155' }}>
+                        {specialAnswers[activeTabData.key]?.question}
+                      </p>
                       <textarea
-                        style={textareaStyle}
-                        value={qa.answer || ''}
+                        key={activeTabData.id}
+                        style={{ width: '100%', padding: '10px 12px', fontSize: 13, fontFamily: 'monospace', border: '1px solid #cbd5e1', borderRadius: 8, outline: 'none', background: '#ffffff', color: '#1e293b', resize: 'vertical', lineHeight: 1.6, boxSizing: 'border-box' }}
+                        value={specialAnswers[activeTabData.key]?.answer || ''}
                         onChange={e => {
                           const updated = [...specialAnswers];
-                          updated[i] = { ...updated[i], answer: e.target.value };
+                          updated[activeTabData.key] = { ...updated[activeTabData.key], answer: e.target.value };
                           setSpecialAnswers(updated);
                         }}
-                        rows={8}
+                        rows={18}
+                        placeholder="Enter answer…"
                       />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                    </>
+                  )}
+                </>
+              ) : (
+                <p style={{ fontSize: 13, color: '#94a3b8' }}>Select a section tab above to edit.</p>
+              )}
+            </div>
           </div>
         )}
 
-        {/* Preview tab */}
-        {tab === 'preview' && (
+        {/* ── Preview tab ── */}
+        {outerTab === 'preview' && (
           <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
               <button
                 onClick={handlePreviewLoad}
                 disabled={loadingPreview}
-                style={{
-                  padding: '6px 16px', fontSize: 13, background: 'var(--accent)', color: '#fff',
-                  border: 0, borderRadius: 8, cursor: 'pointer', opacity: loadingPreview ? 0.6 : 1,
-                }}
+                style={{ padding: '6px 16px', fontSize: 13, background: '#6366f1', color: '#fff', border: 0, borderRadius: 8, cursor: 'pointer', opacity: loadingPreview ? 0.6 : 1 }}
               >
                 {loadingPreview ? 'Loading…' : '🔄 Refresh Preview'}
               </button>
-              <span style={{ fontSize: 12, color: 'var(--text-3)', alignSelf: 'center' }}>
-                Save your changes first before refreshing the preview.
+              <span style={{ fontSize: 12, color: '#94a3b8', alignSelf: 'center' }}>
+                Save changes first, then refresh preview.
               </span>
             </div>
             {loadingPreview && (
-              <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-3)' }}>
+              <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>
                 <span className="w-6 h-6 border-2 border-violet-400/30 border-t-violet-500 rounded-full animate-spin inline-block" />
                 <div style={{ marginTop: 8, fontSize: 13 }}>Rendering document…</div>
               </div>
             )}
-            <div
-              ref={previewRef}
-              style={{
-                background: '#fff',
-                border: '1px solid var(--border)',
-                borderRadius: 8,
-                minHeight: 400,
-                overflow: 'auto',
-              }}
-            />
+            <div ref={previewRef} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, minHeight: 400, overflow: 'auto' }} />
           </div>
         )}
 
-        {/* Footer actions */}
-        <div style={{
-          flexShrink: 0, padding: '12px 16px',
-          borderTop: '1px solid var(--border)',
-          display: 'flex', gap: 8, justifyContent: 'flex-end',
-          background: 'var(--bg-surface)',
-        }}>
+        {/* Footer */}
+        <div style={{ flexShrink: 0, padding: '12px 16px', borderTop: '1px solid #e2e8f0', display: 'flex', gap: 8, justifyContent: 'flex-end', background: '#f8fafc' }}>
           <button
             onClick={handleDownload}
             disabled={downloading}
-            style={{
-              padding: '8px 18px', fontSize: 13, background: 'var(--bg-card)',
-              color: 'var(--text-1)', border: '1px solid var(--border)', borderRadius: 8,
-              cursor: downloading ? 'not-allowed' : 'pointer', opacity: downloading ? 0.6 : 1,
-            }}
+            style={{ padding: '8px 18px', fontSize: 13, background: '#ffffff', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 8, cursor: downloading ? 'not-allowed' : 'pointer', opacity: downloading ? 0.6 : 1 }}
           >
             {downloading ? 'Downloading…' : '⬇ Download Word'}
           </button>
           <button
             onClick={handleSave}
             disabled={saving}
-            style={{
-              padding: '8px 18px', fontSize: 13, fontWeight: 500,
-              background: saving ? '#7c3aed' : 'var(--accent)', color: '#fff',
-              border: 0, borderRadius: 8, cursor: 'pointer', opacity: saving ? 0.7 : 1,
-            }}
+            style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, background: '#6366f1', color: '#fff', border: 0, borderRadius: 8, cursor: 'pointer', opacity: saving ? 0.7 : 1 }}
           >
             {saving ? 'Saving…' : '💾 Save Changes'}
           </button>

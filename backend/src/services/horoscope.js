@@ -326,6 +326,14 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
   }));
 
   const doc = new Document({
+    styles: {
+      default: {
+        document: {
+          run: { font: 'Abhaya Libre', size: 24 },
+          paragraph: { alignment: AlignmentType.JUSTIFY, spacing: { after: 160 } },
+        },
+      },
+    },
     numbering: {
       config: [{
         reference: 'default-numbering',

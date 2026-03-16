@@ -161,11 +161,11 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
     padding: '8px 10px',
     fontSize: '13px',
     fontFamily: 'monospace',
-    border: '1px solid var(--border)',
+    border: '1px solid #cbd5e1',
     borderRadius: '8px',
     outline: 'none',
-    background: 'var(--bg-card)',
-    color: 'var(--text-1)',
+    background: '#ffffff',
+    color: '#1e293b',
     resize: 'vertical',
     minHeight: '120px',
     lineHeight: 1.6,
@@ -185,24 +185,26 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
         {tab === 'edit' && (
           <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
             {allSectionKeys.map((sec, idx) => (
-              <div key={sec} style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
-                <button
+              <div key={sec} style={{ border: '1px solid #cbd5e1', borderRadius: 10, overflow: 'hidden' }}>
+                <div
+                  role="button"
                   onClick={() => setExpandedSection(expandedSection === sec ? null : sec)}
                   style={{
-                    width: '100%', textAlign: 'left', padding: '10px 14px',
-                    background: expandedSection === sec ? 'var(--bg-base)' : 'var(--bg-card)',
-                    border: 0, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    color: 'var(--text-1)', fontSize: 13, fontWeight: 500,
+                    padding: '10px 14px',
+                    background: expandedSection === sec ? '#ede9fe' : '#f8fafc',
+                    cursor: 'pointer',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    userSelect: 'none',
                   }}
                 >
-                  <span style={{ color: 'var(--text-1)' }}>{getSectionLabel(sec, idx)}</span>
-                  <span style={{ color: 'var(--text-3)', fontSize: 11 }}>
+                  <span style={{ color: '#1e293b', fontSize: 13, fontWeight: 600 }}>{getSectionLabel(sec, idx)}</span>
+                  <span style={{ color: '#64748b', fontSize: 11 }}>
                     {expandedSection === sec ? '▲' : '▼'}
                     {sections[sec] ? ` · ${sections[sec].length} chars` : ' · empty'}
                   </span>
-                </button>
+                </div>
                 {expandedSection === sec && (
-                  <div style={{ padding: '10px 12px', background: 'var(--bg-base)' }}>
+                  <div style={{ padding: '10px 12px', background: '#ffffff' }}>
                     <textarea
                       style={textareaStyle}
                       value={sections[sec] || ''}

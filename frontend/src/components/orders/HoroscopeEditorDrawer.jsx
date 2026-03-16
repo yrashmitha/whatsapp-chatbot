@@ -30,13 +30,10 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
 
   const savedSections    = hd.sections || {};
   const savedSpecial     = hd.special_answers || [];
-  // Always show in canonical SECTIONS order, then any extras (e.g. VIP)
-  const allSectionKeys = (() => {
-    const hasData = Object.keys(savedSections).length > 0;
-    const ordered = SECTIONS.filter(s => !hasData || savedSections[s] !== undefined);
-    const extra   = Object.keys(savedSections).filter(s => !SECTIONS.includes(s));
-    return hasData ? [...ordered, ...extra] : SECTIONS;
-  })();
+  // Use saved keys directly to avoid Unicode/ZWJ mismatch issues
+  const allSectionKeys = Object.keys(savedSections).length > 0
+    ? Object.keys(savedSections)
+    : SECTIONS;
 
   // Editor state
   const [tab, setTab]                 = useState('edit'); // 'edit' | 'preview'

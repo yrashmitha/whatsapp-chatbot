@@ -11,6 +11,7 @@ import Media from './pages/Media';
 import Settings from './pages/Settings';
 import Addons from './pages/Addons';
 import Plugins from './pages/Plugins';
+import Summary from './pages/Summary';
 
 const qc = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -18,6 +19,7 @@ const qc = new QueryClient({
 
 const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
+  { path: '/summary', element: <ProtectedRoute><Summary /></ProtectedRoute> },
   { path: '/chat', element: <ProtectedRoute><Chat /></ProtectedRoute> },
   { path: '/orders', element: <ProtectedRoute><Orders /></ProtectedRoute> },
   { path: '/products', element: <ProtectedRoute><Products /></ProtectedRoute> },

@@ -1,8 +1,21 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '../../lib/api';
 import { timeAgo } from '../../lib/utils';
 import Spinner from '../ui/Spinner';
+
+const WINDOW_MS = 24 * 3600_000;
+
+function windowBadge(last_message_at) {
+  if (!last_message_at) return null;
+  const rem = WINDOW_MS - (Date.now() - new Date(last_message_at));
+  if (rem <= 0) return { label: 'Expired', bg: 'rgba(239,68,68,0.15)', color: '#f87171' };
+  const h = Math.floor(rem / 3600_000);
+  const m = Math.floor((rem % 3600_000) / 60_000);
+  if (rem < 3600_000)  return { label: `${m}m`,        bg: 'rgba(239,68,68,0.15)',    color: '#f87171' };
+  if (rem < 4*3600_000) return { label: `${h}h ${m}m`, bg: 'rgba(245,158,11,0.15)',  color: '#fbbf24' };
+  return { label: `${h}h`, bg: 'rgba(100,116,139,0.12)', color: 'var(--text-3)' };
+}
 
 const STATUS_LABEL = {
   pending:          'Pending',
@@ -42,6 +55,11 @@ function Avatar({ name, phone }) {
 export default function CustomerList({ clientId, selectedPhone, onSelect }) {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   const params = { page, limit: 30, ...(search && { search }), ...(clientId && { client_id: clientId }) };
 
@@ -83,6 +101,7 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
         ) : (
           customers.map(c => {
             const isSelected = selectedPhone === c.phone;
+            const badge = windowBadge(c.last_message_at);
             return (
               <button
                 key={c.phone}
@@ -155,6 +174,12 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
                         >
                           {c.order_count} {c.order_count === 1 ? 'order' : 'orders'}
                         </span>
+                      )}
+                      {badge && (
+                        <span
+                          className="text-[10px] font-medium rounded px-1.5 py-0.5"
+                          style={{ background: badge.bg, color: badge.color }}
+                        >{badge.label}</span>
                       )}
                     </div>
                   </div>

@@ -1,4 +1,4 @@
-import { formatTime } from '../../lib/utils';
+import { formatMessageTime } from '../../lib/utils';
 
 // Resolve media URLs: if already absolute, use as-is; if starts with /uploads/, prepend backend origin.
 // In production the frontend and backend share the same origin so window.location.origin works.
@@ -114,7 +114,7 @@ export default function MessageBubble({ msg, onDelete }) {
           <div className="whitespace-pre-wrap break-words">{text}</div>
         )}
         <div className={`text-xs mt-1 ${isUser ? 'text-slate-400' : 'opacity-60'} text-right`}>
-          {formatTime(msg.created_at)}
+          {formatMessageTime(msg.created_at)}
           {!isUser && !isAdmin && msg.cost_usd && parseFloat(msg.cost_usd) > 0 && (
             <span className="ml-1.5">${parseFloat(msg.cost_usd).toFixed(6)}</span>
           )}

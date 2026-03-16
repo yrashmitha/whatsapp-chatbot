@@ -1,4 +1,4 @@
-import { format, formatDistanceToNow, parseISO } from 'date-fns';
+import { format, formatDistanceToNow, parseISO, isSameDay, subDays } from 'date-fns';
 
 export function formatTime(iso) {
   if (!iso) return '';
@@ -18,6 +18,17 @@ export function formatDateTime(iso) {
   if (!iso) return '';
   try {
     return format(typeof iso === 'string' ? parseISO(iso) : iso, 'MMM d, yyyy HH:mm');
+  } catch { return ''; }
+}
+
+export function formatMessageTime(iso) {
+  if (!iso) return '';
+  try {
+    const d = typeof iso === 'string' ? parseISO(iso) : iso;
+    const now = new Date();
+    if (isSameDay(d, now)) return format(d, 'HH:mm');
+    if (isSameDay(d, subDays(now, 1))) return `Yesterday ${format(d, 'HH:mm')}`;
+    return format(d, 'MMM d, HH:mm');
   } catch { return ''; }
 }
 

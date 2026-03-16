@@ -4,9 +4,11 @@ import { useAuthStore, isSuperAdmin } from '../stores/auth';
 import Layout from '../components/Layout';
 import Pagination from '../components/ui/Pagination';
 import Spinner from '../components/ui/Spinner';
+import Drawer from '../components/ui/Drawer';
 import { useToast } from '../components/ui/Toast';
 import api from '../lib/api';
 import { formatDateTime, STATUS_COLORS, STATUS_OPTIONS, STATUS_FILTER_OPTIONS } from '../lib/utils';
+import ChatThread from '../components/chat/ChatThread';
 
 function parseCustomFields(raw) {
   if (!raw) return null;
@@ -20,11 +22,14 @@ export default function Orders() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [expandedOrder, setExpandedOrder] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null); // { id, orderId, fields }
   const [editingNoteId, setEditingNoteId] = useState(null);
   const [noteText, setNoteText] = useState('');
   const [productPopup, setProductPopup] = useState(null); // product object or 'loading'
+  const [drawerCustomer, setDrawerCustomer] = useState(null); // { phone, name }
   const toast = useToast();
   const qc = useQueryClient();
 
@@ -34,6 +39,8 @@ export default function Orders() {
     page, limit: 20,
     ...(search && { search }),
     ...(statusFilter && { status: statusFilter }),
+    ...(dateFrom && { date_from: dateFrom }),
+    ...(dateTo && { date_to: dateTo }),
     ...(clientId && { client_id: clientId }),
   };
 
@@ -87,7 +94,7 @@ export default function Orders() {
   };
 
   const handleExport = async () => {
-    const exportParams = new URLSearchParams({ ...(clientId && { client_id: clientId }), ...(statusFilter && { status: statusFilter }), ...(search && { search }) });
+    const exportParams = new URLSearchParams({ ...(clientId && { client_id: clientId }), ...(statusFilter && { status: statusFilter }), ...(search && { search }), ...(dateFrom && { date_from: dateFrom }), ...(dateTo && { date_to: dateTo }) });
     const token = localStorage.getItem('crm_token');
     const res = await fetch(`/api/orders/export?${exportParams}`, { headers: { Authorization: `Bearer ${token}` } });
     const blob = await res.blob();
@@ -112,6 +119,12 @@ export default function Orders() {
             <option value="">All statuses</option>
             {STATUS_FILTER_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
+          <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }}
+            className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-violet-400"
+            title="From date" />
+          <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }}
+            className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-violet-400"
+            title="To date" />
           <div className="ml-auto">
             <button onClick={handleExport} className="text-sm bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg px-4 py-1.5 cursor-pointer transition-colors">
               Export CSV
@@ -146,7 +159,11 @@ export default function Orders() {
                       <tr className="border-b border-slate-100 hover:bg-slate-50">
                         <td className="py-2.5 pr-4 text-slate-500 font-mono text-xs">#{o.order_id || o.id}</td>
                         <td className="py-2.5 pr-4">
-                          <div className="font-medium text-slate-800">{o.customer_name || o.phone || o.phone_number}</div>
+                          <button
+                            onClick={() => setDrawerCustomer({ phone: o.phone || o.phone_number, name: o.customer_name || o.phone || o.phone_number })}
+                            className="font-medium text-left bg-transparent border-0 cursor-pointer p-0 transition-colors"
+                            style={{ color: 'var(--accent)' }}
+                          >{o.customer_name || o.phone || o.phone_number}</button>
                           <div className="text-xs text-slate-400">{o.phone || o.phone_number}</div>
                         </td>
                         <td className="py-2.5 pr-4">
@@ -338,6 +355,15 @@ export default function Orders() {
           </div>
         </div>
       )}
+      <Drawer
+        open={!!drawerCustomer}
+        onClose={() => setDrawerCustomer(null)}
+        title={drawerCustomer?.name || drawerCustomer?.phone || 'Chat'}
+      >
+        {drawerCustomer && (
+          <ChatThread customer={drawerCustomer} clientId={clientId} />
+        )}
+      </Drawer>
     </Layout>
   );
 }

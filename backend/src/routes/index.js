@@ -22,6 +22,7 @@ const mediaRoutes      = require('./media.routes');
 const addonRoutes      = require('./addons.routes');      // mounted at /api — owns /api/addons, /api/crm
 const pluginRoutes     = require('./plugins.routes');
 const settingsRoutes   = require('./settings.routes');
+const summaryRoutes    = require('./summary.routes');
 const adminRoutes      = require('./admin.routes');
 
 const jwtAuth = require('../middleware/jwtAuth');
@@ -72,6 +73,7 @@ function mountRoutes(app) {
   app.use('/api/media',        mediaRoutes);
   app.use('/api/plugins',      pluginRoutes);
   app.use('/api/settings',     settingsRoutes);
+  app.use('/api/summary',      summaryRoutes);
 
   // Standalone endpoint: POST /api/upload-image (Cloudinary product image upload)
   app.post('/api/upload-image', jwtAuth, upload.single('image'), uploadImage);

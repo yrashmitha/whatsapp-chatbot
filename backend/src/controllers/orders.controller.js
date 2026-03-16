@@ -20,22 +20,28 @@ async function listOrders(req, res) {
   const page   = Math.max(1, parseInt(req.query.page) || 1);
   const limit  = Math.min(100, parseInt(req.query.limit) || 20);
   const offset = (page - 1) * limit;
-  const status = req.query.status || '';
-  const search = req.query.search || '';
+  const status    = req.query.status    || '';
+  const search    = req.query.search    || '';
+  const date_from = req.query.date_from || '';
+  const date_to   = req.query.date_to   || '';
   try {
     const conditions = [];
     const params = [];
-    if (clientId) { params.push(clientId); conditions.push(`o.client_id=$${params.length}`); }
-    if (status)   { params.push(status);   conditions.push(`o.status=$${params.length}`); }
-    if (search)   { params.push(`%${search}%`); conditions.push(`(o.order_id ILIKE $${params.length} OR o.phone_number ILIKE $${params.length})`); }
+    if (clientId)   { params.push(clientId);        conditions.push(`o.client_id=$${params.length}`); }
+    if (status)     { params.push(status);           conditions.push(`o.status=$${params.length}`); }
+    if (search)     { params.push(`%${search}%`);   conditions.push(`(o.order_id ILIKE $${params.length} OR o.phone_number ILIKE $${params.length})`); }
+    if (date_from)  { params.push(date_from);        conditions.push(`o.created_at >= $${params.length}::date`); }
+    if (date_to)    { params.push(date_to);          conditions.push(`o.created_at < ($${params.length}::date + INTERVAL '1 day')`); }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     params.push(limit);  const limitIdx  = params.length;
     params.push(offset); const offsetIdx = params.length;
     const countConditions = [];
     const countParams = [];
-    if (clientId) { countParams.push(clientId); countConditions.push(`client_id=$${countParams.length}`); }
-    if (status)   { countParams.push(status);   countConditions.push(`status=$${countParams.length}`); }
-    if (search)   { countParams.push(`%${search}%`); countConditions.push(`(order_id ILIKE $${countParams.length} OR phone_number ILIKE $${countParams.length})`); }
+    if (clientId)   { countParams.push(clientId);       countConditions.push(`client_id=$${countParams.length}`); }
+    if (status)     { countParams.push(status);          countConditions.push(`status=$${countParams.length}`); }
+    if (search)     { countParams.push(`%${search}%`);  countConditions.push(`(order_id ILIKE $${countParams.length} OR phone_number ILIKE $${countParams.length})`); }
+    if (date_from)  { countParams.push(date_from);       countConditions.push(`created_at >= $${countParams.length}::date`); }
+    if (date_to)    { countParams.push(date_to);         countConditions.push(`created_at < ($${countParams.length}::date + INTERVAL '1 day')`); }
     const countWhere = countConditions.length ? `WHERE ${countConditions.join(' AND ')}` : '';
     const [rows, countRes] = await Promise.all([
       db.pgQuery(`SELECT o.*, o.phone_number AS phone, cu.name AS customer_name FROM orders o LEFT JOIN customers cu ON cu.phone_number=o.phone_number ${where} ORDER BY o.created_at DESC LIMIT $${limitIdx} OFFSET $${offsetIdx}`, params),
@@ -53,10 +59,20 @@ async function listOrders(req, res) {
  * @returns {Promise<void>}
  */
 async function exportOrders(req, res) {
-  const clientId = resolveClientId(req);
+  const clientId  = resolveClientId(req);
+  const status    = req.query.status    || '';
+  const search    = req.query.search    || '';
+  const date_from = req.query.date_from || '';
+  const date_to   = req.query.date_to   || '';
   try {
-    const where = clientId ? 'WHERE o.client_id=$1' : '';
-    const params = clientId ? [clientId] : [];
+    const conditions = [];
+    const params = [];
+    if (clientId)  { params.push(clientId);       conditions.push(`o.client_id=$${params.length}`); }
+    if (status)    { params.push(status);          conditions.push(`o.status=$${params.length}`); }
+    if (search)    { params.push(`%${search}%`);  conditions.push(`(o.order_id ILIKE $${params.length} OR o.phone_number ILIKE $${params.length})`); }
+    if (date_from) { params.push(date_from);       conditions.push(`o.created_at >= $${params.length}::date`); }
+    if (date_to)   { params.push(date_to);         conditions.push(`o.created_at < ($${params.length}::date + INTERVAL '1 day')`); }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const r = await db.pgQuery(
       `SELECT o.order_id, o.phone_number, cu.name AS customer_name, o.status,
               o.custom_fields, o.notes, o.created_at, o.client_id

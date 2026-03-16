@@ -17,6 +17,27 @@ const SECTIONS = [
   'ජීවිතයේ අභියෝග ජයගැනීම සඳහා වූ පොදු ශාස්ත්‍රීය සහ බෞද්ධ පිළියම්',
 ];
 
+// English labels shown as primary header text (Sinhala fonts may not render in browser)
+const SECTION_LABELS = [
+  'Personality',
+  'Education',
+  'Career & Finance',
+  'Love & Marriage',
+  'Property, Land & Vehicles',
+  'Health & Accidents',
+  'Children',
+  'Life Summary',
+  'Current Dasha Period',
+  'Remedies',
+];
+
+function getSectionLabel(sec, index) {
+  const canonical = SECTIONS.findIndex(s => s === sec || s.includes(sec.slice(0, 4)));
+  const idx = canonical >= 0 ? canonical : index;
+  const label = SECTION_LABELS[idx];
+  return label ? `Section ${idx + 1} — ${label}` : `Section ${index + 1}`;
+}
+
 export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }) {
   const toast = useToast();
   const qc    = useQueryClient();
@@ -140,11 +161,11 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
     padding: '8px 10px',
     fontSize: '13px',
     fontFamily: 'monospace',
-    border: '1px solid #e2e8f0',
+    border: '1px solid var(--border)',
     borderRadius: '8px',
     outline: 'none',
-    background: '#ffffff',
-    color: '#1e293b',
+    background: 'var(--bg-card)',
+    color: 'var(--text-1)',
     resize: 'vertical',
     minHeight: '120px',
     lineHeight: 1.6,
@@ -163,25 +184,25 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
         {/* Edit tab */}
         {tab === 'edit' && (
           <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {allSectionKeys.map((sec) => (
-              <div key={sec} style={{ border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
+            {allSectionKeys.map((sec, idx) => (
+              <div key={sec} style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
                 <button
                   onClick={() => setExpandedSection(expandedSection === sec ? null : sec)}
                   style={{
                     width: '100%', textAlign: 'left', padding: '10px 14px',
-                    background: expandedSection === sec ? '#f1f5f9' : '#ffffff',
+                    background: expandedSection === sec ? 'var(--bg-base)' : 'var(--bg-card)',
                     border: 0, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    color: '#1e293b', fontSize: 13, fontWeight: 500,
+                    color: 'var(--text-1)', fontSize: 13, fontWeight: 500,
                   }}
                 >
-                  <span>{sec}</span>
-                  <span style={{ color: '#94a3b8', fontSize: 11 }}>
+                  <span style={{ color: 'var(--text-1)' }}>{getSectionLabel(sec, idx)}</span>
+                  <span style={{ color: 'var(--text-3)', fontSize: 11 }}>
                     {expandedSection === sec ? '▲' : '▼'}
                     {sections[sec] ? ` · ${sections[sec].length} chars` : ' · empty'}
                   </span>
                 </button>
                 {expandedSection === sec && (
-                  <div style={{ padding: '10px 12px', background: '#f8fafc' }}>
+                  <div style={{ padding: '10px 12px', background: 'var(--bg-base)' }}>
                     <textarea
                       style={textareaStyle}
                       value={sections[sec] || ''}

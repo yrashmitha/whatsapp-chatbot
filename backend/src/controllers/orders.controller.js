@@ -178,6 +178,13 @@ async function createOrder(req, res) {
       `INSERT INTO customers (phone_number, client_id) VALUES ($1, $2) ON CONFLICT (phone_number) DO NOTHING`,
       [phone_number, clientId || null]
     );
+    // Update customer name if provided
+    if (custom_fields.customer_name) {
+      await db.pgQuery(
+        `UPDATE customers SET name=$1 WHERE phone_number=$2`,
+        [custom_fields.customer_name, phone_number]
+      );
+    }
     await db.insertOrder(orderId, phone_number, clientId || null, custom_fields);
     if (notes) {
       await db.pgQuery(`UPDATE orders SET notes=$1 WHERE order_id=$2`, [notes, orderId]);

@@ -30,9 +30,13 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
 
   const savedSections    = hd.sections || {};
   const savedSpecial     = hd.special_answers || [];
-  const allSectionKeys   = Object.keys(savedSections).length
-    ? Object.keys(savedSections)
-    : SECTIONS;
+  // Always show in canonical SECTIONS order, then any extras (e.g. VIP)
+  const allSectionKeys = (() => {
+    const hasData = Object.keys(savedSections).length > 0;
+    const ordered = SECTIONS.filter(s => !hasData || savedSections[s] !== undefined);
+    const extra   = Object.keys(savedSections).filter(s => !SECTIONS.includes(s));
+    return hasData ? [...ordered, ...extra] : SECTIONS;
+  })();
 
   // Editor state
   const [tab, setTab]                 = useState('edit'); // 'edit' | 'preview'
@@ -139,11 +143,11 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
     padding: '8px 10px',
     fontSize: '13px',
     fontFamily: 'monospace',
-    border: '1px solid var(--border)',
+    border: '1px solid #e2e8f0',
     borderRadius: '8px',
     outline: 'none',
-    background: 'var(--bg-base)',
-    color: 'var(--text-1)',
+    background: '#ffffff',
+    color: '#1e293b',
     resize: 'vertical',
     minHeight: '120px',
     lineHeight: 1.6,
@@ -163,24 +167,24 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
         {tab === 'edit' && (
           <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
             {allSectionKeys.map((sec) => (
-              <div key={sec} style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+              <div key={sec} style={{ border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
                 <button
                   onClick={() => setExpandedSection(expandedSection === sec ? null : sec)}
                   style={{
                     width: '100%', textAlign: 'left', padding: '10px 14px',
-                    background: expandedSection === sec ? 'var(--bg-card)' : 'var(--bg-base)',
+                    background: expandedSection === sec ? '#f1f5f9' : '#ffffff',
                     border: 0, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    color: 'var(--text-1)', fontSize: 13, fontWeight: 500,
+                    color: '#1e293b', fontSize: 13, fontWeight: 500,
                   }}
                 >
                   <span>{sec}</span>
-                  <span style={{ color: 'var(--text-3)', fontSize: 11 }}>
+                  <span style={{ color: '#94a3b8', fontSize: 11 }}>
                     {expandedSection === sec ? '▲' : '▼'}
                     {sections[sec] ? ` · ${sections[sec].length} chars` : ' · empty'}
                   </span>
                 </button>
                 {expandedSection === sec && (
-                  <div style={{ padding: '10px 12px', background: 'var(--bg-base)' }}>
+                  <div style={{ padding: '10px 12px', background: '#f8fafc' }}>
                     <textarea
                       style={textareaStyle}
                       value={sections[sec] || ''}
@@ -196,15 +200,15 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
             {/* Special answers */}
             {specialAnswers.length > 0 && (
               <div style={{ marginTop: 8 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)', marginBottom: 8 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 8 }}>
                   විශේෂ ප්‍රශ්න
                 </div>
                 {specialAnswers.map((qa, i) => (
-                  <div key={i} style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', marginBottom: 8 }}>
-                    <div style={{ padding: '10px 14px', background: 'var(--bg-card)', fontSize: 12, fontWeight: 500, color: 'var(--text-1)' }}>
+                  <div key={i} style={{ border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden', marginBottom: 8 }}>
+                    <div style={{ padding: '10px 14px', background: '#f1f5f9', fontSize: 12, fontWeight: 500, color: '#1e293b' }}>
                       {i + 1}. {qa.question}
                     </div>
-                    <div style={{ padding: '10px 12px', background: 'var(--bg-base)' }}>
+                    <div style={{ padding: '10px 12px', background: '#f8fafc' }}>
                       <textarea
                         style={textareaStyle}
                         value={qa.answer || ''}

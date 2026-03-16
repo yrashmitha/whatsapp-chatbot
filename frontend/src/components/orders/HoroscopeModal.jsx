@@ -88,6 +88,19 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
     setGeoSuggestions([]);
   };
 
+  // Special questions
+  const [specialQuestions, setSpecialQuestions] = useState([]);
+  const [newQuestion, setNewQuestion] = useState('');
+
+  const addQuestion = () => {
+    const q = newQuestion.trim();
+    if (!q) return;
+    setSpecialQuestions(prev => [...prev, q]);
+    setNewQuestion('');
+  };
+
+  const removeQuestion = (i) => setSpecialQuestions(prev => prev.filter((_, idx) => idx !== i));
+
   const [generating, setGenerating] = useState(false);
 
   const handleGenerate = async () => {
@@ -101,6 +114,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
         lng: selectedPlace.lng,
         birth_place_name: selectedPlace.name,
         override_astro: overrideAstro,
+        special_questions: specialQuestions,
         birth_overrides: {
           customer_name: customerName,
           birth_date: birthDate,
@@ -203,6 +217,35 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
               <p className="text-xs text-emerald-600 mt-1">
                 ✓ {selectedPlace.lat.toFixed(4)}, {selectedPlace.lng.toFixed(4)}
               </p>
+            )}
+          </div>
+
+          {/* Special questions */}
+          <div>
+            <label className={labelCls}>Special Questions <span className="text-slate-400 font-normal">(optional)</span></label>
+            <div className="flex gap-2 mb-2">
+              <input
+                className={inputCls}
+                value={newQuestion}
+                onChange={e => setNewQuestion(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addQuestion())}
+                placeholder="Type a question and press Enter or Add…"
+              />
+              <button
+                type="button"
+                onClick={addQuestion}
+                className="px-3 py-2 text-xs font-medium bg-violet-100 text-violet-700 rounded-xl border-0 cursor-pointer hover:bg-violet-200 shrink-0"
+              >Add</button>
+            </div>
+            {specialQuestions.length > 0 && (
+              <ul className="flex flex-col gap-1">
+                {specialQuestions.map((q, i) => (
+                  <li key={i} className="flex items-start gap-2 bg-slate-50 rounded-lg px-3 py-1.5 text-xs text-slate-700">
+                    <span className="flex-1">{i + 1}. {q}</span>
+                    <button type="button" onClick={() => removeQuestion(i)} className="text-slate-400 hover:text-red-500 bg-transparent border-0 cursor-pointer leading-none shrink-0">×</button>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
 

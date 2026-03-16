@@ -12,10 +12,10 @@ const db     = require('../db');
 const { genAI } = require('./gemini');
 // Lazy-loaded on first use to avoid crashing the server on startup if the
 // package isn't installed yet (e.g. stale Railway build cache).
-let Document, Packer, Paragraph, TextRun, AlignmentType, PageBreak, Footer, PageNumber;
+let Document, Packer, Paragraph, TextRun, AlignmentType, PageBreak, Footer, PageNumber, NumberFormat;
 function ensureDocx() {
   if (!Document) {
-    ({ Document, Packer, Paragraph, TextRun, AlignmentType, PageBreak, Footer, PageNumber } = require('docx'));
+    ({ Document, Packer, Paragraph, TextRun, AlignmentType, PageBreak, Footer, PageNumber, NumberFormat } = require('docx'));
   }
 }
 
@@ -252,7 +252,12 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
     })
   );
 
-  const currentSections = Object.keys(sections || {});
+  // Always render in the canonical SECTIONS order, then any extras (e.g. VIP)
+  const allKnown = [...SECTIONS, VIP_SECTION];
+  const currentSections = [
+    ...allKnown.filter(s => (sections || {})[s] !== undefined),
+    ...Object.keys(sections || {}).filter(s => !allKnown.includes(s)),
+  ];
 
   currentSections.forEach((sec, idx) => {
     if (idx > 0) {
@@ -328,7 +333,11 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
       }],
     },
     sections: [{
-      properties: {},
+      properties: {
+        page: {
+          pageNumbers: { start: 1, formatType: NumberFormat.DECIMAL },
+        },
+      },
       footers: {
         default: new Footer({
           children: [new Paragraph({
@@ -349,7 +358,7 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
 
 // ─── Main generation function ─────────────────────────────────────────────────
 
-async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, birth_place_name, overrideAstro) {
+async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, birth_place_name, overrideAstro, specialQuestions = []) {
   // 1. Fetch order
   const orderRes = await db.pgQuery(
     'SELECT custom_fields, horoscope_data FROM orders WHERE order_id=$1',
@@ -415,14 +424,14 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
     console.log('[HOROSCOPE] Chart data saved for', orderId);
   }
 
-  // 5. Build birth data JSON for AI
-  const birthDataForAi = JSON.stringify({ ...effectiveFields, chart_data: chartData }, null, 2);
+  // 5. Only send chart data to Gemini — no order/customer details
+  const chartDataJson = JSON.stringify(chartData, null, 2);
 
   // 6. Create Gemini chat session
   const geminiModel = genAI.getGenerativeModel({
     model: 'gemini-2.5-flash',
     generationConfig: { temperature: 0.4, topP: 0.8, topK: 40 },
-    systemInstruction: systemPrompt + '\n\nමෙම කේන්ද්‍ර දත්ත සම්පූර්ණ වාර්තාව සඳහා පදනම වේ:\n\n' + birthDataForAi,
+    systemInstruction: systemPrompt + '\n\nමෙම කේන්ද්‍ර දත්ත සම්පූර්ණ වාර්තාව සඳහා පදනම වේ:\n\n' + chartDataJson,
   });
 
   const chat = geminiModel.startChat({});
@@ -438,21 +447,19 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
     sectionsMap[sec] = result.response.text();
   }
 
-  // 8. Special questions (needs field)
+  // 8. Special questions (passed from frontend, one by one)
   const specialAnswers = [];
-  const needsRaw = effectiveFields.needs;
-  if (needsRaw && String(needsRaw).trim()) {
-    const questions = String(needsRaw).split('\n').map(q => q.trim()).filter(Boolean);
+  if (specialQuestions.length > 0) {
     const specialModel = genAI.getGenerativeModel({
       model: 'gemini-2.5-flash',
       generationConfig: { temperature: 0.4, topP: 0.8, topK: 40 },
-      systemInstruction: systemPrompt + '\n\n' + birthDataForAi,
+      systemInstruction: systemPrompt + '\n\n' + chartDataJson,
     });
     const specialChat = specialModel.startChat({});
-    for (const question of questions) {
+    for (const question of specialQuestions) {
       console.log('[HOROSCOPE] Special question:', question);
       const qResult = await specialChat.sendMessage(
-        buildSpecialQuestionPrompt(question, systemPrompt, birthDataForAi)
+        buildSpecialQuestionPrompt(question, systemPrompt, chartDataJson)
       );
       specialAnswers.push({ question, answer: qResult.response.text() });
     }

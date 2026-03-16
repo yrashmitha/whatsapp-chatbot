@@ -140,7 +140,7 @@ async function generateHoroscopeReading(req, res) {
   const clientId = resolveClientId(req);
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
 
-  const { order_id, lat, lng, birth_place_name, birth_overrides, override_astro } = req.body;
+  const { order_id, lat, lng, birth_place_name, birth_overrides, override_astro, special_questions } = req.body;
   if (!order_id || lat == null || lng == null) {
     return res.status(400).json({ error: 'order_id, lat, lng required' });
   }
@@ -167,7 +167,8 @@ async function generateHoroscopeReading(req, res) {
     birth_overrides || {},
     lat, lng,
     birth_place_name || '',
-    !!override_astro
+    !!override_astro,
+    Array.isArray(special_questions) ? special_questions : []
   ).catch(async (e) => {
     console.error('[HOROSCOPE] generate error:', e.message);
     const detail = e?.response?.data?.detail;

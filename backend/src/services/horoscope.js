@@ -10,10 +10,14 @@
 const axios  = require('axios');
 const db     = require('../db');
 const { genAI } = require('./gemini');
-const {
-  Document, Packer, Paragraph, TextRun, AlignmentType, PageBreak,
-  HeadingLevel, Footer, PageNumber, NumberFormat, Header,
-} = require('docx');
+// Lazy-loaded on first use to avoid crashing the server on startup if the
+// package isn't installed yet (e.g. stale Railway build cache).
+let Document, Packer, Paragraph, TextRun, AlignmentType, PageBreak, Footer, PageNumber;
+function ensureDocx() {
+  if (!Document) {
+    ({ Document, Packer, Paragraph, TextRun, AlignmentType, PageBreak, Footer, PageNumber } = require('docx'));
+  }
+}
 
 // ─── Sinhala parsers (shared with AstroChartModal on the FE) ─────────────────
 
@@ -236,6 +240,7 @@ function contentToParagraphs(content) {
 }
 
 async function buildHoroscopeDoc({ customerName, sections, specialAnswers, specialNote }) {
+  ensureDocx();
   const children = [];
 
   // Title

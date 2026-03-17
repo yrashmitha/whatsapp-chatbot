@@ -8,7 +8,7 @@
 
 const db   = require('../db');
 const { generateAstroMessage, DEFAULT_ASTRO_PROMPT } = require('../services/astro');
-const { generateHoroscope, buildHoroscopeDoc, SECTIONS } = require('../services/horoscope');
+const { generateHoroscope, buildHoroscopeDoc, SECTIONS, parseSinhalaDate } = require('../services/horoscope');
 const resolveClientId = require('../middleware/resolveClientId');
 
 /**
@@ -238,7 +238,10 @@ async function downloadHoroscope(req, res) {
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     const phone    = (r.rows[0].phone_number || orderId).replace(/\s+/g, '');
-    const birthday = (cf.birth_date || '').replace(/\s+/g, '-').replace(/[^\w\-]/g, '').slice(0, 20) || 'birthday';
+    const parsed   = parseSinhalaDate(cf.birth_date || '');
+    const birthday = parsed
+      ? `${parsed.year}${String(parsed.month).padStart(2,'0')}${String(parsed.day).padStart(2,'0')}`
+      : 'birthday';
     const filename = `${phone}-${birthday}.docx`;
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buffer);

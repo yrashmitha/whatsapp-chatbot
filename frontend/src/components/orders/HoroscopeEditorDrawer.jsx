@@ -124,14 +124,8 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
       // Use filename from Content-Disposition if available, else build from order data
       const cd = res.headers.get('Content-Disposition') || '';
       const match = cd.match(/filename="([^"]+)"/);
-      const cf = (() => {
-        if (!order?.custom_fields) return {};
-        if (typeof order.custom_fields === 'object') return order.custom_fields;
-        try { return JSON.parse(order.custom_fields); } catch { return {}; }
-      })();
       const phone    = (order.phone_number || order.order_id || '').replace(/\s+/g, '');
-      const birthday = (cf.birth_date || '').replace(/\s+/g, '-').replace(/[^\w\-]/g, '').slice(0, 20) || 'birthday';
-      const filename = match ? match[1] : `${phone}-${birthday}.docx`;
+      const filename = match ? match[1] : `${phone}-birthday.docx`;
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement('a');
       a.href = url;

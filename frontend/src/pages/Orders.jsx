@@ -216,7 +216,7 @@ export default function Orders() {
                             >
                               {isExpanded ? 'Hide' : (hasDetails || hasNotes ? 'View' : 'Notes')}
                             </button>
-                            {o.status === 'payment_received' && (
+                            {(
                               <>
                                 {isGenerating ? (
                                   <span className="flex items-center gap-1 text-xs text-violet-600 font-medium">

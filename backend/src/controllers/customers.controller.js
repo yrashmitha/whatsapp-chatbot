@@ -37,7 +37,7 @@ async function listCustomers(req, res) {
       SELECT cu.phone_number, cu.phone_number AS phone, cu.name, cu.client_id, cu.updated_at,
              COUNT(DISTINCT m.id) AS message_count,
              COUNT(DISTINCT o.id) AS order_count,
-             MAX(m.created_at) AS last_message_at,
+             cu.last_customer_message_at AS last_message_at,
              BOOL_OR(m.media_type = 'image') AS has_image,
              BOOL_OR(m.media_type IN ('pdf', 'document', 'audio', 'voice')) AS has_document,
              (SELECT status FROM orders o2 WHERE o2.phone_number=cu.phone_number ORDER BY o2.created_at DESC LIMIT 1) AS latest_order_status,
@@ -51,8 +51,8 @@ async function listCustomers(req, res) {
       LEFT JOIN messages m ON m.phone_number=cu.phone_number
       LEFT JOIN orders   o ON o.phone_number=cu.phone_number
       ${where}
-      GROUP BY cu.phone_number, cu.name, cu.client_id, cu.updated_at, cu.last_read_at
-      ORDER BY last_message_at DESC NULLS LAST
+      GROUP BY cu.phone_number, cu.name, cu.client_id, cu.updated_at, cu.last_read_at, cu.last_customer_message_at
+      ORDER BY cu.last_customer_message_at DESC NULLS LAST
       LIMIT ${clientId ? '$2' : '$1'} OFFSET ${clientId ? '$3' : '$2'}`;
     const countQ = clientId
       ? `SELECT COUNT(*) FROM customers cu ${search ? "WHERE client_id=$1 AND (phone_number ILIKE $2 OR name ILIKE $2)" : "WHERE client_id=$1"}`

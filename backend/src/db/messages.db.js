@@ -27,8 +27,17 @@ async function insertMessage(phoneNumber, text, senderType, costUsd = null, clie
       'INSERT INTO messages (phone_number, message_text, sender_type, cost_usd, client_id, media_type, media_url, wamid) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
       [phoneNumber, text, senderType, costUsd, clientId, mediaType, mediaUrl, wamid]
     );
+    if (senderType === 'user') {
+      await pool.query(
+        'UPDATE customers SET last_customer_message_at = NOW() WHERE phone_number = $1 AND client_id = $2',
+        [phoneNumber, clientId]
+      );
+    }
   } else {
     db.prepare('INSERT INTO messages (phone_number, message_text, sender_type, cost_usd, client_id, media_type, media_url, wamid) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(phoneNumber, text, senderType, costUsd, clientId, mediaType, mediaUrl, wamid);
+    if (senderType === 'user') {
+      db.prepare('UPDATE customers SET last_customer_message_at = datetime(\'now\') WHERE phone_number = ? AND client_id = ?').run(phoneNumber, clientId);
+    }
   }
 }
 

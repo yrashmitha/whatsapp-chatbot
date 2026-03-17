@@ -48,11 +48,6 @@ async function generateAstroMessage(clientId, phone, birthData, apiKey) {
 
   const config = await db.getPluginConfig(clientId, 'astro_vedic_chart');
 
-  // Save birth place for future pre-fill
-  if (birth_place_name) {
-    await db.upsertPluginCustomerData(clientId, phone, 'astro_vedic_chart', { birth_place_name, lat, lng });
-  }
-
   const resolvedApiKey = apiKey || config.api_key || process.env.FREEASTRO_API_KEY;
 
   const astroPayload = {
@@ -74,6 +69,13 @@ async function generateAstroMessage(clientId, phone, birthData, apiKey) {
   );
   const chartData = astroResp.data;
   console.log('[ASTRO] freeastroapi response:', JSON.stringify(chartData));
+
+  // Save birth details + raw chart data for future use / pre-fill
+  await db.upsertPluginCustomerData(clientId, phone, 'astro_vedic_chart', {
+    birth_place_name: birth_place_name || null,
+    lat, lng,
+    chart_data: chartData,
+  }).catch(e => console.warn('[ASTRO] failed to save chart data:', e.message));
 
   const promptTemplate = config.prompt || DEFAULT_ASTRO_PROMPT;
   const prompt = promptTemplate.replace('{chart_json}', JSON.stringify(chartData, null, 2));

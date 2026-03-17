@@ -324,6 +324,19 @@ async function init() {
     // ── Horoscope reading data ────────────────────────────────────────────────
     await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS horoscope_data JSONB`);
 
+    // ── Quick replies ─────────────────────────────────────────────────────────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS quick_replies (
+        id         SERIAL PRIMARY KEY,
+        client_id  TEXT NOT NULL,
+        title      TEXT NOT NULL,
+        text       TEXT NOT NULL,
+        sort_order INT NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_quick_replies_client ON quick_replies (client_id, sort_order);
+    `);
+
     // ── Plugin config + customer data ─────────────────────────────────────────
     await pool.query(`
       CREATE TABLE IF NOT EXISTS plugin_configs (
@@ -480,6 +493,18 @@ async function init() {
     `);
     // ── Horoscope reading data (SQLite) ──────────────────────────────────────
     try { db.exec(`ALTER TABLE orders ADD COLUMN horoscope_data TEXT`); } catch (_) {}
+
+    // ── Quick replies (SQLite) ────────────────────────────────────────────────
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS quick_replies (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        client_id  TEXT NOT NULL,
+        title      TEXT NOT NULL,
+        text       TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
 
     // ── Plugin config + customer data (SQLite) ────────────────────────────────
     db.exec(`

@@ -25,7 +25,8 @@ const icons = {
   moon:      <IC d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />,
   sun:       <IC d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />,
   logout:    <IC d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />,
-  summary:   <IC d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />,
+  summary:      <IC d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />,
+  quickreplies: <IC d="M7 8h10M7 12h6m-6 4h4M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />,
 };
 
 const ALL_NAV = [
@@ -37,8 +38,9 @@ const ALL_NAV = [
   { to: '/media',     label: 'Media',     icon: icons.media     },
   { to: '/clients',   label: 'Clients',   icon: icons.clients,   adminOnly: true },
   { to: '/addons',    label: 'Addons',    icon: icons.addons,    adminOnly: true },
-  { to: '/plugins',   label: 'Plugins',   icon: icons.plugins   },
-  { to: '/settings',  label: 'Settings',  icon: icons.settings  },
+  { to: '/plugins',       label: 'Plugins',        icon: icons.plugins      },
+  { to: '/quick-replies', label: 'Quick Replies',  icon: icons.quickreplies },
+  { to: '/settings',      label: 'Settings',       icon: icons.settings     },
 ];
 
 export default function Layout({ children }) {

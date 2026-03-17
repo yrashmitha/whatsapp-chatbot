@@ -118,10 +118,14 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, prefill
             <button
               key={r.id}
               onMouseDown={e => { e.preventDefault(); selectReply(r); }}
-              className={`w-full text-left px-3 py-2 flex flex-col gap-0.5 border-0 cursor-pointer transition-colors ${i === qrIndex ? 'bg-violet-50' : 'hover:bg-slate-50'}`}
+              className={`w-full text-left px-3 py-2.5 flex flex-col gap-0.5 border-0 cursor-pointer transition-colors border-l-2 ${
+                i === qrIndex
+                  ? 'bg-violet-600 border-l-violet-800'
+                  : 'hover:bg-slate-50 border-l-transparent'
+              }`}
             >
-              <span className="text-xs font-semibold text-violet-600">/{r.title}</span>
-              <span className="text-xs text-slate-500 truncate">{r.text}</span>
+              <span className={`text-xs font-semibold ${i === qrIndex ? 'text-white' : 'text-violet-600'}`}>/{r.title}</span>
+              <span className={`text-xs truncate ${i === qrIndex ? 'text-violet-100' : 'text-slate-500'}`}>{r.text}</span>
             </button>
           ))}
         </div>

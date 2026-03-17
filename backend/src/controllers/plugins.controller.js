@@ -237,12 +237,13 @@ async function downloadHoroscope(req, res) {
     });
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    const phone    = (r.rows[0].phone_number || orderId).replace(/\s+/g, '');
+    const phone    = (r.rows[0].phone_number || orderId).replace(/\D/g, '');
+    const last4    = phone.slice(-4) || '0000';
     const parsed   = parseSinhalaDate(cf.birth_date || '');
     const birthday = parsed
       ? `${parsed.year}${String(parsed.month).padStart(2,'0')}${String(parsed.day).padStart(2,'0')}`
       : 'birthday';
-    const filename = `${phone}-${birthday}.docx`;
+    const filename = `horoscope-${last4}-${birthday}.docx`;
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buffer);
   } catch (e) { res.status(500).json({ error: e.message }); }

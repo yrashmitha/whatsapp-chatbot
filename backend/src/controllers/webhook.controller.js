@@ -180,6 +180,14 @@ function receiveWebhook(req, res) {
         return;
       }
 
+      // Global AI kill switch — if disabled for this client, store message and skip Gemini
+      if (client.ai_enabled === false) {
+        await db.upsertCustomer(from, null, client.id);
+        await db.insertMessage(from, userMessage, 'user', null, client.id);
+        console.log(`[WEBHOOK] AI globally disabled for client ${client.id} — message stored, no reply sent`);
+        return;
+      }
+
       // Check per-chat AI mode — if disabled, store message and skip Gemini
       const aiEnabled = await db.getCustomerAiEnabled(from, client.id);
       if (!aiEnabled) {

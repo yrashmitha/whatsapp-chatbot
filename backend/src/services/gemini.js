@@ -160,7 +160,13 @@ async function buildChatSession(phoneNumber, client) {
         if (extra) fullInstruction += '\n\n' + extra;
       } catch (e) { console.error(`[PLUGIN] appendInstruction error for ${client?.id}:`, e.message); }
     }
-    chatModel = genAI.getGenerativeModel({
+    const clientApiKey = client.gemini_api_key
+      || (client.use_system_gemini_key ? process.env.GEMINI_API_KEY : null);
+    if (!clientApiKey) throw new Error(`No Gemini API key configured for client ${client.id}`);
+    const clientGenAI = clientApiKey !== process.env.GEMINI_API_KEY
+      ? new GoogleGenerativeAI(clientApiKey)
+      : genAI;
+    chatModel = clientGenAI.getGenerativeModel({
       model: client.ai_model || 'gemini-2.5-flash',
       systemInstruction: fullInstruction,
       generationConfig: {

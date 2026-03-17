@@ -326,6 +326,14 @@ async function init() {
     // ── Horoscope reading data ────────────────────────────────────────────────
     await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS horoscope_data JSONB`);
 
+    // ── Global AI kill switch per client ─────────────────────────────────────
+    await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS ai_enabled BOOLEAN NOT NULL DEFAULT TRUE`);
+    // ── Per-client token storage (no restart needed for new clients) ──────────
+    await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS wa_token TEXT`);
+    await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS gemini_api_key TEXT`);
+    await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS use_system_wa_token BOOLEAN NOT NULL DEFAULT FALSE`);
+    await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS use_system_gemini_key BOOLEAN NOT NULL DEFAULT FALSE`);
+
     // ── Quick replies ─────────────────────────────────────────────────────────
     await pool.query(`
       CREATE TABLE IF NOT EXISTS quick_replies (
@@ -470,6 +478,11 @@ async function init() {
     try { db.exec(`ALTER TABLE client_configs ADD COLUMN plugin_enabled INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
     try { db.exec(`ALTER TABLE customers ADD COLUMN last_read_at TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE customers ADD COLUMN last_customer_message_at TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE client_configs ADD COLUMN ai_enabled INTEGER NOT NULL DEFAULT 1`); } catch (_) {}
+    try { db.exec(`ALTER TABLE client_configs ADD COLUMN wa_token TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE client_configs ADD COLUMN gemini_api_key TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE client_configs ADD COLUMN use_system_wa_token INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
+    try { db.exec(`ALTER TABLE client_configs ADD COLUMN use_system_gemini_key INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
     // SQLite cannot DROP columns — old columns (package, birth_date, etc.) remain but are ignored
 
     // ── Per-chat AI mode (SQLite) ────────────────────────────────────────────

@@ -358,25 +358,37 @@ async function uploadImage(req, res) {
  * @returns {Promise<void>}
  */
 async function createClient(req, res) {
-  const { id, name, type, phone_number_id, wa_token_env, ai_model, system_prompt_mode,
-          custom_prompt, temperature, brand_name, brand_color, logo_url,
-          order_id_prefix, product_catalog_enabled, order_flow_enabled, admin_password_env } = req.body;
+  const { id, name, type, phone_number_id, wa_token_env, wa_token, use_system_wa_token,
+          webhook_verify_token, ai_model, system_prompt_mode, custom_prompt, temperature,
+          brand_name, brand_color, logo_url, order_id_prefix, product_catalog_enabled,
+          order_flow_enabled, admin_password_env, contact_number, knowledge_base_enabled,
+          plugin_enabled, ai_enabled, gemini_api_key, use_system_gemini_key } = req.body;
   if (!id || !name) return res.status(400).json({ error: 'id and name required' });
   try {
     await db.pgQuery(`INSERT INTO clients (id, name, type) VALUES ($1, $2, $3)`,
       [id, name, type || 'general']);
     await db.pgQuery(`
-      INSERT INTO client_configs (client_id, phone_number_id, wa_token_env, ai_model,
-        system_prompt_mode, custom_prompt, temperature, brand_name, brand_color, logo_url,
-        order_id_prefix, product_catalog_enabled, order_flow_enabled, admin_password_env)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
-      [id, phone_number_id || null, wa_token_env || null, ai_model || 'gemini-2.5-flash',
-       system_prompt_mode || 'custom', custom_prompt || null,
+      INSERT INTO client_configs (client_id, phone_number_id, wa_token_env, wa_token, use_system_wa_token,
+        webhook_verify_token, ai_model, system_prompt_mode, custom_prompt, temperature, brand_name,
+        brand_color, logo_url, order_id_prefix, product_catalog_enabled, order_flow_enabled,
+        admin_password_env, contact_number, knowledge_base_enabled, plugin_enabled, ai_enabled,
+        gemini_api_key, use_system_gemini_key)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
+      [id, phone_number_id || null, wa_token_env || null, wa_token || null,
+       use_system_wa_token === true || use_system_wa_token === 'true',
+       webhook_verify_token || null,
+       ai_model || 'gemini-2.5-flash', system_prompt_mode || 'builtin', custom_prompt || null,
        parseFloat(temperature) || 0.70, brand_name || name, brand_color || '#075e54',
        logo_url || null, order_id_prefix || id.toUpperCase().slice(0,6),
        product_catalog_enabled === true || product_catalog_enabled === 'true',
        order_flow_enabled !== false && order_flow_enabled !== 'false',
-       admin_password_env || 'ADMIN_PASSWORD']);
+       admin_password_env || 'ADMIN_PASSWORD',
+       contact_number || null,
+       knowledge_base_enabled === true || knowledge_base_enabled === 'true',
+       plugin_enabled === true || plugin_enabled === 'true',
+       ai_enabled !== false && ai_enabled !== 'false',
+       gemini_api_key || null,
+       use_system_gemini_key === true || use_system_gemini_key === 'true']);
     clientRouter.invalidateCache(id);
     res.json({ ok: true, id });
   } catch (err) {
@@ -393,30 +405,72 @@ async function createClient(req, res) {
  */
 async function updateClient(req, res) {
   const { clientId } = req.params;
-  const { name, type, active, phone_number_id, wa_token_env, ai_model, system_prompt_mode,
-          custom_prompt, temperature, brand_name, brand_color, logo_url,
-          order_id_prefix, product_catalog_enabled, order_flow_enabled, admin_password_env } = req.body;
+  const { name, type, active, phone_number_id, wa_token_env, wa_token, use_system_wa_token,
+          webhook_verify_token, ai_model, system_prompt_mode, custom_prompt, temperature,
+          brand_name, brand_color, logo_url, order_id_prefix, product_catalog_enabled,
+          order_flow_enabled, admin_password_env, contact_number, knowledge_base_enabled,
+          plugin_enabled, ai_enabled, gemini_api_key, use_system_gemini_key } = req.body;
   try {
-    if (name || type || active !== undefined) {
+    if (name !== undefined || type !== undefined || active !== undefined) {
       await db.pgQuery(
         `UPDATE clients SET name=COALESCE($1,name), type=COALESCE($2,type), active=COALESCE($3,active) WHERE id=$4`,
         [name || null, type || null, active !== undefined ? active : null, clientId]
       );
     }
-    await db.pgQuery(`
-      UPDATE client_configs SET
-        phone_number_id=$1, wa_token_env=$2, ai_model=$3, system_prompt_mode=$4,
-        custom_prompt=$5, temperature=$6, brand_name=$7, brand_color=$8, logo_url=$9,
-        order_id_prefix=$10, product_catalog_enabled=$11, order_flow_enabled=$12,
-        admin_password_env=$13, updated_at=NOW()
-      WHERE client_id=$14`,
-      [phone_number_id || null, wa_token_env || null, ai_model || 'gemini-2.5-flash',
-       system_prompt_mode || 'custom', custom_prompt || null,
-       parseFloat(temperature) || 0.70, brand_name || null, brand_color || '#075e54',
-       logo_url || null, order_id_prefix || null,
-       product_catalog_enabled === true || product_catalog_enabled === 'true',
-       order_flow_enabled !== false && order_flow_enabled !== 'false',
-       admin_password_env || 'ADMIN_PASSWORD', clientId]);
+    // Only update config fields that were explicitly sent
+    if (Object.keys(req.body).some(k => k !== 'name' && k !== 'type' && k !== 'active')) {
+      await db.pgQuery(`
+        UPDATE client_configs SET
+          phone_number_id=COALESCE($1,phone_number_id),
+          wa_token_env=COALESCE($2,wa_token_env),
+          wa_token=COALESCE($3,wa_token),
+          use_system_wa_token=COALESCE($4,use_system_wa_token),
+          webhook_verify_token=COALESCE($5,webhook_verify_token),
+          ai_model=COALESCE($6,ai_model),
+          system_prompt_mode=COALESCE($7,system_prompt_mode),
+          custom_prompt=COALESCE($8,custom_prompt),
+          temperature=COALESCE($9,temperature),
+          brand_name=COALESCE($10,brand_name),
+          brand_color=COALESCE($11,brand_color),
+          logo_url=COALESCE($12,logo_url),
+          order_id_prefix=COALESCE($13,order_id_prefix),
+          product_catalog_enabled=COALESCE($14,product_catalog_enabled),
+          order_flow_enabled=COALESCE($15,order_flow_enabled),
+          admin_password_env=COALESCE($16,admin_password_env),
+          contact_number=COALESCE($17,contact_number),
+          knowledge_base_enabled=COALESCE($18,knowledge_base_enabled),
+          plugin_enabled=COALESCE($19,plugin_enabled),
+          ai_enabled=COALESCE($20,ai_enabled),
+          gemini_api_key=COALESCE($21,gemini_api_key),
+          use_system_gemini_key=COALESCE($22,use_system_gemini_key),
+          updated_at=NOW()
+        WHERE client_id=$23`,
+        [
+          phone_number_id !== undefined ? (phone_number_id || null) : null,
+          wa_token_env !== undefined ? (wa_token_env || null) : null,
+          wa_token !== undefined ? (wa_token || null) : null,
+          use_system_wa_token !== undefined ? (use_system_wa_token === true || use_system_wa_token === 'true') : null,
+          webhook_verify_token !== undefined ? (webhook_verify_token || null) : null,
+          ai_model || null,
+          system_prompt_mode || null,
+          custom_prompt !== undefined ? (custom_prompt || null) : null,
+          temperature !== undefined ? (parseFloat(temperature) || null) : null,
+          brand_name || null,
+          brand_color || null,
+          logo_url !== undefined ? (logo_url || null) : null,
+          order_id_prefix || null,
+          product_catalog_enabled !== undefined ? (product_catalog_enabled === true || product_catalog_enabled === 'true') : null,
+          order_flow_enabled !== undefined ? (order_flow_enabled !== false && order_flow_enabled !== 'false') : null,
+          admin_password_env || null,
+          contact_number !== undefined ? (contact_number || null) : null,
+          knowledge_base_enabled !== undefined ? (knowledge_base_enabled === true || knowledge_base_enabled === 'true') : null,
+          plugin_enabled !== undefined ? (plugin_enabled === true || plugin_enabled === 'true') : null,
+          ai_enabled !== undefined ? (ai_enabled !== false && ai_enabled !== 'false') : null,
+          gemini_api_key !== undefined ? (gemini_api_key || null) : null,
+          use_system_gemini_key !== undefined ? (use_system_gemini_key === true || use_system_gemini_key === 'true') : null,
+          clientId,
+        ]);
+    }
     clientRouter.invalidateCache(clientId);
     res.json({ ok: true });
   } catch (err) {

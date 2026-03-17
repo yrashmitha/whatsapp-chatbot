@@ -25,7 +25,12 @@ async function getSettings(req, res) {
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
   try {
     const r = await db.pgQuery(
-      `SELECT custom_prompt, error_message, system_prompt_mode, temperature, brand_name, brand_color, order_fields, contact_number, knowledge_base_enabled, product_catalog_enabled, plugin_enabled FROM client_configs WHERE client_id=$1`,
+      `SELECT custom_prompt, error_message, system_prompt_mode, temperature, brand_name, brand_color,
+              order_fields, contact_number, knowledge_base_enabled, product_catalog_enabled, plugin_enabled,
+              (wa_token IS NOT NULL AND wa_token <> '') AS wa_token_set,
+              (gemini_api_key IS NOT NULL AND gemini_api_key <> '') AS gemini_api_key_set,
+              use_system_wa_token, use_system_gemini_key
+       FROM client_configs WHERE client_id=$1`,
       [clientId]
     );
     const row = r.rows[0] || {};
@@ -105,4 +110,33 @@ async function changePassword(req, res) {
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 
-module.exports = { getSettings, updatePrompt, changePassword };
+/**
+ * PUT /api/settings/tokens — update WA token and/or Gemini API key for a client.
+ *
+ * @param {import('express').Request}  req
+ * @param {import('express').Response} res
+ * @returns {Promise<void>}
+ */
+async function updateTokens(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  const { wa_token, gemini_api_key } = req.body;
+  if (wa_token === undefined && gemini_api_key === undefined) {
+    return res.status(400).json({ error: 'wa_token or gemini_api_key required' });
+  }
+  try {
+    const sets = [];
+    const vals = [];
+    if (wa_token !== undefined) { sets.push(`wa_token=$${vals.push(wa_token || null)}`); }
+    if (gemini_api_key !== undefined) { sets.push(`gemini_api_key=$${vals.push(gemini_api_key || null)}`); }
+    vals.push(clientId);
+    await db.pgQuery(
+      `UPDATE client_configs SET ${sets.join(', ')}, updated_at=NOW() WHERE client_id=$${vals.length}`,
+      vals
+    );
+    clientRouter.invalidateCache(clientId);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+module.exports = { getSettings, updatePrompt, changePassword, updateTokens };

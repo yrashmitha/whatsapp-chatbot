@@ -16,12 +16,12 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const CLIENT_SELECT = `
   SELECT
     c.id, c.name, c.type, c.active,
-    cc.phone_number_id, cc.wa_token_env, cc.webhook_verify_token,
+    cc.phone_number_id, cc.wa_token_env, cc.wa_token, cc.use_system_wa_token, cc.webhook_verify_token,
     cc.ai_model, cc.system_prompt_mode, cc.custom_prompt, cc.error_message, cc.temperature,
     cc.brand_name, cc.brand_color, cc.logo_url,
     cc.order_id_prefix, cc.product_catalog_enabled, cc.knowledge_base_enabled, cc.max_products_in_context,
     cc.catalog_search_mode, cc.order_flow_enabled, cc.admin_password_env, cc.order_fields, cc.contact_number,
-    cc.plugin_enabled
+    cc.plugin_enabled, cc.ai_enabled, cc.gemini_api_key, cc.use_system_gemini_key
   FROM clients c
   JOIN client_configs cc ON cc.client_id = c.id
 `;
@@ -89,7 +89,12 @@ async function getAllClients() {
     SELECT c.id, c.name, c.type, c.active,
       cc.phone_number_id, cc.brand_name, cc.brand_color, cc.logo_url,
       cc.order_id_prefix, cc.product_catalog_enabled, cc.ai_model,
-      cc.system_prompt_mode, cc.order_flow_enabled
+      cc.system_prompt_mode, cc.order_flow_enabled, cc.ai_enabled,
+      cc.use_system_wa_token, cc.use_system_gemini_key,
+      cc.wa_token_env, cc.webhook_verify_token,
+      cc.temperature, cc.custom_prompt, cc.error_message,
+      cc.knowledge_base_enabled, cc.plugin_enabled, cc.contact_number,
+      cc.order_fields, cc.admin_password_env
     FROM clients c
     LEFT JOIN client_configs cc ON cc.client_id = c.id
     ORDER BY c.name
@@ -121,9 +126,17 @@ function invalidateCache(key) {
  * @returns {Object} Normalised client object
  */
 function buildClient(row) {
-  const waToken = row.wa_token_env
-    ? (process.env[row.wa_token_env] || '')
-    : (process.env.PROD_META_ACCESS_TOKEN || '');
+  // WhatsApp token: system checkbox → provider's env var; otherwise DB token → legacy env var name → null
+  const waToken = row.use_system_wa_token
+    ? (process.env.PROD_META_ACCESS_TOKEN || '')
+    : row.wa_token
+      || (row.wa_token_env ? (process.env[row.wa_token_env] || '') : '')
+      || '';
+
+  // Gemini key: system checkbox → null (gemini.js uses GEMINI_API_KEY); otherwise DB key → null
+  const gemini_api_key = row.use_system_gemini_key
+    ? null
+    : (row.gemini_api_key || null);
   let orderFields = [];
   try {
     const raw = row.order_fields;
@@ -132,7 +145,10 @@ function buildClient(row) {
   return {
     ...row,
     waToken,
+    gemini_api_key,
+    use_system_gemini_key: !!row.use_system_gemini_key,
     active: !!row.active,
+    ai_enabled: row.ai_enabled !== false,
     product_catalog_enabled: !!row.product_catalog_enabled,
     knowledge_base_enabled: !!row.knowledge_base_enabled,
     plugin_enabled: !!row.plugin_enabled,

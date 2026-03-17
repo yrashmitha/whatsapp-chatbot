@@ -7,7 +7,21 @@
 
 const router    = require('express').Router();
 const adminAuth = require('../middleware/adminAuth');
+const jwtAuth   = require('../middleware/jwtAuth');
 const { upload } = require('../config/multer');
+
+// Accepts either a valid superadmin JWT or the legacy admin password.
+// Keeps onboard.html working while allowing the React CRM to use JWT.
+function superAdminOrAdminAuth(req, res, next) {
+  const auth = req.headers.authorization;
+  if (auth?.startsWith('Bearer ')) {
+    return jwtAuth(req, res, (err) => {
+      if (!err && req.user?.role === 'superadmin') return next();
+      return adminAuth(req, res, next);
+    });
+  }
+  return adminAuth(req, res, next);
+}
 const {
   listTemplates,
   listCustomers,
@@ -56,11 +70,11 @@ router.post('/followup',                       adminAuth, generateFollowup);
 router.get('/builtin-prompt',                  adminAuth, getBuiltinPrompt);
 
 // Client management
-router.get('/clients',                         adminAuth, listClients);
-router.get('/clients/:clientId',               adminAuth, getClient);
-router.post('/upload-image',                   adminAuth, upload.single('image'), uploadImage);
-router.post('/clients',                        adminAuth, createClient);
-router.put('/clients/:clientId',               adminAuth, updateClient);
+router.get('/clients',                         superAdminOrAdminAuth, listClients);
+router.get('/clients/:clientId',               superAdminOrAdminAuth, getClient);
+router.post('/upload-image',                   superAdminOrAdminAuth, upload.single('image'), uploadImage);
+router.post('/clients',                        superAdminOrAdminAuth, createClient);
+router.put('/clients/:clientId',               superAdminOrAdminAuth, updateClient);
 
 // Products
 router.get('/products',                        adminAuth, listProducts);

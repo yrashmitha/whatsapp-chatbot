@@ -6,7 +6,27 @@ import Button from '../components/ui/Button';
 import { useToast } from '../components/ui/Toast';
 import api, { authApi } from '../lib/api';
 
-const TABS = ['AI Details', 'Password', 'Quick Replies'];
+const TABS = ['AI Details', 'API Keys', 'Password', 'Quick Replies'];
+
+function TokenInput({ value, onChange, placeholder }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="flex gap-2 items-center">
+      <input
+        type={show ? 'text' : 'password'}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+      />
+      <button
+        type="button"
+        onClick={() => setShow(s => !s)}
+        className="shrink-0 px-3 py-2 text-xs border border-slate-200 rounded-lg cursor-pointer bg-white text-slate-500 hover:bg-slate-50"
+      >{show ? 'Hide' : 'Show'}</button>
+    </div>
+  );
+}
 
 export default function Settings() {
   const { user, selectedClientId } = useAuthStore();
@@ -35,6 +55,13 @@ export default function Settings() {
   const [orderFields, setOrderFields]                 = useState([]);
   const [newField, setNewField]                       = useState({ key: '', label: '', description: '', required: true });
   const [promptLoading, setPromptLoading]             = useState(false);
+
+  // ── API Keys ──────────────────────────────────────────────────────────────
+  const [waToken, setWaToken]           = useState('');
+  const [geminiKey, setGeminiKey]       = useState('');
+  const [tokenSaving, setTokenSaving]   = useState(false);
+  const [waTokenSet, setWaTokenSet]     = useState(false);
+  const [geminiKeySet, setGeminiKeySet] = useState(false);
 
   // ── Quick Replies ─────────────────────────────────────────────────────────
   const [replies, setReplies]     = useState([]);
@@ -65,6 +92,8 @@ export default function Settings() {
       setProductCatalogEnabled(!!settingsData.product_catalog_enabled);
       setPluginEnabled(!!settingsData.plugin_enabled);
       setOrderFields(settingsData.order_fields || []);
+      setWaTokenSet(!!settingsData.wa_token_set);
+      setGeminiKeySet(!!settingsData.gemini_api_key_set);
     }
   }, [settingsData]);
 
@@ -117,6 +146,25 @@ export default function Settings() {
       toast.success('Settings saved');
     } catch { toast.error('Failed to save settings'); }
     finally { setPromptLoading(false); }
+  };
+
+  // ── API Keys handler ─────────────────────────────────────────────────────
+  const handleSaveTokens = async (e) => {
+    e.preventDefault();
+    if (!clientId) { toast.error('Select a client first'); return; }
+    if (!waToken.trim() && !geminiKey.trim()) { toast.error('Enter at least one token to update'); return; }
+    setTokenSaving(true);
+    try {
+      const body = {};
+      if (waToken.trim())    body.wa_token = waToken.trim();
+      if (geminiKey.trim())  body.gemini_api_key = geminiKey.trim();
+      await api.put('/settings/tokens', body, { params });
+      qc.invalidateQueries({ queryKey: ['settings', clientId] });
+      toast.success('API keys saved');
+      setWaToken('');
+      setGeminiKey('');
+    } catch (err) { toast.error(err.response?.data?.error || 'Failed to save'); }
+    finally { setTokenSaving(false); }
   };
 
   // ── Order fields helpers ──────────────────────────────────────────────────
@@ -287,6 +335,35 @@ export default function Settings() {
                   </div>
 
                   <div className="mt-1"><Button type="submit" disabled={promptLoading}>{promptLoading ? 'Saving…' : 'Save'}</Button></div>
+                </form>
+              )}
+            </div>
+          )}
+
+          {/* ── API Keys tab ── */}
+          {activeTab === 'API Keys' && (
+            <div className="bg-white border border-slate-200 rounded-xl p-6">
+              <h2 className="text-sm font-semibold text-slate-700 mb-1">API Keys</h2>
+              <p className="text-xs text-slate-400 mb-4">Update your WhatsApp access token or Gemini API key. Leave a field blank to keep the existing value.</p>
+              {!clientId ? (
+                <p className="text-sm text-slate-400">Select a client from the top bar to edit their API keys.</p>
+              ) : (
+                <form onSubmit={handleSaveTokens} className="flex flex-col gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <label className="block text-xs font-medium text-slate-600">WhatsApp Access Token</label>
+                      {waTokenSet && <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">✓ Set</span>}
+                    </div>
+                    <TokenInput value={waToken} onChange={setWaToken} placeholder={waTokenSet ? '(leave blank to keep current)' : 'EAAxxxxx...'} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <label className="block text-xs font-medium text-slate-600">Gemini API Key</label>
+                      {geminiKeySet && <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">✓ Set</span>}
+                    </div>
+                    <TokenInput value={geminiKey} onChange={setGeminiKey} placeholder={geminiKeySet ? '(leave blank to keep current)' : 'AIzaSy...'} />
+                  </div>
+                  <div className="mt-1"><Button type="submit" disabled={tokenSaving}>{tokenSaving ? 'Saving…' : 'Save API Keys'}</Button></div>
                 </form>
               )}
             </div>

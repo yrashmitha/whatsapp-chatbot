@@ -9,6 +9,7 @@ import Products from './pages/Products';
 import KnowledgeBase from './pages/KnowledgeBase';
 import Media from './pages/Media';
 import Settings from './pages/Settings';
+import Clients from './pages/Clients';
 import Addons from './pages/Addons';
 import Plugins from './pages/Plugins';
 import Summary from './pages/Summary';
@@ -26,6 +27,7 @@ const router = createBrowserRouter([
   { path: '/knowledge', element: <ProtectedRoute><KnowledgeBase /></ProtectedRoute> },
   { path: '/media', element: <ProtectedRoute><Media /></ProtectedRoute> },
   { path: '/settings', element: <ProtectedRoute><Settings /></ProtectedRoute> },
+  { path: '/clients', element: <ProtectedRoute><Clients /></ProtectedRoute> },
   { path: '/addons', element: <ProtectedRoute><Addons /></ProtectedRoute> },
   { path: '/plugins', element: <ProtectedRoute><Plugins /></ProtectedRoute> },
   { path: '/', element: <Navigate to="/chat" replace /> },

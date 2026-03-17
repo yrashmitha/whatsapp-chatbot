@@ -38,9 +38,8 @@ const ALL_NAV = [
   { to: '/media',     label: 'Media',     icon: icons.media     },
   { to: '/clients',   label: 'Clients',   icon: icons.clients,   adminOnly: true },
   { to: '/addons',    label: 'Addons',    icon: icons.addons,    adminOnly: true },
-  { to: '/plugins',       label: 'Plugins',        icon: icons.plugins      },
-  { to: '/quick-replies', label: 'Quick Replies',  icon: icons.quickreplies },
-  { to: '/settings',      label: 'Settings',       icon: icons.settings     },
+  { to: '/plugins',  label: 'Plugins',  icon: icons.plugins  },
+  { to: '/settings', label: 'Settings', icon: icons.settings },
 ];
 
 export default function Layout({ children }) {

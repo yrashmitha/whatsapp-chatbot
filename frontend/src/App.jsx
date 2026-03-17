@@ -12,7 +12,6 @@ import Settings from './pages/Settings';
 import Addons from './pages/Addons';
 import Plugins from './pages/Plugins';
 import Summary from './pages/Summary';
-import QuickReplies from './pages/QuickReplies';
 
 const qc = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -29,7 +28,6 @@ const router = createBrowserRouter([
   { path: '/settings', element: <ProtectedRoute><Settings /></ProtectedRoute> },
   { path: '/addons', element: <ProtectedRoute><Addons /></ProtectedRoute> },
   { path: '/plugins', element: <ProtectedRoute><Plugins /></ProtectedRoute> },
-  { path: '/quick-replies', element: <ProtectedRoute><QuickReplies /></ProtectedRoute> },
   { path: '/', element: <Navigate to="/chat" replace /> },
   { path: '*', element: <Navigate to="/chat" replace /> },
 ]);

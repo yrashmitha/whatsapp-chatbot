@@ -298,7 +298,7 @@ async function downloadHoroscopePdf(req, res) {
     fs.writeFileSync(tmpDocx, docxBuffer);
     await new Promise((resolve, reject) => {
       exec(
-        `fc-cache -f "${fontDest}" && soffice --headless --convert-to pdf --outdir "${os.tmpdir()}" "${tmpDocx}"`,
+        `fc-cache -f "${fontDest}" 2>/dev/null; soffice --headless --convert-to pdf --outdir "${os.tmpdir()}" "${tmpDocx}"`,
         { env: { ...process.env, HOME: tmpHome } },
         (err, _stdout, stderr) => {
           if (err) reject(new Error(stderr || err.message));

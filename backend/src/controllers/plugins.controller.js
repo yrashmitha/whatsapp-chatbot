@@ -336,7 +336,7 @@ async function downloadHoroscopePdf(req, res) {
     const birthday = parsed
       ? `${parsed.year}${String(parsed.month).padStart(2,'0')}${String(parsed.day).padStart(2,'0')}`
       : rawBirth.replace(/[^0-9]/g, '').slice(0, 8) || 'birthday';
-    const filename = `horoscope-${last4}-${birthday}.pdf`;
+    const filename = `${phone}-${birthday}.pdf`;
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);

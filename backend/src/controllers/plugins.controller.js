@@ -307,17 +307,24 @@ async function downloadHoroscopePdf(req, res) {
       exec(
         `fc-cache -f "${fontDest}" 2>/dev/null; soffice --headless --convert-to pdf --outdir "${os.tmpdir()}" "${tmpDocx}"`,
         { env: { ...process.env, HOME: tmpHome } },
-        (err, stdout, stderr) => {
-          console.log('[PDF] stdout:', stdout);
-          console.log('[PDF] stderr:', stderr);
-          console.log('[PDF] fontDest:', fontDest);
-          console.log('[PDF] tmpHome fonts:', fs.readdirSync(fontDirs[2]).join(', '));
+        (err, _stdout, stderr) => {
           if (err) reject(new Error(stderr || err.message));
           else resolve();
         }
       );
     });
-    const buffer = fs.readFileSync(tmpPdf);
+
+    // Update PDF metadata to hide software origin
+    const { PDFDocument } = require('pdf-lib');
+    const rawPdf = fs.readFileSync(tmpPdf);
+    const pdfDoc = await PDFDocument.load(rawPdf);
+    pdfDoc.setTitle('ජෝතිෂ්‍ය පඨනය');
+    pdfDoc.setAuthor('පුරාණ ජෝතිර්වේදය හදහන් සේවය');
+    pdfDoc.setCreator('පුරාණ ජෝතිර්වේදය');
+    pdfDoc.setProducer('පුරාණ ජෝතිර්වේදය');
+    pdfDoc.setSubject('ජෝතිෂ්‍ය පඨනය');
+    pdfDoc.setKeywords([]);
+    const buffer = Buffer.from(await pdfDoc.save());
     fs.rm(tmpHome, { recursive: true, force: true }, () => {});
     fs.unlink(tmpDocx, () => {});
     fs.unlink(tmpPdf, () => {});

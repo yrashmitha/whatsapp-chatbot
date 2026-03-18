@@ -152,37 +152,29 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
       if (!res.ok) throw new Error('Download failed');
       const blob = await res.blob();
       const { renderAsync } = await import('docx-preview');
-      const html2pdf = (await import('html2pdf.js')).default;
 
-      // Wrap in a hidden clip so html2canvas can still render it
-      const wrapper = document.createElement('div');
-      wrapper.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;overflow:hidden;z-index:9999;';
       const container = document.createElement('div');
-      container.style.cssText = 'width:794px;padding:40px;background:#fff;';
-      wrapper.appendChild(container);
-      document.body.appendChild(wrapper);
-
       await renderAsync(blob, container, null, {
         className: 'docx-preview', inWrapper: true, ignoreWidth: false,
         ignoreHeight: false, ignoreFonts: false, breakPages: true, useBase64URL: true,
       });
 
-      // Wait for fonts to fully load before capturing
-      await document.fonts.ready;
-      await new Promise(r => setTimeout(r, 600));
-
-      const last4 = (order.phone_number || '').replace(/\D/g, '').slice(-4) || '0000';
-      await html2pdf().set({
-        margin: 10,
-        filename: `horoscope-${last4}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, logging: false, allowTaint: true },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      }).from(container).save();
-
-      document.body.removeChild(wrapper);
+      const win = window.open('', '_blank');
+      win.document.write(`<!DOCTYPE html><html><head><title>Horoscope</title>
+        <style>
+          * { box-sizing: border-box; }
+          body { margin: 0; padding: 0; background: #fff; }
+          .docx-wrapper { background: #fff !important; padding: 0 !important; }
+          .docx-wrapper > section.docx { box-shadow: none !important; margin: 0 !important; }
+          @media print { body { margin: 0; } @page { margin: 1cm; } }
+        </style>
+      </head><body>${container.innerHTML}</body></html>`);
+      win.document.close();
+      await new Promise(r => setTimeout(r, 1000));
+      win.print();
+      win.onafterprint = () => win.close();
     } catch (e) {
-      toast.error('Failed to download PDF');
+      toast.error('Failed to generate PDF');
     } finally {
       setDownloadingPdf(false);
     }

@@ -33,6 +33,11 @@ const ADDON_CATALOG = [
     name: 'Horoscope Reading',
     description: 'Generates full 10-section Vedic horoscope Word documents for payment_received orders.',
   },
+  {
+    id: 'ai_call_answering',
+    name: 'AI Call Answering',
+    description: 'Answers inbound Twilio phone calls with an AI agent, transcribes the conversation, and logs it in the CRM.',
+  },
 ];
 
 /**

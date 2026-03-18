@@ -25,6 +25,7 @@ const settingsRoutes   = require('./settings.routes');
 const summaryRoutes      = require('./summary.routes');
 const adminRoutes        = require('./admin.routes');
 const quickRepliesRoutes = require('./quickReplies.routes');
+const callsRoutes        = require('./calls.routes');
 
 const jwtAuth = require('../middleware/jwtAuth');
 const { upload } = require('../config/multer');
@@ -76,6 +77,7 @@ function mountRoutes(app) {
   app.use('/api/settings',     settingsRoutes);
   app.use('/api/summary',        summaryRoutes);
   app.use('/api/quick-replies',  quickRepliesRoutes);
+  app.use('/api/calls',          callsRoutes);
 
   // Standalone endpoint: POST /api/upload-image (Cloudinary product image upload)
   app.post('/api/upload-image', jwtAuth, upload.single('image'), uploadImage);

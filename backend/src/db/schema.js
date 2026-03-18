@@ -347,6 +347,26 @@ async function init() {
       CREATE INDEX IF NOT EXISTS idx_quick_replies_client ON quick_replies (client_id, sort_order);
     `);
 
+    // ── AI Call Answering ─────────────────────────────────────────────────────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS calls (
+        id               SERIAL PRIMARY KEY,
+        call_sid         TEXT UNIQUE NOT NULL,
+        client_id        TEXT NOT NULL,
+        caller_phone     TEXT NOT NULL,
+        called_phone     TEXT NOT NULL,
+        status           TEXT NOT NULL DEFAULT 'in-progress',
+        duration_seconds INT,
+        transcript       JSONB NOT NULL DEFAULT '[]',
+        ai_summary       TEXT,
+        started_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        ended_at         TIMESTAMPTZ,
+        created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_calls_client_id  ON calls(client_id);
+      CREATE INDEX IF NOT EXISTS idx_calls_created_at ON calls(created_at DESC);
+    `);
+
     // ── Plugin config + customer data ─────────────────────────────────────────
     await pool.query(`
       CREATE TABLE IF NOT EXISTS plugin_configs (

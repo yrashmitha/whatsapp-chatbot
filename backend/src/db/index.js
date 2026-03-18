@@ -29,6 +29,9 @@ const { getClientMedia, insertMedia,
 const { getPluginConfig, upsertPluginConfig,
         getPluginCustomerData,
         upsertPluginCustomerData }                  = require('./plugins.db');
+const { insertCall, appendTranscriptTurn,
+        updateCallStatus, updateCallSummary,
+        listCalls, getCall }                        = require('./calls.db');
 
 module.exports = {
   // Schema
@@ -79,4 +82,11 @@ module.exports = {
   upsertPluginConfig,
   getPluginCustomerData,
   upsertPluginCustomerData,
+  // Calls
+  insertCall,
+  appendTranscriptTurn,
+  updateCallStatus,
+  updateCallSummary,
+  listCalls,
+  getCall,
 };

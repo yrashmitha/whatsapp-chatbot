@@ -318,7 +318,7 @@ async function downloadHoroscopePdf(req, res) {
     const { PDFDocument } = require('pdf-lib');
     const rawPdf = fs.readFileSync(tmpPdf);
     const pdfDoc = await PDFDocument.load(rawPdf);
-    pdfDoc.setTitle('ජෝතිෂ්‍ය පඨනය');
+    pdfDoc.setTitle('පුරාණ ජෝතිර්වේදය හදහන් සේවය');
     pdfDoc.setAuthor('පුරාණ ජෝතිර්වේදය හදහන් සේවය');
     pdfDoc.setCreator('පුරාණ ජෝතිර්වේදය');
     pdfDoc.setProducer('පුරාණ ජෝතිර්වේදය');

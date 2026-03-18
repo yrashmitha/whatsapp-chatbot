@@ -283,14 +283,23 @@ async function downloadHoroscopePdf(req, res) {
     const os   = require('os');
     const path = require('path');
     const uid  = `${orderId}-${Date.now()}`;
+    const tmpHome = path.join(os.tmpdir(), `lo-home-${uid}`);
     const tmpDocx = path.join(os.tmpdir(), `horo-${uid}.docx`);
     const tmpPdf  = path.join(os.tmpdir(), `horo-${uid}.pdf`);
+
+    // Copy fonts into the temp HOME so LibreOffice finds them
+    const fontSrc  = path.join(__dirname, '../assets/fonts');
+    const fontDest = path.join(tmpHome, '.fonts');
+    fs.mkdirSync(fontDest, { recursive: true });
+    for (const f of fs.readdirSync(fontSrc)) {
+      if (f.endsWith('.ttf')) fs.copyFileSync(path.join(fontSrc, f), path.join(fontDest, f));
+    }
 
     fs.writeFileSync(tmpDocx, docxBuffer);
     await new Promise((resolve, reject) => {
       exec(
-        `soffice --headless --convert-to pdf --outdir "${os.tmpdir()}" "${tmpDocx}"`,
-        { env: { ...process.env, HOME: os.tmpdir() } },
+        `fc-cache -f "${fontDest}" && soffice --headless --convert-to pdf --outdir "${os.tmpdir()}" "${tmpDocx}"`,
+        { env: { ...process.env, HOME: tmpHome } },
         (err, _stdout, stderr) => {
           if (err) reject(new Error(stderr || err.message));
           else resolve();
@@ -298,6 +307,7 @@ async function downloadHoroscopePdf(req, res) {
       );
     });
     const buffer = fs.readFileSync(tmpPdf);
+    fs.rm(tmpHome, { recursive: true, force: true }, () => {});
     fs.unlink(tmpDocx, () => {});
     fs.unlink(tmpPdf, () => {});
 

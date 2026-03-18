@@ -84,6 +84,7 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
   const [specialAnswers, setSpecialAnswers] = useState(savedSpecial.map(qa => ({ ...qa })));
   const [saving, setSaving]         = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [loadingPreview, setLoadingPreview] = useState(false);
 
   useEffect(() => {
@@ -136,6 +137,38 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
       toast.error('Failed to download');
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    if (downloadingPdf) return;
+    setDownloadingPdf(true);
+    try {
+      // Ensure preview is rendered
+      const token = localStorage.getItem('crm_token');
+      const params = clientId ? `?client_id=${clientId}` : '';
+      const res = await fetch(`/api/plugins/horoscope/download/${order.order_id}${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Failed to fetch document');
+      const blob = await res.blob();
+      const { renderAsync } = await import('docx-preview');
+      const container = document.createElement('div');
+      await renderAsync(blob, container, null, {
+        className: 'docx-preview', inWrapper: true, ignoreWidth: false,
+        ignoreHeight: false, ignoreFonts: false, breakPages: true, useBase64URL: true,
+      });
+      const win = window.open('', '_blank');
+      win.document.write(`<!DOCTYPE html><html><head><title>Horoscope</title>
+        <style>body{margin:0;padding:16px;font-family:sans-serif;}@media print{body{margin:0;}}</style>
+      </head><body>${container.innerHTML}</body></html>`);
+      win.document.close();
+      win.focus();
+      setTimeout(() => { win.print(); }, 800);
+    } catch (e) {
+      toast.error('Failed to generate PDF');
+    } finally {
+      setDownloadingPdf(false);
     }
   };
 
@@ -302,6 +335,13 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
             style={{ padding: '8px 18px', fontSize: 13, background: '#ffffff', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 8, cursor: downloading ? 'not-allowed' : 'pointer', opacity: downloading ? 0.6 : 1 }}
           >
             {downloading ? 'Downloading…' : '⬇ Download Word'}
+          </button>
+          <button
+            onClick={handleDownloadPdf}
+            disabled={downloadingPdf}
+            style={{ padding: '8px 18px', fontSize: 13, background: '#ffffff', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 8, cursor: downloadingPdf ? 'not-allowed' : 'pointer', opacity: downloadingPdf ? 0.6 : 1 }}
+          >
+            {downloadingPdf ? 'Preparing…' : '⬇ Download PDF'}
           </button>
           <button
             onClick={handleSave}

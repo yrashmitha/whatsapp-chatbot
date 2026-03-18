@@ -270,8 +270,8 @@ async function downloadHoroscopePdf(req, res) {
 
     const PDFDocument = require('pdfkit');
     const path = require('path');
-    const fontRegular = path.join(__dirname, '../assets/fonts/NotoSansSinhala-Regular.ttf');
-    const fontBold    = path.join(__dirname, '../assets/fonts/NotoSansSinhala-Bold.ttf');
+    const fontRegular = path.join(__dirname, '../assets/fonts/AbhayaLibre-Regular.ttf');
+    const fontBold    = path.join(__dirname, '../assets/fonts/AbhayaLibre-Bold.ttf');
 
     const doc = new PDFDocument({ margin: 50, size: 'A4' });
     const chunks = [];

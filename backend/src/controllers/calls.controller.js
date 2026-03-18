@@ -58,18 +58,35 @@ function cacheAudio(buffer, mime = 'audio/wav') {
   return token;
 }
 
+// ─── Silent WAV fallback ──────────────────────────────────────────────────────
+/**
+ * Returns a short silent WAV buffer so Twilio <Play> never gets a 404.
+ * Used when all Gemini TTS retry attempts fail.
+ */
+function silentWav(durationMs = 500) {
+  const sampleRate = 24000;
+  const numSamples = Math.floor(sampleRate * durationMs / 1000);
+  const pcm = Buffer.alloc(numSamples * 2, 0); // 16-bit zeros
+  return pcmToWav(pcm, sampleRate);
+}
+
 // ─── Gemini TTS helper ────────────────────────────────────────────────────────
 /**
- * Synthesize text to MP3 audio using Gemini TTS API.
+ * Synthesize text to WAV audio using Gemini TTS API with retry.
  * Supports 100+ languages including Sinhala (si).
+ * Retries up to MAX_ATTEMPTS times; returns silent WAV on all failures
+ * so Twilio never drops the call due to a missing audio file.
  * @param {string} text - Text to synthesize
  * @param {string} voiceName - Gemini prebuilt voice name (e.g. 'Kore', 'Leda', 'Puck')
  * @param {string} [apiKey] - Optional API key override
- * @returns {Promise<Buffer>} MP3 audio buffer
+ * @returns {Promise<Buffer>} WAV audio buffer
  */
 async function synthesizeSpeech(text, voiceName = 'Kore', apiKey) {
   const key = apiKey || process.env.GEMINI_API_KEY;
-  if (!key) throw new Error('GEMINI_API_KEY not configured');
+  if (!key) {
+    console.error('[TTS] GEMINI_API_KEY not configured — returning silence');
+    return silentWav();
+  }
 
   const axios = require('axios');
   const body = {
@@ -84,36 +101,60 @@ async function synthesizeSpeech(text, voiceName = 'Kore', apiKey) {
     },
   };
 
-  console.log(`[TTS] Gemini TTS voice=${voiceName} text="${text.slice(0, 80)}"`);
-  let resp;
-  try {
-    resp = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${key}`,
-      body,
-      { headers: { 'Content-Type': 'application/json' } }
-    );
-  } catch (axiosErr) {
-    const errData = axiosErr.response?.data;
-    console.error('[TTS] Gemini TTS error:', JSON.stringify(errData || axiosErr.message));
-    throw new Error(`Gemini TTS ${axiosErr.response?.status}: ${JSON.stringify(errData?.error?.message || axiosErr.message)}`);
+  const MAX_ATTEMPTS = 3;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    console.log(`[TTS] Gemini TTS attempt ${attempt}/${MAX_ATTEMPTS} voice=${voiceName} text="${text.slice(0, 80)}"`);
+    try {
+      const resp = await axios.post(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${key}`,
+        body,
+        { headers: { 'Content-Type': 'application/json' } }
+      );
+
+      // Check for finishReason OTHER (safety/content filter — no audio returned)
+      const candidate = resp.data?.candidates?.[0];
+      const finishReason = candidate?.finishReason;
+      if (finishReason && finishReason !== 'STOP') {
+        console.warn(`[TTS] Attempt ${attempt} finishReason=${finishReason} — retrying`);
+        if (attempt < MAX_ATTEMPTS) {
+          await new Promise(r => setTimeout(r, 500 * attempt));
+          continue;
+        }
+        break;
+      }
+
+      const inlineData = candidate?.content?.parts?.[0]?.inlineData;
+      if (!inlineData?.data) {
+        console.warn(`[TTS] Attempt ${attempt} no inlineData — retrying. Response: ${JSON.stringify(resp.data).slice(0, 300)}`);
+        if (attempt < MAX_ATTEMPTS) {
+          await new Promise(r => setTimeout(r, 500 * attempt));
+          continue;
+        }
+        break;
+      }
+
+      console.log(`[TTS] Gemini TTS OK mimeType=${inlineData.mimeType} dataLength=${inlineData.data.length}`);
+      const audioBuffer = Buffer.from(inlineData.data, 'base64');
+
+      // Gemini TTS returns raw PCM (audio/pcm, 24kHz, 16-bit, mono)
+      // Twilio <Play> requires WAV or MP3 — wrap PCM in a WAV header
+      if (!inlineData.mimeType || inlineData.mimeType.includes('pcm') || inlineData.mimeType.includes('l16')) {
+        console.log('[TTS] Converting PCM → WAV for Twilio compatibility');
+        return pcmToWav(audioBuffer, 24000);
+      }
+      return audioBuffer;
+
+    } catch (axiosErr) {
+      const errData = axiosErr.response?.data;
+      console.error(`[TTS] Attempt ${attempt} HTTP error:`, JSON.stringify(errData || axiosErr.message).slice(0, 300));
+      if (attempt < MAX_ATTEMPTS) {
+        await new Promise(r => setTimeout(r, 500 * attempt));
+      }
+    }
   }
 
-  // Gemini returns audio as base64 inline data in candidates[0].content.parts[0].inlineData.data
-  const inlineData = resp.data?.candidates?.[0]?.content?.parts?.[0]?.inlineData;
-  if (!inlineData?.data) {
-    console.error('[TTS] No inlineData in Gemini TTS response:', JSON.stringify(resp.data));
-    throw new Error('Gemini TTS returned no audio data');
-  }
-  console.log(`[TTS] Gemini TTS OK mimeType=${inlineData.mimeType} dataLength=${inlineData.data.length}`);
-  const audioBuffer = Buffer.from(inlineData.data, 'base64');
-
-  // Gemini TTS returns raw PCM (audio/pcm, 24kHz, 16-bit, mono)
-  // Twilio <Play> requires WAV or MP3 — wrap PCM in a WAV header
-  if (!inlineData.mimeType || inlineData.mimeType.includes('pcm') || inlineData.mimeType.includes('l16')) {
-    console.log('[TTS] Converting PCM → WAV for Twilio compatibility');
-    return pcmToWav(audioBuffer, 24000);
-  }
-  return audioBuffer;
+  console.error('[TTS] All attempts failed — returning silent WAV so call continues');
+  return silentWav();
 }
 
 // ─── Gemini helper (bare model for call AI — no CRM tools) ───────────────────
@@ -180,7 +221,7 @@ function gatherTwiML(clientId, audioToken, sttLanguage) {
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather input="speech" language="${sttLanguage || 'en-US'}" action="${gatherAction}" speechTimeout="2" timeout="10" actionOnEmptyResult="true">
+  <Gather input="speech" language="${sttLanguage || 'en-US'}" action="${gatherAction}" speechTimeout="3" timeout="15" actionOnEmptyResult="true">
     <Play>${audioUrl}</Play>
   </Gather>
   <Redirect>${redirectUrl}</Redirect>
@@ -192,7 +233,7 @@ function repromptTwiML(clientId, sttLanguage) {
   const redirectUrl  = `${BASE_URL}/api/calls/webhook/gather?client_id=${encodeURIComponent(clientId)}&amp;empty=1`;
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather input="speech" language="${sttLanguage || 'en-US'}" action="${gatherAction}" speechTimeout="2" timeout="10" actionOnEmptyResult="true">
+  <Gather input="speech" language="${sttLanguage || 'en-US'}" action="${gatherAction}" speechTimeout="3" timeout="15" actionOnEmptyResult="true">
   </Gather>
   <Redirect>${redirectUrl}</Redirect>
 </Response>`;

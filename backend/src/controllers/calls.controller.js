@@ -49,11 +49,17 @@ async function synthesizeSpeech(text, voiceName = 'si-LK-Wavenet-A') {
     voice: { languageCode: langCode, name: voiceName },
     audioConfig: { audioEncoding: 'MP3' },
   };
+  console.log(`[TTS] Requesting voice=${voiceName} lang=${langCode} text="${text.slice(0, 80)}..."`);
   const resp = await axios.post(
     `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
     body,
     { headers: { 'Content-Type': 'application/json' } }
   );
+  if (!resp.data?.audioContent) {
+    console.error('[TTS] No audioContent in response:', JSON.stringify(resp.data));
+    throw new Error('TTS returned no audioContent');
+  }
+  console.log(`[TTS] audioContent length=${resp.data.audioContent.length} chars (base64)`);
   return Buffer.from(resp.data.audioContent, 'base64');
 }
 
@@ -153,28 +159,40 @@ function repromptTwiML(clientId, ttsVoice) {
 async function handleVoiceWebhook(req, res) {
   res.type('text/xml');
   const clientId = req.query.client_id;
+  console.log(`[CALLS/voice] clientId=${clientId} body=`, JSON.stringify(req.body));
+
   if (!clientId) {
+    console.warn('[CALLS/voice] No client_id in query — hanging up');
     return res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`);
   }
 
   const { CallSid, From, To } = req.body;
+  console.log(`[CALLS/voice] CallSid=${CallSid} From=${From} To=${To}`);
 
   try {
     const cfg = await loadCallConfig(clientId);
     if (!cfg) {
+      console.warn(`[CALLS/voice] Addon not enabled for client=${clientId} — hanging up`);
       return res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`);
     }
+    console.log(`[CALLS/voice] Config loaded: voice=${cfg.ttsVoice} greeting="${cfg.greeting}"`);
 
-    // Insert call record
     await db.insertCall(CallSid, clientId, From || '', To || '');
+    console.log(`[CALLS/voice] Call record inserted: ${CallSid}`);
 
-    // Generate greeting audio
+    console.log(`[CALLS/voice] Synthesizing greeting via TTS...`);
     const audioBuffer = await synthesizeSpeech(cfg.greeting, cfg.ttsVoice);
-    const token = cacheAudio(audioBuffer);
+    console.log(`[CALLS/voice] TTS OK — audio size=${audioBuffer.length} bytes`);
 
-    return res.send(gatherTwiML(clientId, token, cfg.ttsVoice));
+    const token = cacheAudio(audioBuffer);
+    const audioUrl = `${BASE_URL}/api/calls/audio/${token}`;
+    console.log(`[CALLS/voice] Audio cached at: ${audioUrl}`);
+
+    const twiml = gatherTwiML(clientId, token, cfg.ttsVoice);
+    console.log(`[CALLS/voice] Responding with TwiML:\n${twiml}`);
+    return res.send(twiml);
   } catch (e) {
-    console.error('[CALLS] voice webhook error:', e.message);
+    console.error('[CALLS/voice] ERROR:', e.message, e.stack);
     return res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`);
   }
 }
@@ -185,50 +203,60 @@ async function handleVoiceWebhook(req, res) {
 async function handleGatherWebhook(req, res) {
   res.type('text/xml');
   const clientId = req.query.client_id;
+  console.log(`[CALLS/gather] clientId=${clientId} empty=${req.query.empty} body=`, JSON.stringify(req.body));
+
   if (!clientId) {
+    console.warn('[CALLS/gather] No client_id — hanging up');
     return res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`);
   }
 
   const { CallSid, SpeechResult } = req.body;
   const isEmpty = req.query.empty === '1' || !SpeechResult?.trim();
+  console.log(`[CALLS/gather] CallSid=${CallSid} SpeechResult="${SpeechResult}" isEmpty=${isEmpty}`);
 
+  let cfg;
   try {
-    const cfg = await loadCallConfig(clientId);
+    cfg = await loadCallConfig(clientId);
     if (!cfg) {
+      console.warn(`[CALLS/gather] Addon not enabled for client=${clientId}`);
       return res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`);
     }
 
-    // If no speech detected, just re-prompt silently
     if (isEmpty) {
+      console.log('[CALLS/gather] No speech — sending reprompt');
       return res.send(repromptTwiML(clientId, cfg.ttsVoice));
     }
 
     const callerText = SpeechResult.trim();
+    console.log(`[CALLS/gather] Caller said: "${callerText}"`);
 
-    // Append caller turn
     await db.appendTranscriptTurn(CallSid, 'caller', callerText);
 
-    // Fetch full transcript for context
     const callRow = await db.getCall(CallSid, clientId);
     const transcript = callRow?.transcript || [];
+    console.log(`[CALLS/gather] Transcript length: ${transcript.length} turns`);
 
-    // Add current caller turn to in-memory transcript for Gemini (already appended above)
     const geminiTranscript = transcript.length > 0 ? transcript : [{ speaker: 'caller', text: callerText }];
 
-    // Generate Gemini reply
+    console.log('[CALLS/gather] Calling Gemini...');
     const aiText = await geminiCallReply(cfg.systemPrompt, geminiTranscript, cfg.geminiApiKey);
+    console.log(`[CALLS/gather] Gemini replied: "${aiText}"`);
 
-    // Append AI turn
     await db.appendTranscriptTurn(CallSid, 'ai', aiText);
 
-    // Synthesize AI reply to audio
+    console.log('[CALLS/gather] Synthesizing AI reply via TTS...');
     const audioBuffer = await synthesizeSpeech(aiText, cfg.ttsVoice);
-    const token = cacheAudio(audioBuffer);
+    console.log(`[CALLS/gather] TTS OK — audio size=${audioBuffer.length} bytes`);
 
-    return res.send(gatherTwiML(clientId, token, cfg.ttsVoice));
+    const token = cacheAudio(audioBuffer);
+    const audioUrl = `${BASE_URL}/api/calls/audio/${token}`;
+    console.log(`[CALLS/gather] Audio cached at: ${audioUrl}`);
+
+    const twiml = gatherTwiML(clientId, token, cfg.ttsVoice);
+    console.log(`[CALLS/gather] Responding with TwiML:\n${twiml}`);
+    return res.send(twiml);
   } catch (e) {
-    console.error('[CALLS] gather webhook error:', e.message);
-    // On error, re-prompt so call doesn't drop
+    console.error('[CALLS/gather] ERROR:', e.message, e.stack);
     return res.send(repromptTwiML(clientId, cfg?.ttsVoice));
   }
 }

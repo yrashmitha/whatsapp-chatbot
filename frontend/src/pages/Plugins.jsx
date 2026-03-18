@@ -16,11 +16,17 @@ const ALL_PLUGINS = [
     defaultName: 'Horoscope Reading',
     description: 'Generates full 10-section Vedic horoscope Word documents for payment_received orders.',
   },
+  {
+    id: 'ai_call_answering',
+    defaultName: 'AI Call Answering',
+    description: 'Answers inbound Twilio phone calls with an AI agent, transcribes the conversation, and logs it in the CRM.',
+  },
 ];
 
 function PluginCard({ pluginMeta, clientId, superAdmin }) {
   const toast = useToast();
-  const isHoroscope = pluginMeta.id === 'horoscope_reading';
+  const isHoroscope   = pluginMeta.id === 'horoscope_reading';
+  const isCallAnswering = pluginMeta.id === 'ai_call_answering';
 
   const [config, setConfig] = useState(null);
   const [name, setName] = useState('');
@@ -28,6 +34,8 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
   const [apiKey, setApiKey] = useState('');
   const [systemPrompt, setSystemPrompt] = useState('');
   const [specialNote, setSpecialNote]   = useState('');
+  const [greeting, setGreeting]         = useState('');
+  const [ttsVoice, setTtsVoice]         = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -41,6 +49,8 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         setApiKey(r.data.api_key || '');
         setSystemPrompt(r.data.system_prompt || '');
         setSpecialNote(r.data.special_note || '');
+        setGreeting(r.data.greeting || '');
+        setTtsVoice(r.data.tts_voice || 'en-US-Neural2-F');
       })
       .catch(() => {
         setConfig({});
@@ -49,6 +59,8 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         setApiKey('');
         setSystemPrompt('');
         setSpecialNote('');
+        setGreeting('');
+        setTtsVoice('en-US-Neural2-F');
       });
   }, [pluginMeta.id, clientId]);
 
@@ -60,6 +72,10 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
       if (isHoroscope) {
         body.system_prompt = systemPrompt;
         body.special_note  = specialNote;
+      } else if (isCallAnswering) {
+        body.system_prompt = systemPrompt;
+        body.greeting      = greeting;
+        body.tts_voice     = ttsVoice;
       } else {
         body.prompt = prompt;
       }
@@ -100,6 +116,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         </div>
       )}
 
+      {!isCallAnswering && (
       <div>
         <label className="text-xs font-medium text-slate-500 block mb-1">FreeAstro API Key</label>
         <input
@@ -111,10 +128,54 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         />
         <p className="text-xs text-slate-400 mt-1">Get your key at freeastroapi.com</p>
       </div>
+      )}
 
-      {!isHoroscope && (
+      {isCallAnswering && (
+        <>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Greeting</label>
+            <p className="text-xs text-slate-400 mb-1.5">First thing the AI says when it answers the call.</p>
+            <input
+              type="text"
+              value={greeting}
+              onChange={e => setGreeting(e.target.value)}
+              placeholder="Hello! How can I help you today?"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">System Prompt</label>
+            <p className="text-xs text-slate-400 mb-1.5">AI personality and instructions for handling calls.</p>
+            <textarea
+              value={systemPrompt}
+              onChange={e => setSystemPrompt(e.target.value)}
+              rows={6}
+              placeholder="You are a helpful AI phone receptionist. Keep responses short and conversational..."
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">TTS Voice</label>
+            <p className="text-xs text-slate-400 mb-1.5">Google Cloud Text-to-Speech voice name.</p>
+            <input
+              type="text"
+              value={ttsVoice}
+              onChange={e => setTtsVoice(e.target.value)}
+              placeholder="en-US-Neural2-F"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 font-mono"
+            />
+            <p className="text-xs text-slate-400 mt-1">
+              English: <code className="bg-slate-100 px-1 rounded">en-US-Neural2-F</code> &nbsp;
+              Sinhala: <code className="bg-slate-100 px-1 rounded">si-LK-Wavenet-A</code>
+            </p>
+          </div>
+        </>
+      )}
+
+      {!isHoroscope && !isCallAnswering && (
         <div>
           <label className="text-xs font-medium text-slate-500 block mb-1">Gemini Prompt</label>
+
           <p className="text-xs text-slate-400 mb-1.5">
             Use <code className="font-mono bg-slate-100 px-1 rounded">{'{chart_json}'}</code> where chart data will be inserted.
           </p>

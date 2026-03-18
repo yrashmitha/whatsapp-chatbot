@@ -166,7 +166,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
             />
             <p className="text-xs text-slate-400 mt-1">
               English: <code className="bg-slate-100 px-1 rounded">en-US-Neural2-F</code> &nbsp;
-              Sinhala: <code className="bg-slate-100 px-1 rounded">si-LK-Wavenet-A</code>
+              Sinhala: <code className="bg-slate-100 px-1 rounded">si-LK-Standard-A</code> or <code className="bg-slate-100 px-1 rounded">si-LK-Standard-B</code>
             </p>
           </div>
         </>

@@ -37,7 +37,7 @@ function cacheAudio(buffer) {
  * @param {string} voiceName - Voice name (e.g. 'si-LK-Wavenet-A')
  * @returns {Promise<Buffer>} MP3 audio buffer
  */
-async function synthesizeSpeech(text, voiceName = 'si-LK-Wavenet-A') {
+async function synthesizeSpeech(text, voiceName = 'si-LK-Standard-A') {
   const apiKey = process.env.GOOGLE_TTS_API_KEY;
   if (!apiKey) throw new Error('GOOGLE_TTS_API_KEY not configured');
 
@@ -49,12 +49,19 @@ async function synthesizeSpeech(text, voiceName = 'si-LK-Wavenet-A') {
     voice: { languageCode: langCode, name: voiceName },
     audioConfig: { audioEncoding: 'MP3' },
   };
-  console.log(`[TTS] Requesting voice=${voiceName} lang=${langCode} text="${text.slice(0, 80)}..."`);
-  const resp = await axios.post(
-    `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
-    body,
-    { headers: { 'Content-Type': 'application/json' } }
-  );
+  console.log(`[TTS] Requesting voice=${voiceName} lang=${langCode} text="${text.slice(0, 80)}"`);
+  let resp;
+  try {
+    resp = await axios.post(
+      `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
+      body,
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+  } catch (axiosErr) {
+    const errData = axiosErr.response?.data;
+    console.error('[TTS] API error:', JSON.stringify(errData || axiosErr.message));
+    throw new Error(`TTS API ${axiosErr.response?.status}: ${JSON.stringify(errData?.error?.message || errData || axiosErr.message)}`);
+  }
   if (!resp.data?.audioContent) {
     console.error('[TTS] No audioContent in response:', JSON.stringify(resp.data));
     throw new Error('TTS returned no audioContent');
@@ -111,7 +118,7 @@ async function loadCallConfig(clientId) {
   return {
     systemPrompt: config.system_prompt || '',
     greeting:     config.greeting     || 'Hello, how can I help you today?',
-    ttsVoice:     config.tts_voice    || 'si-LK-Wavenet-A',
+    ttsVoice:     config.tts_voice    || 'si-LK-Standard-A',
     geminiApiKey: config.api_key      || null,
   };
 }

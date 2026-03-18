@@ -51,7 +51,9 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         setSystemPrompt(r.data.system_prompt || '');
         setSpecialNote(r.data.special_note || '');
         setGreeting(r.data.greeting || '');
-        setTtsVoice(r.data.tts_voice || 'Kore');
+        const GEMINI_VOICES = ['achernar','achird','algenib','algieba','alnilam','aoede','autonoe','callirrhoe','charon','despina','enceladus','erinome','fenrir','gacrux','iapetus','kore','laomedeia','leda','orus','puck','pulcherrima','rasalgethi','sadachbia','sadaltager','schedar','sulafat','umbriel','vindemiatrix','zephyr','zubenelgenubi'];
+        const savedVoice = (r.data.tts_voice || '').toLowerCase();
+        setTtsVoice(GEMINI_VOICES.includes(savedVoice) ? r.data.tts_voice : 'Kore');
         setSttLanguage(r.data.stt_language || 'en-US');
       })
       .catch(() => {

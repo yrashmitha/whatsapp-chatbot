@@ -307,7 +307,11 @@ async function downloadHoroscopePdf(req, res) {
       exec(
         `fc-cache -f "${fontDest}" 2>/dev/null; soffice --headless --convert-to pdf --outdir "${os.tmpdir()}" "${tmpDocx}"`,
         { env: { ...process.env, HOME: tmpHome } },
-        (err, _stdout, stderr) => {
+        (err, stdout, stderr) => {
+          console.log('[PDF] stdout:', stdout);
+          console.log('[PDF] stderr:', stderr);
+          console.log('[PDF] fontDest:', fontDest);
+          console.log('[PDF] tmpHome fonts:', fs.readdirSync(fontDirs[2]).join(', '));
           if (err) reject(new Error(stderr || err.message));
           else resolve();
         }

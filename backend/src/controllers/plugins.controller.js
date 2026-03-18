@@ -331,10 +331,11 @@ async function downloadHoroscopePdf(req, res) {
 
     const phone  = (r.rows[0].phone_number || orderId).replace(/\D/g, '');
     const last4  = phone.slice(-4) || '0000';
-    const parsed = parseSinhalaDate(cf.birth_date || '');
+    const rawBirth = hd.birth_overrides?.birth_date || cf.birth_date || '';
+    const parsed = parseSinhalaDate(rawBirth);
     const birthday = parsed
       ? `${parsed.year}${String(parsed.month).padStart(2,'0')}${String(parsed.day).padStart(2,'0')}`
-      : 'birthday';
+      : rawBirth.replace(/[^0-9]/g, '').slice(0, 8) || 'birthday';
     const filename = `horoscope-${last4}-${birthday}.pdf`;
 
     res.setHeader('Content-Type', 'application/pdf');

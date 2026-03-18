@@ -373,10 +373,10 @@ export default function Orders() {
           )}
         </div>
 
-        {data?.total > 20 && (
+        {data && (
           <div className="px-6 py-3 border-t border-slate-200 bg-white flex items-center justify-between shrink-0">
             <span className="text-sm text-slate-500">{data.total} total</span>
-            <Pagination page={page} total={data.total} limit={20} onChange={setPage} />
+            {data.total > 20 && <Pagination page={page} total={data.total} limit={20} onChange={setPage} />}
           </div>
         )}
       </div>

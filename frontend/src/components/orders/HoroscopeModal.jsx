@@ -28,6 +28,7 @@ function toISODate(raw) {
 export default function HoroscopeModal({ order, clientId, onClose, onGenerated }) {
   const toast = useToast();
   const geoRef = useRef();
+  const [showOrderDetails, setShowOrderDetails] = useState(false);
 
   const cf = (() => {
     if (!order?.custom_fields) return {};
@@ -195,6 +196,38 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
 
         {/* Body */}
         <div className="overflow-y-auto flex-1 px-5 py-4 flex flex-col gap-3">
+
+          {/* Order details panel */}
+          {Object.keys(cf).length > 0 && (
+            <div className="border border-slate-200 rounded-xl overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowOrderDetails(v => !v)}
+                className="w-full flex items-center justify-between px-3 py-2 bg-slate-50 text-xs font-medium text-slate-600 hover:bg-slate-100 border-0 cursor-pointer"
+              >
+                <span>📋 Customer Order Details</span>
+                <span className="text-slate-400">{showOrderDetails ? '▲' : '▼'}</span>
+              </button>
+              {showOrderDetails && (
+                <div className="px-3 py-2 flex flex-col gap-2 bg-white">
+                  <div className="flex flex-col gap-1 max-h-32 overflow-y-auto">
+                    {Object.entries(cf).map(([k, v]) => v ? (
+                      <div key={k} className="flex gap-2 text-xs">
+                        <span className="text-slate-400 shrink-0 capitalize">{k.replace(/_/g, ' ')}:</span>
+                        <span className="text-slate-700 font-mono break-all">{String(v)}</span>
+                      </div>
+                    ) : null)}
+                  </div>
+                  {order?.ai_summary && (
+                    <div className="bg-violet-50 border border-violet-100 rounded-lg px-3 py-2 text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">
+                      <span className="text-violet-500 font-semibold block mb-1">✨ AI Summary</span>
+                      {order.ai_summary}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Customer name */}
           <div>

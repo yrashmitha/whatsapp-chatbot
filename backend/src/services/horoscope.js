@@ -260,13 +260,12 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
   ];
 
   currentSections.forEach((sec, idx) => {
-    if (idx > 0) {
-      children.push(new Paragraph({ children: [new PageBreak()] }));
-    }
-
-    // Section heading
+    // Section heading — page break embedded inside heading paragraph to avoid blank pages
     children.push(new Paragraph({
-      children: [new TextRun({ text: sec, bold: true, size: 36, font: 'Abhaya Libre' })],
+      children: [
+        ...(idx > 0 ? [new PageBreak()] : []),
+        new TextRun({ text: sec, bold: true, size: 36, font: 'Abhaya Libre' }),
+      ],
       alignment: AlignmentType.LEFT,
       spacing: { after: 240 },
     }));
@@ -277,9 +276,8 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
 
   // Special questions
   if (specialAnswers && specialAnswers.length > 0) {
-    children.push(new Paragraph({ children: [new PageBreak()] }));
     children.push(new Paragraph({
-      children: [new TextRun({ text: 'විශේෂ උපදේශනය සහ විසඳුම් සේවාව (2026 සිට ඉදිරියට)', bold: true, size: 36, font: 'Abhaya Libre' })],
+      children: [new PageBreak(), new TextRun({ text: 'විශේෂ උපදේශනය සහ විසඳුම් සේවාව (2026 සිට ඉදිරියට)', bold: true, size: 36, font: 'Abhaya Libre' })],
       alignment: AlignmentType.LEFT,
       spacing: { after: 240 },
     }));
@@ -300,17 +298,21 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
 
   // Special note page
   if (specialNote && specialNote.trim()) {
-    children.push(new Paragraph({ children: [new PageBreak()] }));
     const noteLines = specialNote.split('\n');
+    let firstLine = true;
     for (const noteLine of noteLines) {
       const trimmed = noteLine.trim();
       if (!trimmed) { children.push(new Paragraph({ children: [] })); continue; }
       const isHeading = trimmed.includes('විශේෂ ශාස්ත්‍රීය සටහන');
       children.push(new Paragraph({
-        children: [new TextRun({ text: trimmed, bold: isHeading, size: isHeading ? 36 : 24, font: 'Abhaya Libre' })],
+        children: [
+          ...(firstLine ? [new PageBreak()] : []),
+          new TextRun({ text: trimmed, bold: isHeading, size: isHeading ? 36 : 24, font: 'Abhaya Libre' }),
+        ],
         alignment: isHeading ? AlignmentType.CENTER : AlignmentType.JUSTIFIED,
         spacing: { after: 160 },
       }));
+      firstLine = false;
     }
   }
 

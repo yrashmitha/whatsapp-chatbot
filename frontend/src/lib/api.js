@@ -34,3 +34,14 @@ authApi.interceptors.request.use(cfg => {
   if (token) cfg.headers.Authorization = `Bearer ${token}`;
   return cfg;
 });
+
+// Admin helper for /admin/* endpoints (no /api prefix)
+export const adminApi = axios.create({
+  baseURL: '/admin',
+  headers: { 'Content-Type': 'application/json' },
+});
+adminApi.interceptors.request.use(cfg => {
+  const token = localStorage.getItem('crm_token');
+  if (token) cfg.headers.Authorization = `Bearer ${token}`;
+  return cfg;
+});

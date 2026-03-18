@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore, isSuperAdmin } from '../stores/auth';
-import api from '../lib/api';
+import api, { adminApi } from '../lib/api';
 import Layout from '../components/Layout';
 import Drawer from '../components/ui/Drawer';
 import { useToast } from '../components/ui/Toast';
@@ -182,7 +182,7 @@ export default function Clients() {
   /* ── API ─ */
   const { data: clients = [], isLoading } = useQuery({
     queryKey: ['admin-clients'],
-    queryFn: () => api.get('/admin/clients').then(r => {
+    queryFn: () => adminApi.get('/clients').then(r => {
       const d = r.data;
       return Array.isArray(d) ? d : (d.clients || []);
     }),
@@ -190,8 +190,8 @@ export default function Clients() {
 
   const saveMutation = useMutation({
     mutationFn: (body) => editing
-      ? api.put(`/admin/clients/${editing.id}`, body)
-      : api.post('/admin/clients', body),
+      ? adminApi.put(`/clients/${editing.id}`, body)
+      : adminApi.post('/clients', body),
     onSuccess: (_, body) => {
       qc.invalidateQueries({ queryKey: ['admin-clients'] });
       qc.invalidateQueries({ queryKey: ['clients'] });
@@ -204,7 +204,7 @@ export default function Clients() {
   });
 
   const toggleMutation = useMutation({
-    mutationFn: ({ id, ...body }) => api.put(`/admin/clients/${id}`, body),
+    mutationFn: ({ id, ...body }) => adminApi.put(`/clients/${id}`, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-clients'] }),
     onError: (e) => showToast(e?.response?.data?.error || 'Update failed', 'error'),
   });

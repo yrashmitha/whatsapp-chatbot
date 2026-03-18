@@ -13,7 +13,6 @@
 
 const { v4: uuidv4 } = require('uuid');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const textToSpeech = require('@google-cloud/text-to-speech');
 const db = require('../db');
 const resolveClientId = require('../middleware/resolveClientId');
 const { PUBLIC_URL } = require('../config/env');
@@ -72,7 +71,11 @@ async function geminiCallReply(systemPrompt, transcript, apiKey) {
   const callModel = genAI.getGenerativeModel({
     model: 'gemini-2.5-flash',
     systemInstruction: systemPrompt || 'You are a helpful telephone receptionist. Keep responses concise and conversational.',
-    generationConfig: { temperature: 0.8, maxOutputTokens: 256 },
+    generationConfig: {
+      temperature: 0.8,
+      maxOutputTokens: 256,
+      thinkingConfig: { thinkingBudget: 0 }, // disable thinking for low-latency call replies
+    },
   });
 
   // Build history as alternating user/model turns
@@ -110,26 +113,33 @@ async function loadCallConfig(clientId) {
 // ─── TwiML helpers ────────────────────────────────────────────────────────────
 const BASE_URL = PUBLIC_URL || '';
 
-function gatherTwiML(clientId, audioToken) {
-  const audioUrl = `${BASE_URL}/api/calls/audio/${audioToken}`;
+function getLangCode(ttsVoice) {
+  // Derive STT language from TTS voice name (e.g. 'en-US-Neural2-F' → 'en-US', 'si-LK-Wavenet-A' → 'si-LK')
+  return (ttsVoice || 'en-US-Neural2-F').split('-').slice(0, 2).join('-');
+}
+
+function gatherTwiML(clientId, audioToken, ttsVoice) {
+  const audioUrl    = `${BASE_URL}/api/calls/audio/${audioToken}`;
   const gatherAction = `${BASE_URL}/api/calls/webhook/gather?client_id=${encodeURIComponent(clientId)}`;
   const redirectUrl  = `${BASE_URL}/api/calls/webhook/gather?client_id=${encodeURIComponent(clientId)}&empty=1`;
+  const language    = getLangCode(ttsVoice);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather input="speech" language="si-LK" action="${gatherAction}" speechTimeout="1" timeout="10">
+  <Gather input="speech" language="${language}" action="${gatherAction}" speechTimeout="2" timeout="10" actionOnEmptyResult="true">
     <Play>${audioUrl}</Play>
   </Gather>
   <Redirect>${redirectUrl}</Redirect>
 </Response>`;
 }
 
-function repromptTwiML(clientId) {
+function repromptTwiML(clientId, ttsVoice) {
   const gatherAction = `${BASE_URL}/api/calls/webhook/gather?client_id=${encodeURIComponent(clientId)}`;
   const redirectUrl  = `${BASE_URL}/api/calls/webhook/gather?client_id=${encodeURIComponent(clientId)}&empty=1`;
+  const language    = getLangCode(ttsVoice);
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather input="speech" language="si-LK" action="${gatherAction}" speechTimeout="1" timeout="10">
+  <Gather input="speech" language="${language}" action="${gatherAction}" speechTimeout="2" timeout="10" actionOnEmptyResult="true">
   </Gather>
   <Redirect>${redirectUrl}</Redirect>
 </Response>`;
@@ -162,7 +172,7 @@ async function handleVoiceWebhook(req, res) {
     const audioBuffer = await synthesizeSpeech(cfg.greeting, cfg.ttsVoice);
     const token = cacheAudio(audioBuffer);
 
-    return res.send(gatherTwiML(clientId, token));
+    return res.send(gatherTwiML(clientId, token, cfg.ttsVoice));
   } catch (e) {
     console.error('[CALLS] voice webhook error:', e.message);
     return res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`);
@@ -190,7 +200,7 @@ async function handleGatherWebhook(req, res) {
 
     // If no speech detected, just re-prompt silently
     if (isEmpty) {
-      return res.send(repromptTwiML(clientId));
+      return res.send(repromptTwiML(clientId, cfg.ttsVoice));
     }
 
     const callerText = SpeechResult.trim();
@@ -215,11 +225,11 @@ async function handleGatherWebhook(req, res) {
     const audioBuffer = await synthesizeSpeech(aiText, cfg.ttsVoice);
     const token = cacheAudio(audioBuffer);
 
-    return res.send(gatherTwiML(clientId, token));
+    return res.send(gatherTwiML(clientId, token, cfg.ttsVoice));
   } catch (e) {
     console.error('[CALLS] gather webhook error:', e.message);
     // On error, re-prompt so call doesn't drop
-    return res.send(repromptTwiML(clientId));
+    return res.send(repromptTwiML(clientId, cfg?.ttsVoice));
   }
 }
 

@@ -37,7 +37,7 @@ function cacheAudio(buffer) {
  * @param {string} voiceName - Voice name (e.g. 'si-LK-Wavenet-A')
  * @returns {Promise<Buffer>} MP3 audio buffer
  */
-async function synthesizeSpeech(text, voiceName = 'si-LK-Standard-A') {
+async function synthesizeSpeech(text, voiceName = 'en-US-Neural2-F') {
   const apiKey = process.env.GOOGLE_TTS_API_KEY;
   if (!apiKey) throw new Error('GOOGLE_TTS_API_KEY not configured');
 
@@ -118,7 +118,7 @@ async function loadCallConfig(clientId) {
   return {
     systemPrompt: config.system_prompt || '',
     greeting:     config.greeting     || 'Hello, how can I help you today?',
-    ttsVoice:     config.tts_voice    || 'si-LK-Standard-A',
+    ttsVoice:     config.tts_voice    || 'en-US-Neural2-F',
     geminiApiKey: config.api_key      || null,
   };
 }

@@ -30,7 +30,7 @@ async function getPluginConfig(req, res) {
     } else if (pluginId === 'horoscope_reading') {
       defaults = { name: 'Horoscope Reading', system_prompt: '', special_note: '', api_key: '' };
     } else if (pluginId === 'ai_call_answering') {
-      defaults = { name: 'AI Call Answering', system_prompt: '', greeting: 'Hello, how can I help you today?', tts_voice: 'si-LK-Standard-A' };
+      defaults = { name: 'AI Call Answering', system_prompt: '', greeting: 'Hello, how can I help you today?', tts_voice: 'en-US-Neural2-F' };
     } else {
       defaults = { name: pluginId, prompt: '' };
     }

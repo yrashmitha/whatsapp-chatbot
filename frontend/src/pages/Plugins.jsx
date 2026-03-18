@@ -165,8 +165,9 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 font-mono"
             />
             <p className="text-xs text-slate-400 mt-1">
-              English: <code className="bg-slate-100 px-1 rounded">en-US-Neural2-F</code> &nbsp;
-              Sinhala: <code className="bg-slate-100 px-1 rounded">si-LK-Standard-A</code> or <code className="bg-slate-100 px-1 rounded">si-LK-Standard-B</code>
+              English (F): <code className="bg-slate-100 px-1 rounded">en-US-Neural2-F</code> &nbsp;
+              English (M): <code className="bg-slate-100 px-1 rounded">en-US-Neural2-D</code> &nbsp;
+              Sinhala requires Azure TTS.
             </p>
           </div>
         </>

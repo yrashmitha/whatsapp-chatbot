@@ -279,9 +279,7 @@ async function downloadHoroscopePdf(req, res) {
     });
 
     const libre = require('libreoffice-convert');
-    const { promisify } = require('util');
-    const libreConvert = promisify(libre.convert);
-    const buffer = await libreConvert(docxBuffer, '.pdf', undefined);
+    const buffer = await libre.convert(docxBuffer, '.pdf', undefined);
 
     const phone  = (r.rows[0].phone_number || orderId).replace(/\D/g, '');
     const last4  = phone.slice(-4) || '0000';

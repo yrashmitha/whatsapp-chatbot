@@ -166,7 +166,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
               onChange={e => setTtsVoice(e.target.value)}
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
             >
-              {['Kore','Leda','Puck','Charon','Zephyr','Fenrir','Enceladus','Algieba','Despina','Sulafat'].map(v => (
+              {['Kore','Leda','Puck','Charon','Zephyr','Fenrir','Enceladus','Aoede','Algieba','Despina','Sulafat','Orus','Gacrux','Iapetus','Schedar','Achernar','Achird','Algenib','Alnilam','Autonoe','Callirrhoe','Erinome','Laomedeia','Pulcherrima','Rasalgethi','Sadachbia','Sadaltager','Umbriel','Vindemiatrix','Zubenelgenubi'].map(v => (
                 <option key={v} value={v}>{v}</option>
               ))}
             </select>

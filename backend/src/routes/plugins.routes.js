@@ -15,6 +15,7 @@ const {
   generateHoroscopeReading,
   updateHoroscopeSections,
   downloadHoroscope,
+  downloadHoroscopePdf,
 } = require('../controllers/plugins.controller');
 
 router.get('/:pluginId/config',                   jwtAuth, getPluginConfig);
@@ -24,5 +25,6 @@ router.post('/astro-chart',                       jwtAuth, generateAstroChart);
 router.post('/horoscope/generate',                jwtAuth, generateHoroscopeReading);
 router.patch('/horoscope/sections/:orderId',      jwtAuth, updateHoroscopeSections);
 router.get('/horoscope/download/:orderId',        jwtAuth, downloadHoroscope);
+router.get('/horoscope/download-pdf/:orderId',    jwtAuth, downloadHoroscopePdf);
 
 module.exports = router;

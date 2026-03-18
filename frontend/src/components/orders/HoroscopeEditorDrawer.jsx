@@ -144,29 +144,24 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
     if (downloadingPdf) return;
     setDownloadingPdf(true);
     try {
-      // Ensure preview is rendered
       const token = localStorage.getItem('crm_token');
       const params = clientId ? `?client_id=${clientId}` : '';
-      const res = await fetch(`/api/plugins/horoscope/download/${order.order_id}${params}`, {
+      const res = await fetch(`/api/plugins/horoscope/download-pdf/${order.order_id}${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error('Failed to fetch document');
+      if (!res.ok) throw new Error('Download failed');
       const blob = await res.blob();
-      const { renderAsync } = await import('docx-preview');
-      const container = document.createElement('div');
-      await renderAsync(blob, container, null, {
-        className: 'docx-preview', inWrapper: true, ignoreWidth: false,
-        ignoreHeight: false, ignoreFonts: false, breakPages: true, useBase64URL: true,
-      });
-      const win = window.open('', '_blank');
-      win.document.write(`<!DOCTYPE html><html><head><title>Horoscope</title>
-        <style>body{margin:0;padding:16px;font-family:sans-serif;}@media print{body{margin:0;}}</style>
-      </head><body>${container.innerHTML}</body></html>`);
-      win.document.close();
-      win.focus();
-      setTimeout(() => { win.print(); }, 800);
+      const cd = res.headers.get('Content-Disposition') || '';
+      const match = cd.match(/filename="([^"]+)"/);
+      const filename = match ? match[1] : `horoscope-${order.order_id}.pdf`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
     } catch (e) {
-      toast.error('Failed to generate PDF');
+      toast.error('Failed to download PDF');
     } finally {
       setDownloadingPdf(false);
     }
@@ -339,7 +334,7 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
           <button
             onClick={handleDownloadPdf}
             disabled={downloadingPdf}
-            style={{ padding: '8px 18px', fontSize: 13, background: '#ffffff', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 8, cursor: downloadingPdf ? 'not-allowed' : 'pointer', opacity: downloadingPdf ? 0.6 : 1 }}
+            style={{ padding: '8px 18px', fontSize: 13, background: '#dc2626', color: '#ffffff', border: 0, borderRadius: 8, cursor: downloadingPdf ? 'not-allowed' : 'pointer', opacity: downloadingPdf ? 0.6 : 1 }}
           >
             {downloadingPdf ? 'Preparing…' : '⬇ Download PDF'}
           </button>

@@ -249,7 +249,86 @@ async function downloadHoroscope(req, res) {
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 
+/**
+ * GET /api/plugins/horoscope/download-pdf/:orderId — stream PDF for an order.
+ */
+async function downloadHoroscopePdf(req, res) {
+  const { orderId } = req.params;
+  try {
+    const r = await db.pgQuery(
+      'SELECT phone_number, custom_fields, horoscope_data FROM orders WHERE order_id=$1', [orderId]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Order not found' });
+    const hd = (typeof r.rows[0].horoscope_data === 'string')
+      ? JSON.parse(r.rows[0].horoscope_data || '{}')
+      : (r.rows[0].horoscope_data || {});
+    if (!hd.sections) return res.status(404).json({ error: 'No horoscope data yet' });
+
+    const cf = (typeof r.rows[0].custom_fields === 'string')
+      ? JSON.parse(r.rows[0].custom_fields || '{}')
+      : (r.rows[0].custom_fields || {});
+
+    const PDFDocument = require('pdfkit');
+    const path = require('path');
+    const fontRegular = path.join(__dirname, '../assets/fonts/NotoSansSinhala-Regular.ttf');
+    const fontBold    = path.join(__dirname, '../assets/fonts/NotoSansSinhala-Bold.ttf');
+
+    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+    const chunks = [];
+    doc.on('data', c => chunks.push(c));
+
+    doc.registerFont('SinhalaRegular', fontRegular);
+    doc.registerFont('SinhalaBold', fontBold);
+
+    // Title
+    doc.font('SinhalaBold').fontSize(16).text(cf.customer_name || orderId, { align: 'center' });
+    doc.moveDown(0.5);
+    doc.font('SinhalaRegular').fontSize(10).fillColor('#666')
+      .text(`Order: ${orderId}`, { align: 'center' });
+    doc.moveDown(1);
+
+    // Sections
+    const SECTION_LABELS = [
+      'පෞරුෂය','අධ්‍යාපනය','වෘත්තීය ජීවිතය','ප්‍රේමය සහ විවාහ',
+      'දේපළ','සෞඛ්‍යය','දරු පල','ජීවන සාරාංශය','වර්තමාන දශාව','පිළියම්','VIP'
+    ];
+    Object.entries(hd.sections).forEach(([key, value], i) => {
+      const label = SECTION_LABELS[i] || key;
+      doc.font('SinhalaBold').fontSize(12).fillColor('#4f46e5').text(label);
+      doc.moveDown(0.3);
+      doc.font('SinhalaRegular').fontSize(11).fillColor('#1e293b').text(value || '', { align: 'justify', lineGap: 4 });
+      doc.moveDown(1);
+    });
+
+    // Special questions
+    if (hd.special_answers?.length) {
+      (hd.special_answers).forEach((qa, i) => {
+        doc.font('SinhalaBold').fontSize(12).fillColor('#4f46e5').text(`Q${i + 1}: ${qa.question || ''}`);
+        doc.moveDown(0.3);
+        doc.font('SinhalaRegular').fontSize(11).fillColor('#1e293b').text(qa.answer || '', { align: 'justify', lineGap: 4 });
+        doc.moveDown(1);
+      });
+    }
+
+    doc.end();
+    await new Promise(resolve => doc.on('end', resolve));
+    const buffer = Buffer.concat(chunks);
+
+    const phone  = (r.rows[0].phone_number || orderId).replace(/\D/g, '');
+    const last4  = phone.slice(-4) || '0000';
+    const parsed = parseSinhalaDate(cf.birth_date || '');
+    const birthday = parsed
+      ? `${parsed.year}${String(parsed.month).padStart(2,'0')}${String(parsed.day).padStart(2,'0')}`
+      : 'birthday';
+    const filename = `horoscope-${last4}-${birthday}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
 module.exports = {
   getPluginConfig, updatePluginConfig, getPluginCustomerData, generateAstroChart,
-  generateHoroscopeReading, updateHoroscopeSections, downloadHoroscope,
+  generateHoroscopeReading, updateHoroscopeSections, downloadHoroscope, downloadHoroscopePdf,
 };

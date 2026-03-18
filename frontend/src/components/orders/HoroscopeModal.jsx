@@ -181,8 +181,8 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
       <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden flex flex-col"
-        style={{ maxHeight: '90vh' }}
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden flex flex-col"
+        style={{ maxHeight: '95vh' }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -200,24 +200,27 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
             <button
               type="button"
               onClick={() => setShowOrderDetails(v => !v)}
-              className="w-full flex items-center justify-between px-5 py-2 bg-violet-50 text-xs font-medium text-violet-700 hover:bg-violet-100 border-0 cursor-pointer"
+              className="w-full flex items-center justify-between px-5 py-2.5 bg-violet-50 text-xs font-semibold text-violet-700 hover:bg-violet-100 border-0 cursor-pointer"
             >
               <span>📋 Customer Order Details</span>
-              <span className="text-violet-400">{showOrderDetails ? '▲' : '▼'}</span>
+              <span className="text-violet-400 text-base leading-none">{showOrderDetails ? '▲' : '▼'}</span>
             </button>
             {showOrderDetails && (
-              <div className="px-5 py-2 flex flex-col gap-2 bg-white max-h-40 overflow-y-auto">
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                  {Object.entries(cf).map(([k, v]) => v ? (
-                    <div key={k} className="flex flex-col text-xs">
-                      <span className="text-slate-400 capitalize">{k.replace(/_/g, ' ')}</span>
-                      <span className="text-slate-700 font-mono break-all">{String(v)}</span>
-                    </div>
-                  ) : null)}
+              <div className="px-5 py-3 flex flex-col gap-2 bg-slate-50 max-h-48 overflow-y-auto">
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+                  {Object.entries(cf).map(([k, v]) => {
+                    if (!v || typeof v === 'object') return null;
+                    return (
+                      <div key={k} className="flex flex-col text-xs">
+                        <span className="text-slate-400 capitalize mb-0.5">{k.replace(/_/g, ' ')}</span>
+                        <span className="text-slate-700 break-all">{String(v)}</span>
+                      </div>
+                    );
+                  })}
                 </div>
                 {order?.ai_summary && (
-                  <div className="bg-violet-50 border border-violet-100 rounded-lg px-3 py-2 text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">
-                    <span className="text-violet-500 font-semibold block mb-1">✨ AI Summary</span>
+                  <div className="bg-violet-50 border border-violet-200 rounded-lg px-3 py-2 text-xs text-slate-700 leading-relaxed whitespace-pre-wrap mt-1">
+                    <span className="text-violet-600 font-semibold block mb-1">✨ AI Summary</span>
                     {order.ai_summary}
                   </div>
                 )}

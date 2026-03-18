@@ -30,44 +30,54 @@ function cacheAudio(buffer) {
   return token;
 }
 
-// ─── Google Cloud TTS helper ─────────────────────────────────────────────────
+// ─── Gemini TTS helper ────────────────────────────────────────────────────────
 /**
- * Synthesize text to MP3 audio using Google Cloud Text-to-Speech API.
+ * Synthesize text to MP3 audio using Gemini TTS API.
+ * Supports 100+ languages including Sinhala (si).
  * @param {string} text - Text to synthesize
- * @param {string} voiceName - Voice name (e.g. 'si-LK-Wavenet-A')
+ * @param {string} voiceName - Gemini prebuilt voice name (e.g. 'Kore', 'Leda', 'Puck')
+ * @param {string} [apiKey] - Optional API key override
  * @returns {Promise<Buffer>} MP3 audio buffer
  */
-async function synthesizeSpeech(text, voiceName = 'en-US-Neural2-F') {
-  const apiKey = process.env.GOOGLE_TTS_API_KEY;
-  if (!apiKey) throw new Error('GOOGLE_TTS_API_KEY not configured');
+async function synthesizeSpeech(text, voiceName = 'Kore', apiKey) {
+  const key = apiKey || process.env.GEMINI_API_KEY;
+  if (!key) throw new Error('GEMINI_API_KEY not configured');
 
-  // Use the REST API directly (avoids service account / ADC complexity)
   const axios = require('axios');
-  const langCode = voiceName.split('-').slice(0, 2).join('-'); // e.g. si-LK
   const body = {
-    input: { text },
-    voice: { languageCode: langCode, name: voiceName },
-    audioConfig: { audioEncoding: 'MP3' },
+    contents: [{ parts: [{ text }] }],
+    generationConfig: {
+      responseModalities: ['AUDIO'],
+      speechConfig: {
+        voiceConfig: {
+          prebuiltVoiceConfig: { voiceName },
+        },
+      },
+    },
   };
-  console.log(`[TTS] Requesting voice=${voiceName} lang=${langCode} text="${text.slice(0, 80)}"`);
+
+  console.log(`[TTS] Gemini TTS voice=${voiceName} text="${text.slice(0, 80)}"`);
   let resp;
   try {
     resp = await axios.post(
-      `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${key}`,
       body,
       { headers: { 'Content-Type': 'application/json' } }
     );
   } catch (axiosErr) {
     const errData = axiosErr.response?.data;
-    console.error('[TTS] API error:', JSON.stringify(errData || axiosErr.message));
-    throw new Error(`TTS API ${axiosErr.response?.status}: ${JSON.stringify(errData?.error?.message || errData || axiosErr.message)}`);
+    console.error('[TTS] Gemini TTS error:', JSON.stringify(errData || axiosErr.message));
+    throw new Error(`Gemini TTS ${axiosErr.response?.status}: ${JSON.stringify(errData?.error?.message || axiosErr.message)}`);
   }
-  if (!resp.data?.audioContent) {
-    console.error('[TTS] No audioContent in response:', JSON.stringify(resp.data));
-    throw new Error('TTS returned no audioContent');
+
+  // Gemini returns audio as base64 inline data in candidates[0].content.parts[0].inlineData.data
+  const inlineData = resp.data?.candidates?.[0]?.content?.parts?.[0]?.inlineData;
+  if (!inlineData?.data) {
+    console.error('[TTS] No inlineData in Gemini TTS response:', JSON.stringify(resp.data));
+    throw new Error('Gemini TTS returned no audio data');
   }
-  console.log(`[TTS] audioContent length=${resp.data.audioContent.length} chars (base64)`);
-  return Buffer.from(resp.data.audioContent, 'base64');
+  console.log(`[TTS] Gemini TTS OK mimeType=${inlineData.mimeType} dataLength=${inlineData.data.length}`);
+  return Buffer.from(inlineData.data, 'base64');
 }
 
 // ─── Gemini helper (bare model for call AI — no CRM tools) ───────────────────
@@ -117,42 +127,36 @@ async function loadCallConfig(clientId) {
   const config = await db.getPluginConfig(clientId, 'ai_call_answering');
   return {
     systemPrompt: config.system_prompt || '',
-    greeting:     config.greeting     || 'Hello, how can I help you today?',
-    ttsVoice:     config.tts_voice    || 'en-US-Neural2-F',
-    geminiApiKey: config.api_key      || null,
+    greeting:     config.greeting      || 'Hello, how can I help you today?',
+    ttsVoice:     config.tts_voice     || 'Kore',       // Gemini prebuilt voice name
+    sttLanguage:  config.stt_language  || 'en-US',      // Twilio <Gather> STT language code
+    geminiApiKey: config.api_key       || null,
   };
 }
 
 // ─── TwiML helpers ────────────────────────────────────────────────────────────
 const BASE_URL = PUBLIC_URL || '';
 
-function getLangCode(ttsVoice) {
-  // Derive STT language from TTS voice name (e.g. 'en-US-Neural2-F' → 'en-US', 'si-LK-Wavenet-A' → 'si-LK')
-  return (ttsVoice || 'en-US-Neural2-F').split('-').slice(0, 2).join('-');
-}
-
-function gatherTwiML(clientId, audioToken, ttsVoice) {
-  const audioUrl    = `${BASE_URL}/api/calls/audio/${audioToken}`;
+function gatherTwiML(clientId, audioToken, sttLanguage) {
+  const audioUrl     = `${BASE_URL}/api/calls/audio/${audioToken}`;
   const gatherAction = `${BASE_URL}/api/calls/webhook/gather?client_id=${encodeURIComponent(clientId)}`;
   const redirectUrl  = `${BASE_URL}/api/calls/webhook/gather?client_id=${encodeURIComponent(clientId)}&empty=1`;
-  const language    = getLangCode(ttsVoice);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather input="speech" language="${language}" action="${gatherAction}" speechTimeout="2" timeout="10" actionOnEmptyResult="true">
+  <Gather input="speech" language="${sttLanguage || 'en-US'}" action="${gatherAction}" speechTimeout="2" timeout="10" actionOnEmptyResult="true">
     <Play>${audioUrl}</Play>
   </Gather>
   <Redirect>${redirectUrl}</Redirect>
 </Response>`;
 }
 
-function repromptTwiML(clientId, ttsVoice) {
+function repromptTwiML(clientId, sttLanguage) {
   const gatherAction = `${BASE_URL}/api/calls/webhook/gather?client_id=${encodeURIComponent(clientId)}`;
   const redirectUrl  = `${BASE_URL}/api/calls/webhook/gather?client_id=${encodeURIComponent(clientId)}&empty=1`;
-  const language    = getLangCode(ttsVoice);
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather input="speech" language="${language}" action="${gatherAction}" speechTimeout="2" timeout="10" actionOnEmptyResult="true">
+  <Gather input="speech" language="${sttLanguage || 'en-US'}" action="${gatherAction}" speechTimeout="2" timeout="10" actionOnEmptyResult="true">
   </Gather>
   <Redirect>${redirectUrl}</Redirect>
 </Response>`;
@@ -188,14 +192,14 @@ async function handleVoiceWebhook(req, res) {
     console.log(`[CALLS/voice] Call record inserted: ${CallSid}`);
 
     console.log(`[CALLS/voice] Synthesizing greeting via TTS...`);
-    const audioBuffer = await synthesizeSpeech(cfg.greeting, cfg.ttsVoice);
+    const audioBuffer = await synthesizeSpeech(cfg.greeting, cfg.ttsVoice, cfg.geminiApiKey);
     console.log(`[CALLS/voice] TTS OK — audio size=${audioBuffer.length} bytes`);
 
     const token = cacheAudio(audioBuffer);
     const audioUrl = `${BASE_URL}/api/calls/audio/${token}`;
     console.log(`[CALLS/voice] Audio cached at: ${audioUrl}`);
 
-    const twiml = gatherTwiML(clientId, token, cfg.ttsVoice);
+    const twiml = gatherTwiML(clientId, token, cfg.sttLanguage);
     console.log(`[CALLS/voice] Responding with TwiML:\n${twiml}`);
     return res.send(twiml);
   } catch (e) {
@@ -231,7 +235,7 @@ async function handleGatherWebhook(req, res) {
 
     if (isEmpty) {
       console.log('[CALLS/gather] No speech — sending reprompt');
-      return res.send(repromptTwiML(clientId, cfg.ttsVoice));
+      return res.send(repromptTwiML(clientId, cfg.sttLanguage));
     }
 
     const callerText = SpeechResult.trim();
@@ -252,19 +256,19 @@ async function handleGatherWebhook(req, res) {
     await db.appendTranscriptTurn(CallSid, 'ai', aiText);
 
     console.log('[CALLS/gather] Synthesizing AI reply via TTS...');
-    const audioBuffer = await synthesizeSpeech(aiText, cfg.ttsVoice);
+    const audioBuffer = await synthesizeSpeech(aiText, cfg.ttsVoice, cfg.geminiApiKey);
     console.log(`[CALLS/gather] TTS OK — audio size=${audioBuffer.length} bytes`);
 
     const token = cacheAudio(audioBuffer);
     const audioUrl = `${BASE_URL}/api/calls/audio/${token}`;
     console.log(`[CALLS/gather] Audio cached at: ${audioUrl}`);
 
-    const twiml = gatherTwiML(clientId, token, cfg.ttsVoice);
+    const twiml = gatherTwiML(clientId, token, cfg.sttLanguage);
     console.log(`[CALLS/gather] Responding with TwiML:\n${twiml}`);
     return res.send(twiml);
   } catch (e) {
     console.error('[CALLS/gather] ERROR:', e.message, e.stack);
-    return res.send(repromptTwiML(clientId, cfg?.ttsVoice));
+    return res.send(repromptTwiML(clientId, cfg?.sttLanguage));
   }
 }
 

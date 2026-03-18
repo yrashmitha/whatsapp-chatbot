@@ -30,7 +30,7 @@ async function getPluginConfig(req, res) {
     } else if (pluginId === 'horoscope_reading') {
       defaults = { name: 'Horoscope Reading', system_prompt: '', special_note: '', api_key: '' };
     } else if (pluginId === 'ai_call_answering') {
-      defaults = { name: 'AI Call Answering', system_prompt: '', greeting: 'Hello, how can I help you today?', tts_voice: 'en-US-Neural2-F' };
+      defaults = { name: 'AI Call Answering', system_prompt: '', greeting: 'Hello, how can I help you today?', tts_voice: 'Kore', stt_language: 'en-US' };
     } else {
       defaults = { name: pluginId, prompt: '' };
     }
@@ -52,7 +52,7 @@ async function updatePluginConfig(req, res) {
     return res.status(403).json({ error: 'Forbidden' });
   }
   const { pluginId } = req.params;
-  const { name, prompt, api_key, system_prompt, special_note, greeting, tts_voice } = req.body;
+  const { name, prompt, api_key, system_prompt, special_note, greeting, tts_voice, stt_language } = req.body;
   try {
     const existing = await db.getPluginConfig(clientId, pluginId);
     const update = { ...existing };
@@ -63,6 +63,7 @@ async function updatePluginConfig(req, res) {
     if (special_note !== undefined)  update.special_note  = special_note;
     if (greeting !== undefined)      update.greeting      = greeting;
     if (tts_voice !== undefined)     update.tts_voice     = tts_voice;
+    if (stt_language !== undefined)  update.stt_language  = stt_language;
     await db.upsertPluginConfig(clientId, pluginId, update);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }

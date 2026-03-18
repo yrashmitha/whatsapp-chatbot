@@ -36,6 +36,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
   const [specialNote, setSpecialNote]   = useState('');
   const [greeting, setGreeting]         = useState('');
   const [ttsVoice, setTtsVoice]         = useState('');
+  const [sttLanguage, setSttLanguage]   = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -50,7 +51,8 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         setSystemPrompt(r.data.system_prompt || '');
         setSpecialNote(r.data.special_note || '');
         setGreeting(r.data.greeting || '');
-        setTtsVoice(r.data.tts_voice || 'en-US-Neural2-F');
+        setTtsVoice(r.data.tts_voice || 'Kore');
+        setSttLanguage(r.data.stt_language || 'en-US');
       })
       .catch(() => {
         setConfig({});
@@ -60,7 +62,8 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         setSystemPrompt('');
         setSpecialNote('');
         setGreeting('');
-        setTtsVoice('en-US-Neural2-F');
+        setTtsVoice('Kore');
+        setSttLanguage('en-US');
       });
   }, [pluginMeta.id, clientId]);
 
@@ -76,6 +79,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         body.system_prompt = systemPrompt;
         body.greeting      = greeting;
         body.tts_voice     = ttsVoice;
+        body.stt_language  = sttLanguage;
       } else {
         body.prompt = prompt;
       }
@@ -155,20 +159,33 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
             />
           </div>
           <div>
-            <label className="text-xs font-medium text-slate-500 block mb-1">TTS Voice</label>
-            <p className="text-xs text-slate-400 mb-1.5">Google Cloud Text-to-Speech voice name.</p>
-            <input
-              type="text"
+            <label className="text-xs font-medium text-slate-500 block mb-1">TTS Voice (Gemini)</label>
+            <p className="text-xs text-slate-400 mb-1.5">Gemini prebuilt voice — supports Sinhala and 100+ languages automatically.</p>
+            <select
               value={ttsVoice}
               onChange={e => setTtsVoice(e.target.value)}
-              placeholder="en-US-Neural2-F"
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 font-mono"
-            />
-            <p className="text-xs text-slate-400 mt-1">
-              English (F): <code className="bg-slate-100 px-1 rounded">en-US-Neural2-F</code> &nbsp;
-              English (M): <code className="bg-slate-100 px-1 rounded">en-US-Neural2-D</code> &nbsp;
-              Sinhala requires Azure TTS.
-            </p>
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+            >
+              {['Kore','Leda','Puck','Charon','Zephyr','Fenrir','Enceladus','Algieba','Despina','Sulafat'].map(v => (
+                <option key={v} value={v}>{v}</option>
+              ))}
+            </select>
+            <p className="text-xs text-slate-400 mt-1">Voice is language-agnostic — it speaks whatever language the text is in.</p>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">STT Language (Caller speech)</label>
+            <p className="text-xs text-slate-400 mb-1.5">Language Twilio uses to transcribe the caller's speech.</p>
+            <select
+              value={sttLanguage}
+              onChange={e => setSttLanguage(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+            >
+              <option value="en-US">English (en-US)</option>
+              <option value="si-LK">Sinhala (si-LK)</option>
+              <option value="en-GB">English UK (en-GB)</option>
+              <option value="hi-IN">Hindi (hi-IN)</option>
+              <option value="ta-LK">Tamil Sri Lanka (ta-LK)</option>
+            </select>
           </div>
         </>
       )}

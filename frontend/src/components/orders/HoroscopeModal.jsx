@@ -182,7 +182,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
       <div
         className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden flex flex-col"
-        style={{ maxHeight: '95vh' }}
+        style={{ maxHeight: '95vh', minHeight: '70vh' }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -231,8 +231,6 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
 
         {/* Body */}
         <div className="overflow-y-auto flex-1 px-5 py-4 flex flex-col gap-3">
-
-          )}
 
           {/* Customer name */}
           <div>

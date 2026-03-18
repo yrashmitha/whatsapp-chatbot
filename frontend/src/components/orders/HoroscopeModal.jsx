@@ -203,7 +203,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
               <button
                 type="button"
                 onClick={() => setShowOrderDetails(v => !v)}
-                className="w-full flex items-center justify-between px-3 py-2 bg-slate-50 text-xs font-medium text-slate-600 hover:bg-slate-100 border-0 cursor-pointer"
+                className="w-full flex items-center justify-between px-3 py-2 bg-violet-50 text-xs font-medium text-violet-700 hover:bg-violet-100 border-0 cursor-pointer"
               >
                 <span>📋 Customer Order Details</span>
                 <span className="text-slate-400">{showOrderDetails ? '▲' : '▼'}</span>

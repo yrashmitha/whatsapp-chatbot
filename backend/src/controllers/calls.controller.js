@@ -17,15 +17,43 @@ const db = require('../db');
 const resolveClientId = require('../middleware/resolveClientId');
 const { PUBLIC_URL } = require('../config/env');
 
+// ─── PCM → WAV conversion ─────────────────────────────────────────────────────
+/**
+ * Wrap raw 16-bit little-endian PCM samples in a WAV container header.
+ * Twilio <Play> accepts WAV; Gemini TTS returns raw PCM at 24kHz mono.
+ */
+function pcmToWav(pcmBuffer, sampleRate = 24000, numChannels = 1, bitDepth = 16) {
+  const byteRate    = sampleRate * numChannels * (bitDepth / 8);
+  const blockAlign  = numChannels * (bitDepth / 8);
+  const dataSize    = pcmBuffer.length;
+  const buffer      = Buffer.alloc(44 + dataSize);
+
+  buffer.write('RIFF', 0);
+  buffer.writeUInt32LE(36 + dataSize, 4);
+  buffer.write('WAVE', 8);
+  buffer.write('fmt ', 12);
+  buffer.writeUInt32LE(16, 16);           // PCM chunk size
+  buffer.writeUInt16LE(1, 20);            // PCM format
+  buffer.writeUInt16LE(numChannels, 22);
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(byteRate, 28);
+  buffer.writeUInt16LE(blockAlign, 32);
+  buffer.writeUInt16LE(bitDepth, 34);
+  buffer.write('data', 36);
+  buffer.writeUInt32LE(dataSize, 40);
+  pcmBuffer.copy(buffer, 44);
+
+  return buffer;
+}
+
 // ─── In-memory audio cache (token → { buffer, mime, expiresAt }) ─────────────
 /** @type {Map<string, { buffer: Buffer, expiresAt: number }>} */
 const audioCache = new Map();
 const AUDIO_TTL_MS = 60_000; // 60 seconds
 
-function cacheAudio(buffer) {
+function cacheAudio(buffer, mime = 'audio/wav') {
   const token = uuidv4();
-  audioCache.set(token, { buffer, expiresAt: Date.now() + AUDIO_TTL_MS });
-  // Lazy cleanup of expired entries
+  audioCache.set(token, { buffer, mime, expiresAt: Date.now() + AUDIO_TTL_MS });
   setTimeout(() => audioCache.delete(token), AUDIO_TTL_MS + 1000);
   return token;
 }
@@ -77,7 +105,15 @@ async function synthesizeSpeech(text, voiceName = 'Kore', apiKey) {
     throw new Error('Gemini TTS returned no audio data');
   }
   console.log(`[TTS] Gemini TTS OK mimeType=${inlineData.mimeType} dataLength=${inlineData.data.length}`);
-  return Buffer.from(inlineData.data, 'base64');
+  const audioBuffer = Buffer.from(inlineData.data, 'base64');
+
+  // Gemini TTS returns raw PCM (audio/pcm, 24kHz, 16-bit, mono)
+  // Twilio <Play> requires WAV or MP3 — wrap PCM in a WAV header
+  if (!inlineData.mimeType || inlineData.mimeType.includes('pcm') || inlineData.mimeType.includes('l16')) {
+    console.log('[TTS] Converting PCM → WAV for Twilio compatibility');
+    return pcmToWav(audioBuffer, 24000);
+  }
+  return audioBuffer;
 }
 
 // ─── Gemini helper (bare model for call AI — no CRM tools) ───────────────────
@@ -325,11 +361,13 @@ async function handleStatusWebhook(req, res) {
 function serveAudio(req, res) {
   const { token } = req.params;
   const entry = audioCache.get(token);
+  console.log(`[AUDIO] GET token=${token} found=${!!entry}`);
   if (!entry || Date.now() > entry.expiresAt) {
     audioCache.delete(token);
     return res.status(404).send('Audio not found or expired');
   }
-  res.type('audio/mpeg');
+  console.log(`[AUDIO] Serving mime=${entry.mime} size=${entry.buffer.length}`);
+  res.type(entry.mime);
   res.send(entry.buffer);
 }
 

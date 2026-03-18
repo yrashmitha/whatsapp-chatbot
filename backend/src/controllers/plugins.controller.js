@@ -287,13 +287,20 @@ async function downloadHoroscopePdf(req, res) {
     const tmpDocx = path.join(os.tmpdir(), `horo-${uid}.docx`);
     const tmpPdf  = path.join(os.tmpdir(), `horo-${uid}.pdf`);
 
-    // Copy fonts into the temp HOME so LibreOffice finds them
-    const fontSrc  = path.join(__dirname, '../assets/fonts');
-    const fontDest = path.join(tmpHome, '.fonts');
-    fs.mkdirSync(fontDest, { recursive: true });
-    for (const f of fs.readdirSync(fontSrc)) {
-      if (f.endsWith('.ttf')) fs.copyFileSync(path.join(fontSrc, f), path.join(fontDest, f));
+    // Copy fonts into all locations LibreOffice checks
+    const fontSrc = path.join(__dirname, '../assets/fonts');
+    const fontDirs = [
+      path.join(tmpHome, '.fonts'),
+      path.join(tmpHome, '.local', 'share', 'fonts'),
+      path.join(tmpHome, '.config', 'libreoffice', '4', 'user', 'fonts'),
+    ];
+    for (const dir of fontDirs) {
+      fs.mkdirSync(dir, { recursive: true });
+      for (const f of fs.readdirSync(fontSrc)) {
+        if (f.endsWith('.ttf')) fs.copyFileSync(path.join(fontSrc, f), path.join(dir, f));
+      }
     }
+    const fontDest = fontDirs[0];
 
     fs.writeFileSync(tmpDocx, docxBuffer);
     await new Promise((resolve, reject) => {

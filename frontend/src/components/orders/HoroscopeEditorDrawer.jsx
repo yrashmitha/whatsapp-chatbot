@@ -146,20 +146,33 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
     try {
       const token = localStorage.getItem('crm_token');
       const params = clientId ? `?client_id=${clientId}` : '';
-      const res = await fetch(`/api/plugins/horoscope/download-pdf/${order.order_id}${params}`, {
+      const res = await fetch(`/api/plugins/horoscope/download/${order.order_id}${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error('Download failed');
       const blob = await res.blob();
-      const cd = res.headers.get('Content-Disposition') || '';
-      const match = cd.match(/filename="([^"]+)"/);
-      const filename = match ? match[1] : `horoscope-${order.order_id}.pdf`;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
+      const { renderAsync } = await import('docx-preview');
+      const html2pdf = (await import('html2pdf.js')).default;
+
+      const container = document.createElement('div');
+      container.style.cssText = 'width:794px;padding:40px;background:#fff;position:absolute;left:-9999px;top:0;';
+      document.body.appendChild(container);
+
+      await renderAsync(blob, container, null, {
+        className: 'docx-preview', inWrapper: true, ignoreWidth: false,
+        ignoreHeight: false, ignoreFonts: false, breakPages: true, useBase64URL: true,
+      });
+
+      const last4 = (order.phone_number || '').replace(/\D/g, '').slice(-4) || '0000';
+      await html2pdf().set({
+        margin: 10,
+        filename: `horoscope-${last4}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, logging: false },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      }).from(container).save();
+
+      document.body.removeChild(container);
     } catch (e) {
       toast.error('Failed to download PDF');
     } finally {

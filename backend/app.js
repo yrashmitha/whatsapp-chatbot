@@ -26,8 +26,10 @@ const { embedText, productToText } = require('./src/services/embedder');
 
 const app = express();
 
-// ── JSON body parser (20 MB limit for base64 image payloads) ──────────────────
+// ── Body parsers ──────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '20mb' }));
+// Twilio webhooks send application/x-www-form-urlencoded
+app.use(express.urlencoded({ extended: false }));
 
 // ── Request logger ────────────────────────────────────────────────────────────
 app.use((req, _res, next) => {

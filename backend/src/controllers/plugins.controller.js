@@ -278,13 +278,28 @@ async function downloadHoroscopePdf(req, res) {
       specialNote: config.special_note || '',
     });
 
-    const libre = require('libreoffice-convert');
-    const buffer = await new Promise((resolve, reject) => {
-      libre.convert(docxBuffer, '.pdf', undefined, (err, done) => {
-        if (err) reject(err);
-        else resolve(done);
-      });
+    const { exec } = require('child_process');
+    const fs   = require('fs');
+    const os   = require('os');
+    const path = require('path');
+    const uid  = `${orderId}-${Date.now()}`;
+    const tmpDocx = path.join(os.tmpdir(), `horo-${uid}.docx`);
+    const tmpPdf  = path.join(os.tmpdir(), `horo-${uid}.pdf`);
+
+    fs.writeFileSync(tmpDocx, docxBuffer);
+    await new Promise((resolve, reject) => {
+      exec(
+        `soffice --headless --convert-to pdf --outdir "${os.tmpdir()}" "${tmpDocx}"`,
+        { env: { ...process.env, HOME: os.tmpdir() } },
+        (err, _stdout, stderr) => {
+          if (err) reject(new Error(stderr || err.message));
+          else resolve();
+        }
+      );
     });
+    const buffer = fs.readFileSync(tmpPdf);
+    fs.unlink(tmpDocx, () => {});
+    fs.unlink(tmpPdf, () => {});
 
     const phone  = (r.rows[0].phone_number || orderId).replace(/\D/g, '');
     const last4  = phone.slice(-4) || '0000';

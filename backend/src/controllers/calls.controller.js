@@ -176,7 +176,7 @@ const BASE_URL = PUBLIC_URL || '';
 function gatherTwiML(clientId, audioToken, sttLanguage) {
   const audioUrl     = `${BASE_URL}/api/calls/audio/${audioToken}`;
   const gatherAction = `${BASE_URL}/api/calls/webhook/gather?client_id=${encodeURIComponent(clientId)}`;
-  const redirectUrl  = `${BASE_URL}/api/calls/webhook/gather?client_id=${encodeURIComponent(clientId)}&empty=1`;
+  const redirectUrl  = `${BASE_URL}/api/calls/webhook/gather?client_id=${encodeURIComponent(clientId)}&amp;empty=1`;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -189,7 +189,7 @@ function gatherTwiML(clientId, audioToken, sttLanguage) {
 
 function repromptTwiML(clientId, sttLanguage) {
   const gatherAction = `${BASE_URL}/api/calls/webhook/gather?client_id=${encodeURIComponent(clientId)}`;
-  const redirectUrl  = `${BASE_URL}/api/calls/webhook/gather?client_id=${encodeURIComponent(clientId)}&empty=1`;
+  const redirectUrl  = `${BASE_URL}/api/calls/webhook/gather?client_id=${encodeURIComponent(clientId)}&amp;empty=1`;
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather input="speech" language="${sttLanguage || 'en-US'}" action="${gatherAction}" speechTimeout="2" timeout="10" actionOnEmptyResult="true">

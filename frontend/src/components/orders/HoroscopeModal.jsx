@@ -28,7 +28,7 @@ function toISODate(raw) {
 export default function HoroscopeModal({ order, clientId, onClose, onGenerated }) {
   const toast = useToast();
   const geoRef = useRef();
-  const [showOrderDetails, setShowOrderDetails] = useState(false);
+  const [showOrderDetails, setShowOrderDetails] = useState(true);
 
   const cf = (() => {
     if (!order?.custom_fields) return {};

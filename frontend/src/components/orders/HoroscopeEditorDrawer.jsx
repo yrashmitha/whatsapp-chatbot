@@ -146,35 +146,20 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
     try {
       const token = localStorage.getItem('crm_token');
       const params = clientId ? `?client_id=${clientId}` : '';
-      const res = await fetch(`/api/plugins/horoscope/download/${order.order_id}${params}`, {
+      const res = await fetch(`/api/plugins/horoscope/download-pdf/${order.order_id}${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error('Download failed');
       const blob = await res.blob();
-      const { renderAsync } = await import('docx-preview');
-
-      const container = document.createElement('div');
-      await renderAsync(blob, container, null, {
-        className: 'docx-preview', inWrapper: true, ignoreWidth: false,
-        ignoreHeight: false, ignoreFonts: false, breakPages: true, useBase64URL: true,
-      });
-
-      const win = window.open('', '_blank');
-      win.document.write(`<!DOCTYPE html><html><head><title>Horoscope</title>
-        <style>
-          * { box-sizing: border-box; }
-          body { margin: 0; padding: 0; background: #fff; }
-          .docx-wrapper { background: #fff !important; padding: 0 !important; }
-          .docx-wrapper > section.docx { box-shadow: none !important; margin: 0 !important; }
-          @media print { body { margin: 0; } @page { margin: 1cm; } }
-        </style>
-      </head><body>${container.innerHTML}</body></html>`);
-      win.document.close();
-      await new Promise(r => setTimeout(r, 1000));
-      win.print();
-      win.onafterprint = () => win.close();
+      const cd = res.headers.get('Content-Disposition') || '';
+      const match = cd.match(/filename="([^"]+)"/);
+      const filename = match ? match[1] : `horoscope-${order.order_id}.pdf`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
     } catch (e) {
-      toast.error('Failed to generate PDF');
+      toast.error('Failed to download PDF');
     } finally {
       setDownloadingPdf(false);
     }

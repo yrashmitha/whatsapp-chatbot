@@ -268,51 +268,20 @@ async function downloadHoroscopePdf(req, res) {
       ? JSON.parse(r.rows[0].custom_fields || '{}')
       : (r.rows[0].custom_fields || {});
 
-    const PDFDocument = require('pdfkit');
-    const path = require('path');
-    const fontRegular = path.join(__dirname, '../assets/fonts/AbhayaLibre-Regular.ttf');
-    const fontBold    = path.join(__dirname, '../assets/fonts/AbhayaLibre-Bold.ttf');
+    const clientId = resolveClientId(req);
+    const config = clientId ? await db.getPluginConfig(clientId, 'horoscope_reading') : {};
 
-    const doc = new PDFDocument({ margin: 50, size: 'A4' });
-    const chunks = [];
-    doc.on('data', c => chunks.push(c));
-
-    doc.registerFont('SinhalaRegular', fontRegular);
-    doc.registerFont('SinhalaBold', fontBold);
-
-    // Title
-    doc.font('SinhalaBold').fontSize(16).text(cf.customer_name || orderId, { align: 'center' });
-    doc.moveDown(0.5);
-    doc.font('SinhalaRegular').fontSize(10).fillColor('#666')
-      .text(`Order: ${orderId}`, { align: 'center' });
-    doc.moveDown(1);
-
-    // Sections
-    const SECTION_LABELS = [
-      'පෞරුෂය','අධ්‍යාපනය','වෘත්තීය ජීවිතය','ප්‍රේමය සහ විවාහ',
-      'දේපළ','සෞඛ්‍යය','දරු පල','ජීවන සාරාංශය','වර්තමාන දශාව','පිළියම්','VIP'
-    ];
-    Object.entries(hd.sections).forEach(([key, value], i) => {
-      const label = SECTION_LABELS[i] || key;
-      doc.font('SinhalaBold').fontSize(12).fillColor('#4f46e5').text(label);
-      doc.moveDown(0.3);
-      doc.font('SinhalaRegular').fontSize(11).fillColor('#1e293b').text(value || '', { align: 'justify', lineGap: 4 });
-      doc.moveDown(1);
+    const docxBuffer = await buildHoroscopeDoc({
+      customerName: cf.customer_name || '',
+      sections: hd.sections,
+      specialAnswers: hd.special_answers || [],
+      specialNote: config.special_note || '',
     });
 
-    // Special questions
-    if (hd.special_answers?.length) {
-      (hd.special_answers).forEach((qa, i) => {
-        doc.font('SinhalaBold').fontSize(12).fillColor('#4f46e5').text(`Q${i + 1}: ${qa.question || ''}`);
-        doc.moveDown(0.3);
-        doc.font('SinhalaRegular').fontSize(11).fillColor('#1e293b').text(qa.answer || '', { align: 'justify', lineGap: 4 });
-        doc.moveDown(1);
-      });
-    }
-
-    doc.end();
-    await new Promise(resolve => doc.on('end', resolve));
-    const buffer = Buffer.concat(chunks);
+    const libre = require('libreoffice-convert');
+    const { promisify } = require('util');
+    const libreConvert = promisify(libre.convert);
+    const buffer = await libreConvert(docxBuffer, '.pdf', undefined);
 
     const phone  = (r.rows[0].phone_number || orderId).replace(/\D/g, '');
     const last4  = phone.slice(-4) || '0000';

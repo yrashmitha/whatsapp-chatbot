@@ -341,6 +341,9 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   let messageToSend = statusNote ? `${statusNote}\n\n${userMessage}` : userMessage;
   if (retryNote) messageToSend = `${retryNote}\n\n${messageToSend}`;
 
+  // Wrap message to anchor language detection to current message only
+  messageToSend = `CURRENT USER MESSAGE:\n"${messageToSend}"\n\nIMPORTANT: Detect the language from CURRENT USER MESSAGE above and reply in that language only. Ignore previous conversation language.`;
+
   console.log(`[GEMINI] Full prompt: ${messageToSend.replace(/\n/g, '\\n')}`);
   let result;
   for (let attempt = 1; attempt <= 3; attempt++) {

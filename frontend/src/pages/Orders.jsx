@@ -182,6 +182,7 @@ export default function Orders() {
                     ? (() => { try { return JSON.parse(o.horoscope_data); } catch { return {}; } })()
                     : (o.horoscope_data || null);
                   const isGenerating = hd?.generating === true;
+                  const paymentIdentified = cf?.payment_identified || null;
                   const horoscopeError = hd?.error || null;
                   const horoscopeDone = hd?.sections && Object.keys(hd.sections).length > 0;
 
@@ -198,14 +199,24 @@ export default function Orders() {
                           <div className="text-xs text-slate-400">{o.phone || o.phone_number}</div>
                         </td>
                         <td className="py-2.5 pr-4">
-                          <select
-                            value={o.status}
-                            onChange={e => updateStatus.mutate({ orderId: o.order_id, status: e.target.value })}
-                            className={`text-xs font-medium rounded-md px-2 py-1 border cursor-pointer outline-none ${STATUS_COLORS[o.status] || 'bg-slate-100 text-slate-600 border-slate-200'}`}
-                          >
-                            {!STATUS_OPTIONS.includes(o.status) && <option value={o.status}>{o.status}</option>}
-                            {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                          </select>
+                          <div className="flex flex-col gap-1">
+                            <select
+                              value={o.status}
+                              onChange={e => updateStatus.mutate({ orderId: o.order_id, status: e.target.value })}
+                              className={`text-xs font-medium rounded-md px-2 py-1 border cursor-pointer outline-none ${STATUS_COLORS[o.status] || 'bg-slate-100 text-slate-600 border-slate-200'}`}
+                            >
+                              {!STATUS_OPTIONS.includes(o.status) && <option value={o.status}>{o.status}</option>}
+                              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                            {paymentIdentified && o.status !== 'payment_received' && (
+                              <div
+                                className="flex items-center gap-1 px-1.5 py-0.5 bg-amber-50 border border-amber-300 rounded text-amber-700 text-xs font-medium w-fit"
+                                title={`AI detected payment — Amount: ${paymentIdentified.amount || '?'} | Date: ${paymentIdentified.date || '?'} | Bank: ${paymentIdentified.bank || '?'} | Ref: ${paymentIdentified.ref || '?'}`}
+                              >
+                                💳 Payment detected
+                              </div>
+                            )}
+                          </div>
                         </td>
                         <td className="py-2.5 pr-4 text-slate-500 text-xs">{formatDateTime(o.created_at)}</td>
                         <td className="py-2.5 pr-4">

@@ -54,6 +54,8 @@ const ORDER_MARKER_REGEX   = /\[\[ORDER_COMPLETE:([\s\S]*?)\]\]/;
 const ORDER_UPDATE_REGEX   = /\[\[ORDER_UPDATE:([\s\S]*?)\]\]/;
 /** @type {RegExp} Matches [[UPDATE_SUMMARY:...]] markers */
 const UPDATE_SUMMARY_REGEX = /\[\[UPDATE_SUMMARY:([\s\S]*?)\]\]/;
+/** @type {RegExp} Matches [[PAYMENT_IDENTIFIED:{...}]] markers */
+const PAYMENT_IDENTIFIED_REGEX = /\[\[PAYMENT_IDENTIFIED:([\s\S]*?)\]\]/;
 /**
  * Generate a unique order ID in the format <PREFIX><YEAR>-<NNNN>.
  *
@@ -593,6 +595,37 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
         console.warn(`[ORDER] UPDATE_SUMMARY: no order found for ${phoneNumber}`);
       }
     } catch (e) { console.error('[ORDER] UPDATE_SUMMARY failed:', e.message); }
+  }
+
+  const paymentMatch = botReply.match(PAYMENT_IDENTIFIED_REGEX);
+  if (paymentMatch) {
+    botReply = botReply.replace(PAYMENT_IDENTIFIED_REGEX, '').trim();
+    try {
+      const paymentData = JSON.parse(paymentMatch[1]);
+      const targetOrderId = paymentData.order_id;
+      const orders = await db.getOrdersByPhone(phoneNumber);
+      const order = targetOrderId
+        ? orders.find(o => o.order_id === targetOrderId)
+        : orders.find(o => o.status !== 'completed' && o.status !== 'cancelled');
+      if (order) {
+        const cf = order.custom_fields
+          ? (typeof order.custom_fields === 'string' ? JSON.parse(order.custom_fields) : order.custom_fields)
+          : {};
+        await db.updateOrderCustomFields(order.order_id, {
+          ...cf,
+          payment_identified: {
+            amount:    paymentData.amount    || null,
+            date:      paymentData.date      || null,
+            bank:      paymentData.bank      || null,
+            ref:       paymentData.ref       || null,
+            identified_at: new Date().toISOString(),
+          },
+        });
+        console.log(`[ORDER] Payment identified flag set on ${order.order_id}`);
+      } else {
+        console.warn(`[ORDER] PAYMENT_IDENTIFIED: no matching order for ${phoneNumber}`);
+      }
+    } catch (e) { console.error('[ORDER] PAYMENT_IDENTIFIED failed:', e.message); }
   }
 
   let paymentReceived = false;

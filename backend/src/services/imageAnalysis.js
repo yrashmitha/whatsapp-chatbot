@@ -23,10 +23,18 @@ Use exactly this structure:
   "currency": null,
   "payment_date": null,
   "reference_number": null,
-  "bank_name": null,
-  "account_number": null,
+  "sender_bank": null,
+  "recipient_bank": null,
+  "sender_account": null,
+  "recipient_account": null,
   "description": "one sentence describing what this image shows"
 }
+
+Field meanings:
+- sender_bank: the bank the money was sent FROM (customer's bank)
+- recipient_bank: the bank or account the money was sent TO (merchant/recipient's bank)
+- sender_account: account number of the sender
+- recipient_account: account number of the recipient
 
 Valid values for document_type: payment_slip, bank_transfer, cheque, product_photo, id_document, screenshot, other
 Rules:
@@ -79,7 +87,7 @@ async function analyzePaymentDocument(buffer, mimeType, apiKey) {
 
   try {
     const parsed = JSON.parse(cleaned);
-    console.log(`[IMAGE-ANALYZER] Parsed: type=${parsed.document_type} payment=${parsed.is_payment_related} amount=${parsed.amount} date=${parsed.payment_date} ref=${parsed.reference_number}`);
+    console.log(`[IMAGE-ANALYZER] Parsed: type=${parsed.document_type} payment=${parsed.is_payment_related} amount=${parsed.amount} date=${parsed.payment_date} ref=${parsed.reference_number} sender_bank=${parsed.sender_bank} recipient_bank=${parsed.recipient_bank}`);
     return parsed;
   } catch (parseErr) {
     // If JSON parse fails, return a safe fallback (do NOT include raw broken JSON as description)
@@ -95,39 +103,44 @@ async function analyzePaymentDocument(buffer, mimeType, apiKey) {
 /**
  * Build the imageNote string to inject into the AI's message context.
  *
- * @param {Object}      analysis           - Result from analyzePaymentDocument()
- * @param {string}      caption            - Customer's caption on the image
- * @param {Object|null} latestPendingOrder - Most recent pending order for this customer
- * @param {string}      verificationPrompt - Client's custom instruction from plugin config
+ * @param {Object}   analysis           - Result from analyzePaymentDocument()
+ * @param {string}   caption            - Customer's caption on the image
+ * @param {Array}    pendingOrders      - All pending orders for this customer
+ * @param {string}   verificationPrompt - Client's custom instruction from plugin config
  * @returns {string}
  */
-function buildAnalysisNote(analysis, caption, latestPendingOrder, verificationPrompt) {
+function buildAnalysisNote(analysis, caption, pendingOrders, verificationPrompt) {
   const lines = [];
 
   if (analysis.is_payment_related) {
     lines.push(`[Customer sent a payment document. Vision analysis result:`);
     lines.push(`  Document type: ${analysis.document_type}`);
-    if (analysis.payer_name)      lines.push(`  Payer name: ${analysis.payer_name}`);
-    if (analysis.recipient_name)  lines.push(`  Recipient: ${analysis.recipient_name}`);
-    if (analysis.amount)          lines.push(`  Amount: ${analysis.currency || ''} ${analysis.amount}`.trim());
-    if (analysis.payment_date)    lines.push(`  Payment date: ${analysis.payment_date}`);
+    if (analysis.payer_name)       lines.push(`  Payer name: ${analysis.payer_name}`);
+    if (analysis.recipient_name)   lines.push(`  Recipient name: ${analysis.recipient_name}`);
+    if (analysis.amount)           lines.push(`  Amount: ${(analysis.currency || '').trim()} ${analysis.amount}`.trim());
+    if (analysis.payment_date)     lines.push(`  Payment date: ${analysis.payment_date}`);
     if (analysis.reference_number) lines.push(`  Reference: ${analysis.reference_number}`);
-    if (analysis.bank_name)       lines.push(`  Bank: ${analysis.bank_name}`);
-    if (analysis.account_number)  lines.push(`  Account: ${analysis.account_number}`);
-    if (caption)                  lines.push(`  Caption from customer: "${caption}"`);
+    if (analysis.sender_bank)      lines.push(`  Customer's bank (sent from): ${analysis.sender_bank}`);
+    if (analysis.sender_account)   lines.push(`  Customer's account: ${analysis.sender_account}`);
+    if (analysis.recipient_bank)   lines.push(`  Recipient bank (sent to): ${analysis.recipient_bank}`);
+    if (analysis.recipient_account) lines.push(`  Recipient account: ${analysis.recipient_account}`);
+    if (caption)                   lines.push(`  Caption from customer: "${caption}"`);
 
-    // Scam detection: date check (objective — done in code, not AI)
+    // Scam detection: date check against ALL pending orders
     const scamFlags = [];
-    if (analysis.payment_date && latestPendingOrder?.created_at) {
-      const payDate   = new Date(analysis.payment_date);
-      const orderDate = new Date(latestPendingOrder.created_at);
+    if (analysis.payment_date && pendingOrders.length > 0) {
+      const payDate = new Date(analysis.payment_date);
       payDate.setHours(0, 0, 0, 0);
-      orderDate.setHours(0, 0, 0, 0);
-      if (payDate < orderDate) {
-        const orderDateStr = orderDate.toISOString().slice(0, 10);
-        scamFlags.push(
-          `⚠️ SUSPICIOUS: Payment date on slip (${analysis.payment_date}) is BEFORE the order was placed (${orderDateStr}). This customer may be reusing an old payment slip to claim a payment they did not make for this order.`
-        );
+      for (const order of pendingOrders) {
+        if (!order.created_at) continue;
+        const orderDate = new Date(order.created_at);
+        orderDate.setHours(0, 0, 0, 0);
+        if (payDate < orderDate) {
+          const orderDateStr = orderDate.toISOString().slice(0, 10);
+          scamFlags.push(
+            `⚠️ SUSPICIOUS: Payment date on slip (${analysis.payment_date}) is BEFORE order #${order.order_id} was placed (${orderDateStr}). This customer may be reusing an old payment slip.`
+          );
+        }
       }
     }
 
@@ -136,14 +149,15 @@ function buildAnalysisNote(analysis, caption, latestPendingOrder, verificationPr
       for (const flag of scamFlags) lines.push(`  ${flag}`);
     }
 
-    // Pending order context for amount matching
-    if (latestPendingOrder) {
-      const cf = latestPendingOrder.custom_fields || {};
-      const orderPrice = cf.price || cf.amount || cf.total || null;
-      lines.push(`\n  Customer's pending order: #${latestPendingOrder.order_id}`);
-      if (orderPrice) lines.push(`  Expected payment amount: ${orderPrice}`);
-      lines.push(`  Order placed: ${new Date(latestPendingOrder.created_at).toISOString().slice(0, 10)}`);
-      lines.push(`  Order status: ${latestPendingOrder.status}`);
+    // All pending orders — AI checks the amount against each one
+    if (pendingOrders.length > 0) {
+      lines.push(`\n  Customer's pending orders (${pendingOrders.length}):`);
+      for (const order of pendingOrders) {
+        const cf = order.custom_fields || {};
+        const orderPrice = cf.price || cf.amount || cf.total || null;
+        const product = cf.product || cf.product_name || '';
+        lines.push(`  - #${order.order_id} | status: ${order.status} | placed: ${order.created_at ? new Date(order.created_at).toISOString().slice(0, 10) : 'unknown'}${orderPrice ? ` | expected amount: ${orderPrice}` : ''}${product ? ` | product: ${product}` : ''}`);
+      }
     } else {
       lines.push(`\n  No pending orders found for this customer.`);
     }

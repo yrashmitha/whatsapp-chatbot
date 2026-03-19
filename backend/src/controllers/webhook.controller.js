@@ -140,13 +140,13 @@ function receiveWebhook(req, res) {
               const analysis = await analyzePaymentDocument(imgBuffer, imgMimeType, cfg.api_key || null);
               console.log(`[IMAGE-ANALYZER] Result: type=${analysis.document_type} payment=${analysis.is_payment_related} amount=${analysis.amount}`);
 
-              let latestPendingOrder = null;
+              let pendingOrders = [];
               if (analysis.is_payment_related) {
                 const orders = await db.getOrdersByPhone(from);
-                latestPendingOrder = orders.find(o => o.status !== 'completed' && o.status !== 'cancelled' && o.client_id === client.id) || null;
+                pendingOrders = orders.filter(o => o.status !== 'completed' && o.status !== 'cancelled' && o.client_id === client.id);
               }
 
-              imageNote = buildAnalysisNote(analysis, caption, latestPendingOrder, cfg.verification_prompt || '');
+              imageNote = buildAnalysisNote(analysis, caption, pendingOrders, cfg.verification_prompt || '');
             }
           } catch (e) {
             console.warn('[IMAGE-ANALYZER] Failed, using default note:', e.message);
@@ -240,13 +240,13 @@ function receiveWebhook(req, res) {
               const analysis = await analyzePaymentDocument(docBuffer, docMimeType, cfg.api_key || null);
               console.log(`[IMAGE-ANALYZER] PDF result: type=${analysis.document_type} payment=${analysis.is_payment_related} amount=${analysis.amount}`);
 
-              let latestPendingOrder = null;
+              let pendingOrders = [];
               if (analysis.is_payment_related) {
                 const orders = await db.getOrdersByPhone(from);
-                latestPendingOrder = orders.find(o => o.status !== 'completed' && o.status !== 'cancelled' && o.client_id === client.id) || null;
+                pendingOrders = orders.filter(o => o.status !== 'completed' && o.status !== 'cancelled' && o.client_id === client.id);
               }
 
-              const docNote = buildAnalysisNote(analysis, '', latestPendingOrder, cfg.verification_prompt || '');
+              const docNote = buildAnalysisNote(analysis, '', pendingOrders, cfg.verification_prompt || '');
               const { botReply: docReply, imagesToSend: docImages, productImagesToSend: docProductImages } = await handleMessage(from, docNote, docSession.chat, { skipUserInsert: true, client });
               if (docReply.trim()) await sendBotReply(from, docReply, client);
               for (const filename of docImages) {

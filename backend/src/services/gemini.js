@@ -478,6 +478,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     .map(p => p.text)
     .join('');
   const rawReply = nonThoughtText || candidate.text() || '';
+  console.log(`[GEMINI] Raw response JSON: ${JSON.stringify({ parts: rawParts.map(p => ({ thought: !!p.thought, text: p.text?.slice(0, 300) })), rawReply: rawReply.slice(0, 500) })}`);
 
   let botReply  = rawReply
     .replace(/\*\*([^*\n]+)\*\*/g, '*$1*') // convert markdown **bold** → WhatsApp *bold*

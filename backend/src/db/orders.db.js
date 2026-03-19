@@ -156,17 +156,18 @@ async function updateOrderCustomFields(orderId, customFields) {
  * @returns {Promise<number>}
  */
 async function countOrdersByYear(pattern, clientId) {
+  // Use MAX of the numeric suffix to avoid collisions when orders are deleted or IDs pre-exist
   if (IS_PG) {
     const res = clientId
       ? await pool.query(
-          "SELECT COUNT(*) AS cnt FROM orders WHERE order_id LIKE $1 AND client_id = $2",
+          "SELECT COALESCE(MAX(CAST(SPLIT_PART(order_id, '-', 2) AS INTEGER)), 0) AS mx FROM orders WHERE order_id LIKE $1 AND client_id = $2",
           [pattern, clientId]
         )
       : await pool.query(
-          "SELECT COUNT(*) AS cnt FROM orders WHERE order_id LIKE $1",
+          "SELECT COALESCE(MAX(CAST(SPLIT_PART(order_id, '-', 2) AS INTEGER)), 0) AS mx FROM orders WHERE order_id LIKE $1",
           [pattern]
         );
-    return parseInt(res.rows[0].cnt, 10);
+    return parseInt(res.rows[0].mx, 10);
   } else {
     const row = clientId
       ? db.prepare("SELECT COUNT(*) as cnt FROM orders WHERE order_id LIKE ? AND client_id = ?").get(pattern, clientId)

@@ -63,16 +63,25 @@ async function analyzePaymentDocument(buffer, mimeType, apiKey) {
   const raw = result.response.text().trim();
   console.log(`[IMAGE-ANALYZER] Raw Gemini response:\n${raw}`);
 
-  // Strip markdown code fences if present
-  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  // Extract JSON — handle code fences anywhere in the response, or bare JSON object
+  let cleaned = raw;
+  const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fenceMatch) {
+    cleaned = fenceMatch[1].trim();
+  } else {
+    // Try to find the first { ... } block in the response
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (jsonMatch) cleaned = jsonMatch[0].trim();
+  }
+  console.log(`[IMAGE-ANALYZER] Cleaned for parsing:\n${cleaned}`);
 
   try {
     const parsed = JSON.parse(cleaned);
     console.log(`[IMAGE-ANALYZER] Parsed: type=${parsed.document_type} payment=${parsed.is_payment_related} amount=${parsed.amount} date=${parsed.payment_date} ref=${parsed.reference_number}`);
     return parsed;
-  } catch {
+  } catch (parseErr) {
     // If JSON parse fails, return a generic description
-    console.warn(`[IMAGE-ANALYZER] Could not parse JSON. Cleaned text was:\n${cleaned}`);
+    console.warn(`[IMAGE-ANALYZER] Could not parse JSON (${parseErr.message}). Cleaned text was:\n${cleaned}`);
     return {
       document_type: 'other',
       is_payment_related: false,

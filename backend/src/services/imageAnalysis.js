@@ -60,7 +60,7 @@ async function analyzePaymentDocument(buffer, mimeType, apiKey) {
   const genAI = new GoogleGenerativeAI(key);
   const model = genAI.getGenerativeModel({
     model: 'gemini-2.5-flash',
-    generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
+    generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
   });
 
   const base64Data = buffer.toString('base64');

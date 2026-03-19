@@ -61,16 +61,18 @@ async function analyzePaymentDocument(buffer, mimeType, apiKey) {
   ]);
 
   const raw = result.response.text().trim();
-  console.log(`[IMAGE-ANALYZER] Raw response: ${raw.slice(0, 300)}`);
+  console.log(`[IMAGE-ANALYZER] Raw Gemini response:\n${raw}`);
 
   // Strip markdown code fences if present
   const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
 
   try {
-    return JSON.parse(cleaned);
+    const parsed = JSON.parse(cleaned);
+    console.log(`[IMAGE-ANALYZER] Parsed: type=${parsed.document_type} payment=${parsed.is_payment_related} amount=${parsed.amount} date=${parsed.payment_date} ref=${parsed.reference_number}`);
+    return parsed;
   } catch {
     // If JSON parse fails, return a generic description
-    console.warn('[IMAGE-ANALYZER] Could not parse JSON, using fallback');
+    console.warn(`[IMAGE-ANALYZER] Could not parse JSON. Cleaned text was:\n${cleaned}`);
     return {
       document_type: 'other',
       is_payment_related: false,
@@ -150,7 +152,9 @@ function buildAnalysisNote(analysis, caption, latestPendingOrder, verificationPr
     }
   }
 
-  return lines.join('\n');
+  const note = lines.join('\n');
+  console.log(`[IMAGE-ANALYZER] Note injected into AI:\n${note}`);
+  return note;
 }
 
 module.exports = { analyzePaymentDocument, buildAnalysisNote };

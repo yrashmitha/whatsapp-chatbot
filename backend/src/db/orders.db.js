@@ -36,15 +36,22 @@ async function insertOrder(orderId, phoneNumber, clientId, customFields) {
  * @param {string} phoneNumber - E.164 customer phone number
  * @returns {Promise<Array>} Array of order row objects
  */
-async function getOrdersByPhone(phoneNumber) {
+async function getOrdersByPhone(phoneNumber, clientId) {
   if (IS_PG) {
-    const res = await pool.query(
-      'SELECT * FROM orders WHERE phone_number = $1 ORDER BY created_at DESC',
-      [phoneNumber]
-    );
+    const res = clientId
+      ? await pool.query(
+          'SELECT * FROM orders WHERE phone_number = $1 AND client_id = $2 ORDER BY created_at DESC',
+          [phoneNumber, clientId]
+        )
+      : await pool.query(
+          'SELECT * FROM orders WHERE phone_number = $1 ORDER BY created_at DESC',
+          [phoneNumber]
+        );
     return res.rows;
   } else {
-    return db.prepare('SELECT * FROM orders WHERE phone_number = ? ORDER BY created_at DESC').all(phoneNumber);
+    return clientId
+      ? db.prepare('SELECT * FROM orders WHERE phone_number = ? AND client_id = ? ORDER BY created_at DESC').all(phoneNumber, clientId)
+      : db.prepare('SELECT * FROM orders WHERE phone_number = ? ORDER BY created_at DESC').all(phoneNumber);
   }
 }
 

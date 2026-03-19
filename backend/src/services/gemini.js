@@ -78,8 +78,8 @@ async function generateOrderId(client) {
  * @param {string} phoneNumber - E.164 customer phone number
  * @returns {Promise<string|null>} Multi-line status note, or null if no orders
  */
-async function buildOrderStatusNote(phoneNumber) {
-  const all = await db.getOrdersByPhone(phoneNumber);
+async function buildOrderStatusNote(phoneNumber, clientId) {
+  const all = await db.getOrdersByPhone(phoneNumber, clientId);
   if (!all.length) return null;
   const orders = all.slice(0, 5);
   const lines = orders.map(o => {
@@ -104,7 +104,7 @@ async function buildOrderStatusNote(phoneNumber) {
  */
 async function buildChatSession(phoneNumber, client) {
   console.log(`[SESSION] Building session for ${phoneNumber}`);
-  const existingOrders = await db.getOrdersByPhone(phoneNumber);
+  const existingOrders = await db.getOrdersByPhone(phoneNumber, client?.id);
   console.log(`[SESSION] Found ${existingOrders.length} existing orders for ${phoneNumber}`);
   let initialHistory = [];
 
@@ -337,7 +337,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   }
 
   // Inject current order status so AI knows what documents are already received
-  const statusNote = await buildOrderStatusNote(phoneNumber);
+  const statusNote = await buildOrderStatusNote(phoneNumber, client?.id);
   let messageToSend = statusNote ? `${statusNote}\n\n${userMessage}` : userMessage;
   if (retryNote) messageToSend = `${retryNote}\n\n${messageToSend}`;
 
@@ -567,7 +567,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     try {
       const { order_id, updates } = JSON.parse(updateMatch[1]);
       if (order_id && updates && typeof updates === 'object') {
-        const existing = await db.getOrdersByPhone(phoneNumber);
+        const existing = await db.getOrdersByPhone(phoneNumber, client?.id);
         const order = existing.find(o => o.order_id === order_id);
         if (order) {
           const cf = order.custom_fields
@@ -603,7 +603,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     try {
       const paymentData = JSON.parse(paymentMatch[1]);
       const targetOrderId = paymentData.order_id;
-      const orders = await db.getOrdersByPhone(phoneNumber);
+      const orders = await db.getOrdersByPhone(phoneNumber, client?.id);
       const order = targetOrderId
         ? orders.find(o => o.order_id === targetOrderId)
         : orders.find(o => o.status !== 'completed' && o.status !== 'cancelled');

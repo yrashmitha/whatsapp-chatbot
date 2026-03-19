@@ -142,8 +142,8 @@ function receiveWebhook(req, res) {
 
               let pendingOrders = [];
               if (analysis.is_payment_related) {
-                const orders = await db.getOrdersByPhone(from);
-                pendingOrders = orders.filter(o => o.status !== 'completed' && o.status !== 'cancelled' && o.client_id === client.id);
+                const orders = await db.getOrdersByPhone(from, client.id);
+                pendingOrders = orders.filter(o => o.status !== 'completed' && o.status !== 'cancelled');
               }
 
               imageNote = buildAnalysisNote(analysis, caption, pendingOrders, cfg.verification_prompt || '');
@@ -242,8 +242,8 @@ function receiveWebhook(req, res) {
 
               let pendingOrders = [];
               if (analysis.is_payment_related) {
-                const orders = await db.getOrdersByPhone(from);
-                pendingOrders = orders.filter(o => o.status !== 'completed' && o.status !== 'cancelled' && o.client_id === client.id);
+                const orders = await db.getOrdersByPhone(from, client.id);
+                pendingOrders = orders.filter(o => o.status !== 'completed' && o.status !== 'cancelled');
               }
 
               const docNote = buildAnalysisNote(analysis, '', pendingOrders, cfg.verification_prompt || '');

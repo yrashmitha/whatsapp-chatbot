@@ -40,7 +40,7 @@ async function listCustomers(req, res) {
              cu.last_customer_message_at AS last_message_at,
              BOOL_OR(m.media_type = 'image') AS has_image,
              BOOL_OR(m.media_type IN ('pdf', 'document', 'audio', 'voice')) AS has_document,
-             (SELECT status FROM orders o2 WHERE o2.phone_number=cu.phone_number ORDER BY o2.created_at DESC LIMIT 1) AS latest_order_status,
+             (SELECT status FROM orders o2 WHERE o2.phone_number=cu.phone_number AND o2.client_id=cu.client_id ORDER BY o2.created_at DESC LIMIT 1) AS latest_order_status,
              (SELECT COUNT(*) FROM messages m2
               WHERE m2.phone_number = cu.phone_number
                 AND m2.client_id    = cu.client_id
@@ -48,8 +48,8 @@ async function listCustomers(req, res) {
                 AND m2.created_at   > COALESCE(cu.last_read_at, '1970-01-01T00:00:00Z')
              ) AS unread_count
       FROM customers cu
-      LEFT JOIN messages m ON m.phone_number=cu.phone_number
-      LEFT JOIN orders   o ON o.phone_number=cu.phone_number
+      LEFT JOIN messages m ON m.phone_number=cu.phone_number AND m.client_id=cu.client_id
+      LEFT JOIN orders   o ON o.phone_number=cu.phone_number AND o.client_id=cu.client_id
       ${where}
       GROUP BY cu.phone_number, cu.name, cu.client_id, cu.updated_at, cu.last_read_at, cu.last_customer_message_at
       ORDER BY cu.last_customer_message_at DESC NULLS LAST

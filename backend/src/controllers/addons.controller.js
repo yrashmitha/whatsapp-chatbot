@@ -38,6 +38,11 @@ const ADDON_CATALOG = [
     name: 'AI Call Answering',
     description: 'Answers inbound Twilio phone calls with an AI agent, transcribes the conversation, and logs it in the CRM.',
   },
+  {
+    id: 'image_analyzer',
+    name: 'Image Analyzer',
+    description: 'Analyzes customer payment slips and documents (images and PDFs) using Gemini Vision — extracts amount, date, and reference, and flags suspicious slips.',
+  },
 ];
 
 /**

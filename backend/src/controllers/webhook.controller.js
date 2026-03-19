@@ -15,6 +15,7 @@ const { buildChatSession, handleMessage } = require('../services/gemini');
 const { sendWhatsAppMessage, sendWhatsAppImage, sendBotReply, waToken, waPhoneId } = require('../services/whatsapp');
 const { chatSessions } = require('../workers/sessionManager');
 const { UPLOADS_DIR } = require('../config/env');
+const { analyzePaymentDocument, buildAnalysisNote } = require('../services/imageAnalysis');
 
 /**
  * GET /webhook — Meta webhook verification challenge.
@@ -92,14 +93,12 @@ function receiveWebhook(req, res) {
         const imgSession = chatSessions.get(sessionKey);
         imgSession.lastUsed = Date.now();
 
-        const imageNote = caption
-          ? `[Customer sent a photo with caption: "${caption}". You cannot see the image itself. Acknowledge what the customer has sent and respond appropriately. Add a short note that you cannot view images directly but the team will review it.]`
-          : `[Customer sent a photo (no caption). You cannot see the image. Acknowledge what the customer has sent and respond appropriately. Add a short note that you cannot view images but the team will review it.]`;
-
         const mediaId = msg.image?.id || '';
         const userLabel = `[Photo:${mediaId}]${caption ? ` ${caption}` : ''}`;
 
         let customerMediaUrl = null;
+        let imgBuffer = null;
+        let imgMimeType = 'image/jpeg';
         if (mediaId) {
           try {
             const metaRes = await axios.get(
@@ -112,11 +111,12 @@ function receiveWebhook(req, res) {
                 responseType: 'arraybuffer',
                 headers: { Authorization: `Bearer ${waToken(client)}` }
               });
-              const mimeType = metaRes.data?.mime_type || 'image/jpeg';
-              const ext = mimeType.split('/')[1]?.split(';')[0] || 'jpg';
+              imgMimeType = metaRes.data?.mime_type || 'image/jpeg';
+              const ext = imgMimeType.split('/')[1]?.split(';')[0] || 'jpg';
               const fname = `wa-${from}-${Date.now()}.${ext}`;
               fs.writeFileSync(path.join(UPLOADS_DIR, fname), imgRes.data);
               customerMediaUrl = `/uploads/${fname}`;
+              imgBuffer = Buffer.from(imgRes.data);
               console.log(`[MEDIA-DL] Customer image saved: ${fname}`);
             }
           } catch (e) {
@@ -125,6 +125,38 @@ function receiveWebhook(req, res) {
         }
 
         await db.insertMessage(from, userLabel, 'user', null, client?.id ?? null, 'image', customerMediaUrl);
+
+        // ── Image Analyzer addon ────────────────────────────────────────────
+        let imageNote = null;
+        if (imgBuffer) {
+          try {
+            const analyzerCheck = await db.pgQuery(
+              `SELECT enabled FROM client_addons WHERE client_id=$1 AND addon_id='image_analyzer' AND enabled=TRUE`,
+              [client.id]
+            );
+            if (analyzerCheck.rows.length) {
+              console.log(`[IMAGE-ANALYZER] Analyzing image for client=${client.id}`);
+              const cfg = await db.getPluginConfig(client.id, 'image_analyzer');
+              const analysis = await analyzePaymentDocument(imgBuffer, imgMimeType, cfg.api_key || null);
+              console.log(`[IMAGE-ANALYZER] Result: type=${analysis.document_type} payment=${analysis.is_payment_related} amount=${analysis.amount}`);
+
+              let latestPendingOrder = null;
+              if (analysis.is_payment_related) {
+                const orders = await db.getOrdersByPhone(from);
+                latestPendingOrder = orders.find(o => o.status !== 'completed' && o.status !== 'cancelled' && o.client_id === client.id) || null;
+              }
+
+              imageNote = buildAnalysisNote(analysis, caption, latestPendingOrder, cfg.verification_prompt || '');
+            }
+          } catch (e) {
+            console.warn('[IMAGE-ANALYZER] Failed, using default note:', e.message);
+          }
+        }
+        if (!imageNote) {
+          imageNote = caption
+            ? `[Customer sent a photo with caption: "${caption}". You cannot see the image itself. Acknowledge what the customer has sent and respond appropriately. Add a short note that you cannot view images directly but the team will review it.]`
+            : `[Customer sent a photo (no caption). You cannot see the image. Acknowledge what the customer has sent and respond appropriately. Add a short note that you cannot view images but the team will review it.]`;
+        }
 
         const { botReply, imagesToSend } = await handleMessage(from, imageNote, imgSession.chat, { skipUserInsert: true, client });
         if (botReply.trim()) await sendBotReply(from, botReply, client);
@@ -145,6 +177,8 @@ function receiveWebhook(req, res) {
         const docMediaId = msg.document?.id;
         const docFileName = msg.document?.filename || 'document.pdf';
         let docStoredUrl = null;
+        let docBuffer = null;
+        let docMimeType = 'application/pdf';
         if (docMediaId) {
           try {
             const metaRes = await axios.get(
@@ -157,10 +191,12 @@ function receiveWebhook(req, res) {
                 responseType: 'arraybuffer',
                 headers: { Authorization: `Bearer ${waToken(client)}` }
               });
+              docMimeType = metaRes.data?.mime_type || 'application/pdf';
               const safeName = docFileName.replace(/[^a-zA-Z0-9.\-_]/g, '_');
               const fname = `wa-doc-${from}-${Date.now()}-${safeName}`;
               fs.writeFileSync(path.join(UPLOADS_DIR, fname), docRes.data);
               docStoredUrl = `/uploads/${fname}`;
+              docBuffer = Buffer.from(docRes.data);
               console.log(`[MEDIA-DL] Customer document saved: ${fname}`);
             }
           } catch (e) {
@@ -169,7 +205,49 @@ function receiveWebhook(req, res) {
         }
         await db.upsertCustomer(from, null, client?.id);
         await db.insertMessage(from, `[Document: ${docFileName}]`, 'user', null, client?.id ?? null, 'pdf', docStoredUrl);
-        await sendWhatsAppMessage(from, 'ලිපිය ලැබුණා, ස්තූතියි! 🙏', client);
+
+        // ── Image Analyzer addon for PDFs ───────────────────────────────────
+        let docAnalyzed = false;
+        if (docBuffer) {
+          try {
+            const analyzerCheck = await db.pgQuery(
+              `SELECT enabled FROM client_addons WHERE client_id=$1 AND addon_id='image_analyzer' AND enabled=TRUE`,
+              [client.id]
+            );
+            if (analyzerCheck.rows.length) {
+              console.log(`[IMAGE-ANALYZER] Analyzing PDF for client=${client.id}`);
+              // Build a session if needed (mirrors image path)
+              if (!chatSessions.has(sessionKey)) {
+                chatSessions.set(sessionKey, { chat: await buildChatSession(from, client), phoneNumber: from });
+              }
+              const docSession = chatSessions.get(sessionKey);
+              docSession.lastUsed = Date.now();
+
+              const cfg = await db.getPluginConfig(client.id, 'image_analyzer');
+              const analysis = await analyzePaymentDocument(docBuffer, docMimeType, cfg.api_key || null);
+              console.log(`[IMAGE-ANALYZER] PDF result: type=${analysis.document_type} payment=${analysis.is_payment_related} amount=${analysis.amount}`);
+
+              let latestPendingOrder = null;
+              if (analysis.is_payment_related) {
+                const orders = await db.getOrdersByPhone(from);
+                latestPendingOrder = orders.find(o => o.status !== 'completed' && o.status !== 'cancelled' && o.client_id === client.id) || null;
+              }
+
+              const docNote = buildAnalysisNote(analysis, '', latestPendingOrder, cfg.verification_prompt || '');
+              const { botReply: docReply, imagesToSend: docImages } = await handleMessage(from, docNote, docSession.chat, { skipUserInsert: true, client });
+              if (docReply.trim()) await sendBotReply(from, docReply, client);
+              for (const filename of docImages) {
+                await sendWhatsAppImage(from, filename, '', client);
+              }
+              docAnalyzed = true;
+            }
+          } catch (e) {
+            console.warn('[IMAGE-ANALYZER] PDF analysis failed:', e.message);
+          }
+        }
+        if (!docAnalyzed) {
+          await sendWhatsAppMessage(from, 'ලිපිය ලැබුණා, ස්තූතියි! 🙏', client);
+        }
         return;
       }
 

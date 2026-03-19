@@ -21,12 +21,18 @@ const ALL_PLUGINS = [
     defaultName: 'AI Call Answering',
     description: 'Answers inbound Twilio phone calls with an AI agent, transcribes the conversation, and logs it in the CRM.',
   },
+  {
+    id: 'image_analyzer',
+    defaultName: 'Image Analyzer',
+    description: 'Analyzes customer payment slips and PDFs using Gemini Vision — extracts amount, date, and reference, and flags suspicious slips.',
+  },
 ];
 
 function PluginCard({ pluginMeta, clientId, superAdmin }) {
   const toast = useToast();
-  const isHoroscope   = pluginMeta.id === 'horoscope_reading';
+  const isHoroscope     = pluginMeta.id === 'horoscope_reading';
   const isCallAnswering = pluginMeta.id === 'ai_call_answering';
+  const isImageAnalyzer = pluginMeta.id === 'image_analyzer';
 
   const [config, setConfig] = useState(null);
   const [name, setName] = useState('');
@@ -35,8 +41,9 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
   const [systemPrompt, setSystemPrompt] = useState('');
   const [specialNote, setSpecialNote]   = useState('');
   const [greeting, setGreeting]         = useState('');
-  const [ttsVoice, setTtsVoice]         = useState('');
-  const [sttLanguage, setSttLanguage]   = useState('');
+  const [ttsVoice, setTtsVoice]                   = useState('');
+  const [sttLanguage, setSttLanguage]             = useState('');
+  const [verificationPrompt, setVerificationPrompt] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -55,6 +62,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         const savedVoice = (r.data.tts_voice || '').toLowerCase();
         setTtsVoice(GEMINI_VOICES.includes(savedVoice) ? r.data.tts_voice : 'Kore');
         setSttLanguage(r.data.stt_language || 'en-US');
+        setVerificationPrompt(r.data.verification_prompt || '');
       })
       .catch(() => {
         setConfig({});
@@ -66,6 +74,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         setGreeting('');
         setTtsVoice('Kore');
         setSttLanguage('en-US');
+        setVerificationPrompt('');
       });
   }, [pluginMeta.id, clientId]);
 
@@ -82,6 +91,8 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         body.greeting      = greeting;
         body.tts_voice     = ttsVoice;
         body.stt_language  = sttLanguage;
+      } else if (isImageAnalyzer) {
+        body.verification_prompt = verificationPrompt;
       } else {
         body.prompt = prompt;
       }
@@ -122,7 +133,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         </div>
       )}
 
-      {!isCallAnswering && (
+      {!isCallAnswering && !isImageAnalyzer && (
       <div>
         <label className="text-xs font-medium text-slate-500 block mb-1">FreeAstro API Key</label>
         <input
@@ -192,7 +203,24 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         </>
       )}
 
-      {!isHoroscope && !isCallAnswering && (
+      {isImageAnalyzer && (
+        <div>
+          <label className="text-xs font-medium text-slate-500 block mb-1">Verification Instructions</label>
+          <p className="text-xs text-slate-400 mb-1.5">
+            How the AI should handle payment slips — when to confirm, when to flag mismatches, and how to respond to customers.
+          </p>
+          <textarea
+            value={verificationPrompt}
+            onChange={e => setVerificationPrompt(e.target.value)}
+            rows={8}
+            placeholder="When a customer sends a payment slip, check if the amount matches their pending order..."
+            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y"
+          />
+          <p className="text-xs text-slate-400 mt-1">Uses your Gemini API key. Supports images (JPG, PNG) and PDFs.</p>
+        </div>
+      )}
+
+      {!isHoroscope && !isCallAnswering && !isImageAnalyzer && (
         <div>
           <label className="text-xs font-medium text-slate-500 block mb-1">Gemini Prompt</label>
 

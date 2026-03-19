@@ -31,6 +31,11 @@ async function getPluginConfig(req, res) {
       defaults = { name: 'Horoscope Reading', system_prompt: '', special_note: '', api_key: '' };
     } else if (pluginId === 'ai_call_answering') {
       defaults = { name: 'AI Call Answering', system_prompt: '', greeting: 'Hello, how can I help you today?', tts_voice: 'Kore', stt_language: 'en-US' };
+    } else if (pluginId === 'image_analyzer') {
+      defaults = {
+        name: 'Image Analyzer',
+        verification_prompt: 'When a customer sends a payment slip:\n1. Check if the amount matches their pending order price.\n2. If everything looks correct, confirm payment and update the order status to payment_received using [[ORDER_UPDATE:{"status":"payment_received"}]].\n3. If the payment date is before the order date, or the amount is wrong, politely ask the customer to clarify — do not accuse them.\n4. Always mention the extracted amount and date so the customer can confirm.',
+      };
     } else {
       defaults = { name: pluginId, prompt: '' };
     }
@@ -52,7 +57,7 @@ async function updatePluginConfig(req, res) {
     return res.status(403).json({ error: 'Forbidden' });
   }
   const { pluginId } = req.params;
-  const { name, prompt, api_key, system_prompt, special_note, greeting, tts_voice, stt_language } = req.body;
+  const { name, prompt, api_key, system_prompt, special_note, greeting, tts_voice, stt_language, verification_prompt } = req.body;
   try {
     const existing = await db.getPluginConfig(clientId, pluginId);
     const update = { ...existing };
@@ -63,7 +68,8 @@ async function updatePluginConfig(req, res) {
     if (special_note !== undefined)  update.special_note  = special_note;
     if (greeting !== undefined)      update.greeting      = greeting;
     if (tts_voice !== undefined)     update.tts_voice     = tts_voice;
-    if (stt_language !== undefined)  update.stt_language  = stt_language;
+    if (stt_language !== undefined)         update.stt_language         = stt_language;
+    if (verification_prompt !== undefined)  update.verification_prompt  = verification_prompt;
     await db.upsertPluginConfig(clientId, pluginId, update);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }

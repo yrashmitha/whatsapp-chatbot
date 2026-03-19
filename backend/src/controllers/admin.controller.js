@@ -43,10 +43,11 @@ function listTemplates(_req, res) {
  * @param {import('express').Response} res
  * @returns {Promise<void>}
  */
-async function listCustomers(_req, res) {
-  console.log(`[ADMIN] GET /admin/customers`);
+async function listCustomers(req, res) {
+  const clientId = req.query.client_id || req.user?.clientId || null;
+  console.log(`[ADMIN] GET /admin/customers client=${clientId}`);
   try {
-    const customers = await db.getAllCustomers();
+    const customers = await db.getAllCustomers(clientId);
     res.json(customers);
   } catch (err) {
     console.error(`[ADMIN] customers error:`, err.message);
@@ -63,11 +64,12 @@ async function listCustomers(_req, res) {
  */
 async function getMessages(req, res) {
   const phone = req.params.phone;
+  const clientId = req.query.client_id || req.user?.clientId || null;
   console.log(`[ADMIN] GET /admin/messages/${phone}`);
   try {
     const [messages, orders] = await Promise.all([
-      db.getMessagesByPhone(phone),
-      db.getOrdersByPhone(phone),
+      db.getMessagesByPhone(phone, clientId),
+      db.getOrdersByPhone(phone, clientId),
     ]);
     res.json({ messages, orders });
   } catch (err) {
@@ -154,10 +156,11 @@ async function sendAdminMessage(req, res) {
  */
 async function deleteCustomer(req, res) {
   const phone = decodeURIComponent(req.params.phone);
-  console.log(`[ADMIN] DELETE customer ${phone}`);
+  const clientId = req.query.client_id || req.user?.clientId || null;
+  console.log(`[ADMIN] DELETE customer ${phone} client=${clientId}`);
   try {
     for (const key of chatSessions.keys()) { if (key.endsWith(`:${phone}`)) chatSessions.delete(key); }
-    await db.deleteCustomer(phone);
+    await db.deleteCustomer(phone, clientId);
     res.json({ ok: true });
   } catch (err) {
     console.error(`[ADMIN] delete customer error:`, err.message);
@@ -174,10 +177,11 @@ async function deleteCustomer(req, res) {
  */
 async function deleteMessages(req, res) {
   const phone = decodeURIComponent(req.params.phone);
+  const clientId = req.query.client_id || req.user?.clientId || null;
   console.log(`[ADMIN] DELETE messages for ${phone}`);
   try {
     for (const key of chatSessions.keys()) { if (key.endsWith(`:${phone}`)) chatSessions.delete(key); }
-    await db.deleteMessages(phone);
+    await db.deleteMessages(phone, clientId);
     res.json({ ok: true });
   } catch (err) {
     console.error(`[ADMIN] delete messages error:`, err.message);
@@ -251,7 +255,8 @@ async function generateFollowup(req, res) {
   console.log(`[ADMIN] POST /admin/followup → ${phone}`);
   if (!phone) return res.status(400).json({ error: 'phone required' });
   try {
-    const messages = await db.getMessagesByPhone(phone);
+    const clientId = req.query.client_id || req.body?.client_id || req.user?.clientId || null;
+    const messages = await db.getMessagesByPhone(phone, clientId);
     const historyText = messages
       .map(m => `${m.sender_type === 'user' ? 'Customer' : 'Assistant'}: ${m.message_text}`)
       .join('\n');

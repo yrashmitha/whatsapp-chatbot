@@ -61,15 +61,22 @@ async function getOrdersByPhone(phoneNumber, clientId) {
  * @param {string} phoneNumber - E.164 customer phone number
  * @returns {Promise<Object|null>}
  */
-async function getLatestOrder(phoneNumber) {
+async function getLatestOrder(phoneNumber, clientId) {
   if (IS_PG) {
-    const res = await pool.query(
-      'SELECT * FROM orders WHERE phone_number = $1 ORDER BY created_at DESC LIMIT 1',
-      [phoneNumber]
-    );
+    const res = clientId
+      ? await pool.query(
+          'SELECT * FROM orders WHERE phone_number = $1 AND client_id = $2 ORDER BY created_at DESC LIMIT 1',
+          [phoneNumber, clientId]
+        )
+      : await pool.query(
+          'SELECT * FROM orders WHERE phone_number = $1 ORDER BY created_at DESC LIMIT 1',
+          [phoneNumber]
+        );
     return res.rows[0] || null;
   } else {
-    return db.prepare('SELECT * FROM orders WHERE phone_number = ? ORDER BY created_at DESC LIMIT 1').get(phoneNumber) || null;
+    return clientId
+      ? db.prepare('SELECT * FROM orders WHERE phone_number = ? AND client_id = ? ORDER BY created_at DESC LIMIT 1').get(phoneNumber, clientId) || null
+      : db.prepare('SELECT * FROM orders WHERE phone_number = ? ORDER BY created_at DESC LIMIT 1').get(phoneNumber) || null;
   }
 }
 
@@ -148,15 +155,22 @@ async function updateOrderCustomFields(orderId, customFields) {
  * @param {string} pattern - SQL LIKE pattern e.g. "PJ2026-%"
  * @returns {Promise<number>}
  */
-async function countOrdersByYear(pattern) {
+async function countOrdersByYear(pattern, clientId) {
   if (IS_PG) {
-    const res = await pool.query(
-      "SELECT COUNT(*) AS cnt FROM orders WHERE order_id LIKE $1",
-      [pattern]
-    );
+    const res = clientId
+      ? await pool.query(
+          "SELECT COUNT(*) AS cnt FROM orders WHERE order_id LIKE $1 AND client_id = $2",
+          [pattern, clientId]
+        )
+      : await pool.query(
+          "SELECT COUNT(*) AS cnt FROM orders WHERE order_id LIKE $1",
+          [pattern]
+        );
     return parseInt(res.rows[0].cnt, 10);
   } else {
-    const row = db.prepare("SELECT COUNT(*) as cnt FROM orders WHERE order_id LIKE ?").get(pattern);
+    const row = clientId
+      ? db.prepare("SELECT COUNT(*) as cnt FROM orders WHERE order_id LIKE ? AND client_id = ?").get(pattern, clientId)
+      : db.prepare("SELECT COUNT(*) as cnt FROM orders WHERE order_id LIKE ?").get(pattern);
     return row.cnt || 0;
   }
 }

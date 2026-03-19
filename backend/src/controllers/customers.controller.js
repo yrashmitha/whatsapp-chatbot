@@ -165,8 +165,9 @@ async function deleteMessage(req, res) {
 async function deleteCustomer(req, res) {
   try {
     const phone = req.params.phone;
+    const clientId = req.user?.clientId || null;
     for (const key of chatSessions.keys()) { if (key.endsWith(`:${phone}`)) chatSessions.delete(key); }
-    await db.deleteCustomer(phone);
+    await db.deleteCustomer(phone, clientId);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 }

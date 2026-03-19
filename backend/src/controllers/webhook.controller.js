@@ -84,7 +84,7 @@ function receiveWebhook(req, res) {
 
         await db.upsertCustomer(from, null, client?.id);
         if (chatSessions.has(sessionKey)) {
-          const dbMsgs = await db.getMessagesByPhone(from);
+          const dbMsgs = await db.getMessagesByPhone(from, client?.id);
           if (dbMsgs.length === 0) chatSessions.delete(sessionKey);
         }
         if (!chatSessions.has(sessionKey)) {
@@ -303,7 +303,7 @@ function receiveWebhook(req, res) {
 
       // Invalidate stale in-memory session if DB was cleared externally
       if (chatSessions.has(sessionKey)) {
-        const dbMsgs = await db.getMessagesByPhone(from);
+        const dbMsgs = await db.getMessagesByPhone(from, client?.id);
         if (dbMsgs.length === 0) {
           console.log(`[WEBHOOK-POST] DB cleared for ${from} — rebuilding session`);
           chatSessions.delete(sessionKey);

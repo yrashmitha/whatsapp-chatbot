@@ -42,20 +42,34 @@ async function upsertCustomer(phoneNumber, name, clientId) {
  *
  * @returns {Promise<Array>} Array of customer summary rows
  */
-async function getAllCustomers() {
+async function getAllCustomers(clientId) {
   if (IS_PG) {
-    const res = await pool.query(`
-      SELECT
-        c.phone_number, c.name,
-        MAX(m.created_at) AS last_seen,
-        COUNT(DISTINCT m.id)::int AS msg_count,
-        COUNT(DISTINCT o.id)::int AS order_count
-      FROM customers c
-      LEFT JOIN messages m ON m.phone_number = c.phone_number
-      LEFT JOIN orders   o ON o.phone_number = c.phone_number
-      GROUP BY c.phone_number, c.name
-      ORDER BY last_seen DESC NULLS LAST
-    `);
+    const res = clientId
+      ? await pool.query(`
+          SELECT
+            c.phone_number, c.name,
+            MAX(m.created_at) AS last_seen,
+            COUNT(DISTINCT m.id)::int AS msg_count,
+            COUNT(DISTINCT o.id)::int AS order_count
+          FROM customers c
+          LEFT JOIN messages m ON m.phone_number = c.phone_number AND m.client_id = $1
+          LEFT JOIN orders   o ON o.phone_number = c.phone_number AND o.client_id = $1
+          WHERE c.client_id = $1
+          GROUP BY c.phone_number, c.name
+          ORDER BY last_seen DESC NULLS LAST
+        `, [clientId])
+      : await pool.query(`
+          SELECT
+            c.phone_number, c.name,
+            MAX(m.created_at) AS last_seen,
+            COUNT(DISTINCT m.id)::int AS msg_count,
+            COUNT(DISTINCT o.id)::int AS order_count
+          FROM customers c
+          LEFT JOIN messages m ON m.phone_number = c.phone_number
+          LEFT JOIN orders   o ON o.phone_number = c.phone_number
+          GROUP BY c.phone_number, c.name
+          ORDER BY last_seen DESC NULLS LAST
+        `);
     return res.rows;
   } else {
     return db.prepare(`
@@ -79,9 +93,21 @@ async function getAllCustomers() {
  * @param {string} phoneNumber - E.164 customer phone number
  * @returns {Promise<void>}
  */
-async function deleteCustomer(phoneNumber) {
+async function deleteCustomer(phoneNumber, clientId) {
   if (IS_PG) {
-    await pool.query('DELETE FROM customers WHERE phone_number = $1', [phoneNumber]);
+    // Delete messages and orders scoped to this client, then remove customer record only if no data remains
+    if (clientId) {
+      await pool.query('DELETE FROM messages WHERE phone_number = $1 AND client_id = $2', [phoneNumber, clientId]);
+      await pool.query('DELETE FROM orders WHERE phone_number = $1 AND client_id = $2', [phoneNumber, clientId]);
+      // Remove customer record only if no messages/orders remain for any client
+      await pool.query(`
+        DELETE FROM customers WHERE phone_number = $1
+        AND NOT EXISTS (SELECT 1 FROM messages WHERE phone_number = $1)
+        AND NOT EXISTS (SELECT 1 FROM orders WHERE phone_number = $1)
+      `, [phoneNumber]);
+    } else {
+      await pool.query('DELETE FROM customers WHERE phone_number = $1', [phoneNumber]);
+    }
   } else {
     db.prepare('DELETE FROM customers WHERE phone_number = ?').run(phoneNumber);
   }

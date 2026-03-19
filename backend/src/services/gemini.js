@@ -65,7 +65,7 @@ const PAYMENT_IDENTIFIED_REGEX = /\[\[PAYMENT_IDENTIFIED:([\s\S]*?)\]\]/;
 async function generateOrderId(client) {
   const prefix = (client && client.order_id_prefix) || 'PJ';
   const year   = new Date().getFullYear();
-  const cnt    = await db.countOrdersByYear(`${prefix}${year}-%`);
+  const cnt    = await db.countOrdersByYear(`${prefix}${year}-%`, client?.id);
   const id     = `${prefix}${year}-${String(cnt + 1).padStart(4, '0')}`;
   console.log(`[ORDER_ID] Generated: ${id} (existing count: ${cnt})`);
   return id;
@@ -263,7 +263,7 @@ async function buildChatSession(phoneNumber, client) {
 
   // Load last 40 messages from DB so context survives server restarts
   const SESSION_MSG_LIMIT = 40;
-  const dbMsgs = await db.getMessagesByPhone(phoneNumber);
+  const dbMsgs = await db.getMessagesByPhone(phoneNumber, client?.id);
   const recentMsgs = dbMsgs.slice(-SESSION_MSG_LIMIT);
   const msgHistory = recentMsgs
     .filter(m => !m.message_text.startsWith('[SYSTEM NOTE'))
@@ -320,7 +320,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
 
   // If in-memory history is empty, reload last 40 messages from DB
   if (!chatSession._history || chatSession._history.length === 0) {
-    const dbMsgs = await db.getMessagesByPhone(phoneNumber);
+    const dbMsgs = await db.getMessagesByPhone(phoneNumber, client?.id);
     if (dbMsgs.length > 0) {
       const recent = dbMsgs.slice(-40).filter(m => !m.message_text.startsWith('[SYSTEM NOTE'));
       const merged = [];
@@ -587,7 +587,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     botReply = botReply.replace(UPDATE_SUMMARY_REGEX, '').trim();
     const summaryText = summaryMatch[1].trim();
     try {
-      const latestOrder = await db.getLatestOrder(phoneNumber);
+      const latestOrder = await db.getLatestOrder(phoneNumber, client?.id);
       if (latestOrder) {
         await db.updateOrderAISummary(latestOrder.order_id, summaryText);
         console.log(`[ORDER] AI summary updated for ${latestOrder.order_id}`);

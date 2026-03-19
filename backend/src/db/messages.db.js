@@ -47,15 +47,22 @@ async function insertMessage(phoneNumber, text, senderType, costUsd = null, clie
  * @param {string} phoneNumber - E.164 customer phone number
  * @returns {Promise<Array>} Array of message row objects
  */
-async function getMessagesByPhone(phoneNumber) {
+async function getMessagesByPhone(phoneNumber, clientId) {
   if (IS_PG) {
-    const res = await pool.query(
-      'SELECT * FROM messages WHERE phone_number = $1 ORDER BY created_at ASC',
-      [phoneNumber]
-    );
+    const res = clientId
+      ? await pool.query(
+          'SELECT * FROM messages WHERE phone_number = $1 AND client_id = $2 ORDER BY created_at ASC',
+          [phoneNumber, clientId]
+        )
+      : await pool.query(
+          'SELECT * FROM messages WHERE phone_number = $1 ORDER BY created_at ASC',
+          [phoneNumber]
+        );
     return res.rows;
   } else {
-    return db.prepare('SELECT * FROM messages WHERE phone_number = ? ORDER BY created_at ASC').all(phoneNumber);
+    return clientId
+      ? db.prepare('SELECT * FROM messages WHERE phone_number = ? AND client_id = ? ORDER BY created_at ASC').all(phoneNumber, clientId)
+      : db.prepare('SELECT * FROM messages WHERE phone_number = ? ORDER BY created_at ASC').all(phoneNumber);
   }
 }
 
@@ -65,11 +72,19 @@ async function getMessagesByPhone(phoneNumber) {
  * @param {string} phoneNumber - E.164 customer phone number
  * @returns {Promise<void>}
  */
-async function deleteMessages(phoneNumber) {
+async function deleteMessages(phoneNumber, clientId) {
   if (IS_PG) {
-    await pool.query('DELETE FROM messages WHERE phone_number = $1', [phoneNumber]);
+    if (clientId) {
+      await pool.query('DELETE FROM messages WHERE phone_number = $1 AND client_id = $2', [phoneNumber, clientId]);
+    } else {
+      await pool.query('DELETE FROM messages WHERE phone_number = $1', [phoneNumber]);
+    }
   } else {
-    db.prepare('DELETE FROM messages WHERE phone_number = ?').run(phoneNumber);
+    if (clientId) {
+      db.prepare('DELETE FROM messages WHERE phone_number = ? AND client_id = ?').run(phoneNumber, clientId);
+    } else {
+      db.prepare('DELETE FROM messages WHERE phone_number = ?').run(phoneNumber);
+    }
   }
 }
 

@@ -158,7 +158,7 @@ function receiveWebhook(req, res) {
             : `[Customer sent a photo (no caption). You cannot see the image. Acknowledge what the customer has sent and respond appropriately. Add a short note that you cannot view images but the team will review it.]`;
         }
 
-        const { botReply, imagesToSend } = await handleMessage(from, imageNote, imgSession.chat, { skipUserInsert: true, client });
+        const { botReply, imagesToSend, productImagesToSend: imgProductImages } = await handleMessage(from, imageNote, imgSession.chat, { skipUserInsert: true, client });
         if (botReply.trim()) await sendBotReply(from, botReply, client);
 
         for (const filename of imagesToSend) {
@@ -168,6 +168,19 @@ function receiveWebhook(req, res) {
           await sendWhatsAppImage(from, filename, imgCaption, client);
           const isPdf = filename.toLowerCase().endsWith('.pdf');
           await db.insertMessage(from, isPdf ? `[PDF: ${filename}]` : `[Image: ${filename}]`, 'bot', null, client?.id ?? null, isPdf ? 'pdf' : 'image', `/templates/${encodeURIComponent(filename)}`);
+        }
+        for (const { url, caption: pc } of (imgProductImages || [])) {
+          try {
+            await axios.post(
+              `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
+              { messaging_product: 'whatsapp', to: from, type: 'image', image: { link: url, caption: pc } },
+              { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
+            );
+            await db.insertMessage(from, `[Image: ${pc}]`, 'bot', null, client?.id ?? null, 'image', url);
+            console.log(`[WA-IMG] Media image sent after image message: ${pc}`);
+          } catch (e) {
+            console.warn(`[WA-IMG] Failed to send media image "${pc}":`, e?.response?.data ?? e.message);
+          }
         }
         return;
       }
@@ -234,10 +247,23 @@ function receiveWebhook(req, res) {
               }
 
               const docNote = buildAnalysisNote(analysis, '', latestPendingOrder, cfg.verification_prompt || '');
-              const { botReply: docReply, imagesToSend: docImages } = await handleMessage(from, docNote, docSession.chat, { skipUserInsert: true, client });
+              const { botReply: docReply, imagesToSend: docImages, productImagesToSend: docProductImages } = await handleMessage(from, docNote, docSession.chat, { skipUserInsert: true, client });
               if (docReply.trim()) await sendBotReply(from, docReply, client);
               for (const filename of docImages) {
                 await sendWhatsAppImage(from, filename, '', client);
+              }
+              for (const { url, caption: pc } of (docProductImages || [])) {
+                try {
+                  await axios.post(
+                    `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
+                    { messaging_product: 'whatsapp', to: from, type: 'image', image: { link: url, caption: pc } },
+                    { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
+                  );
+                  await db.insertMessage(from, `[Image: ${pc}]`, 'bot', null, client?.id ?? null, 'image', url);
+                  console.log(`[WA-IMG] Media image sent after PDF message: ${pc}`);
+                } catch (e) {
+                  console.warn(`[WA-IMG] Failed to send media image "${pc}":`, e?.response?.data ?? e.message);
+                }
               }
               docAnalyzed = true;
             }

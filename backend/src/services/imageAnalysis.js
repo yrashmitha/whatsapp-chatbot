@@ -9,30 +9,32 @@
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-const EXTRACTION_PROMPT = `Analyze this document image. Return ONLY a JSON object — no markdown, no explanation.
+const EXTRACTION_PROMPT = `Analyze this document image.
 
-Identify the document type and extract any payment-related information.
+IMPORTANT: Your entire response must be a single raw JSON object. Do NOT use markdown. Do NOT use code fences. Do NOT write any text before or after the JSON. Start your response with { and end with }.
 
-Return this exact JSON structure:
+Use exactly this structure:
 {
-  "document_type": "payment_slip" | "bank_transfer" | "cheque" | "product_photo" | "id_document" | "screenshot" | "other",
-  "is_payment_related": true | false,
-  "payer_name": "full name or null",
-  "recipient_name": "recipient name or null",
-  "amount": "numeric string like 5500.00 or null",
-  "currency": "LKR or USD or null",
-  "payment_date": "YYYY-MM-DD or null",
-  "reference_number": "transaction/reference ID or null",
-  "bank_name": "bank name or null",
-  "account_number": "account number or null",
-  "description": "1–2 sentence plain text description of what this image shows"
+  "document_type": "payment_slip",
+  "is_payment_related": true,
+  "payer_name": null,
+  "recipient_name": null,
+  "amount": null,
+  "currency": null,
+  "payment_date": null,
+  "reference_number": null,
+  "bank_name": null,
+  "account_number": null,
+  "description": "one sentence describing what this image shows"
 }
 
+Valid values for document_type: payment_slip, bank_transfer, cheque, product_photo, id_document, screenshot, other
 Rules:
-- If not payment-related, set is_payment_related to false and leave payment fields as null
-- For payment_date, convert any date format to YYYY-MM-DD
-- For amount, return only the numeric value as a string (no currency symbols)
-- Return ONLY the JSON object, nothing else`;
+- Set is_payment_related to true only for payment_slip, bank_transfer, cheque
+- payment_date must be YYYY-MM-DD format or null
+- amount must be numeric string only (no currency symbols) or null
+- description is always required — one plain sentence about the image
+- Start response with { and end with } — no other text`;
 
 /**
  * Analyze an image or PDF buffer using Gemini Vision.
@@ -50,7 +52,7 @@ async function analyzePaymentDocument(buffer, mimeType, apiKey) {
   const genAI = new GoogleGenerativeAI(key);
   const model = genAI.getGenerativeModel({
     model: 'gemini-2.5-flash',
-    generationConfig: { temperature: 0.1, maxOutputTokens: 512 },
+    generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
   });
 
   const base64Data = buffer.toString('base64');
@@ -80,12 +82,12 @@ async function analyzePaymentDocument(buffer, mimeType, apiKey) {
     console.log(`[IMAGE-ANALYZER] Parsed: type=${parsed.document_type} payment=${parsed.is_payment_related} amount=${parsed.amount} date=${parsed.payment_date} ref=${parsed.reference_number}`);
     return parsed;
   } catch (parseErr) {
-    // If JSON parse fails, return a generic description
+    // If JSON parse fails, return a safe fallback (do NOT include raw broken JSON as description)
     console.warn(`[IMAGE-ANALYZER] Could not parse JSON (${parseErr.message}). Cleaned text was:\n${cleaned}`);
     return {
       document_type: 'other',
       is_payment_related: false,
-      description: cleaned.slice(0, 300),
+      description: 'an image the team will review',
     };
   }
 }

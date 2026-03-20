@@ -14,6 +14,7 @@ import Addons from './pages/Addons';
 import Plugins from './pages/Plugins';
 import Summary from './pages/Summary';
 import Calls from './pages/Calls';
+import Landing from './pages/Landing';
 
 const qc = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -32,8 +33,8 @@ const router = createBrowserRouter([
   { path: '/addons', element: <ProtectedRoute><Addons /></ProtectedRoute> },
   { path: '/plugins', element: <ProtectedRoute><Plugins /></ProtectedRoute> },
   { path: '/calls',   element: <ProtectedRoute><Calls /></ProtectedRoute> },
-  { path: '/', element: <Navigate to="/chat" replace /> },
-  { path: '*', element: <Navigate to="/chat" replace /> },
+  { path: '/', element: <Landing /> },
+  { path: '*', element: <Navigate to="/" replace /> },
 ]);
 
 export default function App() {

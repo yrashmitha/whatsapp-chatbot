@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 
 const NOVA_WA      = 'https://wa.me/94771784821';
 const NOVA_WA_DEMO = 'https://wa.me/94771784821?text=Hi%20Nova%2C%20I%20want%20to%20see%20a%20demo';
@@ -22,56 +22,161 @@ const IconWA = () => (
   </svg>
 );
 
-/* ── Fake WhatsApp chat mockup ── */
+/* ── Scenario slider data ── */
+const SCENARIOS = [
+  {
+    tag: 'Upsell',
+    color: '#7c3aed',
+    messages: [
+      { from: 'customer', text: 'Basic package eka ganna one — LKR 2,500 wala.' },
+      { from: 'nova',     text: 'Sure! Basic is 2,500 — but most customers pick Standard (3,500) because it includes priority support + 2 extra sessions. Same thing, more value. Want that instead? 👀' },
+      { from: 'customer', text: 'hm ok standard eka denna' },
+      { from: 'nova',     text: 'Done! Standard package add karagatta 🎉 Oya name ekata order confirm karannam—' },
+    ],
+  },
+  {
+    tag: 'Cross-sell',
+    color: '#0891b2',
+    messages: [
+      { from: 'customer', text: 'yoga mat ekak order karanna one' },
+      { from: 'nova',     text: 'Great choice! Oyage cart ekata yoga mat add karagatta ✅\n\nQuick one — water bottle combo thibba, LKR 500 off. Add karannad? Most people grab it together 🙂' },
+      { from: 'customer', text: 'haa add karanna' },
+      { from: 'nova',     text: 'Added! Oyage total: LKR 3,200. Delivery address kiyanna.' },
+    ],
+  },
+  {
+    tag: 'Angry customer',
+    color: '#dc2626',
+    messages: [
+      { from: 'customer', text: '3 days wechchi denneth neh. api fool karanawada???😡' },
+      { from: 'nova',     text: 'Oyage frustration puruwatenne neh, sincerely sorry 🙏 Order #PJ2026-0042 check karagatta — today dispatch wuna, tomorrow morning first batch ekata. Apita oyawa update karannam.' },
+      { from: 'customer', text: 'ok' },
+      { from: 'nova',     text: 'Thank you for the patience. Oyawa let down kara ganna apita kamathi neh — tomorrow confirm arrive weyi 🙏' },
+    ],
+  },
+  {
+    tag: 'Review request',
+    color: '#f59e0b',
+    messages: [
+      { from: 'nova',     text: 'Oyage order deliver wuna! Hope you loved it 🎉' },
+      { from: 'customer', text: 'yes thank you, very nice' },
+      { from: 'nova',     text: 'Oyata kiyawanna santhosai 😊 Minute 1k thibba nam, Google review ekak denna puluanda? Oyage feedback ekke aya goda enna help wenawd 🙏' },
+      { from: 'customer', text: 'sure, link denna' },
+      { from: 'nova',     text: 'Thank you so much! 🌟 → g.page/r/nova-review' },
+    ],
+  },
+  {
+    tag: 'Payment slip',
+    color: '#059669',
+    messages: [
+      { from: 'customer', text: '[image: payment_slip.jpg]', isImg: true },
+      { from: 'nova',     text: 'Slip balala gatta ✅\n\nAmount: LKR 5,500 · BOC · March 19\nOyage order #PJ2026-0089 confirm wuna! We\'ll process it now.' },
+      { from: 'customer', text: 'thank you!' },
+      { from: 'nova',     text: 'Our pleasure! Order dispatch wenna 24h gannawa. Update karannam 📦' },
+    ],
+  },
+];
+
+/* ── Animated phone mockup with scenario slider ── */
 function PhoneMockup() {
-  const [step, setStep] = useState(0);
+  const [scene, setScene]   = useState(0);
+  const [step, setStep]     = useState(0);
+  const [fading, setFading] = useState(false);
+  const timerRef            = useRef(null);
+  const autoRef             = useRef(null);
 
-  const messages = [
-    { from: 'customer', text: 'Hi, oyage packages gana kiyanna puluanda?' },
-    { from: 'nova',     text: 'ආයුබෝවන්! 😊 අපිට packages කිහිපයක් තියෙනවා — ඔයා කැමති business type එක කොයි වගේද?' },
-    { from: 'customer', text: 'Online clothing store' },
-    { from: 'nova',     text: 'Perfect! Clothing stores වලට Nova හරිම හොඳින් work කරනවා. Orders, payments, ගොඩක් questions — සෙල්ලමෙ handle වෙනවා. Demo එකක් try කරන්නද?' },
-  ];
+  const msgs = SCENARIOS[scene].messages;
 
+  /* Advance bubbles */
   useEffect(() => {
-    if (step >= messages.length) return;
-    const t = setTimeout(() => setStep(s => s + 1), step === 0 ? 600 : 1400);
-    return () => clearTimeout(t);
-  }, [step]);
+    if (step >= msgs.length) return;
+    timerRef.current = setTimeout(() => setStep(s => s + 1), step === 0 ? 500 : 1500);
+    return () => clearTimeout(timerRef.current);
+  }, [step, msgs.length]);
+
+  /* Auto-advance scenario every 8 s after all bubbles shown */
+  useEffect(() => {
+    if (step < msgs.length) return;
+    autoRef.current = setTimeout(() => switchScene((scene + 1) % SCENARIOS.length), 2800);
+    return () => clearTimeout(autoRef.current);
+  }, [step, msgs.length, scene]);
+
+  const switchScene = useCallback((idx) => {
+    clearTimeout(timerRef.current);
+    clearTimeout(autoRef.current);
+    setFading(true);
+    setTimeout(() => {
+      setScene(idx);
+      setStep(0);
+      setFading(false);
+    }, 260);
+  }, []);
+
+  const accentColor = SCENARIOS[scene].color;
 
   return (
-    <div className="phone-wrap">
-      <div className="phone-shell">
-        {/* status bar */}
-        <div className="phone-bar">
-          <span style={{ fontSize: 11, fontWeight: 600 }}>9:41</span>
-          <span style={{ fontSize: 11 }}>●●●</span>
-        </div>
-        {/* chat header */}
-        <div className="phone-header">
-          <div className="phone-avatar">N</div>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1 }}>Nova</div>
-            <div style={{ fontSize: 11, color: '#4ade80', marginTop: 2 }}>online</div>
+    <div className="phone-outer">
+      {/* scenario tabs */}
+      <div className="scenario-tabs">
+        {SCENARIOS.map((s, i) => (
+          <button
+            key={i}
+            className={`scenario-tab ${i === scene ? 'active' : ''}`}
+            style={i === scene ? { borderColor: s.color, color: s.color, background: `${s.color}18` } : {}}
+            onClick={() => switchScene(i)}
+          >
+            {s.tag}
+          </button>
+        ))}
+      </div>
+
+      {/* phone */}
+      <div className="phone-wrap">
+        <div className="phone-wrap-glow" style={{ background: `radial-gradient(circle, ${accentColor}22 0%, transparent 65%)` }} />
+        <div className="phone-shell" style={{ borderColor: `${accentColor}28` }}>
+          <div className="phone-bar">
+            <span style={{ fontSize: 11, fontWeight: 600 }}>9:41</span>
+            <span style={{ fontSize: 11, opacity: 0.5 }}>●●●</span>
           </div>
-        </div>
-        {/* messages */}
-        <div className="phone-body">
-          {messages.slice(0, step).map((m, i) => (
-            <div key={i} className={`bubble ${m.from}`}>
-              {m.text}
+          <div className="phone-header">
+            <div className="phone-avatar" style={{ background: `linear-gradient(135deg, ${accentColor}, #001a33)` }}>N</div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1 }}>Nova</div>
+              <div style={{ fontSize: 11, color: '#4ade80', marginTop: 2 }}>online</div>
             </div>
-          ))}
-          {step < messages.length && step > 0 && (
-            <div className="typing-dots">
-              <span/><span/><span/>
+            <div className="phone-scenario-tag" style={{ background: `${accentColor}22`, color: accentColor }}>
+              {SCENARIOS[scene].tag}
             </div>
-          )}
+          </div>
+          <div className={`phone-body ${fading ? 'fading' : ''}`}>
+            {msgs.slice(0, step).map((m, i) => (
+              <div key={i} className={`bubble ${m.from}`} style={m.from === 'nova' ? { background: `${accentColor}28`, borderLeft: `2px solid ${accentColor}55` } : {}}>
+                {m.isImg
+                  ? <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'rgba(255,255,255,0.5)', fontSize: 11 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                      Payment slip sent
+                    </span>
+                  : m.text.split('\n').map((line, j) => <span key={j}>{line}{j < m.text.split('\n').length - 1 && <br/>}</span>)
+                }
+              </div>
+            ))}
+            {step < msgs.length && step > 0 && (
+              <div className={`typing-dots ${msgs[step]?.from === 'nova' ? 'nova-typing' : ''}`}>
+                <span/><span/><span/>
+              </div>
+            )}
+          </div>
+          <div className="phone-input"><span>Message…</span></div>
         </div>
-        {/* input bar */}
-        <div className="phone-input">
-          <span>Message…</span>
-        </div>
+      </div>
+
+      {/* progress dots */}
+      <div className="scene-dots">
+        {SCENARIOS.map((s, i) => (
+          <button key={i} className={`scene-dot ${i === scene ? 'active' : ''}`}
+            style={i === scene ? { background: s.color, width: 20 } : {}}
+            onClick={() => switchScene(i)} />
+        ))}
       </div>
     </div>
   );
@@ -183,19 +288,47 @@ export default function Landing() {
           font-size: 13px; color: rgba(255,255,255,0.38);
         }
 
-        /* ─ Phone mockup ─ */
+        /* ─ Phone mockup & slider ─ */
+        .phone-outer { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+
+        .scenario-tabs {
+          display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;
+          max-width: 320px;
+        }
+        .scenario-tab {
+          font-family: 'Space Grotesk', sans-serif; font-size: 11px; font-weight: 700;
+          letter-spacing: 0.5px; padding: 5px 12px; border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.12); color: rgba(255,255,255,0.35);
+          background: transparent; cursor: pointer;
+          transition: all 0.18s;
+        }
+        .scenario-tab:hover { color: rgba(255,255,255,0.7); border-color: rgba(255,255,255,0.25); }
+        .scenario-tab.active { font-weight: 700; }
+
+        .phone-scenario-tag {
+          margin-left: auto; font-size: 10px; font-weight: 700;
+          font-family: 'Space Grotesk', sans-serif; letter-spacing: 0.5px;
+          padding: 3px 8px; border-radius: 5px; text-transform: uppercase;
+        }
+
+        .scene-dots { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
+        .scene-dot {
+          height: 5px; width: 5px; border-radius: 999px;
+          background: rgba(255,255,255,0.2); border: none; cursor: pointer;
+          padding: 0; transition: all 0.25s;
+        }
+        .scene-dot.active { width: 20px; }
+
         .phone-wrap {
           display: flex; justify-content: center; align-items: center;
           position: relative;
         }
-        .phone-wrap::before {
-          content: ''; position: absolute;
-          width: 280px; height: 280px; border-radius: 50%;
-          background: radial-gradient(circle, rgba(0,212,255,0.12) 0%, transparent 70%);
-          pointer-events: none;
+        .phone-wrap-glow {
+          position: absolute; width: 300px; height: 300px; border-radius: 50%;
+          pointer-events: none; transition: background 0.4s;
         }
         .phone-shell {
-          width: 260px;
+          width: 268px;
           background: #111827;
           border-radius: 28px;
           border: 1.5px solid rgba(255,255,255,0.1);
@@ -242,6 +375,9 @@ export default function Landing() {
           border-bottom-right-radius: 4px; align-self: flex-end;
         }
         @keyframes bubbleIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        .phone-body.fading { opacity: 0; transition: opacity 0.22s; }
+        .phone-body { transition: opacity 0.22s; }
+        .nova-typing { align-self: flex-end; background: rgba(0,212,255,0.15) !important; }
         .typing-dots {
           display: flex; gap: 4px; align-items: center;
           padding: 10px 12px; background: #1e2d42;
@@ -361,6 +497,35 @@ export default function Landing() {
           letter-spacing: -0.02em;
         }
         .feature-highlight p { font-size: 14px; color: rgba(255,255,255,0.45); line-height: 1.7; }
+
+        /* ─ More grid ─ */
+        .more-grid {
+          display: grid; grid-template-columns: 1fr; gap: 16px;
+        }
+        @media (min-width: 600px) { .more-grid { grid-template-columns: 1fr 1fr; } }
+        .more-card {
+          border: 1px solid rgba(255,255,255,0.07);
+          border-radius: 16px; padding: 28px 24px;
+          display: flex; flex-direction: column; gap: 12px;
+          transition: border-color 0.2s, transform 0.2s;
+        }
+        .more-card:hover { transform: translateY(-3px); border-color: rgba(255,255,255,0.14); }
+        .more-card-tag {
+          display: inline-block; font-size: 11px; font-weight: 700;
+          font-family: 'Space Grotesk', sans-serif; letter-spacing: 1px;
+          text-transform: uppercase; padding: 4px 10px; border-radius: 6px; width: fit-content;
+        }
+        .more-card-title {
+          font-family: 'Space Grotesk', sans-serif;
+          font-size: 17px; font-weight: 700; color: #fff; line-height: 1.3;
+        }
+        .more-card-desc { font-size: 14px; color: rgba(255,255,255,0.42); line-height: 1.7; }
+        .more-card-stat {
+          font-size: 12px; font-weight: 600;
+          font-family: 'Space Grotesk', sans-serif;
+          border-left: 2px solid; padding-left: 10px; margin-top: 4px;
+          opacity: 0.85;
+        }
 
         /* ─ Steps ─ */
         .steps { display: flex; flex-direction: column; margin-top: 40px; }
@@ -634,6 +799,57 @@ export default function Landing() {
                 <p>See all customer chats live. Manage orders and track payments. Send quick replies. Your whole team works from the same dashboard.</p>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Nova does more ── */}
+      <section className="section">
+        <div className="container">
+          <div className="section-label">Beyond answering questions</div>
+          <h2 style={{ fontFamily: "'Space Grotesk',sans-serif", fontWeight: 800, fontSize: 'clamp(26px,4vw,40px)', letterSpacing: '-0.03em', lineHeight: 1.15, marginBottom: 48 }}>
+            Nova is a sales assistant,<br />not just a reply bot
+          </h2>
+          <div className="more-grid">
+            {[
+              {
+                tag: 'Upsell',
+                color: '#7c3aed',
+                title: 'Sells the better option — naturally',
+                desc: 'When a customer picks the basic package, Nova knows when to mention the upgrade. Not pushy. Just helpful. Like a good salesperson.',
+                stat: 'Higher average order value',
+              },
+              {
+                tag: 'Cross-sell',
+                color: '#0891b2',
+                title: 'Recommends what goes with it',
+                desc: 'Customer orders a yoga mat? Nova mentions the bottle combo. A dress? Nova asks about accessories. At the right moment, in the right tone.',
+                stat: 'More items per order',
+              },
+              {
+                tag: 'Reviews',
+                color: '#f59e0b',
+                title: 'Asks for reviews after delivery',
+                desc: 'After an order is complete, Nova follows up — warmly, in the customer\'s language — and sends your Google review link. No manual follow-up needed.',
+                stat: 'More 5-star reviews, automatically',
+              },
+              {
+                tag: 'De-escalation',
+                color: '#dc2626',
+                title: 'Handles angry customers with calm',
+                desc: "Customer sends a wall of angry text? Nova doesn't panic. It acknowledges, empathises, checks the order, and responds with composure. Keeps situations from getting worse.",
+                stat: 'Fewer escalations to your team',
+              },
+            ].map((c, i) => (
+              <div key={i} className="more-card">
+                <div className="more-card-tag" style={{ background: `${c.color}18`, color: c.color }}>{c.tag}</div>
+                <h3 className="more-card-title">{c.title}</h3>
+                <p className="more-card-desc">{c.desc}</p>
+                <div className="more-card-stat" style={{ borderLeftColor: c.color, color: c.color }}>
+                  {c.stat}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </section>

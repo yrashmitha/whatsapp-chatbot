@@ -12,7 +12,7 @@ const path   = require('path');
 const db     = require('../db');
 const clientRouter = require('../services/clientRouter');
 const { buildChatSession, handleMessage } = require('../services/gemini');
-const { sendWhatsAppMessage, sendWhatsAppImage, sendBotReply, waToken, waPhoneId } = require('../services/whatsapp');
+const { sendWhatsAppMessage, sendWhatsAppImage, sendBotReply, waToken, waPhoneId, markMessageRead } = require('../services/whatsapp');
 const { chatSessions } = require('../workers/sessionManager');
 const { UPLOADS_DIR } = require('../config/env');
 const { analyzePaymentDocument, buildAnalysisNote } = require('../services/imageAnalysis');
@@ -74,6 +74,9 @@ function receiveWebhook(req, res) {
       const msg  = value.messages[0];
       from = msg.from;
       let sessionKey = `${client.id}:${from}`;
+
+      // Mark message as read immediately (blue ticks) — expected by Meta
+      markMessageRead(msg.id, client).catch(() => {});
 
       console.log(`[WEBHOOK-POST] client=${client.id} msg type=${msg.type} from=${from}`);
 
@@ -328,6 +331,8 @@ function receiveWebhook(req, res) {
       if (!botReply.trim()) {
         console.warn(`[WEBHOOK-POST] Empty botReply from Gemini for ${from} — skipping send`);
       } else {
+        // Small human-like delay before replying (avoids instant 0ms bot pattern)
+        await new Promise(r => setTimeout(r, 1000 + Math.random() * 1500));
         await sendBotReply(from, botReply, client);
       }
 

@@ -45,6 +45,23 @@ function startRetryWorker() {
           const client = await clientRouter.getClientById(item.client_id);
           if (!client) throw new Error('Client not found');
 
+          // 24-hour window check — do not send if customer last messaged > 23h ago
+          const custRow = await db.pgQuery(
+            'SELECT last_customer_message_at FROM customers WHERE phone_number=$1 AND client_id=$2',
+            [item.phone_number, item.client_id]
+          );
+          const lastMsg = custRow.rows[0]?.last_customer_message_at;
+          if (lastMsg) {
+            const hoursSince = (Date.now() - new Date(lastMsg).getTime()) / 36e5;
+            if (hoursSince > 23) {
+              await db.pgQuery(
+                `UPDATE message_retry_queue SET resolved_at=NOW() WHERE id=$1`, [item.id]
+              );
+              console.warn(`[RETRY-WORKER] Skipping ${item.phone_number} — 24-hour window closed (${hoursSince.toFixed(1)}h since last message)`);
+              continue;
+            }
+          }
+
           sessionKey = `${client.id}:${item.phone_number}`;
           if (!chatSessions.has(sessionKey)) {
             chatSessions.set(sessionKey, {

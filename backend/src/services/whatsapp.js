@@ -163,6 +163,27 @@ async function sendBotReply(to, botReply, client) {
   }
 }
 
+/**
+ * Mark an incoming WhatsApp message as read (sends blue ticks).
+ * Call this immediately when a customer message arrives.
+ *
+ * @param {string}      wamid  - WhatsApp message ID from the webhook payload
+ * @param {Object|null} client - Client config object
+ * @returns {Promise<void>}
+ */
+async function markMessageRead(wamid, client) {
+  if (!wamid) return;
+  try {
+    await axios.post(
+      `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
+      { messaging_product: 'whatsapp', status: 'read', message_id: wamid },
+      { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
+    );
+  } catch (err) {
+    console.warn(`[WA] markMessageRead failed for ${wamid}:`, err?.response?.data?.error?.message || err.message);
+  }
+}
+
 module.exports = {
   waToken,
   waPhoneId,
@@ -171,4 +192,5 @@ module.exports = {
   sendWhatsAppImage,
   sendWhatsAppMessage,
   sendBotReply,
+  markMessageRead,
 };

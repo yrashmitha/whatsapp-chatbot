@@ -105,6 +105,15 @@ async function sendMessage(req, res) {
   if (!phone || !message) return res.status(400).json({ error: 'phone and message required' });
   try {
     const client = clientId ? await clientRouter.getClientById(clientId) : null;
+
+    // Check 24-hour window — warn admin if window may be closed
+    const custRow = await db.pgQuery(
+      'SELECT last_customer_message_at FROM customers WHERE phone_number=$1 AND client_id=$2',
+      [phone, clientId]
+    );
+    const lastMsg = custRow.rows[0]?.last_customer_message_at;
+    const windowOpen = !lastMsg || (Date.now() - new Date(lastMsg).getTime()) < 23 * 36e5;
+
     if (type === 'text') {
       const wamid = await sendWhatsAppMessage(phone, message, client);
       await db.insertMessage(phone, message, 'bot', null, clientId, null, null, wamid);
@@ -117,7 +126,7 @@ async function sendMessage(req, res) {
       const wamid = imgResp.data?.messages?.[0]?.id || null;
       await db.insertMessage(phone, `[Image] ${message}`, 'bot', null, clientId, 'image', mediaUrl, wamid);
     }
-    res.json({ ok: true });
+    res.json({ ok: true, window_warning: !windowOpen });
   } catch (e) { res.status(500).json({ error: e?.response?.data?.error?.message || e.message }); }
 }
 

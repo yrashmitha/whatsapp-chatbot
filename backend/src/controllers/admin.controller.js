@@ -140,7 +140,14 @@ async function sendAdminMessage(req, res) {
     } else {
       return res.status(400).json({ error: 'text or image required' });
     }
-    res.json({ ok: true });
+    // Check 24-hour window and warn if closed
+    const custRow = await db.pgQuery(
+      `SELECT last_customer_message_at FROM customers WHERE phone_number=$1`,
+      [phone]
+    ).catch(() => ({ rows: [] }));
+    const lastMsg = custRow.rows[0]?.last_customer_message_at;
+    const windowOpen = !lastMsg || (Date.now() - new Date(lastMsg).getTime()) < 23 * 36e5;
+    res.json({ ok: true, window_warning: !windowOpen });
   } catch (err) {
     console.error(`[ADMIN] send error:`, err.message);
     res.status(500).json({ error: err.message });

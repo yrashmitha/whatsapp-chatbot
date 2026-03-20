@@ -32,6 +32,12 @@ const PLANS = [
     messages: '1,000',
     overage: 'LKR 5 per extra reply',
     popular: false,
+    scenarios: [
+      'A home bakery getting 30-50 orders a month via WhatsApp',
+      'A beauty salon answering appointment questions manually every day',
+      'A small clothing page that keeps missing messages after hours',
+      'A tuition class replying to the same parent questions repeatedly',
+    ],
     highlights: [
       '1,000 AI replies / month',
       '1 WhatsApp number',
@@ -57,6 +63,12 @@ const PLANS = [
     messages: '3,000',
     overage: 'LKR 4 per extra reply',
     popular: true,
+    scenarios: [
+      'An online supplement or cosmetics shop taking 100+ orders a month',
+      'A food business collecting payment slips and confirming orders daily',
+      'A fashion page where customers always ask "what goes with this?"',
+      'Any shop that wants more Google reviews without asking manually',
+    ],
     highlights: [
       '3,000 AI replies / month',
       '1 WhatsApp number',
@@ -81,6 +93,12 @@ const PLANS = [
     messages: '10,000',
     overage: 'LKR 3 per extra reply',
     popular: false,
+    scenarios: [
+      'A wholesale supplier managing hundreds of dealer conversations daily',
+      'A multi-brand store running two separate WhatsApp numbers',
+      'An agency managing customer service for their own clients',
+      'A business where the AI needs to sound and feel like a specific brand persona',
+    ],
     highlights: [
       '10,000 AI replies / month',
       '2 WhatsApp numbers',
@@ -261,6 +279,25 @@ export default function Pricing() {
         .plan-desc { font-size: 13px; color: rgba(255,255,255,0.55); line-height: 1.55; margin-bottom: 28px; margin-top: 8px; }
         .plan-overage { font-size: 11px; color: rgba(255,255,255,0.35); margin-top: 8px; }
 
+        .plan-scenarios {
+          margin-top: 20px;
+          padding-top: 18px;
+          border-top: 1px solid rgba(255,255,255,0.06);
+        }
+        .plan-scenarios-title {
+          font-size: 10px; font-weight: 700; letter-spacing: 1.5px;
+          text-transform: uppercase; color: rgba(255,255,255,0.35);
+          margin-bottom: 10px;
+        }
+        .plan-scenario-item {
+          display: flex; align-items: flex-start; gap: 8px;
+          font-size: 12px; color: rgba(255,255,255,0.55);
+          line-height: 1.5; margin-bottom: 7px;
+        }
+        .plan-scenario-item::before {
+          content: '→'; color: inherit; flex-shrink: 0; opacity: 0.6;
+        }
+
         .plan-divider { border: none; border-top: 1px solid rgba(255,255,255,0.07); margin: 24px 0; }
 
         .plan-features { display: flex; flex-direction: column; gap: 12px; flex: 1; }
@@ -428,6 +465,12 @@ export default function Pricing() {
               ))}
             </div>
             <div className="plan-overage">{plan.overage} over limit</div>
+            <div className="plan-scenarios">
+              <div className="plan-scenarios-title">Good fit if you are...</div>
+              {plan.scenarios.map((s, j) => (
+                <div key={j} className="plan-scenario-item">{s}</div>
+              ))}
+            </div>
             <div className="plan-cta">
               <a
                 href={`${NOVA_WA}?text=Hi%20Nova%2C%20I%20want%20the%20${plan.name}%20plan`}

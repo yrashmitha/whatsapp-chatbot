@@ -184,6 +184,33 @@ async function markMessageRead(wamid, client) {
   }
 }
 
+/**
+ * Send a typing indicator to a WhatsApp recipient.
+ * Shows the "typing..." dots in the customer's chat while Nova processes the reply.
+ *
+ * @param {string}      to     - Recipient E.164 phone number
+ * @param {Object|null} client - Client config object
+ * @returns {Promise<void>}
+ */
+async function sendTypingIndicator(to, client) {
+  try {
+    await axios.post(
+      `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
+      {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: 'typing_indicator',
+        typing_indicator: { type: 'text' },
+      },
+      { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
+    );
+  } catch (err) {
+    // Typing indicators are not supported on all accounts — fail silently
+    console.warn(`[WA] typing indicator not supported:`, err?.response?.data?.error?.message || err.message);
+  }
+}
+
 module.exports = {
   waToken,
   waPhoneId,
@@ -193,4 +220,5 @@ module.exports = {
   sendWhatsAppMessage,
   sendBotReply,
   markMessageRead,
+  sendTypingIndicator,
 };

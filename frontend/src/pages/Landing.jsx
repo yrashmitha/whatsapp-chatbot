@@ -193,7 +193,7 @@ export default function Landing() {
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         .ln-root {
-          font-family: 'Inter', sans-serif;
+          font-family: 'Space Grotesk', sans-serif;
           background: #06080f;
           color: #f0f0f0;
           min-height: 100vh;
@@ -262,7 +262,7 @@ export default function Landing() {
         .hero-label {
           display: inline-flex; align-items: center; gap: 6px;
           font-size: 12px; font-weight: 600; letter-spacing: 0.5px;
-          color: rgba(255,255,255,0.45); margin-bottom: 20px;
+          color: rgba(255,255,255,0.6); margin-bottom: 20px;
           font-family: 'Space Grotesk', sans-serif;
           text-transform: uppercase;
         }
@@ -276,7 +276,7 @@ export default function Landing() {
         .hero h1 em { font-style: normal; color: #00d4ff; }
         .hero-sub {
           font-size: 17px; line-height: 1.75;
-          color: rgba(255,255,255,0.52); max-width: 480px;
+          color: rgba(255,255,255,0.7); max-width: 480px;
           margin-bottom: 36px;
         }
         .hero-ctas { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 36px; }
@@ -285,7 +285,7 @@ export default function Landing() {
         }
         .trust-item {
           display: flex; align-items: center; gap: 8px;
-          font-size: 13px; color: rgba(255,255,255,0.38);
+          font-size: 13px; color: rgba(255,255,255,0.65);
         }
 
         /* ─ Phone mockup & slider ─ */
@@ -298,7 +298,7 @@ export default function Landing() {
         .scenario-tab {
           font-family: 'Space Grotesk', sans-serif; font-size: 11px; font-weight: 700;
           letter-spacing: 0.5px; padding: 5px 12px; border-radius: 999px;
-          border: 1px solid rgba(255,255,255,0.12); color: rgba(255,255,255,0.35);
+          border: 1px solid rgba(255,255,255,0.12); color: rgba(255,255,255,0.6);
           background: transparent; cursor: pointer;
           transition: all 0.18s;
         }
@@ -357,9 +357,11 @@ export default function Landing() {
         }
         .phone-body {
           padding: 14px 12px;
-          min-height: 220px;
+          height: 248px;
+          overflow: hidden;
           display: flex; flex-direction: column; gap: 8px;
           background: #0d1117;
+          justify-content: flex-end;
         }
         .bubble {
           max-width: 85%; padding: 9px 12px;
@@ -436,7 +438,7 @@ export default function Landing() {
           margin-bottom: 4px;
         }
         .stat-num span { color: #00d4ff; }
-        .stat-label { font-size: 12px; color: rgba(255,255,255,0.35); }
+        .stat-label { font-size: 12px; color: rgba(255,255,255,0.62); }
 
         /* ─ Problems ─ */
         .problems-grid {
@@ -461,7 +463,7 @@ export default function Landing() {
           font-size: 15px; font-weight: 700; color: #fff;
           line-height: 1.4; margin-bottom: 8px;
         }
-        .problem-sub { font-size: 13px; color: rgba(255,255,255,0.38); line-height: 1.6; }
+        .problem-sub { font-size: 13px; color: rgba(255,255,255,0.65); line-height: 1.6; }
 
         /* ─ Feature list ─ */
         .feature-split {
@@ -477,7 +479,7 @@ export default function Landing() {
           font-size: 15px; font-weight: 700; color: #fff;
           margin-bottom: 4px;
         }
-        .feature-desc { font-size: 13px; color: rgba(255,255,255,0.42); line-height: 1.65; }
+        .feature-desc { font-size: 13px; color: rgba(255,255,255,0.68); line-height: 1.65; }
         .feature-highlight {
           background: rgba(0,212,255,0.05);
           border: 1px solid rgba(0,212,255,0.12);
@@ -496,7 +498,7 @@ export default function Landing() {
           font-size: 20px; font-weight: 800; color: #fff; line-height: 1.3;
           letter-spacing: -0.02em;
         }
-        .feature-highlight p { font-size: 14px; color: rgba(255,255,255,0.45); line-height: 1.7; }
+        .feature-highlight p { font-size: 14px; color: rgba(255,255,255,0.68); line-height: 1.7; }
 
         /* ─ More grid ─ */
         .more-grid {
@@ -519,7 +521,7 @@ export default function Landing() {
           font-family: 'Space Grotesk', sans-serif;
           font-size: 17px; font-weight: 700; color: #fff; line-height: 1.3;
         }
-        .more-card-desc { font-size: 14px; color: rgba(255,255,255,0.42); line-height: 1.7; }
+        .more-card-desc { font-size: 14px; color: rgba(255,255,255,0.68); line-height: 1.7; }
         .more-card-stat {
           font-size: 12px; font-weight: 600;
           font-family: 'Space Grotesk', sans-serif;
@@ -548,7 +550,7 @@ export default function Landing() {
           font-size: 18px; font-weight: 700; color: #fff;
           margin-bottom: 6px;
         }
-        .step-desc { font-size: 14px; color: rgba(255,255,255,0.42); line-height: 1.7; }
+        .step-desc { font-size: 14px; color: rgba(255,255,255,0.68); line-height: 1.7; }
 
         /* ─ Testimonial ─ */
         .testimonial-grid {
@@ -578,7 +580,7 @@ export default function Landing() {
           font-family: 'Space Grotesk', sans-serif;
           font-size: 13px; font-weight: 700; color: #fff; margin-bottom: 2px;
         }
-        .testimonial-biz { font-size: 11px; color: rgba(255,255,255,0.3); }
+        .testimonial-biz { font-size: 11px; color: rgba(255,255,255,0.55); }
         .stars { color: #f59e0b; font-size: 12px; margin-bottom: 14px; letter-spacing: 1px; }
 
         /* ─ Coming soon ─ */
@@ -603,7 +605,7 @@ export default function Landing() {
           font-family: 'Space Grotesk', sans-serif;
           font-size: 16px; font-weight: 700; color: #fff;
         }
-        .roadmap-item p { font-size: 13px; color: rgba(255,255,255,0.38); line-height: 1.65; }
+        .roadmap-item p { font-size: 13px; color: rgba(255,255,255,0.65); line-height: 1.65; }
 
         /* ─ CTA strip ─ */
         .cta-strip {
@@ -620,9 +622,9 @@ export default function Landing() {
           color: #fff; margin-bottom: 16px; line-height: 1.1;
         }
         .cta-strip h2 em { font-style: normal; color: #00d4ff; }
-        .cta-strip p { font-size: 16px; color: rgba(255,255,255,0.45); max-width: 480px; margin: 0 auto 36px; line-height: 1.7; }
+        .cta-strip p { font-size: 16px; color: rgba(255,255,255,0.68); max-width: 480px; margin: 0 auto 36px; line-height: 1.7; }
         .cta-row { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
-        .cta-note { margin-top: 16px; font-size: 12px; color: rgba(255,255,255,0.2); }
+        .cta-note { margin-top: 16px; font-size: 12px; color: rgba(255,255,255,0.45); }
 
         /* ─ Footer ─ */
         .footer { padding: 60px 24px 36px; }
@@ -634,14 +636,14 @@ export default function Landing() {
         }
         @media (min-width: 640px) { .footer-top { grid-template-columns: 2fr 1fr 1fr; } }
         .footer-brand-desc {
-          font-size: 13px; color: rgba(255,255,255,0.35);
+          font-size: 13px; color: rgba(255,255,255,0.62);
           line-height: 1.7; margin-top: 12px; max-width: 260px;
         }
         .footer-col-title {
           font-family: 'Space Grotesk', sans-serif;
           font-size: 11px; font-weight: 700;
           letter-spacing: 1.5px; text-transform: uppercase;
-          color: rgba(255,255,255,0.3); margin-bottom: 18px;
+          color: rgba(255,255,255,0.55); margin-bottom: 18px;
         }
         .footer-col a {
           display: block; font-size: 14px;
@@ -655,8 +657,8 @@ export default function Landing() {
           align-items: center; text-align: center; padding-top: 28px;
         }
         @media (min-width: 600px) { .footer-bottom { flex-direction: row; justify-content: space-between; } }
-        .footer-bottom span { font-size: 12px; color: rgba(255,255,255,0.2); }
-        .footer-flag { font-size: 12px; color: rgba(255,255,255,0.2); display: flex; align-items: center; gap: 5px; }
+        .footer-bottom span { font-size: 12px; color: rgba(255,255,255,0.45); }
+        .footer-flag { font-size: 12px; color: rgba(255,255,255,0.45); display: flex; align-items: center; gap: 5px; }
 
         /* ─ Floating WA ─ */
         .wa-float {

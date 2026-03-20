@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { Link } from 'react-router-dom';
 
 const NOVA_WA = 'https://wa.me/94771784821';
 
@@ -112,13 +113,13 @@ export default function Terms() {
 
       <nav className="legal-nav">
         <div className="legal-nav-inner">
-          <a href="/" className="legal-logo">
+          <Link to="/" className="legal-logo">
             <img src="/nova-logo.png" alt="Nova"
               onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} />
             <div className="legal-logo-fallback" style={{ display: 'none' }}>N</div>
             Agent <span className="legal-accent">Nova</span>
-          </a>
-          <a href="/" className="legal-back">← Back to home</a>
+          </Link>
+          <Link to="/" className="legal-back">← Back to home</Link>
         </div>
       </nav>
 
@@ -241,10 +242,10 @@ export default function Terms() {
 
       <footer className="legal-footer">
         <div className="legal-footer-links">
-          <a href="/">Home</a>
-          <a href="/pricing">Pricing</a>
-          <a href="/privacy">Privacy Policy</a>
-          <a href="/terms">Terms of Use</a>
+          <Link to="/">Home</Link>
+          <Link to="/pricing">Pricing</Link>
+          <Link to="/privacy">Privacy Policy</Link>
+          <Link to="/terms">Terms of Use</Link>
           <a href={NOVA_WA} target="_blank" rel="noreferrer">Contact</a>
         </div>
         <div className="legal-footer-copy">© 2026 Agent Nova. All rights reserved.</div>

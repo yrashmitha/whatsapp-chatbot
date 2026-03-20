@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 
 const NOVA_WA      = 'https://wa.me/94771784821';
 const NOVA_WA_DEMO = 'https://wa.me/94771784821?text=Hi%20Nova%2C%20I%20want%20to%20see%20a%20demo';
@@ -681,12 +682,12 @@ export default function Landing() {
       {/* ── Navbar ── */}
       <nav className="ln-nav">
         <div className="ln-nav-inner">
-          <a href="/" className="ln-logo">
+          <Link to="/" className="ln-logo">
             <img src="/nova-logo.png" alt="Nova"
               onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} />
             <div className="ln-logo-fallback" style={{ display: 'none' }}>N</div>
             Agent <span className="ln-accent">Nova</span>
-          </a>
+          </Link>
           <a href={NOVA_WA_DEMO} target="_blank" rel="noreferrer" className="btn-cta">
             Try Nova <IconArrow />
           </a>
@@ -955,12 +956,12 @@ export default function Landing() {
       <footer className="footer">
         <div className="footer-top">
           <div>
-            <a href="/" className="ln-logo" style={{ textDecoration: 'none' }}>
+            <Link to="/" className="ln-logo" style={{ textDecoration: 'none' }}>
               <img src="/nova-logo.png" alt="Nova"
                 onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} />
               <div className="ln-logo-fallback" style={{ display: 'none' }}>N</div>
               Agent <span className="ln-accent">Nova</span>
-            </a>
+            </Link>
             <p className="footer-brand-desc">AI-powered WhatsApp automation for Sri Lankan businesses. Your business, always on.</p>
             <a href={NOVA_WA_DEMO} target="_blank" rel="noreferrer" className="btn-cta" style={{ marginTop: 20 }}>
               Try Nova Free →
@@ -970,15 +971,15 @@ export default function Landing() {
             <div className="footer-col-title">Product</div>
             <a href={NOVA_WA_DEMO} target="_blank" rel="noreferrer">Try Nova</a>
             <a href={NOVA_WA} target="_blank" rel="noreferrer">Get a Demo</a>
-            <a href="/pricing">Pricing</a>
+            <Link to="/pricing">Pricing</Link>
             <a href={NOVA_WA} target="_blank" rel="noreferrer">Custom Features</a>
           </div>
           <div className="footer-col">
             <div className="footer-col-title">Company</div>
             <a href={NOVA_WA} target="_blank" rel="noreferrer">About</a>
             <a href={NOVA_WA} target="_blank" rel="noreferrer">Contact</a>
-            <a href="/privacy">Privacy Policy</a>
-            <a href="/terms">Terms of Use</a>
+            <Link to="/privacy">Privacy Policy</Link>
+            <Link to="/terms">Terms of Use</Link>
           </div>
         </div>
         <div className="footer-bottom">

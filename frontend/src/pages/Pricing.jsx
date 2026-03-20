@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { Link } from 'react-router-dom';
 
 const NOVA_WA      = 'https://wa.me/94771784821';
 const NOVA_WA_DEMO = 'https://wa.me/94771784821?text=Hi%20Nova%2C%20I%20want%20to%20see%20a%20demo';
@@ -388,12 +389,12 @@ export default function Pricing() {
       {/* Nav */}
       <nav className="pr-nav">
         <div className="pr-nav-inner">
-          <a href="/" className="pr-logo">
+          <Link to="/" className="pr-logo">
             <img src="/nova-logo.png" alt="Nova"
               onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} />
             <div className="pr-logo-fallback" style={{ display: 'none' }}>N</div>
             Agent <span className="pr-accent">Nova</span>
-          </a>
+          </Link>
           <a href={NOVA_WA_DEMO} target="_blank" rel="noreferrer" className="btn-cta">
             Try Nova Free
           </a>
@@ -498,10 +499,10 @@ export default function Pricing() {
       {/* Footer */}
       <footer className="pr-footer">
         <div className="pr-footer-links">
-          <a href="/">Home</a>
-          <a href="/pricing">Pricing</a>
-          <a href="/privacy">Privacy Policy</a>
-          <a href="/terms">Terms of Use</a>
+          <Link to="/">Home</Link>
+          <Link to="/pricing">Pricing</Link>
+          <Link to="/privacy">Privacy Policy</Link>
+          <Link to="/terms">Terms of Use</Link>
           <a href={NOVA_WA} target="_blank" rel="noreferrer">Contact</a>
         </div>
         <div className="pr-footer-copy">© 2026 Agent Nova. All rights reserved. Built in Sri Lanka 🇱🇰</div>

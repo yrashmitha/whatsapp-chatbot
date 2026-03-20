@@ -34,18 +34,18 @@ const PLANS = [
     highlights: [
       '1,000 AI replies / month',
       '1 WhatsApp number',
+      'Responds in any language',
       'Order taking via chat',
       'Knowledge base (3 docs)',
       'Product catalog (20 items)',
       'Dashboard + order view',
-      '1 team member',
+      'Dedicated onboarding',
       'WhatsApp support',
     ],
     locked: [
       'Payment slip reading',
       'Upsell / cross-sell AI',
       'Auto review requests',
-      'AI voice call answering',
     ],
   },
   {
@@ -59,6 +59,7 @@ const PLANS = [
     highlights: [
       '3,000 AI replies / month',
       '1 WhatsApp number',
+      'Responds in any language',
       'Order taking via chat',
       'Knowledge base (15 docs)',
       'Product catalog (100 items)',
@@ -66,12 +67,10 @@ const PLANS = [
       'Payment slip reading',
       'Upsell / cross-sell AI',
       'Auto review requests',
-      '3 team members',
+      'Dedicated onboarding',
       'Priority WhatsApp support',
     ],
-    locked: [
-      'AI voice call answering',
-    ],
+    locked: [],
   },
   {
     name: 'Business',
@@ -84,6 +83,7 @@ const PLANS = [
     highlights: [
       '10,000 AI replies / month',
       '2 WhatsApp numbers',
+      'Responds in any language',
       'Order taking via chat',
       'Unlimited knowledge base',
       'Unlimited product catalog',
@@ -91,10 +91,9 @@ const PLANS = [
       'Payment slip reading',
       'Upsell / cross-sell AI',
       'Auto review requests',
-      'AI voice call answering',
       'Custom AI personality',
-      'Unlimited team members',
-      'Dedicated onboarding call',
+      'Dedicated onboarding',
+      'Dedicated support',
     ],
     locked: [],
   },
@@ -103,18 +102,16 @@ const PLANS = [
 const ALL_FEATURES = [
   { label: 'AI replies / month',      values: ['1,000', '3,000', '10,000'] },
   { label: 'WhatsApp numbers',        values: ['1', '1', '2'] },
-  { label: 'Sinhala + English',       values: [true, true, true] },
+  { label: 'Any language',            values: [true, true, true] },
   { label: 'Order taking via chat',   values: [true, true, true] },
   { label: 'Dashboard + order view',  values: [true, true, true] },
   { label: 'Knowledge base docs',     values: ['3', '15', 'Unlimited'] },
   { label: 'Product catalog items',   values: ['20', '100', 'Unlimited'] },
-  { label: 'Team members',            values: ['1', '3', 'Unlimited'] },
   { label: 'Payment slip reading',    values: [false, true, true] },
   { label: 'Upsell / cross-sell AI',  values: [false, true, true] },
   { label: 'Auto review requests',    values: [false, true, true] },
-  { label: 'AI voice call answering', values: [false, false, true] },
   { label: 'Custom AI personality',   values: [false, false, true] },
-  { label: 'Dedicated onboarding',    values: [false, false, true] },
+  { label: 'Dedicated onboarding',    values: [true, true, true] },
   { label: 'Overage rate',            values: ['LKR 5/reply', 'LKR 4/reply', 'LKR 3/reply'] },
   { label: 'Support',                 values: ['WhatsApp', 'Priority WA', 'Dedicated'] },
 ];
@@ -299,10 +296,14 @@ export default function Pricing() {
           font-size: clamp(22px, 3vw, 32px); font-weight: 800;
           letter-spacing: -0.03em; color: #fff; margin-bottom: 32px; text-align: center;
         }
+        .compare-scroll {
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+          border: 1px solid rgba(255,255,255,0.07);
+          border-radius: 16px;
+        }
         .compare-table {
-          width: 100%; border-collapse: collapse;
-          border: 1px solid rgba(255,255,255,0.07); border-radius: 16px;
-          overflow: hidden;
+          width: 100%; min-width: 560px; border-collapse: collapse;
         }
         .compare-table th {
           padding: 16px 20px; text-align: center;
@@ -442,28 +443,30 @@ export default function Pricing() {
       {/* Comparison table */}
       <div className="compare-section">
         <div className="compare-title">Full feature comparison</div>
-        <table className="compare-table">
-          <thead>
-            <tr>
-              <th>Feature</th>
-              <th>Starter<br /><span style={{ fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.45)' }}>LKR 4,900/mo</span></th>
-              <th className="popular-col">Growth<br /><span style={{ fontSize: 12, fontWeight: 500 }}>LKR 9,900/mo</span></th>
-              <th>Business<br /><span style={{ fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.45)' }}>LKR 24,900/mo</span></th>
-            </tr>
-          </thead>
-          <tbody>
-            {ALL_FEATURES.map((row, i) => (
-              <tr key={i}>
-                <td>{row.label}</td>
-                {row.values.map((val, j) => (
-                  <td key={j} className={j === 1 ? 'popular-col' : ''}>
-                    {val === true ? <IconCheck /> : val === false ? <IconX /> : val}
-                  </td>
-                ))}
+        <div className="compare-scroll">
+          <table className="compare-table">
+            <thead>
+              <tr>
+                <th>Feature</th>
+                <th>Starter<br /><span style={{ fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.45)' }}>LKR 4,900/mo</span></th>
+                <th className="popular-col">Growth<br /><span style={{ fontSize: 12, fontWeight: 500 }}>LKR 9,900/mo</span></th>
+                <th>Business<br /><span style={{ fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.45)' }}>LKR 24,900/mo</span></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {ALL_FEATURES.map((row, i) => (
+                <tr key={i}>
+                  <td>{row.label}</td>
+                  {row.values.map((val, j) => (
+                    <td key={j} className={j === 1 ? 'popular-col' : ''}>
+                      {val === true ? <IconCheck /> : val === false ? <IconX /> : val}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* FAQ */}

@@ -970,15 +970,15 @@ export default function Landing() {
             <div className="footer-col-title">Product</div>
             <a href={NOVA_WA_DEMO} target="_blank" rel="noreferrer">Try Nova</a>
             <a href={NOVA_WA} target="_blank" rel="noreferrer">Get a Demo</a>
-            <a href={NOVA_WA} target="_blank" rel="noreferrer">Pricing</a>
+            <a href="/pricing">Pricing</a>
             <a href={NOVA_WA} target="_blank" rel="noreferrer">Custom Features</a>
           </div>
           <div className="footer-col">
             <div className="footer-col-title">Company</div>
             <a href={NOVA_WA} target="_blank" rel="noreferrer">About</a>
             <a href={NOVA_WA} target="_blank" rel="noreferrer">Contact</a>
-            <a href="/privacy" rel="noreferrer">Privacy Policy</a>
-            <a href="/terms" rel="noreferrer">Terms of Use</a>
+            <a href="/privacy">Privacy Policy</a>
+            <a href="/terms">Terms of Use</a>
           </div>
         </div>
         <div className="footer-bottom">

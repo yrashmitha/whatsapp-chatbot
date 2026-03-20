@@ -15,6 +15,9 @@ import Plugins from './pages/Plugins';
 import Summary from './pages/Summary';
 import Calls from './pages/Calls';
 import Landing from './pages/Landing';
+import Pricing from './pages/Pricing';
+import Privacy from './pages/Privacy';
+import Terms from './pages/Terms';
 
 const qc = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -34,6 +37,9 @@ const router = createBrowserRouter([
   { path: '/plugins', element: <ProtectedRoute><Plugins /></ProtectedRoute> },
   { path: '/calls',   element: <ProtectedRoute><Calls /></ProtectedRoute> },
   { path: '/', element: <Landing /> },
+  { path: '/pricing', element: <Pricing /> },
+  { path: '/privacy', element: <Privacy /> },
+  { path: '/terms', element: <Terms /> },
   { path: '*', element: <Navigate to="/" replace /> },
 ]);
 

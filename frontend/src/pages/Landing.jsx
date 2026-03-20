@@ -29,10 +29,10 @@ const SCENARIOS = [
     tag: 'Upsell',
     color: '#7c3aed',
     messages: [
-      { from: 'customer', text: 'Basic package eka ganna one, LKR 2,500 wala.' },
-      { from: 'nova',     text: 'Sure! Basic is 2,500, but most customers pick Standard (3,500) because it includes priority support + 2 extra sessions. Same thing, more value. Want that instead? 👀' },
+      { from: 'customer', text: 'Basic package eka ganna one, LKR 2,500 eka.' },
+      { from: 'nova',     text: 'Sure! Basic eka 2,500, a uata godak aya ganne (3,500) mokda eke priority support + 2 extra sessions thiyenawane. Oya mokada hithanne me gana? Eka try karanawada me wenuwata? 👀' },
       { from: 'customer', text: 'hm ok standard eka denna' },
-      { from: 'nova',     text: 'Done! Standard package add karagatta 🎉 Oya name ekata order confirm karannam.' },
+      { from: 'nova',     text: 'Done! Standard package add karagatta 🎉 Oyage me wisthara harida kiyala confirm karanna.' },
     ],
   },
   {
@@ -40,29 +40,29 @@ const SCENARIOS = [
     color: '#0891b2',
     messages: [
       { from: 'customer', text: 'yoga mat ekak order karanna one' },
-      { from: 'nova',     text: 'Great choice! Oyage cart ekata yoga mat add karagatta ✅\n\nQuick one: water bottle combo thibba, LKR 500 off. Add karannad? Most people grab it together 🙂' },
+      { from: 'nova',     text: 'Great choice! Oyage cart ekata yoga mat add karagatta ✅\n\nQuick one: water bottle ekak combo deal thibba, LKR 500 off. Add karannada? Godak aya dekama gaththa 🙂' },
       { from: 'customer', text: 'haa add karanna' },
-      { from: 'nova',     text: 'Added! Oyage total: LKR 3,200. Delivery address kiyanna.' },
+      { from: 'nova',     text: 'Added! Oyage total: LKR 3,200. Delivery address eka kiyanna puluwanda?' },
     ],
   },
   {
     tag: 'Angry customer',
     color: '#dc2626',
     messages: [
-      { from: 'customer', text: '3 days wechchi denneth neh. api fool karanawada???😡' },
-      { from: 'nova',     text: 'Oyage frustration puruwatenne neh, sincerely sorry 🙏 Order #PJ2026-0042 check karagatta. Today dispatch wuna, tomorrow morning first batch ekata. Apita oyawa update karannam.' },
+      { from: 'customer', text: 'දවස් 3ක් පහු උනා, තාම ඕඩර් එක ආවෙ නෑ. අපිව රවට්ටනවද ???😡' },
+      { from: 'nova',     text: 'ඔයාගෙ කලකිරීම සහ ගැටලුව මට තේරෙනවා. සමාවෙන්න 🙏 Order #PJ2026-0042 චෙක් කලා. අද තමා කුරියර් එකට දීල තියෙන්නෙ, හෙට උදේට ඔයාට ලැබේවි.' },
       { from: 'customer', text: 'ok' },
-      { from: 'nova',     text: 'Thank you for the patience. Oyawa let down kara ganna apita kamathi neh. Tomorrow confirm arrive weyi 🙏' },
+      { from: 'nova',     text: 'ඔයාගෙ ඉවසිමට ස්තූතියි. හෙට අනිවර්යෙන්ම එයි 🙏' },
     ],
   },
   {
     tag: 'Review request',
     color: '#f59e0b',
     messages: [
-      { from: 'nova',     text: 'Oyage order deliver wuna! Hope you loved it 🎉' },
+      { from: 'nova',     text: 'Oyage order eka complete! Hope you loved it 🎉' },
       { from: 'customer', text: 'yes thank you, very nice' },
-      { from: 'nova',     text: 'Oyata kiyawanna santhosai 😊 Minute 1k thibba nam, Google review ekak denna puluanda? Oyage feedback ekke aya goda enna help wenawd 🙏' },
-      { from: 'customer', text: 'sure, link denna' },
+      { from: 'nova',     text: 'Ahannath sathutui 😊 ! minute dila apita Google review ekak denna puluanda? Oyage feedback eka apita godak prayojanawath 🙏' },
+      { from: 'customer', text: 'sure, link eka denna' },
       { from: 'nova',     text: 'Thank you so much! 🌟 → g.page/r/nova-review' },
     ],
   },
@@ -71,9 +71,9 @@ const SCENARIOS = [
     color: '#059669',
     messages: [
       { from: 'customer', text: '[image: payment_slip.jpg]', isImg: true },
-      { from: 'nova',     text: 'Slip balala gatta ✅\n\nAmount: LKR 5,500 · BOC · March 19\nOyage order #PJ2026-0089 confirm wuna! We\'ll process it now.' },
+      { from: 'nova',     text: 'Slip eka baluwa ✅\n\nAmount: LKR 5,500 · BOC · March 19\nOyage order #PJ2026-0089 confirmed! We\'ll process it now.' },
       { from: 'customer', text: 'thank you!' },
-      { from: 'nova',     text: 'Our pleasure! Order dispatch wenna 24h gannawa. Update karannam 📦' },
+      { from: 'nova',     text: 'Our pleasure! Order eka dispatch wenna 24h gannawa. Update karannam 📦' },
     ],
   },
 ];
@@ -427,19 +427,53 @@ export default function Landing() {
         }
         @media (min-width: 600px) { .stats-inner { grid-template-columns: repeat(4, 1fr); } }
         .stat {
-          padding: 28px 20px;
+          padding: 32px 20px 28px;
           border-right: 1px solid rgba(255,255,255,0.07);
           text-align: center;
+          display: flex; flex-direction: column; align-items: center; gap: 10px;
         }
         .stat:last-child { border-right: none; }
+        .stat-icon {
+          width: 44px; height: 44px;
+          display: flex; align-items: center; justify-content: center;
+          border-radius: 12px;
+          position: relative;
+        }
         .stat-num {
           font-family: 'Space Grotesk', sans-serif;
           font-size: 32px; font-weight: 800; color: #fff;
           letter-spacing: -0.04em; line-height: 1;
-          margin-bottom: 4px;
         }
         .stat-num span { color: #00d4ff; }
         .stat-label { font-size: 12px; color: rgba(255,255,255,0.62); }
+
+        /* Stat icon animations */
+        @keyframes bolt-pulse {
+          0%, 100% { filter: drop-shadow(0 0 4px #00d4ff88); opacity: 1; }
+          50% { filter: drop-shadow(0 0 12px #00d4ffcc); opacity: 0.7; }
+        }
+        @keyframes hand-spin {
+          from { transform: rotate(0deg); }
+          to   { transform: rotate(360deg); }
+        }
+        @keyframes inf-flow {
+          from { stroke-dashoffset: 200; }
+          to   { stroke-dashoffset: 0; }
+        }
+        @keyframes bubble-bounce {
+          0%, 100% { transform: translateY(0); }
+          40%      { transform: translateY(-4px); }
+        }
+        @keyframes bubble-bounce2 {
+          0%, 100% { transform: translateY(0); }
+          60%      { transform: translateY(-4px); }
+        }
+        .stat-bolt { animation: bolt-pulse 1.8s ease-in-out infinite; }
+        .stat-clock-hand { transform-origin: 12px 12px; animation: hand-spin 4s linear infinite; }
+        .stat-clock-hand-slow { transform-origin: 12px 12px; animation: hand-spin 24s linear infinite; }
+        .stat-inf { stroke-dasharray: 200; animation: inf-flow 2.5s ease-in-out infinite alternate; }
+        .stat-bub1 { animation: bubble-bounce 2s ease-in-out infinite; }
+        .stat-bub2 { animation: bubble-bounce2 2s ease-in-out infinite; }
 
         /* ─ Problems ─ */
         .problems-grid {
@@ -727,17 +761,66 @@ export default function Landing() {
       {/* ── Stats ── */}
       <div className="stats-bar">
         <div className="stats-inner">
-          {[
-            { num: '<3', unit: 's', label: 'Average reply time' },
-            { num: '24', unit: '/7', label: 'Always available' },
-            { num: '∞', unit: '', label: 'Simultaneous chats' },
-            { num: '2', unit: ' lang', label: 'Sinhala & English' },
-          ].map((s, i) => (
-            <div key={i} className="stat">
-              <div className="stat-num">{s.num}<span>{s.unit}</span></div>
-              <div className="stat-label">{s.label}</div>
+
+          {/* Reply speed */}
+          <div className="stat">
+            <div className="stat-icon" style={{ background: 'rgba(0,212,255,0.08)' }}>
+              <svg className="stat-bolt" width="26" height="26" viewBox="0 0 24 24" fill="none">
+                <path d="M13 2L4.5 13.5H11L10 22L20 10H13.5L13 2Z"
+                  fill="#00d4ff" stroke="#00d4ff" strokeWidth="1" strokeLinejoin="round"/>
+              </svg>
             </div>
-          ))}
+            <div className="stat-num">&lt;3<span>s</span></div>
+            <div className="stat-label">Average reply time</div>
+          </div>
+
+          {/* 24/7 */}
+          <div className="stat">
+            <div className="stat-icon" style={{ background: 'rgba(124,58,237,0.1)' }}>
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="9" stroke="#a78bfa" strokeWidth="1.5"/>
+                <line x1="12" y1="12" x2="12" y2="6"
+                  stroke="#a78bfa" strokeWidth="1.8" strokeLinecap="round"
+                  className="stat-clock-hand-slow"/>
+                <line x1="12" y1="12" x2="16" y2="12"
+                  stroke="#7c3aed" strokeWidth="1.8" strokeLinecap="round"
+                  className="stat-clock-hand"/>
+                <circle cx="12" cy="12" r="1.2" fill="#a78bfa"/>
+              </svg>
+            </div>
+            <div className="stat-num">24<span>/7</span></div>
+            <div className="stat-label">Always available</div>
+          </div>
+
+          {/* Infinite chats */}
+          <div className="stat">
+            <div className="stat-icon" style={{ background: 'rgba(5,150,105,0.1)' }}>
+              <svg width="30" height="22" viewBox="0 0 30 22" fill="none">
+                <path className="stat-inf"
+                  d="M15 11 C15 11 12 4 7 4 C3.5 4 1 7 1 11 C1 15 3.5 18 7 18 C12 18 15 11 15 11 C15 11 18 4 23 4 C26.5 4 29 7 29 11 C29 15 26.5 18 23 18 C18 18 15 11 15 11 Z"
+                  stroke="#34d399" strokeWidth="2" strokeLinecap="round" fill="none"/>
+              </svg>
+            </div>
+            <div className="stat-num">∞</div>
+            <div className="stat-label">Simultaneous chats</div>
+          </div>
+
+          {/* Any language */}
+          <div className="stat">
+            <div className="stat-icon" style={{ background: 'rgba(245,158,11,0.1)' }}>
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+                <path className="stat-bub1"
+                  d="M4 5C4 3.9 4.9 3 6 3H16C17.1 3 18 3.9 18 5V11C18 12.1 17.1 13 16 13H9L5 16V13H6C4.9 13 4 12.1 4 11V5Z"
+                  fill="#f59e0b" opacity="0.9"/>
+                <path className="stat-bub2"
+                  d="M18 9H20C21.1 9 22 9.9 22 11V16C22 17.1 21.1 18 20 18H19V20L16 18H12C10.9 18 10 17.1 10 16V14"
+                  stroke="#fcd34d" strokeWidth="1.5" strokeLinejoin="round" fill="none"/>
+              </svg>
+            </div>
+            <div className="stat-num">Any<span> lang</span></div>
+            <div className="stat-label">Sinhala, English + more</div>
+          </div>
+
         </div>
       </div>
 

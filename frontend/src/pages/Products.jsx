@@ -93,14 +93,14 @@ export default function Products() {
                       <td className="py-2 pr-4">
                         {p.image_url
                           ? <img src={p.image_url} alt={p.name} className="w-10 h-10 object-cover rounded-lg border border-slate-200" />
-                          : <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 text-xs">—</div>
+                          : <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 text-xs">img</div>
                         }
                       </td>
                       <td className="py-2 pr-4">
                         <div className="font-medium text-slate-800">{p.name}</div>
                         {p.description && <div className="text-xs text-slate-400 truncate max-w-xs">{p.description}</div>}
                       </td>
-                      <td className="py-2 pr-4 text-slate-500">{p.category || '—'}</td>
+                      <td className="py-2 pr-4 text-slate-500">{p.category || '-'}</td>
                       <td className="py-2 pr-4 text-slate-700 font-medium">{formatPrice(p.price)}</td>
                       <td className="py-2 pr-4">
                         <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${p.active ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>

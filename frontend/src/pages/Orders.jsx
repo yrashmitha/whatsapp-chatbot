@@ -211,7 +211,7 @@ export default function Orders() {
                             {paymentIdentified && o.status !== 'payment_received' && (
                               <div
                                 className="flex items-center gap-1 px-1.5 py-0.5 bg-amber-50 border border-amber-300 rounded text-amber-700 text-xs font-medium w-fit"
-                                title={`AI detected payment — Amount: ${paymentIdentified.amount || '?'} | Date: ${paymentIdentified.date || '?'} | Bank: ${paymentIdentified.bank || '?'} | Ref: ${paymentIdentified.ref || '?'}`}
+                                title={`AI detected payment. Amount: ${paymentIdentified.amount || '?'} | Date: ${paymentIdentified.date || '?'} | Bank: ${paymentIdentified.bank || '?'} | Ref: ${paymentIdentified.ref || '?'}`}
                               >
                                 💳 Payment detected
                               </div>
@@ -362,7 +362,7 @@ export default function Orders() {
                                             {String(v)}
                                           </button>
                                         ) : (
-                                          <span className="text-slate-700">{String(v ?? '—')}</span>
+                                          <span className="text-slate-700">{String(v ?? '-')}</span>
                                         )}
                                       </div>
                                     ))}

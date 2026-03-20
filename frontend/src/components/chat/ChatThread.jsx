@@ -231,7 +231,7 @@ export default function ChatThread({ customer, clientId, onCustomerDeleted }) {
                 ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
                 : 'bg-slate-200 text-slate-500 hover:bg-slate-300'
             }`}
-            title={aiEnabled ? 'AI is ON — click to disable' : 'AI is OFF — click to enable'}
+            title={aiEnabled ? 'AI is ON. Click to disable.' : 'AI is OFF. Click to enable.'}
           >
             AI {aiEnabled ? 'ON' : 'OFF'}
           </button>

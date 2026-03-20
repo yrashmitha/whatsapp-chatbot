@@ -3,7 +3,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 const NOVA_WA      = 'https://wa.me/94771784821';
 const NOVA_WA_DEMO = 'https://wa.me/94771784821?text=Hi%20Nova%2C%20I%20want%20to%20see%20a%20demo';
 
-/* ── Inline SVG icons — no emojis ── */
+/* ── Inline SVG icons, no emojis ── */
 const IconCheck = () => (
   <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
     <circle cx="9" cy="9" r="9" fill="rgba(0,212,255,0.12)"/>
@@ -28,10 +28,10 @@ const SCENARIOS = [
     tag: 'Upsell',
     color: '#7c3aed',
     messages: [
-      { from: 'customer', text: 'Basic package eka ganna one — LKR 2,500 wala.' },
-      { from: 'nova',     text: 'Sure! Basic is 2,500 — but most customers pick Standard (3,500) because it includes priority support + 2 extra sessions. Same thing, more value. Want that instead? 👀' },
+      { from: 'customer', text: 'Basic package eka ganna one, LKR 2,500 wala.' },
+      { from: 'nova',     text: 'Sure! Basic is 2,500, but most customers pick Standard (3,500) because it includes priority support + 2 extra sessions. Same thing, more value. Want that instead? 👀' },
       { from: 'customer', text: 'hm ok standard eka denna' },
-      { from: 'nova',     text: 'Done! Standard package add karagatta 🎉 Oya name ekata order confirm karannam—' },
+      { from: 'nova',     text: 'Done! Standard package add karagatta 🎉 Oya name ekata order confirm karannam.' },
     ],
   },
   {
@@ -39,7 +39,7 @@ const SCENARIOS = [
     color: '#0891b2',
     messages: [
       { from: 'customer', text: 'yoga mat ekak order karanna one' },
-      { from: 'nova',     text: 'Great choice! Oyage cart ekata yoga mat add karagatta ✅\n\nQuick one — water bottle combo thibba, LKR 500 off. Add karannad? Most people grab it together 🙂' },
+      { from: 'nova',     text: 'Great choice! Oyage cart ekata yoga mat add karagatta ✅\n\nQuick one: water bottle combo thibba, LKR 500 off. Add karannad? Most people grab it together 🙂' },
       { from: 'customer', text: 'haa add karanna' },
       { from: 'nova',     text: 'Added! Oyage total: LKR 3,200. Delivery address kiyanna.' },
     ],
@@ -49,9 +49,9 @@ const SCENARIOS = [
     color: '#dc2626',
     messages: [
       { from: 'customer', text: '3 days wechchi denneth neh. api fool karanawada???😡' },
-      { from: 'nova',     text: 'Oyage frustration puruwatenne neh, sincerely sorry 🙏 Order #PJ2026-0042 check karagatta — today dispatch wuna, tomorrow morning first batch ekata. Apita oyawa update karannam.' },
+      { from: 'nova',     text: 'Oyage frustration puruwatenne neh, sincerely sorry 🙏 Order #PJ2026-0042 check karagatta. Today dispatch wuna, tomorrow morning first batch ekata. Apita oyawa update karannam.' },
       { from: 'customer', text: 'ok' },
-      { from: 'nova',     text: 'Thank you for the patience. Oyawa let down kara ganna apita kamathi neh — tomorrow confirm arrive weyi 🙏' },
+      { from: 'nova',     text: 'Thank you for the patience. Oyawa let down kara ganna apita kamathi neh. Tomorrow confirm arrive weyi 🙏' },
     ],
   },
   {
@@ -183,7 +183,7 @@ function PhoneMockup() {
 }
 
 export default function Landing() {
-  useEffect(() => { document.title = 'Agent Nova — Your Business, Always On'; }, []);
+  useEffect(() => { document.title = 'Agent Nova: Your Business, Always On'; }, []);
 
   return (
     <div className="ln-root">
@@ -702,7 +702,7 @@ export default function Landing() {
             waiting for <em>tomorrow</em>
           </h1>
           <p className="hero-sub">
-            Nova connects to your WhatsApp number and handles every customer conversation — orders, payment slips, questions — 24 hours a day, in Sinhala and English. While you sleep.
+            Nova connects to your WhatsApp number and handles every customer conversation: orders, payment slips, questions. 24 hours a day, in Sinhala and English. While you sleep.
           </p>
           <div className="hero-ctas">
             <a href={NOVA_WA_DEMO} target="_blank" rel="noreferrer" className="btn-cta lg">
@@ -752,7 +752,7 @@ export default function Landing() {
               { time: '11:47 PM', msg: 'Customer asked about your packages.', sub: "You're asleep. They messaged a competitor 8 minutes later." },
               { time: '2:30 PM',  msg: '6 people waiting. You\'re in a meeting.', sub: "Every minute they wait is a minute closer to leaving." },
               { time: 'Every day',msg: 'Another blurry payment screenshot arrives.', sub: "Real slip? Reused slip? Someone has to check. Every. Single. Time." },
-              { time: 'Always',   msg: '"What are your prices?" — again.', sub: "Your team copies the same reply 30 times a day instead of real work." },
+              { time: 'Always',   msg: '"What are your prices?" Again.', sub: "Your team copies the same reply 30 times a day instead of doing real work." },
             ].map((p, i) => (
               <div key={i} className="problem-cell">
                 <div className="problem-time">{p.time}</div>
@@ -775,7 +775,7 @@ export default function Landing() {
             <div className="feature-list">
               {[
                 { title: 'Replies in Sinhala and English', desc: 'Detects the language automatically. Switches when your customer switches. No setup.' },
-                { title: 'Takes orders through conversation', desc: 'Collects name, address, package, date — whatever you need — through natural chat. Saves to your dashboard.' },
+                { title: 'Takes orders through conversation', desc: 'Collects name, address, package, date (whatever you need) through natural chat. Saves to your dashboard.' },
                 { title: 'Reads payment slips', desc: 'Customer sends a screenshot or PDF. Nova reads the amount, date, bank, and flags suspicious slips.' },
                 { title: 'Searches your product catalog', desc: "Customer asks what you have. Nova searches your catalog in real time and shows what's relevant." },
                 { title: 'Your team can take over anytime', desc: 'Turn AI off for one chat. Reply manually. Turn it back on. Nova picks up where you left off.' },
@@ -792,7 +792,7 @@ export default function Landing() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div className="feature-highlight">
                 <div className="badge">Payment Verification</div>
-                <h3>Nova catches fake payment slips — automatically</h3>
+                <h3>Nova catches fake payment slips, automatically</h3>
                 <p>When a customer sends a payment slip, Nova reads it using AI vision. It checks the date, amount, and bank. If the payment date is before the order was placed, Nova flags it as suspicious before your team even sees it.</p>
               </div>
               <div className="feature-highlight">
@@ -817,7 +817,7 @@ export default function Landing() {
               {
                 tag: 'Upsell',
                 color: '#7c3aed',
-                title: 'Sells the better option — naturally',
+                title: 'Sells the better option, naturally',
                 desc: 'When a customer picks the basic package, Nova knows when to mention the upgrade. Not pushy. Just helpful. Like a good salesperson.',
                 stat: 'Higher average order value',
               },
@@ -832,7 +832,7 @@ export default function Landing() {
                 tag: 'Reviews',
                 color: '#f59e0b',
                 title: 'Asks for reviews after delivery',
-                desc: 'After an order is complete, Nova follows up — warmly, in the customer\'s language — and sends your Google review link. No manual follow-up needed.',
+                desc: 'After an order is complete, Nova follows up warmly in the customer\'s language and sends your Google review link. No manual follow-up needed.',
                 stat: 'More 5-star reviews, automatically',
               },
               {
@@ -867,7 +867,7 @@ export default function Landing() {
             {[
               { n: '01', title: 'Connect your WhatsApp number', desc: 'We connect Nova to your existing WhatsApp Business number. Your customers keep messaging the same number. Nothing changes on their end.' },
               { n: '02', title: 'Train Nova on your business', desc: 'Tell Nova your products, prices, and how you want to talk to customers. Upload your FAQ document. Done in a few hours.' },
-              { n: '03', title: 'Go live — Nova handles the rest', desc: 'Every message is answered instantly, 24/7. You watch from the dashboard. Jump in whenever you want.' },
+              { n: '03', title: 'Go live. Nova handles the rest.', desc: 'Every message is answered instantly, 24/7. You watch from the dashboard. Jump in whenever you want.' },
             ].map((s, i) => (
               <div key={i} className="step">
                 <div className="step-num">{s.n}</div>
@@ -919,11 +919,11 @@ export default function Landing() {
           <h2 style={{ fontFamily: "'Space Grotesk',sans-serif", fontWeight: 800, fontSize: 'clamp(26px,4vw,40px)', letterSpacing: '-0.03em', lineHeight: 1.15, marginBottom: 8 }}>
             Nova is just getting started
           </h2>
-          <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.38)', marginBottom: 0, maxWidth: 480, lineHeight: 1.7 }}>Clients who join now get early access to everything we launch.</p>
+          <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.65)', marginBottom: 0, maxWidth: 480, lineHeight: 1.7 }}>Clients who join now get early access to everything we launch.</p>
           <div className="roadmap">
             {[
               { title: 'POS & Inventory Management', desc: 'Stock tracking, QR code scanning, sales reports. Your shop and your WhatsApp, connected.' },
-              { title: 'Branded Product Catalog Website', desc: 'Every client gets their own link. Customers browse your products like a proper website — built automatically from Nova.' },
+              { title: 'Branded Product Catalog Website', desc: 'Every client gets their own link. Customers browse your products like a proper website, built automatically from Nova.' },
               { title: 'AI Voice Call Answering', desc: 'Nova answers your inbound calls, understands what callers say, and responds with a natural AI voice.' },
               { title: 'Broadcast & Campaigns', desc: 'Send promotional messages to your customer list through approved WhatsApp templates.' },
             ].map((r, i) => (

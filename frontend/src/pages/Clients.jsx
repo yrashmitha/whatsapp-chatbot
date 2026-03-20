@@ -319,7 +319,7 @@ export default function Clients() {
               label="Use my WhatsApp token (PROD_META_ACCESS_TOKEN)"
             />
             <p className="text-xs mt-1.5" style={{ color: 'var(--text-3)' }}>
-              When ON, this client uses your server token — no separate token needed.
+              When ON, this client uses your server token. No separate token needed.
             </p>
           </div>
           {!form.use_system_wa_token && (
@@ -330,7 +330,7 @@ export default function Clients() {
           <Field label="WA Token Env Var (legacy)" hint="Optional: env var name fallback, e.g. WA_TOKEN_ACME">
             <Input value={form.wa_token_env} onChange={set('wa_token_env')} placeholder="WA_TOKEN_ACME" />
           </Field>
-          <Field label="Webhook Verify Token" hint="Any secret string — must match what you set in Meta dashboard">
+          <Field label="Webhook Verify Token" hint="Any secret string. Must match what you set in Meta dashboard.">
             <Input value={form.webhook_verify_token} onChange={set('webhook_verify_token')} placeholder="my_verify_secret" />
           </Field>
           {(editing || savedInfo) && (
@@ -386,7 +386,7 @@ export default function Clients() {
               label="Use my Gemini API key (GEMINI_API_KEY)"
             />
             <p className="text-xs mt-1.5" style={{ color: 'var(--text-3)' }}>
-              When ON, this client uses your server Gemini key — no separate key needed.
+              When ON, this client uses your server Gemini key. No separate key needed.
             </p>
           </div>
           {!form.use_system_gemini_key && (
@@ -567,7 +567,7 @@ export default function Clients() {
       <Drawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        title={editing ? `Edit — ${editing.name || editing.id}` : 'New Client'}
+        title={editing ? `Edit: ${editing.name || editing.id}` : 'New Client'}
         width="560px"
       >
         <div className="flex flex-col flex-1 overflow-hidden">

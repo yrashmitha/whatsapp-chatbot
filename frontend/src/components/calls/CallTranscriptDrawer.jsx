@@ -11,7 +11,7 @@ const STATUS_COLORS = {
 };
 
 function formatDuration(seconds) {
-  if (!seconds) return '—';
+  if (!seconds) return '-';
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
@@ -28,13 +28,13 @@ export default function CallTranscriptDrawer({ call, onClose }) {
         {/* Call metadata */}
         <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 shrink-0 space-y-1">
           <div className="flex items-center justify-between">
-            <span className="font-semibold text-slate-800 text-sm">{call.caller_phone || '—'}</span>
+            <span className="font-semibold text-slate-800 text-sm">{call.caller_phone || '-'}</span>
             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[call.status] || 'bg-slate-100 text-slate-600'}`}>
-              {call.status || '—'}
+              {call.status || '-'}
             </span>
           </div>
           <div className="flex gap-4 text-xs text-slate-500">
-            <span>Called: {call.called_phone || '—'}</span>
+            <span>Called: {call.called_phone || '-'}</span>
             <span>Duration: {formatDuration(call.duration_seconds)}</span>
           </div>
           <div className="text-xs text-slate-400">{formatDateTime(call.created_at)}</div>

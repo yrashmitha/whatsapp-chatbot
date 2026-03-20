@@ -40,7 +40,7 @@ export function timeAgo(iso) {
 }
 
 export function formatPrice(price, priceMax, currency = 'LKR') {
-  if (price == null) return '—';
+  if (price == null) return '-';
   const fmt = n => Number(n).toLocaleString();
   return priceMax ? `${currency} ${fmt(price)}–${fmt(priceMax)}` : `${currency} ${fmt(price)}`;
 }

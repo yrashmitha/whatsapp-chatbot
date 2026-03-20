@@ -29,8 +29,8 @@ export default function Summary() {
     refetchInterval: 60_000,
   });
 
-  const n = (v) => (v == null ? '—' : Number(v).toLocaleString());
-  const usd = (v) => (v == null ? '—' : `$${parseFloat(v).toFixed(4)}`);
+  const n = (v) => (v == null ? '-' : Number(v).toLocaleString());
+  const usd = (v) => (v == null ? '-' : `$${parseFloat(v).toFixed(4)}`);
 
   return (
     <Layout>

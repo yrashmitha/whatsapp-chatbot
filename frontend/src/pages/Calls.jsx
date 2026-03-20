@@ -25,7 +25,7 @@ const STATUS_OPTIONS = [
 ];
 
 function formatDuration(seconds) {
-  if (!seconds) return '—';
+  if (!seconds) return '-';
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
@@ -145,11 +145,11 @@ export default function Calls() {
                     className="hover:bg-slate-50 cursor-pointer"
                     onClick={() => setSelectedCall(call)}
                   >
-                    <td className="px-6 py-3 font-medium text-slate-700">{call.caller_phone || '—'}</td>
-                    <td className="px-6 py-3 text-slate-500">{call.called_phone || '—'}</td>
+                    <td className="px-6 py-3 font-medium text-slate-700">{call.caller_phone || '-'}</td>
+                    <td className="px-6 py-3 text-slate-500">{call.called_phone || '-'}</td>
                     <td className="px-6 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[call.status] || 'bg-slate-100 text-slate-600'}`}>
-                        {call.status || '—'}
+                        {call.status || '-'}
                       </span>
                     </td>
                     <td className="px-6 py-3 text-slate-500">{formatDuration(call.duration_seconds)}</td>

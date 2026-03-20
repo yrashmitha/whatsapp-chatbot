@@ -24,7 +24,7 @@ const ALL_PLUGINS = [
   {
     id: 'image_analyzer',
     defaultName: 'Image Analyzer',
-    description: 'Analyzes customer payment slips and PDFs using Gemini Vision — extracts amount, date, and reference, and flags suspicious slips.',
+    description: 'Analyzes customer payment slips and PDFs using Gemini Vision. Extracts amount, date, and reference, and flags suspicious slips.',
   },
 ];
 
@@ -173,7 +173,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
           </div>
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">TTS Voice (Gemini)</label>
-            <p className="text-xs text-slate-400 mb-1.5">Gemini prebuilt voice — supports Sinhala and 100+ languages automatically.</p>
+            <p className="text-xs text-slate-400 mb-1.5">Gemini prebuilt voice. Supports Sinhala and 100+ languages automatically.</p>
             <select
               value={ttsVoice}
               onChange={e => setTtsVoice(e.target.value)}
@@ -183,7 +183,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
                 <option key={v} value={v}>{v}</option>
               ))}
             </select>
-            <p className="text-xs text-slate-400 mt-1">Voice is language-agnostic — it speaks whatever language the text is in.</p>
+            <p className="text-xs text-slate-400 mt-1">Voice is language-agnostic. It speaks whatever language the text is in.</p>
           </div>
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">STT Language (Caller speech)</label>
@@ -207,7 +207,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         <div>
           <label className="text-xs font-medium text-slate-500 block mb-1">Verification Instructions</label>
           <p className="text-xs text-slate-400 mb-1.5">
-            How the AI should handle payment slips — when to confirm, when to flag mismatches, and how to respond to customers.
+            How the AI should handle payment slips: when to confirm, when to flag mismatches, and how to respond to customers.
           </p>
           <textarea
             value={verificationPrompt}

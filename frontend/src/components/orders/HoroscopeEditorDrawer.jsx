@@ -64,7 +64,7 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
   const sectionTabs = sectionKeys.map((key, i) => ({
     id: `s-${i}`,
     label: `S${i + 1}`,
-    title: SECTION_LABELS[i] ? `Section ${i + 1} — ${SECTION_LABELS[i]}` : `Section ${i + 1}`,
+    title: SECTION_LABELS[i] ? `Section ${i + 1}: ${SECTION_LABELS[i]}` : `Section ${i + 1}`,
     key,
     type: 'section',
   }));
@@ -214,7 +214,7 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
   const activeTabData = allTabs.find(t => t.id === activeTab);
 
   return (
-    <Drawer open={open} onClose={onClose} title={`Horoscope Editor — #${order?.order_id}`} width="800px">
+    <Drawer open={open} onClose={onClose} title={`Horoscope Editor: #${order?.order_id}`} width="800px">
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
 
         {/* Outer tabs: Edit | Preview */}

@@ -236,7 +236,7 @@ export default function Settings() {
           {activeTab === 'AI Details' && (
             <div className="bg-white border border-slate-200 rounded-xl p-6">
               <h2 className="text-sm font-semibold text-slate-700 mb-4">
-                {superAdmin ? `AI System Prompt${clientId ? ` — ${clientId}` : ''}` : 'AI System Prompt'}
+                {superAdmin ? `AI System Prompt${clientId ? `: ${clientId}` : ''}` : 'AI System Prompt'}
               </h2>
               {superAdmin && !clientId ? (
                 <p className="text-sm text-slate-400">Select a client from the top bar to edit their settings.</p>
@@ -281,7 +281,7 @@ export default function Settings() {
                       <div className={`w-4 h-4 rounded-full shrink-0 ${pluginEnabled ? 'bg-green-500' : 'bg-slate-300'}`} />
                       <div className="flex-1">
                         <p className="text-xs font-medium text-slate-600">Custom Module</p>
-                        <p className="text-xs text-slate-400">{pluginEnabled ? 'Active — custom logic is running.' : 'Inactive.'}</p>
+                        <p className="text-xs text-slate-400">{pluginEnabled ? 'Active. Custom logic is running.' : 'Inactive.'}</p>
                       </div>
                       {superAdmin ? (
                         <input type="checkbox" checked={pluginEnabled} onChange={e => setPluginEnabled(e.target.checked)} className="w-4 h-4 accent-violet-600 cursor-pointer" />

@@ -172,7 +172,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
         },
         ...(clientId && { client_id: clientId }),
       });
-      toast.success('Generation started — takes ~2 min. You can navigate away.');
+      toast.success('Generation started. Takes about 2 min. You can navigate away.');
       onGenerated?.();
       onClose();
     } catch (e) {

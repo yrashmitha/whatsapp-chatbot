@@ -51,7 +51,7 @@ function AddDocModal({ open, onClose, clientId, onSaved }) {
           </div>
           <div className="flex-1">
             <label className="block text-xs font-medium text-slate-600 mb-1">
-              Content <span className="text-slate-400 font-normal">— paste the full document, any format</span>
+              Content <span className="text-slate-400 font-normal">(paste the full document, any format)</span>
             </label>
             <textarea
               value={content} onChange={e => setContent(e.target.value)}
@@ -256,7 +256,7 @@ export default function KnowledgeBase() {
           <div className="flex-1 overflow-auto px-6 py-4">
             {settings && !settings.knowledge_base_enabled && (
               <div className="mb-4 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
-                Knowledge Base is disabled — enable it in <strong>Settings</strong> to let the AI use this content.
+                Knowledge Base is disabled. Enable it in <strong>Settings</strong> to let the AI use this content.
               </div>
             )}
 
@@ -278,7 +278,7 @@ export default function KnowledgeBase() {
                   ))}
                   {sections?.length === 0 && (
                     <tr><td colSpan={4} className="py-12 text-center text-slate-400">
-                      No documents yet — click "+ Add Document" to get started
+                      No documents yet. Click "+ Add Document" to get started.
                     </td></tr>
                   )}
                 </tbody>

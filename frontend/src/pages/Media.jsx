@@ -87,7 +87,7 @@ function MediaModal({ open, onClose, clientId, onSaved, item }) {
             <textarea
               value={description} onChange={e => setDescription(e.target.value)}
               rows={3}
-              placeholder="e.g. Send this always when the customer is about to send their horoscope photo — this shows the exact format needed"
+              placeholder="e.g. Send this always when the customer is about to send their horoscope photo. This shows the exact format needed."
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-violet-400 resize-none"
             />
             <p className="text-xs text-slate-400 mt-1">Gemini reads this to decide when to send the image automatically.</p>

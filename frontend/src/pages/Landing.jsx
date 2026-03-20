@@ -965,37 +965,6 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ── Testimonials ── */}
-      <section className="section alt">
-        <div className="container">
-          <div className="section-label">Early feedback</div>
-          <h2 style={{ fontFamily: "'Space Grotesk',sans-serif", fontWeight: 800, fontSize: 'clamp(26px,4vw,40px)', letterSpacing: '-0.03em', lineHeight: 1.15 }}>
-            What businesses are saying
-          </h2>
-          <div className="testimonial-grid">
-            {[
-              { q: "We used to miss 20–30 messages a day. Nova handles all of them now. Our orders went up in the first week.", name: 'Sithara P.', biz: 'Online clothing store, Colombo', color: '#7c3aed' },
-              { q: "The payment slip feature alone saved us from two scams last month. I didn't even know it was checking dates.", name: 'Ruwan M.', biz: 'Supplement shop, Kandy', color: '#0891b2' },
-              { q: "Customers message at 1am and get a proper reply in Sinhala. I wake up and the orders are already there.", name: 'Dilini S.', biz: 'Bakery, Gampaha', color: '#059669' },
-            ].map((t, i) => (
-              <div key={i} className="testimonial">
-                <div className="stars">★★★★★</div>
-                <div className="testimonial-quote">"{t.q}"</div>
-                <div className="testimonial-author">
-                  <div className="testimonial-avatar" style={{ background: t.color }}>
-                    {t.name[0]}
-                  </div>
-                  <div>
-                    <div className="testimonial-name">{t.name}</div>
-                    <div className="testimonial-biz">{t.biz}</div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* ── Roadmap ── */}
       <section className="section">
         <div className="container">

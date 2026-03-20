@@ -92,7 +92,16 @@ function buildSystemInstruction() {
  */
 function buildSystemInstructionForClient(client) {
   if (client && client.custom_prompt && client.custom_prompt.trim()) {
-    return client.custom_prompt.trim();
+    let prompt = client.custom_prompt.trim();
+    const isMultilingual = prompt.startsWith('[[MULTILINGUAL]]');
+    if (isMultilingual) {
+      prompt = prompt.slice('[[MULTILINGUAL]]'.length).trimStart();
+    }
+    console.log(`[buildInstruction] client=${client?.id} multilingual=${isMultilingual} promptLen=${prompt.length}`);
+    const languageRule = isMultilingual
+      ? `LANGUAGE RULE — HIGHEST PRIORITY:\nAlways detect the language of the customer's LATEST message and reply in that exact same language. Do not be influenced by the language used in earlier conversation history. Each reply must match the language the customer used in their most recent message.\n\n`
+      : '';
+    return languageRule + prompt;
   }
   // No prompt in DB yet — fall back to hardcoded astrology prompt
   console.warn(`[buildInstruction] No custom_prompt set for client ${client?.id} — using hardcoded fallback`);

@@ -318,6 +318,14 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     console.log(`[DB] Saved user message for ${phoneNumber}`);
   }
 
+  // For multilingual clients: always reload history from DB so _history is always
+  // clean (no accumulated label noise from previous turns).
+  const isMultilingual = client?.custom_prompt?.trim().startsWith('[[MULTILINGUAL]]');
+  if (isMultilingual) {
+    chatSession._history = [];
+    console.log(`[LANG] Multilingual client — forcing fresh DB history reload for ${phoneNumber}`);
+  }
+
   // If in-memory history is empty, reload last 40 messages from DB
   if (!chatSession._history || chatSession._history.length === 0) {
     const dbMsgs = await db.getMessagesByPhone(phoneNumber, client?.id);
@@ -332,7 +340,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
       }
       while (merged.length && merged[0].role !== 'user') merged.shift();
       chatSession._history = merged;
-      console.log(`[SESSION] Reloaded ${merged.length} messages from DB into empty session`);
+      console.log(`[SESSION] Reloaded ${merged.length} messages from DB into${isMultilingual ? ' (multilingual)' : ''} session`);
     }
   }
 
@@ -340,6 +348,14 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   const statusNote = await buildOrderStatusNote(phoneNumber, client?.id);
   let messageToSend = statusNote ? `${statusNote}\n\n${userMessage}` : userMessage;
   if (retryNote) messageToSend = `${retryNote}\n\n${messageToSend}`;
+
+  // For multilingual clients: wrap current message with a clear marker so the system
+  // instruction can unambiguously reference it for language detection.
+  // History is always clean (reloaded from DB above), so no label accumulates.
+  if (isMultilingual) {
+    messageToSend = `[CURRENT_MESSAGE_START]\n${messageToSend}\n[CURRENT_MESSAGE_END]`;
+    console.log(`[LANG] Wrapped message with language marker for ${phoneNumber}`);
+  }
 
   console.log(`[GEMINI] Sending message | historyTurns=${chatSession._history?.length || 0} | msgLen=${messageToSend.length} | preview="${messageToSend.slice(0, 80).replace(/\n/g, '\\n')}"`);
   console.log(`[GEMINI] Full prompt: ${messageToSend.replace(/\n/g, '\\n')}`);

@@ -99,7 +99,7 @@ function buildSystemInstructionForClient(client) {
     }
     console.log(`[buildInstruction] client=${client?.id} multilingual=${isMultilingual} promptLen=${prompt.length}`);
     const languageRule = isMultilingual
-      ? `LANGUAGE RULE — HIGHEST PRIORITY:\nAlways detect the language of the customer's LATEST message and reply in that exact same language. Do not be influenced by the language used in earlier conversation history. Each reply must match the language the customer used in their most recent message.\n\n`
+      ? `LANGUAGE RULE — HIGHEST PRIORITY:\nThe customer's current message is always wrapped between [CURRENT_MESSAGE_START] and [CURRENT_MESSAGE_END] markers. Detect the language of the text inside those markers and reply in that exact language only. Ignore the language of all previous messages in the conversation history.\n\n`
       : '';
     return languageRule + prompt;
   }

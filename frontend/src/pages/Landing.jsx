@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 
 const NOVA_WA      = 'https://wa.me/94776891125';
-const NOVA_WA_DEMO = 'https://wa.me/94771784821?text=Hi%20Nova%2C%20I%20want%20to%20see%20a%20demo';
+const NOVA_WA_DEMO = 'https://wa.me/94771784821?text=Hey%20Nova%2C%20I%20need%20a%20favor%20from%20you';
 
 /* ── Inline SVG icons, no emojis ── */
 const IconCheck = () => (

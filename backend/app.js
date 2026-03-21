@@ -12,6 +12,7 @@
 require('dotenv').config();
 
 const express = require('express');
+const helmet  = require('helmet');
 const path    = require('path');
 const fs      = require('fs');
 const bcrypt  = require('bcryptjs');
@@ -25,6 +26,9 @@ const { startEviction }        = require('./src/workers/sessionManager');
 const { embedText, productToText } = require('./src/services/embedder');
 
 const app = express();
+
+// ── Security headers ──────────────────────────────────────────────────────────
+app.use(helmet({ contentSecurityPolicy: false }));
 
 // ── Body parsers ──────────────────────────────────────────────────────────────
 // Preserve raw body for Meta webhook signature verification
@@ -58,6 +62,13 @@ app.use('/templates', express.static(path.join(__dirname, 'public', 'templates')
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 mountRoutes(app);
+
+// ── Global error handler — never expose internal error details to clients ─────
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, _next) => {
+  console.error(`[ERROR] ${req.method} ${req.path}:`, err.message || err);
+  res.status(err.status || 500).json({ error: 'Internal server error' });
+});
 
 // ── Start listening immediately (Railway needs a fast health check) ───────────
 const port = PORT || 3000;

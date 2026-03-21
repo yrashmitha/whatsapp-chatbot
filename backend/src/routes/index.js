@@ -30,6 +30,23 @@ const callsRoutes        = require('./calls.routes');
 const jwtAuth = require('../middleware/jwtAuth');
 const { upload } = require('../config/multer');
 const { uploadImage } = require('../controllers/products.controller');
+const rateLimit = require('express-rate-limit');
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  message: { error: 'Too many login attempts. Try again in 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const webhookLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 200,
+  message: { error: 'Too many requests' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 /**
  * Mount all route groups onto the Express app.
@@ -56,9 +73,9 @@ const { uploadImage } = require('../controllers/products.controller');
  */
 function mountRoutes(app) {
   // Public / unauthenticated routes
-  app.use('/auth',             authRoutes);
+  app.use('/auth',             loginLimiter, authRoutes);
   app.use('/chat',             chatRoutes);
-  app.use('/webhook',          webhookRoutes);
+  app.use('/webhook',          webhookLimiter, webhookRoutes);
   app.use('/api/catalog',      catalogRoutes);
 
   // Customer, message, client routes (all sub-paths defined inside the router)

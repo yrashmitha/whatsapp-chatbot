@@ -78,7 +78,7 @@ const SCENARIOS = [
   },
 ];
 
-/* ── Animated Nova character ── */
+/* ── Animated Nova character SVG ── */
 function NovaCharacter() {
   return (
     <div className="nova-char-wrap">
@@ -87,8 +87,110 @@ function NovaCharacter() {
       <div className="nova-dot nova-dot-1" />
       <div className="nova-dot nova-dot-2" />
       <div className="nova-char-inner">
-        <img src="/nova-robot.png" alt="Nova" className="nova-char-img"
-          onError={e => { e.target.style.display = 'none'; }} />
+        <svg width="120" height="142" viewBox="0 0 120 142" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <radialGradient id="nvShell" cx="36%" cy="26%" r="74%">
+              <stop offset="0%" stopColor="#edf3fa"/>
+              <stop offset="100%" stopColor="#b4c4d6"/>
+            </radialGradient>
+            <radialGradient id="nvVisor" cx="34%" cy="26%" r="68%">
+              <stop offset="0%" stopColor="#0d1d2e"/>
+              <stop offset="100%" stopColor="#03060e"/>
+            </radialGradient>
+            <radialGradient id="nvBody" cx="32%" cy="20%" r="78%">
+              <stop offset="0%" stopColor="#e2ecf6"/>
+              <stop offset="100%" stopColor="#aebfd2"/>
+            </radialGradient>
+            <radialGradient id="nvEye" cx="36%" cy="30%" r="68%">
+              <stop offset="0%" stopColor="#70eeff"/>
+              <stop offset="100%" stopColor="#0080bb"/>
+            </radialGradient>
+            <radialGradient id="nvEarInner" cx="40%" cy="35%" r="65%">
+              <stop offset="0%" stopColor="#5a70b8"/>
+              <stop offset="100%" stopColor="#3448a0"/>
+            </radialGradient>
+            <filter id="nvGlow" x="-60%" y="-60%" width="220%" height="220%">
+              <feGaussianBlur stdDeviation="3" result="blur"/>
+              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+            <filter id="nvSmGlow" x="-40%" y="-40%" width="180%" height="180%">
+              <feGaussianBlur stdDeviation="1.8" result="blur"/>
+              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+
+          {/* Headphone band */}
+          <path d="M30 46 Q60 10 90 46" stroke="#8292a6" strokeWidth="6" fill="none" strokeLinecap="round"/>
+
+          {/* Left ear cup */}
+          <ellipse cx="24" cy="53" rx="13" ry="12" fill="#7888a2"/>
+          <ellipse cx="24" cy="53" rx="9" ry="8" fill="url(#nvEarInner)"/>
+          <ellipse cx="24" cy="53" rx="4.5" ry="4" fill="#2a3c88" opacity="0.9"/>
+
+          {/* Right ear cup */}
+          <ellipse cx="96" cy="53" rx="13" ry="12" fill="#7888a2"/>
+          <ellipse cx="96" cy="53" rx="9" ry="8" fill="url(#nvEarInner)"/>
+          <ellipse cx="96" cy="53" rx="4.5" ry="4" fill="#2a3c88" opacity="0.9"/>
+
+          {/* Mic arm on right cup */}
+          <path d="M96 60 L101 67" stroke="#8292a6" strokeWidth="2.2" strokeLinecap="round"/>
+          <circle cx="101.5" cy="68" r="2.8" fill="url(#nvEarInner)"/>
+
+          {/* Head outer shell */}
+          <ellipse cx="60" cy="52" rx="38" ry="40" fill="url(#nvShell)"/>
+
+          {/* Dark visor */}
+          <ellipse cx="60" cy="54" rx="30" ry="32" fill="url(#nvVisor)"/>
+
+          {/* Visor gloss highlight */}
+          <ellipse cx="50" cy="38" rx="9" ry="4.5" fill="rgba(255,255,255,0.06)" transform="rotate(-18 50 38)"/>
+
+          {/* Left eye — dark bg ring */}
+          <ellipse cx="45" cy="50" rx="10" ry="9.5" fill="#001525"/>
+          {/* Left eye — iris glow */}
+          <ellipse cx="45" cy="50" rx="7.5" ry="7" fill="url(#nvEye)" filter="url(#nvGlow)"/>
+          {/* Left eye — pupil */}
+          <ellipse cx="45" cy="50" rx="4" ry="3.8" fill="#002244"/>
+          {/* Left eye — reflection */}
+          <ellipse cx="42.5" cy="47.2" rx="2" ry="1.5" fill="rgba(255,255,255,0.82)"/>
+
+          {/* Right eye — dark bg ring */}
+          <ellipse cx="75" cy="50" rx="10" ry="9.5" fill="#001525"/>
+          {/* Right eye — iris glow */}
+          <ellipse cx="75" cy="50" rx="7.5" ry="7" fill="url(#nvEye)" filter="url(#nvGlow)"/>
+          {/* Right eye — pupil */}
+          <ellipse cx="75" cy="50" rx="4" ry="3.8" fill="#002244"/>
+          {/* Right eye — reflection */}
+          <ellipse cx="72.5" cy="47.2" rx="2" ry="1.5" fill="rgba(255,255,255,0.82)"/>
+
+          {/* Smile */}
+          <path d="M49 67 Q60 77 71 67" stroke="#00d4ff" strokeWidth="2.8" fill="none" strokeLinecap="round" filter="url(#nvSmGlow)"/>
+
+          {/* Left arm */}
+          <ellipse cx="17" cy="101" rx="12" ry="17" fill="url(#nvBody)" transform="rotate(-10 17 101)"/>
+          {/* Right arm */}
+          <ellipse cx="103" cy="101" rx="12" ry="17" fill="url(#nvBody)" transform="rotate(10 103 101)"/>
+
+          {/* Main body */}
+          <ellipse cx="60" cy="108" rx="40" ry="31" fill="url(#nvBody)"/>
+
+          {/* Blue cuffs */}
+          <ellipse cx="17" cy="114" rx="10" ry="5.5" fill="#3a78cc" opacity="0.72"/>
+          <ellipse cx="103" cy="114" rx="10" ry="5.5" fill="#3a78cc" opacity="0.72"/>
+
+          {/* Feet */}
+          <ellipse cx="44" cy="134" rx="15" ry="9" fill="url(#nvBody)"/>
+          <ellipse cx="76" cy="134" rx="15" ry="9" fill="url(#nvBody)"/>
+
+          {/* Chest logo circle */}
+          <circle cx="60" cy="106" r="18" fill="rgba(0,212,255,0.07)" stroke="rgba(0,212,255,0.28)" strokeWidth="1.3"/>
+          {/* Chest logo inner ring */}
+          <circle cx="60" cy="106" r="13" fill="none" stroke="rgba(0,212,255,0.1)" strokeWidth="0.8"/>
+
+          {/* N letter on chest */}
+          <path d="M52 97 L52 115 L68 97 L68 115" stroke="#00d4ff" strokeWidth="3.2" fill="none"
+            strokeLinecap="round" strokeLinejoin="round" filter="url(#nvSmGlow)"/>
+        </svg>
       </div>
     </div>
   );
@@ -429,7 +531,7 @@ export default function Landing() {
           animation: nova-float 3.8s ease-in-out infinite;
           filter: drop-shadow(0 10px 28px rgba(0,212,255,0.4));
         }
-        .nova-char-img { width: 112px; height: 112px; object-fit: contain; }
+        .nova-char-inner svg { display: block; }
         .nova-ring {
           position: absolute; border-radius: 50%; pointer-events: none;
         }

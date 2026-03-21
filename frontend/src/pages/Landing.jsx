@@ -1222,7 +1222,7 @@ export default function Landing() {
         </div>
         <div className="footer-bottom">
           <span>© 2026 Agent Nova. All rights reserved.</span>
-          <span className="footer-flag">Built in Sri Lanka 🇱🇰</span>
+
         </div>
       </footer>
     </div>

@@ -145,9 +145,9 @@ async function buildChatSession(phoneNumber, client) {
           ? 'TOOL ROUTING — follow strictly, regardless of what language the customer writes in:\n'
             + '- ANY question about price, cost, package tiers, plan options, plan comparison, what is included in a plan, or how much something costs → call search_products FIRST. This includes Sinhala queries such as "මිල", "පැකේජ", "කොපමණ", "ගාස්තු".\n'
             + '- Questions about policies, FAQs, how things work, delivery, terms, or general business info → call search_knowledge FIRST\n'
-            + '- If the first tool returns no useful results, immediately try the other tool\n'
-            + '- Only escalate to a human if BOTH tools return no useful results\n'
-            + '- Never generate pricing or product info from your own knowledge — only use search_products results\n'
+            + '- MANDATORY FALLBACK: If the first tool returns no useful results, you MUST call the other tool before doing anything else. Never skip this step.\n'
+            + '- Only after BOTH tools have been called and BOTH returned no useful results → escalate to a human\n'
+            + '- Never answer from your own knowledge. Never escalate after only one tool has been tried.\n'
           : 'Call search_knowledge before answering any customer question. If no useful results, tell the customer you could not find that information.\n')
       : '';
     const summaryBlock = '\n\n━━━ AI SUMMARY / ORDER NOTES ━━━\n'

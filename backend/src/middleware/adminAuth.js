@@ -1,28 +1,24 @@
 /**
  * @module middleware/adminAuth
- * @description Express middleware for legacy admin routes.
- * Currently passes all requests through (TODO: re-enable before production).
+ * @description Admin route protection — requires a valid superadmin JWT.
  */
 
 'use strict';
 
-/**
- * Admin authentication middleware.
- * Currently a passthrough — all requests are allowed.
- * Re-enable the password check before production deploy.
- *
- * @param {import('express').Request}  req  - Express request
- * @param {import('express').Response} res  - Express response
- * @param {import('express').NextFunction} next - Express next function
- * @returns {void}
- */
+const jwt = require('jsonwebtoken');
+const { JWT_SECRET } = require('../config/env');
+
 function adminAuth(req, res, next) {
-  return next(); // TODO: re-enable password check before production deploy
-  const pass = process.env.ADMIN_PASSWORD;
-  if (!pass) return res.status(500).json({ error: 'ADMIN_PASSWORD not set' });
-  const provided = req.query.pass || (req.headers.authorization || '').replace('Bearer ', '');
-  if (provided !== pass) return res.status(401).json({ error: 'Unauthorized' });
-  next();
+  const token = (req.headers.authorization || '').replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (decoded.role !== 'superadmin') return res.status(403).json({ error: 'Forbidden' });
+    req.user = decoded;
+    next();
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired token' });
+  }
 }
 
 module.exports = adminAuth;

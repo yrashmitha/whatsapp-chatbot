@@ -186,6 +186,7 @@ export default function Clients() {
       const d = r.data;
       return Array.isArray(d) ? d : (d.clients || []);
     }),
+    retry: false,
   });
 
   const saveMutation = useMutation({

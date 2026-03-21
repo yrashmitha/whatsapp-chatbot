@@ -27,6 +27,12 @@ const { embedText, productToText } = require('./src/services/embedder');
 const app = express();
 
 // ── Body parsers ──────────────────────────────────────────────────────────────
+// Preserve raw body for Meta webhook signature verification
+app.use('/webhook', express.raw({ type: 'application/json' }), (req, _res, next) => {
+  req.rawBody = req.body;
+  try { req.body = JSON.parse(req.body); } catch { req.body = {}; }
+  next();
+});
 app.use(express.json({ limit: '20mb' }));
 // Twilio webhooks send application/x-www-form-urlencoded
 app.use(express.urlencoded({ extended: false }));

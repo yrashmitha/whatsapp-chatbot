@@ -6,6 +6,7 @@
 
 'use strict';
 
+const crypto = require('crypto');
 const axios  = require('axios');
 const fs     = require('fs');
 const path   = require('path');
@@ -24,6 +25,28 @@ const { analyzePaymentDocument, buildAnalysisNote } = require('../services/image
  * @param {import('express').Response} res
  * @returns {void}
  */
+function verifyMetaSignature(req) {
+  const secret = process.env.META_APP_SECRET;
+  if (!secret) {
+    console.warn('[WEBHOOK-SIG] META_APP_SECRET not set — skipping signature verification');
+    return true;
+  }
+  const sig = req.headers['x-hub-signature-256'];
+  if (!sig) {
+    console.warn('[WEBHOOK-SIG] Missing X-Hub-Signature-256 header — rejecting request');
+    return false;
+  }
+  const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(req.rawBody).digest('hex');
+  try {
+    const valid = crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+    console.log(`[WEBHOOK-SIG] Signature check: ${valid ? 'PASSED' : 'FAILED'}`);
+    return valid;
+  } catch {
+    console.warn('[WEBHOOK-SIG] Signature comparison error — rejecting request');
+    return false;
+  }
+}
+
 function verifyWebhook(req, res) {
   const mode      = req.query['hub.mode'];
   const token     = req.query['hub.verify_token'];
@@ -46,6 +69,10 @@ function verifyWebhook(req, res) {
  * @returns {void}
  */
 function receiveWebhook(req, res) {
+  if (!verifyMetaSignature(req)) {
+    console.warn('[WEBHOOK] Signature verification failed — request rejected');
+    return res.sendStatus(403);
+  }
   res.sendStatus(200);
 
   // Declare outside try so catch block can reference them for error recovery
@@ -72,7 +99,9 @@ function receiveWebhook(req, res) {
       }
 
       const msg  = value.messages[0];
-      from = msg.from;
+      // From March 31 2026, Meta may omit phone number for username-enabled users.
+      // Fall back to BSUID (business-scoped user ID) from contacts array.
+      from = msg.from || value.contacts?.[0]?.user_id;
       let sessionKey = `${client.id}:${from}`;
 
       // Human-like delay → mark read (blue ticks)

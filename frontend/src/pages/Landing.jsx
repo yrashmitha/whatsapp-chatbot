@@ -78,6 +78,22 @@ const SCENARIOS = [
   },
 ];
 
+/* ── Animated Nova character ── */
+function NovaCharacter() {
+  return (
+    <div className="nova-char-wrap">
+      <div className="nova-ring nova-ring-1" />
+      <div className="nova-ring nova-ring-2" />
+      <div className="nova-dot nova-dot-1" />
+      <div className="nova-dot nova-dot-2" />
+      <div className="nova-char-inner">
+        <img src="/nova-robot.png" alt="Nova" className="nova-char-img"
+          onError={e => { e.target.style.display = 'none'; }} />
+      </div>
+    </div>
+  );
+}
+
 /* ── Animated phone mockup with scenario slider ── */
 function PhoneMockup() {
   const [scene, setScene]   = useState(0);
@@ -117,6 +133,7 @@ function PhoneMockup() {
 
   return (
     <div className="phone-outer">
+      <NovaCharacter />
       {/* scenario tabs */}
       <div className="scenario-tabs">
         {SCENARIOS.map((s, i) => (
@@ -399,6 +416,62 @@ export default function Landing() {
           background: #1a2234;
           border-top: 1px solid rgba(255,255,255,0.06);
           font-size: 12px; color: rgba(255,255,255,0.25);
+        }
+
+        /* ─ Nova character ─ */
+        .nova-char-wrap {
+          position: relative; width: 140px; height: 140px;
+          display: flex; align-items: center; justify-content: center;
+          margin: 0 auto 4px;
+        }
+        .nova-char-inner {
+          position: relative; z-index: 2;
+          animation: nova-float 3.8s ease-in-out infinite;
+          filter: drop-shadow(0 10px 28px rgba(0,212,255,0.4));
+        }
+        .nova-char-img { width: 112px; height: 112px; object-fit: contain; }
+        .nova-ring {
+          position: absolute; border-radius: 50%; pointer-events: none;
+        }
+        .nova-ring-1 {
+          width: 132px; height: 132px;
+          border: 1.5px solid transparent;
+          border-top-color: rgba(0,212,255,0.7);
+          border-right-color: rgba(0,212,255,0.15);
+          animation: nova-spin 2.8s linear infinite;
+        }
+        .nova-ring-2 {
+          width: 152px; height: 152px;
+          border: 1px solid transparent;
+          border-bottom-color: rgba(0,150,255,0.5);
+          border-left-color: rgba(0,150,255,0.1);
+          animation: nova-spin 5s linear infinite reverse;
+        }
+        .nova-dot {
+          position: absolute; width: 7px; height: 7px;
+          border-radius: 50%; background: #00d4ff;
+          box-shadow: 0 0 8px #00d4ff; z-index: 1;
+        }
+        .nova-dot-1 { animation: nova-orbit 2.8s linear infinite; }
+        .nova-dot-2 {
+          width: 5px; height: 5px; background: #4db8ff;
+          animation: nova-orbit2 5s linear infinite reverse;
+        }
+        @keyframes nova-float {
+          0%, 100% { transform: translateY(0); }
+          50%       { transform: translateY(-11px); }
+        }
+        @keyframes nova-spin {
+          from { transform: rotate(0deg); }
+          to   { transform: rotate(360deg); }
+        }
+        @keyframes nova-orbit {
+          from { transform: rotate(0deg) translateX(66px) rotate(0deg); }
+          to   { transform: rotate(360deg) translateX(66px) rotate(-360deg); }
+        }
+        @keyframes nova-orbit2 {
+          from { transform: rotate(0deg) translateX(76px) rotate(0deg); }
+          to   { transform: rotate(360deg) translateX(76px) rotate(-360deg); }
         }
 
         /* ─ Section base ─ */

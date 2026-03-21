@@ -152,7 +152,7 @@ function buildOrderFieldsInstruction(orderFields) {
  */
 function buildContactInstruction(contactNumber) {
   if (!contactNumber) return '';
-  return `\n\n## Escalation Rule — STRICT\nYou MUST follow this rule without exception:\n- If a customer asks something you cannot confidently answer using the knowledge and information provided to you, do NOT guess or make up an answer.\n- Instead, politely apologise and direct them to a human agent.\n- Always say something like: "I'm sorry, I'm not able to help with that right now. Please contact our team directly at *${contactNumber}* and they'll be happy to assist you."\n- This applies to: complaints, issues outside your knowledge, account problems, special requests, or anything you are uncertain about.\n- Never pretend to know something you don't. Honesty and directing to a human is always the right choice.`;
+  return `\n\n## Escalation Rule — STRICT\nYou MUST follow this rule without exception:\n- If a customer asks something you cannot confidently answer, FIRST use any available tools (search_products, search_knowledge) to find the answer before escalating.\n- Only if the tools return no useful results AND you still cannot answer, then politely apologise and direct them to a human agent.\n- Always say something like: "I'm sorry, I'm not able to help with that right now. Please contact our team directly at *${contactNumber}* and they'll be happy to assist you."\n- This applies to: complaints, issues outside your knowledge, account problems, special requests, or anything you are uncertain about even after searching.\n- Never pretend to know something you don't. Honesty and directing to a human is always the right choice.`;
 }
 
 module.exports = buildSystemInstruction;

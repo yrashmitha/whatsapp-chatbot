@@ -27,6 +27,9 @@ const { embedText, productToText } = require('./src/services/embedder');
 
 const app = express();
 
+// Trust Railway's reverse proxy so rate limiting uses real client IP
+app.set('trust proxy', 1);
+
 // ── Security headers ──────────────────────────────────────────────────────────
 app.use(helmet({ contentSecurityPolicy: false }));
 

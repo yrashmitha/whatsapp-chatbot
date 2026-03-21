@@ -137,13 +137,18 @@ async function buildChatSession(phoneNumber, client) {
         + 'Use the send_image tool to deliver images to the customer. Send them at the right moment based on these descriptions:\n'
         + mediaItems.map(m => `- "${m.title}": ${m.description}\n  URL: ${m.image_url}`).join('\n');
     }
+    const hasProductCatalog = client?.product_catalog_enabled && db.IS_PG;
     const kbBlock = (client?.knowledge_base_enabled && db.IS_PG)
       ? '\n\n━━━ KNOWLEDGE BASE — MANDATORY ━━━\n'
         + 'You have a search_knowledge tool connected to a live knowledge base. '
-        + 'You MUST call search_knowledge BEFORE answering ANY customer question — no exceptions. '
-        + 'Never answer from your own memory or training data. '
-        + 'If search returns no results, tell the customer you could not find information on that topic. '
-        + 'You may call search_knowledge multiple times with different queries for complex questions.'
+        + 'Never answer from your own memory or training data. Always search first.\n'
+        + (hasProductCatalog
+          ? 'SEARCH STRATEGY — follow this order:\n'
+            + '1. Call whichever tool best matches the question (search_products for pricing/packages/products, search_knowledge for FAQs/policies/business info).\n'
+            + '2. If the first tool returns no useful results, call the OTHER tool before giving up.\n'
+            + '3. Only escalate to a human if BOTH tools return no useful results.\n'
+          : 'If search returns no useful results, tell the customer you could not find information on that topic.\n')
+        + 'You may search multiple times with different queries if needed.'
       : '';
     const summaryBlock = '\n\n━━━ AI SUMMARY / ORDER NOTES ━━━\n'
       + 'When you place an order using [[ORDER_COMPLETE:{...}]], always include a "summary" field in the JSON with a detailed internal note. '

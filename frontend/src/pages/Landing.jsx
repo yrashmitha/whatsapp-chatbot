@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 
-const NOVA_WA      = 'https://wa.me/94771784821';
+const NOVA_WA      = 'https://wa.me/94776891125';
 const NOVA_WA_DEMO = 'https://wa.me/94771784821?text=Hi%20Nova%2C%20I%20want%20to%20see%20a%20demo';
 
 /* ── Inline SVG icons, no emojis ── */
@@ -760,7 +760,7 @@ export default function Landing() {
         .step-num {
           font-family: 'Space Grotesk', sans-serif;
           font-size: 48px; font-weight: 800;
-          color: rgba(255,255,255,0.06); line-height: 1;
+          color: rgba(255,255,255,0.22); line-height: 1;
           flex-shrink: 0; width: 60px; letter-spacing: -0.04em;
           user-select: none;
         }

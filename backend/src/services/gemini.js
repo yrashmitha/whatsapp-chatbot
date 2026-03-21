@@ -142,10 +142,10 @@ async function buildChatSession(phoneNumber, client) {
       ? '\n\n━━━ KNOWLEDGE BASE — MANDATORY ━━━\n'
         + 'Never answer from your own memory or training data. Always use the search tools.\n'
         + (hasProductCatalog
-          ? 'TOOL ROUTING — strictly follow this:\n'
-            + '- Questions about pricing, packages, plans, products, availability, or cost → call search_products FIRST\n'
-            + '- Questions about policies, FAQs, how things work, business info, or anything else → call search_knowledge FIRST\n'
-            + '- If the first tool returns no useful results, try the other tool\n'
+          ? 'TOOL ROUTING — follow strictly, regardless of what language the customer writes in:\n'
+            + '- ANY question about price, cost, package tiers, plan options, plan comparison, what is included in a plan, or how much something costs → call search_products FIRST. This includes Sinhala queries such as "මිල", "පැකේජ", "කොපමණ", "ගාස්තු".\n'
+            + '- Questions about policies, FAQs, how things work, delivery, terms, or general business info → call search_knowledge FIRST\n'
+            + '- If the first tool returns no useful results, immediately try the other tool\n'
             + '- Only escalate to a human if BOTH tools return no useful results\n'
             + '- Never generate pricing or product info from your own knowledge — only use search_products results\n'
           : 'Call search_knowledge before answering any customer question. If no useful results, tell the customer you could not find that information.\n')

@@ -99,7 +99,7 @@ function buildSystemInstructionForClient(client) {
     }
     console.log(`[buildInstruction] client=${client?.id} multilingual=${isMultilingual} promptLen=${prompt.length}`);
     const languageRule = isMultilingual
-      ? `LANGUAGE RULE — HIGHEST PRIORITY:\nThe customer's current message is always wrapped between [CURRENT_MESSAGE_START] and [CURRENT_MESSAGE_END] markers. Detect the language of the text inside those markers and reply in that exact language only. Ignore the language of all previous messages in the conversation history.\n\n`
+      ? `LANGUAGE RULE — HIGHEST PRIORITY:\nThe customer's current message is always wrapped between [CURRENT_MESSAGE_START] and [CURRENT_MESSAGE_END] markers. Detect the language of the text inside those markers and reply accordingly:\n- If the message is in English → reply in English\n- If the message is in Sinhala script → reply in Sinhala script\n- If the message is in Singlish (Sinhala written in Latin/English letters, e.g. "mama meka ganna ona") → reply in proper Sinhala script (Unicode), NOT in Singlish\n- For any other language → reply in that same language\nIgnore the language of all previous messages in the conversation history.\n\n`
       : '';
     return languageRule + prompt;
   }

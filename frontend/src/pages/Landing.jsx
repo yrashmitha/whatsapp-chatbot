@@ -78,7 +78,7 @@ const SCENARIOS = [
   },
 ];
 
-/* ── Animated Nova character SVG ── */
+/* ── Animated Nova character ── */
 function NovaCharacter() {
   return (
     <div className="nova-char-wrap">
@@ -86,6 +86,16 @@ function NovaCharacter() {
       <div className="nova-ring nova-ring-2" />
       <div className="nova-dot nova-dot-1" />
       <div className="nova-dot nova-dot-2" />
+      <div className="nova-char-inner">
+        <img src="/nova-robot.png" alt="Nova" style={{ width: 130, height: 130, objectFit: 'contain', display: 'block' }} />
+      </div>
+    </div>
+  );
+}
+
+function NovaCharacterSVGUnused() {
+  return (
+    <div className="nova-char-wrap">
       <div className="nova-char-inner">
         <svg width="120" height="142" viewBox="0 0 120 142" fill="none" xmlns="http://www.w3.org/2000/svg">
           <defs>
@@ -235,7 +245,6 @@ function PhoneMockup() {
 
   return (
     <div className="phone-outer">
-      <NovaCharacter />
       {/* scenario tabs */}
       <div className="scenario-tabs">
         {SCENARIOS.map((s, i) => (
@@ -1166,7 +1175,8 @@ export default function Landing() {
 
       {/* ── Final CTA ── */}
       <div className="cta-strip">
-        <h2>Stop losing customers<br />to <em>silence</em></h2>
+        <NovaCharacter />
+        <h2 style={{ marginTop: 28 }}>Stop losing customers<br />to <em>silence</em></h2>
         <p>Message Nova on WhatsApp right now. See it respond. No sign-up. No credit card. Just open WhatsApp.</p>
         <div className="cta-row">
           <a href={NOVA_WA_DEMO} target="_blank" rel="noreferrer" className="btn-cta lg">

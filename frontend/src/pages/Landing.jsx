@@ -1042,7 +1042,7 @@ export default function Landing() {
           <div className="feature-split">
             <div className="feature-list">
               {[
-                { title: 'Understands any language', desc: 'Built for Sri Lanka. Sinhala, English, Singlish, even Tamil — no problem.' },
+                { title: 'Understands any language', desc: 'Built for Sri Lanka. Sinhala, English, Singlish, even Tamil. No problem.' },
                 { title: 'Takes orders through conversation', desc: 'Collects name, address, package, date (whatever you need) through natural chat. Saves to your dashboard.' },
                 { title: 'Sends order updates to customers', desc: 'Sends order updates directly to your customers on WhatsApp. Status changes, confirmations, and follow-ups.' },
                 { title: 'Reads payment slips', desc: 'Customer sends a screenshot or PDF. Nova reads the amount, date, bank, and flags suspicious slips.' },

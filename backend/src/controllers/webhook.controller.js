@@ -379,18 +379,22 @@ function receiveWebhook(req, res) {
         await db.insertMessage(from, isPdf ? `[PDF: ${filename}]` : `[Image: ${filename}]`, 'bot', null, client?.id ?? null, isPdf ? 'pdf' : 'image', `/templates/${encodeURIComponent(filename)}`);
       }
 
-      // Send product images from RAG search
+      // Send product images / PDFs from RAG search or send_image tool
       for (const { url, caption } of (productImagesToSend || [])) {
+        const isPdf = /\.pdf(\?|$)/i.test(url);
+        const waBody = isPdf
+          ? { messaging_product: 'whatsapp', to: from, type: 'document', document: { link: url, filename: caption || 'document.pdf', caption } }
+          : { messaging_product: 'whatsapp', to: from, type: 'image',    image:    { link: url, caption } };
         try {
           await axios.post(
             `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
-            { messaging_product: 'whatsapp', to: from, type: 'image', image: { link: url, caption } },
+            waBody,
             { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
           );
-          await db.insertMessage(from, `[Image: ${caption}]`, 'bot', null, client?.id ?? null, 'image', url);
-          console.log(`[WA-IMG] Product image sent: ${caption}`);
+          await db.insertMessage(from, isPdf ? `[PDF: ${caption}]` : `[Image: ${caption}]`, 'bot', null, client?.id ?? null, isPdf ? 'pdf' : 'image', url);
+          log.info(`[WA-MEDIA] Sent ${isPdf ? 'PDF' : 'image'}: ${caption}`);
         } catch (e) {
-          console.warn(`[WA-IMG] Failed to send product image "${caption}":`, e?.response?.data ?? e.message);
+          log.warn(`[WA-MEDIA] Failed to send "${caption}":`, e?.response?.data ?? e.message);
         }
       }
     } catch (err) {

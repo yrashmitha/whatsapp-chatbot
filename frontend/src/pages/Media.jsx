@@ -31,7 +31,7 @@ function MediaModal({ open, onClose, clientId, onSaved, item }) {
       form.append('image', file);
       const r = await api.post('/media/upload', form, { params, headers: { 'Content-Type': 'multipart/form-data' } });
       setImageUrl(r.data.url);
-      toast.success('Image uploaded');
+      toast.success('File uploaded');
     } catch (e) {
       toast.error(e.response?.data?.error || 'Upload failed');
     } finally {
@@ -106,19 +106,24 @@ function MediaModal({ open, onClose, clientId, onSaved, item }) {
             {tab === 'url' ? (
               <input
                 value={imageUrl} onChange={e => setImageUrl(e.target.value)}
-                placeholder="https://example.com/image.jpg"
+                placeholder="https://example.com/image.jpg or file.pdf"
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-violet-400"
               />
             ) : (
               <label className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${uploading ? 'border-violet-300 bg-violet-50' : 'border-slate-200 hover:border-violet-300 hover:bg-slate-50'}`}>
-                <span className="text-xs text-slate-400">{uploading ? 'Uploading…' : 'Click to choose an image (max 10 MB)'}</span>
-                <input type="file" accept="image/*" className="hidden" onChange={handleFileChange} disabled={uploading} />
+                <span className="text-xs text-slate-400">{uploading ? 'Uploading…' : 'Click to choose an image or PDF (max 16 MB)'}</span>
+                <input type="file" accept="image/*,application/pdf" className="hidden" onChange={handleFileChange} disabled={uploading} />
               </label>
             )}
-            {imageUrl && (
+            {imageUrl && (/\.pdf(\?|$)/i.test(imageUrl) ? (
+              <div className="mt-2 flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50">
+                <span className="text-2xl">📄</span>
+                <a href={imageUrl} target="_blank" rel="noreferrer" className="text-xs text-violet-600 underline truncate">{imageUrl.split('/').pop()}</a>
+              </div>
+            ) : (
               <img src={imageUrl} alt="preview" className="mt-2 rounded-lg max-h-32 object-cover border border-slate-200"
                 onError={e => { e.target.style.display = 'none'; }} />
-            )}
+            ))}
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Sort order</label>
@@ -183,7 +188,7 @@ export default function Media() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-lg font-semibold text-slate-800">Media Library</h1>
-              <p className="text-sm text-slate-400 mt-0.5">Images Gemini can send to customers at the right moment.</p>
+              <p className="text-sm text-slate-400 mt-0.5">Images and PDFs Nova can send to customers at the right moment.</p>
             </div>
             <Button onClick={() => setModal('add')}>+ Add media</Button>
           </div>
@@ -198,19 +203,26 @@ export default function Media() {
 
           {clientId && !isLoading && items.length === 0 && (
             <div className="text-center py-12 text-sm text-slate-400">
-              No media yet. Add images with instructions so Gemini knows when to send them.
+              No media yet. Add images or PDFs with instructions so Nova knows when to send them.
             </div>
           )}
 
           <div className="flex flex-col gap-3">
             {items.map(item => (
               <div key={item.id} className="bg-white border border-slate-200 rounded-xl p-4 flex gap-4">
-                <img
-                  src={item.image_url}
-                  alt={item.title}
-                  className="w-20 h-20 rounded-lg object-cover border border-slate-200 shrink-0 bg-slate-100"
-                  onError={e => { e.target.style.display = 'none'; }}
-                />
+                {/\.pdf(\?|$)/i.test(item.image_url) ? (
+                  <a href={item.image_url} target="_blank" rel="noreferrer"
+                    className="w-20 h-20 rounded-lg border border-slate-200 shrink-0 bg-slate-50 flex items-center justify-center text-3xl">
+                    📄
+                  </a>
+                ) : (
+                  <img
+                    src={item.image_url}
+                    alt={item.title}
+                    className="w-20 h-20 rounded-lg object-cover border border-slate-200 shrink-0 bg-slate-100"
+                    onError={e => { e.target.style.display = 'none'; }}
+                  />
+                )}
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-sm text-slate-800 truncate">{item.title}</div>
                   <div className="text-xs text-slate-500 mt-1 line-clamp-2">{item.description}</div>

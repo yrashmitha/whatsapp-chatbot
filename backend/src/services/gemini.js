@@ -244,7 +244,7 @@ async function buildChatSession(phoneNumber, client) {
       type: 'OBJECT',
       properties: {
         image_url: { type: 'STRING', description: 'The direct file URL to send (image or PDF)' },
-        caption:   { type: 'STRING', description: 'Short caption shown under the file' },
+        caption:   { type: 'STRING', description: 'Short caption shown under the file. Always generate a relevant caption based on the file title and description — never leave this empty.' },
       },
       required: ['image_url'],
     },
@@ -513,10 +513,11 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
 
   // If Gemini returned only thought parts or exited the function loop without text,
   // send one extra nudge to get a plain-text answer before falling back to the error message.
-  if (!botReply && productImagesToSend.length === 0) {
+  // Always nudge when text is empty — even if media is queued, we still need a text reply
+  if (!botReply) {
     log.warn('[GEMINI] Empty reply — nudging Gemini for plain text response');
     try {
-      const nudge = await chatSession.sendMessage('Please provide your response as plain text now.');
+      const nudge = await chatSession.sendMessage('Please provide your text reply now.');
       const nudgeParts = nudge.response.candidates?.[0]?.content?.parts || [];
       botReply = nudgeParts
         .filter(p => !p.thought && typeof p.text === 'string')
@@ -530,7 +531,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     }
   }
 
-  if (!botReply && productImagesToSend.length === 0) {
+  if (!botReply) {
     log.warn('[GEMINI] Still empty after nudge — using fallback message');
     botReply = client?.error_message || "Sorry, I didn't get that. Could you please try again? 🙏";
   }

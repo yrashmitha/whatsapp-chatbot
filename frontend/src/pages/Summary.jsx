@@ -54,8 +54,11 @@ export default function Summary() {
               <StatCard icon="🗂️"  label="Total Orders"       value={n(data?.orders_total)} />
               <StatCard icon="⏳" label="Open Orders"         value={n(data?.open_orders)}        accent="#fbbf24" />
               <StatCard icon="👥" label="Total Customers"     value={n(data?.total_customers)} />
-              <StatCard icon="🤖" label="AI Cost Today"       value={usd(data?.cost_today)}       sub="24h"   accent="#34d399" />
-              <StatCard icon="🤖" label="AI Cost This Month"  value={usd(data?.cost_this_month)}  sub="month" accent="#34d399" />
+              <StatCard icon="🤖" label="Nova Replies Today"      value={n(data?.ai_messages_today)}       sub="24h"   accent="#34d399" />
+              <StatCard icon="🤖" label="Nova Replies This Month" value={n(data?.ai_messages_this_month)} sub="month" accent="#34d399" />
+              <StatCard icon="🤖" label="Nova Replies Total"      value={n(data?.ai_messages_total)}                 accent="#34d399" />
+              <StatCard icon="💰" label="Nova Cost Today"         value={usd(data?.cost_today)}       sub="24h"   accent="#a78bfa" />
+              <StatCard icon="💰" label="Nova Cost This Month"    value={usd(data?.cost_this_month)}  sub="month" accent="#a78bfa" />
             </div>
           )}
         </div>

@@ -97,9 +97,12 @@ async function getAllClients() {
       cc.wa_token_env, cc.webhook_verify_token,
       cc.temperature, cc.custom_prompt, cc.error_message,
       cc.knowledge_base_enabled, cc.plugin_enabled, cc.contact_number,
-      cc.order_fields, cc.admin_password_env
+      cc.order_fields, cc.admin_password_env,
+      cc.package_id, cc.bonus_messages, cc.overage_limit, cc.per_message_cost,
+      p.name AS package_name, p.message_limit AS package_message_limit
     FROM clients c
     LEFT JOIN client_configs cc ON cc.client_id = c.id
+    LEFT JOIN packages p ON p.id = cc.package_id
     ORDER BY c.name
   `);
   return res.rows;

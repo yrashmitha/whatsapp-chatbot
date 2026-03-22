@@ -6,12 +6,17 @@ import api from '../lib/api';
 
 const StatCard = ({ icon, label, value, sub, accent }) => (
   <div
-    className="rounded-2xl p-5 flex flex-col gap-2"
+    className="rounded-2xl p-5 flex flex-col gap-2 items-center text-center"
     style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}
   >
-    <div className="flex items-center justify-between">
+    <div className="flex items-center justify-between w-full">
       <span className="text-lg">{icon}</span>
-      {sub && <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--bg-base)', color: 'var(--text-3)' }}>{sub}</span>}
+      {sub && (
+        <span
+          className="text-xs px-2 py-0.5 rounded-full font-semibold"
+          style={{ background: 'rgba(255,255,255,0.12)', color: 'var(--text-1)' }}
+        >{sub}</span>
+      )}
     </div>
     <div className="text-2xl font-bold" style={{ color: accent || 'var(--text-1)' }}>{value}</div>
     <div className="text-xs font-medium" style={{ color: 'var(--text-2)' }}>{label}</div>
@@ -47,7 +52,7 @@ export default function Summary() {
           {isLoading ? (
             <div className="flex justify-center py-16"><Spinner /></div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 max-w-5xl">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 max-w-5xl mx-auto">
               <StatCard icon="💬" label="New Chats Today"     value={n(data?.new_chats_today)}   sub="24h"   accent="var(--accent)" />
               <StatCard icon="📦" label="Orders Today"        value={n(data?.orders_today)}       sub="24h"   accent="var(--accent)" />
               <StatCard icon="📅" label="Orders This Month"   value={n(data?.orders_this_month)}  sub="month" />

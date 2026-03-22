@@ -17,6 +17,7 @@ const { sendWhatsAppMessage, sendWhatsAppImage, sendBotReply, waToken, waPhoneId
 const { chatSessions } = require('../workers/sessionManager');
 const { UPLOADS_DIR } = require('../config/env');
 const { analyzePaymentDocument, buildAnalysisNote } = require('../services/imageAnalysis');
+const { genTraceId, makeLogger } = require('../utils/logger');
 
 /**
  * GET /webhook — Meta webhook verification challenge.
@@ -77,6 +78,7 @@ function receiveWebhook(req, res) {
 
   // Declare outside try so catch block can reference them for error recovery
   let from = null, client = null, userMessage = null;
+  let log = makeLogger(genTraceId(), null, null);
 
   (async () => {
     try {
@@ -104,17 +106,20 @@ function receiveWebhook(req, res) {
       from = msg.from || value.contacts?.[0]?.user_id;
       let sessionKey = `${client.id}:${from}`;
 
+      const traceId = genTraceId();
+      log = makeLogger(traceId, client.id, from);
+
       // Human-like delay → mark read (blue ticks)
       // Note: WhatsApp Cloud API does not support typing indicators
       await new Promise(r => setTimeout(r, 1000 + Math.random() * 1500));
       markMessageRead(msg.id, client).catch(() => {});
 
-      console.log(`[WEBHOOK-POST] client=${client.id} msg type=${msg.type} from=${from}`);
+      log.info(`[WEBHOOK] type=${msg.type}`);
 
       // ── Image messages ──────────────────────────────────────────────────────
       if (msg.type === 'image') {
         const caption = msg.image?.caption?.trim() || '';
-        console.log(`[WEBHOOK-POST] Image from ${from} | caption="${caption}"`);
+        log.info(`[WEBHOOK] Image received | caption="${caption}"`);
 
         await db.upsertCustomer(from, null, client?.id);
         if (chatSessions.has(sessionKey)) {
@@ -169,10 +174,10 @@ function receiveWebhook(req, res) {
               [client.id]
             );
             if (analyzerCheck.rows.length) {
-              console.log(`[IMAGE-ANALYZER] Analyzing image for client=${client.id}`);
+              log.info(`[IMAGE-ANALYZER] Analyzing image`);
               const cfg = await db.getPluginConfig(client.id, 'image_analyzer');
               const analysis = await analyzePaymentDocument(imgBuffer, imgMimeType, cfg.api_key || null);
-              console.log(`[IMAGE-ANALYZER] Result: type=${analysis.document_type} payment=${analysis.is_payment_related} amount=${analysis.amount}`);
+              log.info(`[IMAGE-ANALYZER] Result: type=${analysis.document_type} payment=${analysis.is_payment_related} amount=${analysis.amount}`);
 
               let pendingOrders = [];
               if (analysis.is_payment_related) {
@@ -192,7 +197,7 @@ function receiveWebhook(req, res) {
             : `[Customer sent a photo (no caption). You cannot see the image. Acknowledge what the customer has sent and respond appropriately. Add a short note that you cannot view images but the team will review it.]`;
         }
 
-        const { botReply, imagesToSend, productImagesToSend: imgProductImages } = await handleMessage(from, imageNote, imgSession.chat, { skipUserInsert: true, client });
+        const { botReply, imagesToSend, productImagesToSend: imgProductImages } = await handleMessage(from, imageNote, imgSession.chat, { skipUserInsert: true, client, traceId });
         if (botReply.trim()) await sendBotReply(from, botReply, client);
 
         for (const filename of imagesToSend) {
@@ -262,7 +267,7 @@ function receiveWebhook(req, res) {
               [client.id]
             );
             if (analyzerCheck.rows.length) {
-              console.log(`[IMAGE-ANALYZER] Analyzing PDF for client=${client.id}`);
+              log.info(`[IMAGE-ANALYZER] Analyzing PDF`);
               // Build a session if needed (mirrors image path)
               if (!chatSessions.has(sessionKey)) {
                 chatSessions.set(sessionKey, { chat: await buildChatSession(from, client), phoneNumber: from });
@@ -272,7 +277,7 @@ function receiveWebhook(req, res) {
 
               const cfg = await db.getPluginConfig(client.id, 'image_analyzer');
               const analysis = await analyzePaymentDocument(docBuffer, docMimeType, cfg.api_key || null);
-              console.log(`[IMAGE-ANALYZER] PDF result: type=${analysis.document_type} payment=${analysis.is_payment_related} amount=${analysis.amount}`);
+              log.info(`[IMAGE-ANALYZER] PDF result: type=${analysis.document_type} payment=${analysis.is_payment_related} amount=${analysis.amount}`);
 
               let pendingOrders = [];
               if (analysis.is_payment_related) {
@@ -281,7 +286,7 @@ function receiveWebhook(req, res) {
               }
 
               const docNote = buildAnalysisNote(analysis, '', pendingOrders, cfg.verification_prompt || '');
-              const { botReply: docReply, imagesToSend: docImages, productImagesToSend: docProductImages } = await handleMessage(from, docNote, docSession.chat, { skipUserInsert: true, client });
+              const { botReply: docReply, imagesToSend: docImages, productImagesToSend: docProductImages } = await handleMessage(from, docNote, docSession.chat, { skipUserInsert: true, client, traceId });
               if (docReply.trim()) await sendBotReply(from, docReply, client);
               for (const filename of docImages) {
                 await sendWhatsAppImage(from, filename, '', client);
@@ -314,7 +319,7 @@ function receiveWebhook(req, res) {
       // ── Text messages ───────────────────────────────────────────────────────
       userMessage = msg.text?.body;
       if (!userMessage) {
-        console.log(`[WEBHOOK-POST] Unsupported message type "${msg.type}" from ${from} — skipping`);
+        log.warn(`[WEBHOOK] Unsupported message type "${msg.type}" — skipping`);
         return;
       }
 
@@ -322,7 +327,7 @@ function receiveWebhook(req, res) {
       if (client.ai_enabled === false) {
         await db.upsertCustomer(from, null, client.id);
         await db.insertMessage(from, userMessage, 'user', null, client.id);
-        console.log(`[WEBHOOK] AI globally disabled for client ${client.id} — message stored, no reply sent`);
+        log.info(`[WEBHOOK] AI globally disabled — message stored, no reply sent`);
         return;
       }
 
@@ -331,7 +336,7 @@ function receiveWebhook(req, res) {
       if (!aiEnabled) {
         await db.upsertCustomer(from, null, client.id);
         await db.insertMessage(from, userMessage, 'user', null, client.id);
-        console.log(`[webhook] AI disabled for ${client.id}:${from} — message stored, no reply sent`);
+        log.info(`[WEBHOOK] AI disabled for this chat — message stored, no reply sent`);
         return;
       }
 
@@ -339,7 +344,7 @@ function receiveWebhook(req, res) {
       if (chatSessions.has(sessionKey)) {
         const dbMsgs = await db.getMessagesByPhone(from, client?.id);
         if (dbMsgs.length === 0) {
-          console.log(`[WEBHOOK-POST] DB cleared for ${from} — rebuilding session`);
+          log.info(`[SESSION] DB cleared — rebuilding session`);
           chatSessions.delete(sessionKey);
         }
       }
@@ -347,8 +352,8 @@ function receiveWebhook(req, res) {
 
       const existingSession = chatSessions.get(sessionKey);
       if (!existingSession || existingSession.settingsFingerprint !== settingsFingerprint) {
-        if (existingSession) console.log(`[WEBHOOK-POST] Settings changed — rebuilding session for ${client.id}:${from}`);
-        else console.log(`[WEBHOOK-POST] New WhatsApp session for ${client.id}:${from}`);
+        if (existingSession) log.info(`[SESSION] Settings changed — rebuilding session`);
+        else log.info(`[SESSION] New session`);
         chatSessions.set(sessionKey, {
           chat:                await buildChatSession(from, client),
           phoneNumber:         from,
@@ -358,9 +363,9 @@ function receiveWebhook(req, res) {
       const session = chatSessions.get(sessionKey);
       session.lastUsed = Date.now();
 
-      const { botReply, imagesToSend, productImagesToSend } = await handleMessage(from, userMessage, session.chat, { client });
+      const { botReply, imagesToSend, productImagesToSend } = await handleMessage(from, userMessage, session.chat, { client, traceId });
       if (!botReply.trim()) {
-        console.warn(`[WEBHOOK-POST] Empty botReply from Gemini for ${from} — skipping send`);
+        log.warn(`[WEBHOOK] Empty botReply from Gemini — skipping send`);
       } else {
         await sendBotReply(from, botReply, client);
       }
@@ -389,7 +394,7 @@ function receiveWebhook(req, res) {
         }
       }
     } catch (err) {
-      console.error(`[WEBHOOK-POST] ERROR:`, err?.response?.data ?? err.message);
+      log.error(`[WEBHOOK] ERROR:`, err?.response?.data ?? err.message);
       if (from && client && userMessage) {
         try {
           const apology = client.error_message ||

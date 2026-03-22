@@ -13,6 +13,7 @@ const buildSystemInstruction = require('./buildInstruction');
 const { buildOrderFieldsInstruction, buildContactInstruction } = require('./buildInstruction');
 const pluginLoader = require('./pluginLoader');
 const { embedText } = require('./embedder');
+const { makeLogger } = require('../utils/logger');
 
 // ─── Gemini client ────────────────────────────────────────────────────────────
 const systemInstruction = buildSystemInstruction();
@@ -314,13 +315,14 @@ async function buildChatSession(phoneNumber, client) {
  *   callCostUSD: number, inputTokens: number, outputTokens: number,
  *   imagesToSend: string[], productImagesToSend: Array<{url: string, caption: string}>}>}
  */
-async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserInsert = false, client = null, retryNote = null } = {}) {
-  console.log(`[IN] ${phoneNumber}: "${userMessage.substring(0, 100)}"`);
+async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserInsert = false, client = null, retryNote = null, traceId = '?' } = {}) {
+  const log = makeLogger(traceId, client?.id, phoneNumber);
+  log.info(`[IN] "${userMessage.substring(0, 100)}"`);
 
   await db.upsertCustomer(phoneNumber, null, client?.id);
   if (!skipUserInsert) {
     await db.insertMessage(phoneNumber, userMessage, 'user', null, client?.id ?? null);
-    console.log(`[DB] Saved user message for ${phoneNumber}`);
+    log.info(`[DB] Saved user message`);
   }
 
   // For multilingual clients: always reload history from DB so _history is always
@@ -328,7 +330,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   const isMultilingual = client?.custom_prompt?.trim().startsWith('[[MULTILINGUAL]]');
   if (isMultilingual) {
     chatSession._history = [];
-    console.log(`[LANG] Multilingual client — forcing fresh DB history reload for ${phoneNumber}`);
+    log.info(`[LANG] Multilingual — forcing fresh DB history reload`);
   }
 
   // If in-memory history is empty, reload last 40 messages from DB
@@ -345,7 +347,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
       }
       while (merged.length && merged[0].role !== 'user') merged.shift();
       chatSession._history = merged;
-      console.log(`[SESSION] Reloaded ${merged.length} messages from DB into${isMultilingual ? ' (multilingual)' : ''} session`);
+      log.info(`[SESSION] Reloaded ${merged.length} messages from DB${isMultilingual ? ' (multilingual)' : ''}`);
     }
   }
 
@@ -359,11 +361,11 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   // History is always clean (reloaded from DB above), so no label accumulates.
   if (isMultilingual) {
     messageToSend = `[CURRENT_MESSAGE_START]\n${messageToSend}\n[CURRENT_MESSAGE_END]`;
-    console.log(`[LANG] Wrapped message with language marker for ${phoneNumber}`);
+    log.info(`[LANG] Wrapped message with language marker`);
   }
 
-  console.log(`[GEMINI] Sending message | historyTurns=${chatSession._history?.length || 0} | msgLen=${messageToSend.length} | preview="${messageToSend.slice(0, 80).replace(/\n/g, '\\n')}"`);
-  console.log(`[GEMINI] Full prompt: ${messageToSend.replace(/\n/g, '\\n')}`);
+  log.info(`[GEMINI] Sending message | historyTurns=${chatSession._history?.length || 0} | msgLen=${messageToSend.length} | preview="${messageToSend.slice(0, 80).replace(/\n/g, '\\n')}"`);
+  log.info(`[GEMINI] Full prompt: ${messageToSend.replace(/\n/g, '\\n')}`);
   let result;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
@@ -372,12 +374,12 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     } catch (aiErr) {
       const retryable = /503|unavailable|overloaded/i.test(aiErr.message || '');
       const funcTurnErr = /function response turn/i.test(aiErr.message || '');
-      console.error(`[GEMINI] Attempt ${attempt}/3 failed:`, aiErr.message);
+      log.error(`[GEMINI] Attempt ${attempt}/3 failed:`, aiErr.message);
       if (attempt < 3 && retryable) {
         await new Promise(r => setTimeout(r, 1000 * attempt));
       } else if (attempt < 3 && funcTurnErr && chatSession._history) {
         // History has orphaned functionCall/functionResponse turns — strip them and retry
-        console.warn('[GEMINI] Sanitizing history due to function turn mismatch, retrying...');
+        log.warn('[GEMINI] Sanitizing history due to function turn mismatch, retrying...');
         chatSession._history = chatSession._history.filter(
           turn => !turn.parts?.some(p => p.functionCall || p.functionResponse)
         );
@@ -395,7 +397,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   let fcLoopCount = 0;
   const productImagesToSend = []; // track images to send after text reply
   const initialFcCalls = candidate.functionCalls();
-  console.log(`[FC] Gemini initial response has ${initialFcCalls?.length || 0} function call(s): [${(initialFcCalls || []).map(f => f.name).join(', ')}]`);
+  log.info(`[FC] Gemini initial response has ${initialFcCalls?.length || 0} function call(s): [${(initialFcCalls || []).map(f => f.name).join(', ')}]`);
   while (candidate.functionCalls()?.length > 0 && fcLoopCount++ < 8) {
     const calls = candidate.functionCalls();
     const functionResponses = [];
@@ -404,7 +406,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     for (const fc of calls) {
       if (fc.name === 'search_products' && client?.product_catalog_enabled && db.IS_PG) {
         const maxPrice = (fc.args.max_price != null && fc.args.max_price > 0) ? fc.args.max_price : null;
-        console.log(`[RAG] search_products called with query: "${fc.args.query}"${maxPrice != null ? ` | max_price: ${maxPrice}` : ''}`);
+        log.info(`[RAG] search_products called with query: "${fc.args.query}"${maxPrice != null ? ` | max_price: ${maxPrice}` : ''}`);
         let resultText = 'No matching products found.';
         const limit = client.max_products_in_context || 5;
         const formatProducts = (products) => products.map(p => {
@@ -420,22 +422,22 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
           const emb = await embedText(fc.args.query);
           products = await db.vectorSearchProducts(client.id, emb, limit, maxPrice);
           if (products.length > 0) {
-            console.log(`[RAG] Vector search returned ${products.length} products`);
+            log.info(`[RAG] Vector search returned ${products.length} products`);
             resultText = formatProducts(products);
           }
         } catch (e) {
-          console.warn('[RAG] Vector search failed, falling back to FTS:', e.message);
+          log.warn('[RAG] Vector search failed, falling back to FTS:', e.message);
         }
 
         if (!products.length) {
           try {
             products = await db.searchProducts(client.id, fc.args.query, limit, maxPrice);
             if (products.length > 0) {
-              console.log(`[RAG] FTS fallback returned ${products.length} products`);
+              log.info(`[RAG] FTS fallback returned ${products.length} products`);
               resultText = formatProducts(products);
             }
           } catch (e) {
-            console.warn('[RAG] FTS fallback failed:', e.message);
+            log.warn('[RAG] FTS fallback failed:', e.message);
           }
         }
 
@@ -450,27 +452,27 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
         anyHandled = true;
 
       } else if (fc.name === 'search_knowledge' && client?.knowledge_base_enabled && db.IS_PG) {
-        console.log(`[RAG] search_knowledge called with query: "${fc.args.query}"`);
+        log.info(`[RAG] search_knowledge called with query: "${fc.args.query}"`);
         let resultText = 'No relevant information found in the knowledge base.';
         try {
           const emb = await embedText(fc.args.query);
           const chunks = await db.vectorSearchKnowledge(client.id, emb, 8);
           if (chunks.length > 0) {
-            console.log(`[RAG] Knowledge base returned ${chunks.length} chunks`);
+            log.info(`[RAG] Knowledge base returned ${chunks.length} chunks`);
             resultText = 'IMPORTANT: Answer using ONLY the exact information below. Do not change numbers, add details, or use any outside knowledge.\n\n'
               + chunks.map(c => `[${c.title}]\n${c.content}`).join('\n\n---\n\n');
           } else {
-            console.log(`[RAG] Knowledge base returned no results`);
+            log.info(`[RAG] Knowledge base returned no results`);
           }
         } catch (e) {
-          console.warn('[RAG] Knowledge search failed:', e.message);
+          log.warn('[RAG] Knowledge search failed:', e.message);
         }
         functionResponses.push({ functionResponse: { name: 'search_knowledge', response: { result: resultText } } });
         anyHandled = true;
 
       } else if (fc.name === 'send_image') {
         const { image_url, caption = '' } = fc.args;
-        console.log(`[MEDIA] send_image called: url="${image_url}" caption="${caption}"`);
+        log.info(`[MEDIA] send_image called: url="${image_url}" caption="${caption}"`);
         if (image_url) productImagesToSend.push({ url: image_url, caption });
         functionResponses.push({ functionResponse: { name: 'send_image', response: { ok: true } } });
         anyHandled = true;
@@ -502,7 +504,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     .map(p => p.text)
     .join('');
   const rawReply = nonThoughtText || candidate.text() || '';
-  console.log(`[GEMINI] Raw response JSON: ${JSON.stringify({ parts: rawParts.map(p => ({ thought: !!p.thought, text: p.text?.slice(0, 300) })), rawReply: rawReply.slice(0, 500) })}`);
+  log.info(`[GEMINI] Raw response JSON: ${JSON.stringify({ parts: rawParts.map(p => ({ thought: !!p.thought, text: p.text?.slice(0, 300) })), rawReply: rawReply.slice(0, 500) })}`);
 
   let botReply  = rawReply
     .replace(/\*\*([^*\n]+)\*\*/g, '*$1*') // convert markdown **bold** → WhatsApp *bold*
@@ -512,7 +514,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   // If Gemini returned only thought parts or exited the function loop without text,
   // send one extra nudge to get a plain-text answer before falling back to the error message.
   if (!botReply && productImagesToSend.length === 0) {
-    console.warn('[GEMINI] Empty reply — nudging Gemini for plain text response');
+    log.warn('[GEMINI] Empty reply — nudging Gemini for plain text response');
     try {
       const nudge = await chatSession.sendMessage('Please provide your response as plain text now.');
       const nudgeParts = nudge.response.candidates?.[0]?.content?.parts || [];
@@ -522,14 +524,14 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
         .join('')
         .trim();
       if (!botReply) botReply = nudge.response.text?.() || '';
-      console.log(`[GEMINI] Nudge reply: "${botReply.substring(0, 80)}"`);
+      log.info(`[GEMINI] Nudge reply: "${botReply.substring(0, 80)}"`);
     } catch (e) {
-      console.error('[GEMINI] Nudge failed:', e.message);
+      log.error('[GEMINI] Nudge failed:', e.message);
     }
   }
 
   if (!botReply && productImagesToSend.length === 0) {
-    console.warn('[GEMINI] Still empty after nudge — using fallback message');
+    log.warn('[GEMINI] Still empty after nudge — using fallback message');
     botReply = client?.error_message || "Sorry, I didn't get that. Could you please try again? 🙏";
   }
 
@@ -540,20 +542,20 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   while ((m = IMAGE_RE.exec(botReply)) !== null) imagesToSend.push(m[1].trim());
   if (imagesToSend.length > 0) {
     botReply = botReply.replace(/\[\[SEND_IMAGE:[^\]]+\]\]/g, '').replace(/\n{3,}/g, '\n\n').trim();
-    console.log(`[MSG] Image markers found: ${imagesToSend.join(', ')}`);
+    log.info(`[MSG] Image markers found: ${imagesToSend.join(', ')}`);
   }
 
   const usage        = result.response.usageMetadata || {};
-  console.log(`[GEMINI] usageMetadata raw:`, JSON.stringify(usage));
+  log.info(`[GEMINI] usageMetadata raw: ${JSON.stringify(usage)}`);
   const inputTokens  = usage.promptTokenCount     || usage.inputTokenCount  || 0;
   const outputTokens = usage.candidatesTokenCount || usage.outputTokenCount || 0;
   const callCostUSD  = calcCost(inputTokens, outputTokens);
-  console.log(`[OUT] "${botReply.substring(0, 120)}" | tokens in=${inputTokens} out=${outputTokens} cost=$${callCostUSD.toFixed(6)}`);
+  log.info(`[OUT] "${botReply.substring(0, 120)}" | tokens in=${inputTokens} out=${outputTokens} cost=$${callCostUSD.toFixed(6)}`);
 
   let orderId = null;
   const orderMatch = botReply.match(ORDER_MARKER_REGEX);
   if (orderMatch) {
-    console.log(`[ORDER] ORDER_COMPLETE marker detected`);
+    log.info(`[ORDER] ORDER_COMPLETE marker detected`);
     botReply = botReply.replace(ORDER_MARKER_REGEX, '').trim();
 
     let details = null;
@@ -562,24 +564,24 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
       const sanitized = orderMatch[1].replace(/\\'/g, "'");
       details = JSON.parse(sanitized);
     } catch (e) {
-      console.error(`[ORDER] Failed to parse order JSON from marker:`, e.message, orderMatch[1]);
+      log.error(`[ORDER] Failed to parse order JSON from marker:`, e.message, orderMatch[1]);
     }
 
     if (details) {
       orderId = await generateOrderId(client);
       await db.insertOrder(orderId, phoneNumber, client?.id ?? null, details);
-      console.log(`[ORDER] Saved order ${orderId} for ${phoneNumber}`);
+      log.info(`[ORDER] Saved order ${orderId}`);
       if (details.summary) {
         await db.updateOrderAISummary(orderId, details.summary);
-        console.log(`[ORDER] AI summary saved for ${orderId}`);
+        log.info(`[ORDER] AI summary saved for ${orderId}`);
       }
       if (details.customer_name) {
         await db.upsertCustomer(phoneNumber, details.customer_name, client?.id);
-        console.log(`[DB] Updated customer name: ${details.customer_name}`);
+        log.info(`[DB] Updated customer name: ${details.customer_name}`);
       }
       botReply += `\n\n✅ *ඔබේ Order ID: ${orderId}*`;
     } else {
-      console.warn(`[ORDER] ORDER_COMPLETE marker found but JSON parse failed`);
+      log.warn(`[ORDER] ORDER_COMPLETE marker found but JSON parse failed`);
     }
   }
 
@@ -596,12 +598,12 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
             ? (typeof order.custom_fields === 'string' ? JSON.parse(order.custom_fields) : order.custom_fields)
             : {};
           await db.updateOrderCustomFields(order_id, { ...cf, ...updates });
-          console.log(`[ORDER] Updated fields for ${order_id}:`, updates);
+          log.info(`[ORDER] Updated fields for ${order_id}:`, updates);
         } else {
-          console.warn(`[ORDER] ORDER_UPDATE: order ${order_id} not found for ${phoneNumber}`);
+          log.warn(`[ORDER] ORDER_UPDATE: order ${order_id} not found`);
         }
       }
-    } catch (e) { console.error('[ORDER] ORDER_UPDATE parse failed:', e.message); }
+    } catch (e) { log.error('[ORDER] ORDER_UPDATE parse failed:', e.message); }
   }
 
   const summaryMatch = botReply.match(UPDATE_SUMMARY_REGEX);
@@ -612,11 +614,11 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
       const latestOrder = await db.getLatestOrder(phoneNumber, client?.id);
       if (latestOrder) {
         await db.updateOrderAISummary(latestOrder.order_id, summaryText);
-        console.log(`[ORDER] AI summary updated for ${latestOrder.order_id}`);
+        log.info(`[ORDER] AI summary updated for ${latestOrder.order_id}`);
       } else {
-        console.warn(`[ORDER] UPDATE_SUMMARY: no order found for ${phoneNumber}`);
+        log.warn(`[ORDER] UPDATE_SUMMARY: no order found`);
       }
-    } catch (e) { console.error('[ORDER] UPDATE_SUMMARY failed:', e.message); }
+    } catch (e) { log.error('[ORDER] UPDATE_SUMMARY failed:', e.message); }
   }
 
   const paymentMatch = botReply.match(PAYMENT_IDENTIFIED_REGEX);
@@ -643,11 +645,11 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
             identified_at: new Date().toISOString(),
           },
         });
-        console.log(`[ORDER] Payment identified flag set on ${order.order_id}`);
+        log.info(`[ORDER] Payment identified flag set on ${order.order_id}`);
       } else {
-        console.warn(`[ORDER] PAYMENT_IDENTIFIED: no matching order for ${phoneNumber}`);
+        log.warn(`[ORDER] PAYMENT_IDENTIFIED: no matching order`);
       }
-    } catch (e) { console.error('[ORDER] PAYMENT_IDENTIFIED failed:', e.message); }
+    } catch (e) { log.error('[ORDER] PAYMENT_IDENTIFIED failed:', e.message); }
   }
 
   let paymentReceived = false;
@@ -663,7 +665,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   // Strip [[MSG_BREAK]] markers before saving to DB (clean single text for history)
   const botReplyForDb = botReply.replace(/\[\[MSG_BREAK\]\]/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
   await db.insertMessage(phoneNumber, botReplyForDb, 'bot', callCostUSD, client?.id ?? null);
-  console.log(`[DB] Saved bot reply for ${phoneNumber} cost=$${callCostUSD.toFixed(6)}`);
+  log.info(`[DB] Saved bot reply cost=$${callCostUSD.toFixed(6)}`);
 
   // Sliding window: keep only last 40 entries in memory, drop oldest from front
   const MAX_HISTORY = 40;

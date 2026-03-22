@@ -459,7 +459,12 @@ export default function Clients() {
           <Field label="Package">
             <select
               value={form.package_id || ''}
-              onChange={e => set('package_id')(e.target.value || null)}
+              onChange={e => {
+                const pid = e.target.value || null;
+                set('package_id')(pid);
+                const pkg = packages.find(p => p.id === pid);
+                if (pkg) set('per_message_cost')(pkg.per_message_cost ?? 0);
+              }}
               className="w-full px-3 py-2 rounded-lg text-sm outline-none border"
               style={{ background: 'var(--bg-card)', color: 'var(--text-1)', borderColor: 'var(--border)' }}
             >
@@ -482,7 +487,7 @@ export default function Clients() {
                 className="w-full px-3 py-2 rounded-lg text-sm outline-none border"
                 style={{ background: 'var(--bg-card)', color: 'var(--text-1)', borderColor: 'var(--border)' }} />
             </Field>
-            <Field label="Cost / Message" hint="Overage price per msg">
+            <Field label="Cost / Message (LKR)" hint="Overage price per msg">
               <input type="number" min="0" step="0.000001" value={form.per_message_cost ?? 0}
                 onChange={e => set('per_message_cost')(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg text-sm outline-none border"

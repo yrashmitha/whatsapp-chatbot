@@ -87,7 +87,7 @@ function PackageModal({ open, onClose, onSaved, item }) {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Per-Message Cost (USD)</label>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Per-Message Cost (LKR)</label>
             <input
               type="number" min="0" step="0.000001" value={perMessageCost}
               onChange={e => setPerMessageCost(e.target.value)}

@@ -331,6 +331,7 @@ function receiveWebhook(req, res) {
           ? `Our assistant is currently unavailable. Please contact us directly at ${client.contact_number} 🙏`
           : `Our assistant is currently unavailable. We'll get back to you shortly 🙏`;
         await sendWhatsAppMessage(from, disabledMsg, client);
+        await db.insertMessage(from, disabledMsg, 'bot', null, client.id);
         log.info(`[WEBHOOK] AI disabled — fallback sent`);
         return;
       }
@@ -362,6 +363,7 @@ function receiveWebhook(req, res) {
             ? `Our AI assistant has reached its monthly limit. Please contact us at ${client.contact_number} for assistance 🙏`
             : `Our AI assistant has reached its monthly limit. We'll be back next month 🙏`;
           await sendWhatsAppMessage(from, limitMsg, client);
+          await db.insertMessage(from, limitMsg, 'bot', null, client.id);
           log.info(`[WEBHOOK] Monthly limit reached (${used}/${totalLimit})`);
           return;
         }

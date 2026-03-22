@@ -78,7 +78,7 @@ async function getSummary(req, res) {
         };
       }
     }
-    res.json({ ...r.rows[0], ...packageInfo });
+    res.json({ ...r.rows[0], ...packageInfo, billing_period_start: billingFrom.toISOString() });
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 

@@ -183,16 +183,79 @@ export default function Summary() {
   const n   = (v) => (v == null ? '-' : Number(v).toLocaleString());
   const usd = (v) => (v == null ? '-' : `$${parseFloat(v).toFixed(4)}`);
 
+  // Package usage bar derived values
+  const used       = data?.ai_messages_this_month || 0;
+  const freeLimit  = data?.free_limit || 0;
+  const totalLimit = freeLimit + (data?.overage_limit || 0);
+  const hasPackage = !!data?.package_name;
+
+  const freePct    = freeLimit  > 0 ? Math.min(100, (used / freeLimit)  * 100) : 0;
+  const totalPct   = totalLimit > 0 ? Math.min(100, (used / totalLimit) * 100) : 0;
+  const barPct     = hasPackage ? (totalLimit > 0 ? totalPct : freePct) : 0;
+
+  const barColor = !hasPackage ? 'var(--accent)'
+    : used >= totalLimit ? '#f87171'
+    : used >= freeLimit  ? '#fbbf24'
+    : used >= freeLimit * 0.8 ? '#fbbf24'
+    : '#34d399';
+
+  // Next billing refresh = billing_period_start + 1 month
+  let nextRefresh = null;
+  if (data?.billing_period_start) {
+    const d = new Date(data.billing_period_start);
+    nextRefresh = new Date(d.getFullYear(), d.getMonth() + 1, d.getDate());
+  }
+  const refreshLabel = nextRefresh
+    ? nextRefresh.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    : null;
+
   return (
     <Layout>
       <style>{ANIM}</style>
       <div className="flex flex-col h-full">
         <div
-          className="px-6 py-4 shrink-0 flex items-center gap-2"
+          className="px-6 py-4 shrink-0"
           style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-surface)' }}
         >
-          <h1 className="text-lg font-semibold" style={{ color: 'var(--text-1)' }}>Summary</h1>
-          <span className="text-xs ml-1" style={{ color: 'var(--text-3)' }}>Live stats for your account</span>
+          <div className="flex items-center justify-between mb-1">
+            <h1 className="text-lg font-semibold" style={{ color: 'var(--text-1)' }}>Summary</h1>
+            {hasPackage && (
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-medium" style={{ color: 'var(--text-2)' }}>
+                  {n(used)} / {n(totalLimit > 0 ? totalLimit : freeLimit)} msgs
+                  {data.overage_limit > 0 && (
+                    <span style={{ color: 'var(--text-3)' }}>
+                      {' '}({n(freeLimit)} free + {n(data.overage_limit)} overage)
+                    </span>
+                  )}
+                </span>
+                {refreshLabel && (
+                  <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.07)', color: 'var(--text-3)' }}>
+                    resets {refreshLabel}
+                  </span>
+                )}
+              </div>
+            )}
+            {!hasPackage && (
+              <span className="text-xs" style={{ color: 'var(--text-3)' }}>Live stats for your account</span>
+            )}
+          </div>
+          {hasPackage && (
+            <div className="relative h-2 rounded-full overflow-hidden mt-2" style={{ background: 'rgba(255,255,255,0.07)' }}>
+              {/* free zone fill */}
+              <div
+                className="absolute left-0 top-0 h-full rounded-full transition-all duration-500"
+                style={{ width: `${barPct}%`, background: barColor }}
+              />
+              {/* divider between free and overage */}
+              {data.overage_limit > 0 && totalLimit > 0 && (
+                <div
+                  className="absolute top-0 h-full w-px"
+                  style={{ left: `${(freeLimit / totalLimit) * 100}%`, background: 'rgba(255,255,255,0.25)' }}
+                />
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex-1 overflow-auto px-6 py-6">

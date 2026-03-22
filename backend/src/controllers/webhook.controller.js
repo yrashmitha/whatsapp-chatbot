@@ -349,11 +349,16 @@ function receiveWebhook(req, res) {
       if (client.package_message_limit) {
         const freeLimit  = client.package_message_limit + (client.bonus_messages || 0);
         const totalLimit = freeLimit + (client.overage_limit || 0);
+        // Billing period starts on the same day-of-month as the client's onboard date
+        const billingDay = client.created_at ? new Date(client.created_at).getDate() : 1;
+        const now = new Date();
+        let periodStart = new Date(now.getFullYear(), now.getMonth(), billingDay);
+        if (periodStart > now) periodStart = new Date(now.getFullYear(), now.getMonth() - 1, billingDay);
         const { rows: usageRows } = await db.pgQuery(
           `SELECT COUNT(*)::int AS cnt FROM messages
            WHERE client_id=$1 AND sender_type='bot'
-           AND created_at >= date_trunc('month', NOW())`,
-          [client.id]
+           AND created_at >= $2`,
+          [client.id, periodStart]
         );
         const used = usageRows[0].cnt;
         if (used >= totalLimit) {

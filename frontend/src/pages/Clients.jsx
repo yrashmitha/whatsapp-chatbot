@@ -594,7 +594,10 @@ export default function Clients() {
                 {/* Info */}
                 <div className="flex-1 min-w-0">
                   <div className="font-medium truncate" style={labelStyle}>{c.name || c.id}</div>
-                  <div className="truncate" style={subStyle}>{c.id} · {c.type || 'general'}</div>
+                  <div className="truncate" style={subStyle}>
+                    {c.id} · {c.type || 'general'}
+                    {c.package_name && <span> · <span style={{ color: 'var(--accent)' }}>{c.package_name}</span></span>}
+                  </div>
                 </div>
 
                 {/* Toggles — stop propagation so click doesn't open drawer */}

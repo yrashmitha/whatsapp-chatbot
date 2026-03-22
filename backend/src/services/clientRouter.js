@@ -15,7 +15,7 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 const CLIENT_SELECT = `
   SELECT
-    c.id, c.name, c.type, c.active,
+    c.id, c.name, c.type, c.active, c.created_at,
     cc.phone_number_id, cc.wa_token_env, cc.wa_token, cc.use_system_wa_token, cc.webhook_verify_token,
     cc.ai_model, cc.system_prompt_mode, cc.custom_prompt, cc.error_message, cc.temperature,
     cc.brand_name, cc.brand_color, cc.logo_url,
@@ -89,7 +89,7 @@ async function getClientById(clientId) {
  */
 async function getAllClients() {
   const res = await pgQuery(`
-    SELECT c.id, c.name, c.type, c.active,
+    SELECT c.id, c.name, c.type, c.active, c.created_at,
       cc.phone_number_id, cc.brand_name, cc.brand_color, cc.logo_url,
       cc.order_id_prefix, cc.product_catalog_enabled, cc.ai_model,
       cc.system_prompt_mode, cc.order_flow_enabled, cc.ai_enabled,

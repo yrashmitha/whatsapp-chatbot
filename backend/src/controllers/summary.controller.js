@@ -3,27 +3,53 @@
 const db = require('../db');
 const resolveClientId = require('../middleware/resolveClientId');
 
+/**
+ * Compute billing period start based on client's onboard day-of-month.
+ * @param {string|Date|null} createdAt
+ * @returns {Date}
+ */
+function billingPeriodStart(createdAt) {
+  const billingDay = createdAt ? new Date(createdAt).getDate() : 1;
+  const now = new Date();
+  let start = new Date(now.getFullYear(), now.getMonth(), billingDay);
+  if (start > now) start = new Date(now.getFullYear(), now.getMonth() - 1, billingDay);
+  return start;
+}
+
 async function getSummary(req, res) {
   const clientId = resolveClientId(req);
   try {
-    const params = clientId ? [clientId] : [];
+    // Fetch client's onboard date to derive billing period start
+    let periodStart = null;
+    if (clientId) {
+      const clientRow = await db.pgQuery(`SELECT created_at FROM clients WHERE id=$1`, [clientId]);
+      if (clientRow.rows.length) periodStart = billingPeriodStart(clientRow.rows[0].created_at);
+    }
+    // Fall back to calendar month when no clientId or client not found
+    const billingFrom = periodStart || new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+
+    const params = clientId ? [clientId, billingFrom] : [billingFrom];
     const clientFilter = clientId ? `AND cu.client_id=$1` : '';
+    const msgClientFilter = clientId ? 'AND m.client_id=$1' : '';
+    const orderClientFilter = clientId ? 'AND o.client_id=$1' : '';
+    const p = (n) => `$${clientId ? n : n - 1}`; // shift param index when no clientId
+
     const r = await db.pgQuery(`
       SELECT
         COUNT(DISTINCT CASE WHEN m.created_at >= date_trunc('day', NOW()) AND m.sender_type='user' THEN m.phone_number END)::int  AS new_chats_today,
         COUNT(DISTINCT CASE WHEN o.created_at >= date_trunc('day', NOW()) THEN o.id END)::int                                    AS orders_today,
-        COUNT(DISTINCT CASE WHEN o.created_at >= date_trunc('month', NOW()) THEN o.id END)::int                                 AS orders_this_month,
+        COUNT(DISTINCT CASE WHEN o.created_at >= ${p(2)} THEN o.id END)::int                                                    AS orders_this_month,
         COUNT(DISTINCT o.id)::int                                                                                               AS orders_total,
         COUNT(DISTINCT CASE WHEN o.status IN ('pending','started') THEN o.id END)::int                                          AS open_orders,
         COUNT(DISTINCT cu.phone_number)::int                                                                                    AS total_customers,
         COALESCE(SUM(CASE WHEN m.created_at >= date_trunc('day', NOW()) THEN m.cost_usd END), 0)::numeric                       AS cost_today,
-        COALESCE(SUM(CASE WHEN m.created_at >= date_trunc('month', NOW()) THEN m.cost_usd END), 0)::numeric                    AS cost_this_month,
+        COALESCE(SUM(CASE WHEN m.created_at >= ${p(2)} THEN m.cost_usd END), 0)::numeric                                       AS cost_this_month,
         COUNT(CASE WHEN m.sender_type='bot' AND m.created_at >= date_trunc('day', NOW()) THEN 1 END)::int                      AS ai_messages_today,
-        COUNT(CASE WHEN m.sender_type='bot' AND m.created_at >= date_trunc('month', NOW()) THEN 1 END)::int                    AS ai_messages_this_month,
+        COUNT(CASE WHEN m.sender_type='bot' AND m.created_at >= ${p(2)} THEN 1 END)::int                                       AS ai_messages_this_month,
         COUNT(CASE WHEN m.sender_type='bot' THEN 1 END)::int                                                                   AS ai_messages_total
       FROM customers cu
-      LEFT JOIN messages m ON m.phone_number=cu.phone_number ${clientId ? 'AND m.client_id=$1' : ''}
-      LEFT JOIN orders   o ON o.phone_number=cu.phone_number ${clientId ? 'AND o.client_id=$1' : ''}
+      LEFT JOIN messages m ON m.phone_number=cu.phone_number ${msgClientFilter}
+      LEFT JOIN orders   o ON o.phone_number=cu.phone_number ${orderClientFilter}
       WHERE TRUE ${clientFilter}
     `, params);
     let packageInfo = {};

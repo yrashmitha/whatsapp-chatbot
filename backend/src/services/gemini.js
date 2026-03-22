@@ -134,9 +134,9 @@ async function buildChatSession(phoneNumber, client) {
     const mediaItems = await db.getClientMedia(client.id);
     let mediaBlock = '';
     if (mediaItems.length > 0) {
-      mediaBlock = '\n\n━━━ Media Images You Can Send ━━━\n'
-        + 'Use the send_image tool to deliver images to the customer. Send them at the right moment based on these descriptions:\n'
-        + mediaItems.map(m => `- "${m.title}": ${m.description}\n  URL: ${m.image_url}`).join('\n');
+      mediaBlock = '\n\n━━━ Media Files You Can Send ━━━\n'
+        + 'Use the send_image tool to deliver images or PDF documents to the customer. Send them at the right moment based on these descriptions:\n'
+        + mediaItems.map(m => `- "${m.title}" [${/\.pdf(\?|$)/i.test(m.image_url) ? 'PDF document' : 'image'}]: ${m.description}\n  URL: ${m.image_url}`).join('\n');
     }
     const hasProductCatalog = client?.product_catalog_enabled && db.IS_PG;
     const kbBlock = (client?.knowledge_base_enabled && db.IS_PG)
@@ -239,12 +239,12 @@ async function buildChatSession(phoneNumber, client) {
   // Always add send_image tool (for media library)
   const sendImageDecl = {
     name: 'send_image',
-    description: 'Send an image to the customer. Use this based on the media image descriptions in your system instructions — send images at exactly the right moment. Pass the exact image_url from your instructions.',
+    description: 'Send an image or PDF document to the customer. Use this based on the media file descriptions in your system instructions — send files at exactly the right moment. Pass the exact image_url from your instructions.',
     parameters: {
       type: 'OBJECT',
       properties: {
-        image_url: { type: 'STRING', description: 'The direct image URL to send' },
-        caption:   { type: 'STRING', description: 'Short caption shown under the image' },
+        image_url: { type: 'STRING', description: 'The direct file URL to send (image or PDF)' },
+        caption:   { type: 'STRING', description: 'Short caption shown under the file' },
       },
       required: ['image_url'],
     },

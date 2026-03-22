@@ -110,6 +110,31 @@ function NovaIcon() {
   );
 }
 
+/* Gauge/meter for package usage */
+function PackageUsageIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="26" height="26" fill="none">
+      <path d="M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"
+        fill="currentColor" opacity="0.1" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M5.5 17.5A8 8 0 0112 4a8 8 0 016.5 13.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      <path d="M12 12l-4.5 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
+        style={{animation:'sv-spin 8s linear infinite', transformOrigin:'12px 12px'}}/>
+      <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+    </svg>
+  );
+}
+
+/* Lightning bolt for overage */
+function OverageIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="26" height="26" fill="none">
+      <path d="M13 2L4.5 13.5H11L10 22L20 10H13.5L13 2z"
+        fill="currentColor" opacity="0.15" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"
+        style={{animation:'sv-pulse 1.8s ease-in-out infinite', transformOrigin:'12px 12px'}}/>
+    </svg>
+  );
+}
+
 /* Bar chart with animated rising bars */
 function CostIcon() {
   return (
@@ -186,6 +211,28 @@ export default function Summary() {
               <StatCard Icon={NovaIcon}     iconColor="#34d399"       label="Nova Replies Total"      value={n(data?.ai_messages_total)}                  accent="#34d399" />
               <StatCard Icon={CostIcon}     iconColor="#a78bfa"       label="Nova Cost Today"         value={usd(data?.cost_today)}           sub="24h"   accent="#a78bfa" />
               <StatCard Icon={CostIcon}     iconColor="#a78bfa"       label="Nova Cost This Month"    value={usd(data?.cost_this_month)}      sub="month" accent="#a78bfa" />
+              {data?.package_name && (
+                <>
+                  <StatCard
+                    Icon={PackageUsageIcon}
+                    iconColor="var(--accent)"
+                    label={`Package: ${data.package_name}`}
+                    value={`${n(data.ai_messages_this_month)} / ${n(data.free_limit)}`}
+                    sub="month"
+                    accent={
+                      data.ai_messages_this_month >= data.free_limit ? '#f87171' :
+                      data.ai_messages_this_month >= data.free_limit * 0.8 ? '#fbbf24' :
+                      'var(--accent)'
+                    }
+                  />
+                  {data.overage_limit > 0 && (
+                    <StatCard Icon={OverageIcon} iconColor="#fbbf24" label="Overage Used" value={`${n(data.overage_used)} / ${n(data.overage_limit)}`} sub="month" accent="#fbbf24" />
+                  )}
+                  {parseFloat(data.overage_cost) > 0 && (
+                    <StatCard Icon={CostIcon} iconColor="#a78bfa" label="Overage Billing" value={`$${parseFloat(data.overage_cost).toFixed(4)}`} sub="month" accent="#a78bfa" />
+                  )}
+                </>
+              )}
             </div>
           )}
         </div>

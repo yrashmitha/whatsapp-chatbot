@@ -33,6 +33,11 @@ const {
   deleteAttribute,
   bulkAttributes,
   bulkProducts,
+  listPackages,
+  createPackage,
+  updatePackage,
+  deletePackage,
+  changeClientPackage,
 } = require('../controllers/admin.controller');
 
 // Templates
@@ -74,5 +79,12 @@ router.get('/attributes',                      adminAuth, listAttributes);
 router.post('/attributes',                     adminAuth, createAttribute);
 router.delete('/attributes/:id',               adminAuth, deleteAttribute);
 router.post('/attributes/bulk',                adminAuth, bulkAttributes);
+
+// Packages
+router.get('/packages',                        adminAuth, listPackages);
+router.post('/packages',                       adminAuth, createPackage);
+router.patch('/packages/:packageId',           adminAuth, updatePackage);
+router.delete('/packages/:packageId',          adminAuth, deletePackage);
+router.patch('/clients/:clientId/package',     adminAuth, changeClientPackage);
 
 module.exports = router;

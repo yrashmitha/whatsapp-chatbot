@@ -374,7 +374,8 @@ async function createClient(req, res) {
           webhook_verify_token, ai_model, system_prompt_mode, custom_prompt, temperature,
           brand_name, brand_color, logo_url, order_id_prefix, product_catalog_enabled,
           order_flow_enabled, admin_password_env, contact_number, knowledge_base_enabled,
-          plugin_enabled, ai_enabled, gemini_api_key, use_system_gemini_key } = req.body;
+          plugin_enabled, ai_enabled, gemini_api_key, use_system_gemini_key,
+          package_id, bonus_messages, overage_limit, per_message_cost } = req.body;
   if (!id || !name) return res.status(400).json({ error: 'id and name required' });
   try {
     await db.pgQuery(`INSERT INTO clients (id, name, type) VALUES ($1, $2, $3)`,
@@ -384,8 +385,9 @@ async function createClient(req, res) {
         webhook_verify_token, ai_model, system_prompt_mode, custom_prompt, temperature, brand_name,
         brand_color, logo_url, order_id_prefix, product_catalog_enabled, order_flow_enabled,
         admin_password_env, contact_number, knowledge_base_enabled, plugin_enabled, ai_enabled,
-        gemini_api_key, use_system_gemini_key)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
+        gemini_api_key, use_system_gemini_key,
+        package_id, bonus_messages, overage_limit, per_message_cost)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)`,
       [id, phone_number_id || null, wa_token_env || null, wa_token || null,
        use_system_wa_token === true || use_system_wa_token === 'true',
        webhook_verify_token || null,
@@ -400,7 +402,11 @@ async function createClient(req, res) {
        plugin_enabled === true || plugin_enabled === 'true',
        ai_enabled !== false && ai_enabled !== 'false',
        gemini_api_key || null,
-       use_system_gemini_key === true || use_system_gemini_key === 'true']);
+       use_system_gemini_key === true || use_system_gemini_key === 'true',
+       package_id || null,
+       Number(bonus_messages) || 0,
+       Number(overage_limit) || 0,
+       Number(per_message_cost) || 0]);
     clientRouter.invalidateCache(id);
     res.json({ ok: true, id });
   } catch (err) {
@@ -421,7 +427,8 @@ async function updateClient(req, res) {
           webhook_verify_token, ai_model, system_prompt_mode, custom_prompt, temperature,
           brand_name, brand_color, logo_url, order_id_prefix, product_catalog_enabled,
           order_flow_enabled, admin_password_env, contact_number, knowledge_base_enabled,
-          plugin_enabled, ai_enabled, gemini_api_key, use_system_gemini_key } = req.body;
+          plugin_enabled, ai_enabled, gemini_api_key, use_system_gemini_key,
+          package_id, bonus_messages, overage_limit, per_message_cost } = req.body;
   try {
     if (name !== undefined || type !== undefined || active !== undefined) {
       await db.pgQuery(
@@ -455,8 +462,12 @@ async function updateClient(req, res) {
           ai_enabled=COALESCE($20,ai_enabled),
           gemini_api_key=COALESCE($21,gemini_api_key),
           use_system_gemini_key=COALESCE($22,use_system_gemini_key),
+          package_id=COALESCE($23,package_id),
+          bonus_messages=COALESCE($24,bonus_messages),
+          overage_limit=COALESCE($25,overage_limit),
+          per_message_cost=COALESCE($26,per_message_cost),
           updated_at=NOW()
-        WHERE client_id=$23`,
+        WHERE client_id=$27`,
         [
           phone_number_id !== undefined ? (phone_number_id || null) : null,
           wa_token_env !== undefined ? (wa_token_env || null) : null,
@@ -480,6 +491,10 @@ async function updateClient(req, res) {
           ai_enabled !== undefined ? (ai_enabled !== false && ai_enabled !== 'false') : null,
           gemini_api_key !== undefined ? (gemini_api_key || null) : null,
           use_system_gemini_key !== undefined ? (use_system_gemini_key === true || use_system_gemini_key === 'true') : null,
+          package_id !== undefined ? (package_id || null) : null,
+          bonus_messages !== undefined ? Number(bonus_messages) : null,
+          overage_limit !== undefined ? Number(overage_limit) : null,
+          per_message_cost !== undefined ? Number(per_message_cost) : null,
           clientId,
         ]);
     }
@@ -716,6 +731,84 @@ async function bulkProducts(req, res) {
   res.json({ ok: true, saved: saved.length, errors });
 }
 
+// ── Packages ──────────────────────────────────────────────────────────────────
+async function listPackages(req, res) {
+  try {
+    const r = await db.pgQuery(`SELECT * FROM packages ORDER BY message_limit ASC`);
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+async function createPackage(req, res) {
+  const { id, name, message_limit, per_message_cost = 0 } = req.body;
+  if (!id || !name || !message_limit) return res.status(400).json({ error: 'id, name, message_limit required' });
+  try {
+    await db.pgQuery(
+      `INSERT INTO packages (id, name, message_limit, per_message_cost) VALUES ($1,$2,$3,$4)`,
+      [id.trim(), name.trim(), Number(message_limit), Number(per_message_cost)]
+    );
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+async function updatePackage(req, res) {
+  const { packageId } = req.params;
+  const { name, message_limit, per_message_cost } = req.body;
+  try {
+    await db.pgQuery(
+      `UPDATE packages SET
+        name=COALESCE($1,name),
+        message_limit=COALESCE($2,message_limit),
+        per_message_cost=COALESCE($3,per_message_cost)
+       WHERE id=$4`,
+      [name || null, message_limit != null ? Number(message_limit) : null, per_message_cost != null ? Number(per_message_cost) : null, packageId]
+    );
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+async function deletePackage(req, res) {
+  const { packageId } = req.params;
+  try {
+    await db.pgQuery(`DELETE FROM packages WHERE id=$1`, [packageId]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+async function changeClientPackage(req, res) {
+  const { clientId } = req.params;
+  const { package_id } = req.body;
+  if (!package_id) return res.status(400).json({ error: 'package_id required' });
+  try {
+    // Get current client config
+    const clientRes = await db.pgQuery(
+      `SELECT cc.package_id, cc.bonus_messages, p.message_limit AS package_message_limit
+       FROM client_configs cc
+       LEFT JOIN packages p ON p.id = cc.package_id
+       WHERE cc.client_id=$1`, [clientId]
+    );
+    if (!clientRes.rows.length) return res.status(404).json({ error: 'Client not found' });
+    const current = clientRes.rows[0];
+
+    // Calculate remaining free messages this month
+    const usageRes = await db.pgQuery(
+      `SELECT COUNT(*)::int AS cnt FROM messages
+       WHERE client_id=$1 AND sender_type='bot'
+       AND created_at >= date_trunc('month', NOW())`, [clientId]
+    );
+    const used = usageRes.rows[0].cnt;
+    const currentFreeLimit = (current.package_message_limit || 0) + (current.bonus_messages || 0);
+    const remaining = Math.max(0, currentFreeLimit - used);
+
+    // Update package and set rollover as bonus_messages
+    await db.pgQuery(
+      `UPDATE client_configs SET package_id=$1, bonus_messages=$2 WHERE client_id=$3`,
+      [package_id, remaining, clientId]
+    );
+    res.json({ ok: true, bonus_messages: remaining });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
 module.exports = {
   listTemplates, listCustomers, getMessages, sendAdminMessage,
   deleteCustomer, deleteMessages, updateOrderStatus,
@@ -723,4 +816,5 @@ module.exports = {
   listClients, getClient, uploadImage, createClient, updateClient,
   listProducts, createProduct, updateProduct, deleteProduct,
   listAttributes, createAttribute, deleteAttribute, bulkAttributes, bulkProducts,
+  listPackages, createPackage, updatePackage, deletePackage, changeClientPackage,
 };

@@ -323,11 +323,15 @@ function receiveWebhook(req, res) {
         return;
       }
 
-      // Global AI kill switch — if disabled for this client, store message and skip Gemini
+      // Global AI kill switch — if disabled for this client, send fallback message
       if (client.ai_enabled === false) {
         await db.upsertCustomer(from, null, client.id);
         await db.insertMessage(from, userMessage, 'user', null, client.id);
-        log.info(`[WEBHOOK] AI globally disabled — message stored, no reply sent`);
+        const disabledMsg = client.contact_number
+          ? `Our assistant is currently unavailable. Please contact us directly at ${client.contact_number} 🙏`
+          : `Our assistant is currently unavailable. We'll get back to you shortly 🙏`;
+        await sendWhatsAppMessage(from, disabledMsg, client);
+        log.info(`[WEBHOOK] AI disabled — fallback sent`);
         return;
       }
 
@@ -338,6 +342,32 @@ function receiveWebhook(req, res) {
         await db.insertMessage(from, userMessage, 'user', null, client.id);
         log.info(`[WEBHOOK] AI disabled for this chat — message stored, no reply sent`);
         return;
+      }
+
+      // Package message limit check
+      if (client.package_message_limit) {
+        const freeLimit  = client.package_message_limit + (client.bonus_messages || 0);
+        const totalLimit = freeLimit + (client.overage_limit || 0);
+        const { rows: usageRows } = await db.pgQuery(
+          `SELECT COUNT(*)::int AS cnt FROM messages
+           WHERE client_id=$1 AND sender_type='bot'
+           AND created_at >= date_trunc('month', NOW())`,
+          [client.id]
+        );
+        const used = usageRows[0].cnt;
+        if (used >= totalLimit) {
+          await db.upsertCustomer(from, null, client.id);
+          await db.insertMessage(from, userMessage, 'user', null, client.id);
+          const limitMsg = client.contact_number
+            ? `Our AI assistant has reached its monthly limit. Please contact us at ${client.contact_number} for assistance 🙏`
+            : `Our AI assistant has reached its monthly limit. We'll be back next month 🙏`;
+          await sendWhatsAppMessage(from, limitMsg, client);
+          log.info(`[WEBHOOK] Monthly limit reached (${used}/${totalLimit})`);
+          return;
+        }
+        if (used >= freeLimit) {
+          log.info(`[WEBHOOK] Overage zone: ${used - freeLimit + 1}/${client.overage_limit} overage msgs used`);
+        }
       }
 
       // Invalidate stale in-memory session if DB was cleared externally

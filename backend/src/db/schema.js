@@ -385,6 +385,25 @@ async function init() {
         PRIMARY KEY (client_id, phone_number, plugin_id)
       );
     `);
+
+    // ── Packages ──────────────────────────────────────────────────────────────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS packages (
+        id               TEXT PRIMARY KEY,
+        name             TEXT NOT NULL,
+        message_limit    INT NOT NULL,
+        per_message_cost NUMERIC(10,6) NOT NULL DEFAULT 0,
+        created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+
+    // ── Package billing fields on client_configs ──────────────────────────────
+    await pool.query(`
+      ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS package_id        TEXT REFERENCES packages(id) DEFAULT NULL;
+      ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS bonus_messages    INT NOT NULL DEFAULT 0;
+      ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS overage_limit     INT NOT NULL DEFAULT 0;
+      ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS per_message_cost  NUMERIC(10,6) NOT NULL DEFAULT 0;
+    `);
   } else {
     db.exec(`PRAGMA foreign_keys = ON;`);
     db.exec(`
@@ -560,6 +579,23 @@ async function init() {
         PRIMARY KEY (client_id, phone_number, plugin_id)
       );
     `);
+
+    // ── Packages (SQLite) ─────────────────────────────────────────────────────
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS packages_local (
+        id               TEXT PRIMARY KEY,
+        name             TEXT NOT NULL,
+        message_limit    INTEGER NOT NULL,
+        per_message_cost REAL NOT NULL DEFAULT 0,
+        created_at       TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+
+    // ── Package billing fields on client_configs (SQLite) ─────────────────────
+    try { db.exec(`ALTER TABLE client_configs ADD COLUMN package_id       TEXT DEFAULT NULL`); } catch (_) {}
+    try { db.exec(`ALTER TABLE client_configs ADD COLUMN bonus_messages   INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
+    try { db.exec(`ALTER TABLE client_configs ADD COLUMN overage_limit    INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
+    try { db.exec(`ALTER TABLE client_configs ADD COLUMN per_message_cost REAL NOT NULL DEFAULT 0`); } catch (_) {}
   }
 }
 

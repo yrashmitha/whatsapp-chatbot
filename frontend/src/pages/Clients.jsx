@@ -120,6 +120,7 @@ const EMPTY = {
   knowledge_base_enabled: false, plugin_enabled: false,
   order_id_prefix: '', order_fields: [],
   ai_enabled: true,
+  package_id: '', bonus_messages: 0, overage_limit: 0, per_message_cost: 0,
 };
 
 /* ── Order field row editor ─────────────────────────────── */
@@ -189,6 +190,12 @@ export default function Clients() {
     retry: false,
   });
 
+  const { data: packagesData } = useQuery({
+    queryKey: ['packages'],
+    queryFn: () => adminApi.get('/packages').then(r => r.data),
+  });
+  const packages = packagesData || [];
+
   const saveMutation = useMutation({
     mutationFn: (body) => editing
       ? adminApi.put(`/clients/${editing.id}`, body)
@@ -251,6 +258,10 @@ export default function Clients() {
       order_id_prefix: c.order_id_prefix || '',
       order_fields: Array.isArray(c.order_fields) ? c.order_fields : (c.order_fields ? JSON.parse(c.order_fields) : []),
       ai_enabled: c.ai_enabled !== false,
+      package_id: c.package_id || '',
+      bonus_messages: c.bonus_messages ?? 0,
+      overage_limit: c.overage_limit ?? 0,
+      per_message_cost: c.per_message_cost ?? 0,
     });
     setActiveTab(0);
     setPassword('');
@@ -438,6 +449,46 @@ export default function Clients() {
               />
             </Field>
           )}
+          <div className="flex items-center justify-between p-3 rounded-lg border" style={{ borderColor: 'var(--border)' }}>
+            <div>
+              <div className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>AI Enabled</div>
+              <div className="text-xs" style={{ color: 'var(--text-3)' }}>Turn Nova AI on or off for this client</div>
+            </div>
+            <Toggle checked={!!form.ai_enabled} onChange={v => set('ai_enabled')(v)} />
+          </div>
+          <Field label="Package">
+            <select
+              value={form.package_id || ''}
+              onChange={e => set('package_id')(e.target.value || null)}
+              className="w-full px-3 py-2 rounded-lg text-sm outline-none border"
+              style={{ background: 'var(--bg-card)', color: 'var(--text-1)', borderColor: 'var(--border)' }}
+            >
+              <option value="">No package</option>
+              {packages.map(p => (
+                <option key={p.id} value={p.id}>{p.name} — {Number(p.message_limit).toLocaleString()} msgs/mo</option>
+              ))}
+            </select>
+          </Field>
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Bonus Messages" hint="Rollover / manual grant">
+              <input type="number" min="0" value={form.bonus_messages ?? 0}
+                onChange={e => set('bonus_messages')(Number(e.target.value))}
+                className="w-full px-3 py-2 rounded-lg text-sm outline-none border"
+                style={{ background: 'var(--bg-card)', color: 'var(--text-1)', borderColor: 'var(--border)' }} />
+            </Field>
+            <Field label="Overage Limit" hint="Extra msgs after package">
+              <input type="number" min="0" value={form.overage_limit ?? 0}
+                onChange={e => set('overage_limit')(Number(e.target.value))}
+                className="w-full px-3 py-2 rounded-lg text-sm outline-none border"
+                style={{ background: 'var(--bg-card)', color: 'var(--text-1)', borderColor: 'var(--border)' }} />
+            </Field>
+            <Field label="Cost / Message" hint="Overage price per msg">
+              <input type="number" min="0" step="0.000001" value={form.per_message_cost ?? 0}
+                onChange={e => set('per_message_cost')(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg text-sm outline-none border"
+                style={{ background: 'var(--bg-card)', color: 'var(--text-1)', borderColor: 'var(--border)' }} />
+            </Field>
+          </div>
         </div>
       );
       case 5: return ( // Order Fields

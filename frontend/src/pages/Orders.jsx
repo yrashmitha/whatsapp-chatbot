@@ -22,6 +22,7 @@ function parseCustomFields(raw) {
 export default function Orders() {
   const { user, selectedClientId } = useAuthStore();
   const superAdmin = isSuperAdmin(user);
+  const showHoroscope = superAdmin || !!user?.plugin_enabled;
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -227,7 +228,7 @@ export default function Orders() {
                             >
                               {isExpanded ? 'Hide' : (hasDetails || hasNotes ? 'View' : 'Notes')}
                             </button>
-                            {(
+                            {showHoroscope && (
                               <>
                                 {isGenerating ? (
                                   <span className="flex items-center gap-1 text-xs text-violet-600 font-medium">

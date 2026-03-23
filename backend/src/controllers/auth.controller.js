@@ -32,7 +32,8 @@ async function login(req, res) {
     }
     // Check client user
     const cfgRow = await db.pgQuery(
-      `SELECT cc.crm_password_hash, c.name FROM client_configs cc JOIN clients c ON c.id=cc.client_id WHERE cc.client_id=$1 AND c.active=TRUE`,
+      `SELECT cc.crm_password_hash, cc.plugin_enabled, c.name, c.type
+       FROM client_configs cc JOIN clients c ON c.id=cc.client_id WHERE cc.client_id=$1 AND c.active=TRUE`,
       [username]
     );
     if (!cfgRow.rows.length || !cfgRow.rows[0].crm_password_hash)
@@ -40,7 +41,10 @@ async function login(req, res) {
     const valid = await bcrypt.compare(password, cfgRow.rows[0].crm_password_hash);
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
     const token = jwt.sign({ sub: username, role: 'client', clientId: username }, JWT_SECRET, { expiresIn: '7d' });
-    const user = { role: 'client', clientId: username, name: cfgRow.rows[0].name };
+    const user = {
+      role: 'client', clientId: username, name: cfgRow.rows[0].name,
+      clientType: cfgRow.rows[0].type, plugin_enabled: !!cfgRow.rows[0].plugin_enabled,
+    };
     return res.json({ token, user });
   } catch (e) { res.status(500).json({ error: e.message }); }
 }

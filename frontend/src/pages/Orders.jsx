@@ -265,23 +265,23 @@ export default function Orders() {
                         {superAdmin && <td className="py-2.5 pr-4 text-violet-500 text-xs">{o.client_id}</td>}
                       </tr>
                       {isExpanded && (
-                        <tr className="bg-violet-50 border-b border-violet-100">
+                        <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
                           <td colSpan={colCount} className="px-6 py-3">
                             {/* AI Summary section */}
                             {o.ai_summary && (
-                              <div className="mb-3 p-3 bg-blue-50 rounded border border-blue-200">
-                                <div className="text-xs font-semibold text-blue-600 mb-1">AI Summary</div>
-                                <div className="text-xs text-slate-700 whitespace-pre-wrap">{o.ai_summary}</div>
+                              <div className="mb-3 p-3 rounded" style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)' }}>
+                                <div className="text-xs font-semibold mb-1" style={{ color: 'var(--accent)' }}>AI Summary</div>
+                                <div className="text-xs whitespace-pre-wrap" style={{ color: 'var(--text-2)' }}>{o.ai_summary}</div>
                               </div>
                             )}
 
                             {/* Notes section */}
                             <div className="mb-3">
                               <div className="flex items-center justify-between mb-1">
-                                <span className="text-xs font-semibold text-slate-600">Notes</span>
+                                <span className="text-xs font-semibold" style={{ color: 'var(--text-2)' }}>Notes</span>
                                 {editingNoteId !== o.id && (
                                   <button onClick={() => { setEditingNoteId(o.id); setNoteText(o.notes || `Today is ${formatDateTime(new Date())}.`); }}
-                                    className="text-xs text-violet-600 hover:text-violet-800 cursor-pointer bg-transparent border-0">
+                                    className="text-xs cursor-pointer bg-transparent border-0" style={{ color: 'var(--accent)' }}>
                                     {o.notes ? 'Edit' : 'Add'}
                                   </button>
                                 )}
@@ -293,7 +293,8 @@ export default function Orders() {
                                     onChange={e => setNoteText(e.target.value)}
                                     rows={3}
                                     autoFocus
-                                    className="w-full text-xs border border-violet-200 rounded px-2 py-1.5 outline-none focus:border-violet-400 bg-white resize-none"
+                                    className="w-full text-xs rounded px-2 py-1.5 outline-none resize-none"
+                                    style={{ background: 'var(--bg-surface)', color: 'var(--text-1)', border: '1px solid var(--border)' }}
                                     placeholder="Delivery date, special instructions, reminders..."
                                   />
                                   <div className="flex gap-2 mt-1">
@@ -302,13 +303,13 @@ export default function Orders() {
                                       Save
                                     </button>
                                     <button onClick={() => setEditingNoteId(null)}
-                                      className="text-xs text-slate-500 hover:text-slate-700 cursor-pointer bg-transparent border-0">
+                                      className="text-xs cursor-pointer bg-transparent border-0" style={{ color: 'var(--text-3)' }}>
                                       Cancel
                                     </button>
                                   </div>
                                 </div>
                               ) : (
-                                <div className={`text-xs whitespace-pre-wrap ${o.notes ? 'text-slate-700' : 'text-slate-400 italic'}`}>
+                                <div className="text-xs whitespace-pre-wrap" style={{ color: o.notes ? 'var(--text-2)' : 'var(--text-3)', fontStyle: o.notes ? 'normal' : 'italic' }}>
                                   {o.notes || 'No notes yet'}
                                 </div>
                               )}
@@ -318,10 +319,10 @@ export default function Orders() {
                             {hasDetails && (
                               <div>
                                 <div className="flex items-center justify-between mb-2">
-                                  <div className="text-xs font-semibold text-slate-600">Order Details</div>
+                                  <div className="text-xs font-semibold" style={{ color: 'var(--text-2)' }}>Order Details</div>
                                   {editingOrder?.id !== o.id && (
                                     <button onClick={() => setEditingOrder({ id: o.id, orderId: o.order_id, fields: { ...cf } })}
-                                      className="text-xs text-violet-600 hover:text-violet-800 cursor-pointer bg-transparent border-0">
+                                      className="text-xs cursor-pointer bg-transparent border-0" style={{ color: 'var(--accent)' }}>
                                       Edit Details
                                     </button>
                                   )}
@@ -331,11 +332,12 @@ export default function Orders() {
                                     <div className="grid grid-cols-2 gap-x-8 gap-y-2 mb-3">
                                       {Object.entries(editingOrder.fields).map(([k, v]) => (
                                         <div key={k} className="flex flex-col gap-0.5">
-                                          <label className="text-xs text-slate-400 capitalize">{k.replace(/_/g, ' ')}</label>
+                                          <label className="text-xs capitalize" style={{ color: 'var(--text-3)' }}>{k.replace(/_/g, ' ')}</label>
                                           <input
                                             value={String(v ?? '')}
                                             onChange={e => setEditingOrder(prev => ({ ...prev, fields: { ...prev.fields, [k]: e.target.value } }))}
-                                            className="text-xs border border-violet-200 rounded px-2 py-1 outline-none focus:border-violet-400 bg-white"
+                                            className="text-xs rounded px-2 py-1 outline-none"
+                                            style={{ background: 'var(--bg-surface)', color: 'var(--text-1)', border: '1px solid var(--border)' }}
                                           />
                                         </div>
                                       ))}
@@ -356,14 +358,14 @@ export default function Orders() {
                                   <div className="grid grid-cols-2 gap-x-8 gap-y-1">
                                     {Object.entries(cf).filter(([k]) => k !== 'product_id').map(([k, v]) => (
                                       <div key={k} className="flex gap-2 text-xs">
-                                        <span className="text-slate-400 capitalize shrink-0">{k.replace(/_/g, ' ')}:</span>
+                                        <span className="capitalize shrink-0" style={{ color: 'var(--text-3)' }}>{k.replace(/_/g, ' ')}:</span>
                                         {k === 'product' && v ? (
                                           <button onClick={() => handleProductClick(cf, o.client_id)}
-                                            className="text-violet-600 hover:text-violet-800 underline cursor-pointer bg-transparent border-0 text-xs text-left p-0">
+                                            className="underline cursor-pointer bg-transparent border-0 text-xs text-left p-0" style={{ color: 'var(--accent)' }}>
                                             {String(v)}
                                           </button>
                                         ) : (
-                                          <span className="text-slate-700">{String(v ?? '-')}</span>
+                                          <span style={{ color: 'var(--text-1)' }}>{String(v ?? '-')}</span>
                                         )}
                                       </div>
                                     ))}
@@ -386,8 +388,8 @@ export default function Orders() {
         </div>
 
         {data && (
-          <div className="px-6 py-3 border-t border-slate-200 bg-white flex items-center justify-between shrink-0">
-            <span className="text-sm text-slate-500">{data.total} total</span>
+          <div className="px-6 py-3 flex items-center justify-between shrink-0" style={{ borderTop: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
+            <span className="text-sm" style={{ color: 'var(--text-3)' }}>{data.total} total</span>
             {data.total > 20 && <Pagination page={page} total={data.total} limit={20} onChange={setPage} />}
           </div>
         )}
@@ -395,29 +397,29 @@ export default function Orders() {
       {/* Product detail popup */}
       {productPopup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setProductPopup(null)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="rounded-2xl shadow-xl w-full max-w-sm mx-4 overflow-hidden" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }} onClick={e => e.stopPropagation()}>
             {productPopup === 'loading' ? (
               <div className="flex justify-center items-center py-16"><Spinner /></div>
             ) : productPopup === 'notfound' ? (
-              <div className="p-6 text-center text-slate-400 text-sm">Product not found</div>
+              <div className="p-6 text-center text-sm" style={{ color: 'var(--text-3)' }}>Product not found</div>
             ) : (
               <div className="max-h-[80vh] overflow-y-auto">
                 {productPopup.map((p, i) => (
-                  <div key={p.id} className={i > 0 ? 'border-t border-slate-100' : ''}>
+                  <div key={p.id} style={i > 0 ? { borderTop: '1px solid var(--border)' } : {}}>
                     {p.image_url && (
                       <img src={p.image_url} alt={p.name} className="w-full h-48 object-cover" />
                     )}
                     <div className="p-5">
-                      <div className="font-semibold text-slate-800 text-base mb-0.5">{p.name}</div>
-                      {p.category && <div className="text-xs text-violet-500 mb-2">{p.category}{p.subcategory ? ` · ${p.subcategory}` : ''}</div>}
-                      {p.description && <div className="text-sm text-slate-600 mb-3">{p.description}</div>}
-                      <div className="text-sm font-semibold text-slate-800 mb-3">
+                      <div className="font-semibold text-base mb-0.5" style={{ color: 'var(--text-1)' }}>{p.name}</div>
+                      {p.category && <div className="text-xs mb-2" style={{ color: 'var(--accent)' }}>{p.category}{p.subcategory ? ` · ${p.subcategory}` : ''}</div>}
+                      {p.description && <div className="text-sm mb-3" style={{ color: 'var(--text-2)' }}>{p.description}</div>}
+                      <div className="text-sm font-semibold mb-3" style={{ color: 'var(--text-1)' }}>
                         {p.currency || 'Rs'} {p.price_max ? `${p.price} – ${p.price_max}` : p.price}
                       </div>
                       {p.attributes && Object.keys(p.attributes).length > 0 && (
                         <div className="flex flex-wrap gap-1.5">
                           {Object.entries(p.attributes).map(([k, v]) => (
-                            <span key={k} className="text-xs bg-slate-100 text-slate-600 rounded-full px-2 py-0.5">{k}: {v}</span>
+                            <span key={k} className="text-xs rounded-full px-2 py-0.5" style={{ background: 'var(--bg-surface)', color: 'var(--text-2)' }}>{k}: {v}</span>
                           ))}
                         </div>
                       )}
@@ -426,8 +428,8 @@ export default function Orders() {
                 ))}
               </div>
             )}
-            <div className="border-t border-slate-100 px-5 py-3 flex justify-end">
-              <button onClick={() => setProductPopup(null)} className="text-sm text-slate-500 hover:text-slate-700 cursor-pointer bg-transparent border-0">Close</button>
+            <div className="px-5 py-3 flex justify-end" style={{ borderTop: '1px solid var(--border)' }}>
+              <button onClick={() => setProductPopup(null)} className="text-sm cursor-pointer bg-transparent border-0" style={{ color: 'var(--text-3)' }}>Close</button>
             </div>
           </div>
         </div>

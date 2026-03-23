@@ -40,10 +40,16 @@ async function login(req, res) {
       return res.status(401).json({ error: 'Invalid credentials' });
     const valid = await bcrypt.compare(password, cfgRow.rows[0].crm_password_hash);
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+    // Check if horoscope plugin is configured for this client
+    const horoRow = await db.pgQuery(
+      `SELECT 1 FROM plugin_configs WHERE client_id=$1 AND plugin_id='horoscope_reading' LIMIT 1`,
+      [username]
+    );
     const token = jwt.sign({ sub: username, role: 'client', clientId: username }, JWT_SECRET, { expiresIn: '7d' });
     const user = {
       role: 'client', clientId: username, name: cfgRow.rows[0].name,
       clientType: cfgRow.rows[0].type, plugin_enabled: !!cfgRow.rows[0].plugin_enabled,
+      horoscope_enabled: horoRow.rows.length > 0,
     };
     return res.json({ token, user });
   } catch (e) { res.status(500).json({ error: e.message }); }

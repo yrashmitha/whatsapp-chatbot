@@ -22,7 +22,7 @@ function parseCustomFields(raw) {
 export default function Orders() {
   const { user, selectedClientId } = useAuthStore();
   const superAdmin = isSuperAdmin(user);
-  const showHoroscope = superAdmin || !!user?.plugin_enabled;
+  const showHoroscope = superAdmin || !!user?.horoscope_enabled;
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');

@@ -310,7 +310,8 @@ export default function Pricing() {
 
         .plan-cta { margin-top: 28px; display: block; text-align: center; }
         .plan-cta-btn {
-          display: block; width: 100%; padding: 14px;
+          display: flex; align-items: center; justify-content: center; gap: 8px;
+          width: 100%; padding: 14px;
           font-weight: 700; font-size: 15px; font-family: 'Space Grotesk', sans-serif;
           border-radius: 12px; border: none; cursor: pointer; text-decoration: none;
           text-align: center; transition: transform 0.15s, box-shadow 0.15s;
@@ -548,7 +549,7 @@ export default function Pricing() {
           <Link to="/terms">Terms of Use</Link>
           <a href={NOVA_WA} target="_blank" rel="noreferrer">Contact</a>
         </div>
-        <div className="pr-footer-copy">© 2026 Agent Nova. All rights reserved. Built in Sri Lanka 🇱🇰</div>
+        <div className="pr-footer-copy">© 2026 Agent Nova. All rights reserved.</div>
       </footer>
     </div>
   );

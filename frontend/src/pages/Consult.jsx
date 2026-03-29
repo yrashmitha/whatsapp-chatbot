@@ -38,7 +38,10 @@ export default function Consult() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [collecting, setCollecting] = useState(false);
   const [limitReached, setLimitReached] = useState(false);
+  const pendingRef = useRef([]);
+  const timerRef   = useRef(null);
   const [slideDir, setSlideDir] = useState('right');
   const messagesEndRef = useRef(null);
 
@@ -133,22 +136,34 @@ export default function Consult() {
     e?.preventDefault();
     const text = input.trim();
     if (!text || loading || limitReached) return;
+
     setInput('');
     setMessages(prev => [...prev, { role: 'user', text }]);
-    setLoading(true);
-    try {
-      const { data } = await api.post('/chat', { session_token: sessionToken, message: text });
-      const parts = data.parts || (data.reply ? [data.reply] : []);
-      for (let i = 0; i < parts.length; i++) {
-        setMessages(prev => [...prev, { role: 'model', text: parts[i] }]);
-        if (i < parts.length - 1) await new Promise(r => setTimeout(r, 600));
+    pendingRef.current.push(text);
+
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setCollecting(true);
+
+    timerRef.current = setTimeout(async () => {
+      const combined = pendingRef.current.join('\n');
+      pendingRef.current = [];
+      timerRef.current   = null;
+      setCollecting(false);
+      setLoading(true);
+      try {
+        const { data } = await api.post('/chat', { session_token: sessionToken, message: combined });
+        const parts = data.parts || (data.reply ? [data.reply] : []);
+        for (let i = 0; i < parts.length; i++) {
+          setMessages(prev => [...prev, { role: 'model', text: parts[i] }]);
+          if (i < parts.length - 1) await new Promise(r => setTimeout(r, 600));
+        }
+        if (data.limit_reached) setLimitReached(true);
+      } catch {
+        setMessages(prev => [...prev, { role: 'model', text: "Sorry, I hit a snag. Please try again in a moment." }]);
+      } finally {
+        setLoading(false);
       }
-      if (data.limit_reached) setLimitReached(true);
-    } catch {
-      setMessages(prev => [...prev, { role: 'model', text: "Sorry, I hit a snag. Please try again in a moment." }]);
-    } finally {
-      setLoading(false);
-    }
+    }, 4000);
   }
 
   function handleKeyDown(e) {
@@ -474,6 +489,11 @@ export default function Consult() {
             />
           </div>
         ))}
+        {collecting && (
+          <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.35)', paddingLeft: '4px', paddingBottom: '2px' }}>
+            Nova is reading...
+          </div>
+        )}
         {loading && (
           <div style={{ display: 'flex', gap: '5px', paddingLeft: '4px' }}>
             {[0,1,2].map(i => (

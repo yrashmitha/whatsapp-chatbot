@@ -1184,7 +1184,7 @@ export default function Landing() {
                 Talk to <em style={{ fontStyle: 'normal', color: '#00d4ff' }}>Nova</em>,<br />your free business advisor
               </h2>
               <p style={{ fontSize: 16, color: 'rgba(255,255,255,0.68)', lineHeight: 1.75, maxWidth: 440, marginBottom: 32 }}>
-                Not sure where to start? Nova is an AI business consultant trained on the CENTS framework — built for Sri Lankan entrepreneurs. Get a free strategy session, no sign-up needed.
+                Not sure where to start? Nova is an AI business consultant trained on the CENTS framework, built for Sri Lankan entrepreneurs. Get a free strategy session, no sign-up needed.
               </p>
               <Link to="/consult" className="btn-cta lg">
                 Start Free Consultation →
@@ -1192,16 +1192,13 @@ export default function Landing() {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {[
-                { icon: '🎯', title: 'Business strategy advice', desc: 'Diagnose bottlenecks, find gaps, and get an actionable plan for your specific business.' },
-                { icon: '🔍', title: 'Live market research', desc: 'Nova searches the web in real time to give you current, Sri Lanka-relevant insights.' },
-                { icon: '💬', title: 'Chat in Sinhala, Tamil, or English', desc: 'Speak naturally in your preferred language. Nova understands and responds accordingly.' },
+                { title: 'Business strategy advice', desc: 'Diagnose bottlenecks, find gaps, and get an actionable plan for your specific business.' },
+                { title: 'Live market research', desc: 'Nova searches the web in real time to give you current, Sri Lanka-relevant insights.' },
+                { title: 'Chat in Sinhala, Tamil, or English', desc: 'Speak naturally in your preferred language. Nova understands and responds accordingly.' },
               ].map((f, i) => (
-                <div key={i} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: '18px 20px', display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-                  <span style={{ fontSize: 26, flexShrink: 0 }}>{f.icon}</span>
-                  <div>
-                    <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontWeight: 600, fontSize: 14, color: '#fff', marginBottom: 4 }}>{f.title}</div>
-                    <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.58)', lineHeight: 1.6 }}>{f.desc}</div>
-                  </div>
+                <div key={i} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: '18px 20px' }}>
+                  <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontWeight: 600, fontSize: 14, color: '#fff', marginBottom: 4 }}>{f.title}</div>
+                  <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.58)', lineHeight: 1.6 }}>{f.desc}</div>
                 </div>
               ))}
             </div>

@@ -404,6 +404,36 @@ async function init() {
       ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS overage_limit     INT NOT NULL DEFAULT 0;
       ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS per_message_cost  NUMERIC(10,6) NOT NULL DEFAULT 0;
     `);
+
+    // ── Nova Consult (public web chat) ────────────────────────────────────────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS consult_config (
+        id            INT PRIMARY KEY DEFAULT 1 CHECK(id = 1),
+        system_prompt TEXT,
+        max_sessions  INT NOT NULL DEFAULT 10,
+        access_code   TEXT,
+        updated_at    TIMESTAMPTZ DEFAULT NOW()
+      );
+      INSERT INTO consult_config (id) VALUES (1) ON CONFLICT DO NOTHING;
+
+      CREATE TABLE IF NOT EXISTS consult_sessions (
+        id            SERIAL PRIMARY KEY,
+        session_token TEXT UNIQUE NOT NULL,
+        name          TEXT,
+        business_name TEXT,
+        business_type TEXT,
+        phone         TEXT,
+        created_at    TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS consult_messages (
+        id         SERIAL PRIMARY KEY,
+        session_id INTEGER REFERENCES consult_sessions(id) ON DELETE CASCADE,
+        role       TEXT NOT NULL CHECK(role IN ('user','model')),
+        text       TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_consult_messages_session ON consult_messages (session_id, created_at);
+    `);
   } else {
     db.exec(`PRAGMA foreign_keys = ON;`);
     db.exec(`

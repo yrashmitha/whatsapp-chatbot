@@ -19,6 +19,8 @@ import Landing from './pages/Landing';
 import Pricing from './pages/Pricing';
 import Privacy from './pages/Privacy';
 import Terms from './pages/Terms';
+import Consult from './pages/Consult';
+import ConsultAdmin from './pages/ConsultAdmin';
 
 const qc = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -42,6 +44,8 @@ const router = createBrowserRouter([
   { path: '/pricing', element: <Pricing /> },
   { path: '/privacy', element: <Privacy /> },
   { path: '/terms', element: <Terms /> },
+  { path: '/consult', element: <Consult /> },
+  { path: '/consult-admin', element: <ProtectedRoute><ConsultAdmin /></ProtectedRoute> },
   { path: '*', element: <Navigate to="/" replace /> },
 ]);
 

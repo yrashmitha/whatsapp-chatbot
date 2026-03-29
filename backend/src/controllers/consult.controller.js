@@ -168,17 +168,22 @@ function mergeHistory(msgs) {
  */
 function logGrounding(result, phoneTag, sessionId) {
   try {
-    const meta = result.response.candidates?.[0]?.groundingMetadata;
-    if (!meta) return;
-    const queries = meta.webSearchQueries || [];
-    const chunks  = meta.groundingChunks  || [];
-    if (queries.length === 0 && chunks.length === 0) return;
-    console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | queries=${JSON.stringify(queries)}`);
-    if (chunks.length) {
-      const sources = chunks.slice(0, 5).map(c => c.web?.uri || c.web?.title || '?');
-      console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | sources=${JSON.stringify(sources)}`);
+    const candidate = result.response.candidates?.[0];
+    if (!candidate) {
+      console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | no candidates in response`);
+      return;
     }
-  } catch { /* non-fatal */ }
+    // Dump the full candidate keys to find the right path
+    console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | candidate keys: ${JSON.stringify(Object.keys(candidate))}`);
+    const meta = candidate.groundingMetadata;
+    if (meta) {
+      console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | groundingMetadata: ${JSON.stringify(meta).slice(0, 500)}`);
+    } else {
+      console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | no groundingMetadata on candidate`);
+    }
+  } catch (err) {
+    console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | logGrounding error: ${err.message}`);
+  }
 }
 
 /**

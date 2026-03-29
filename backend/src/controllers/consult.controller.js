@@ -168,18 +168,21 @@ function mergeHistory(msgs) {
  */
 function logGrounding(result, phoneTag, sessionId) {
   try {
-    const candidate = result.response.candidates?.[0];
-    if (!candidate) {
-      console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | no candidates in response`);
-      return;
+    const resp = result.response;
+    console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | response keys: ${JSON.stringify(Object.keys(resp))}`);
+    const raw = resp.candidates?.[0]?.content?.parts || [];
+    const toolParts = raw.filter(p => p.functionCall || p.executableCode || p.codeExecutionResult);
+    if (toolParts.length) {
+      console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | tool parts: ${JSON.stringify(toolParts).slice(0, 600)}`);
     }
-    // Dump the full candidate keys to find the right path
-    console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | candidate keys: ${JSON.stringify(Object.keys(candidate))}`);
-    const meta = candidate.groundingMetadata;
+    // Check for grounding on the raw response object (some SDK versions use _proto or direct props)
+    const meta = resp.candidates?.[0]?.groundingMetadata
+      || resp.groundingMetadata
+      || resp.candidates?.[0]?.citationMetadata;
     if (meta) {
-      console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | groundingMetadata: ${JSON.stringify(meta).slice(0, 500)}`);
+      console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | meta: ${JSON.stringify(meta).slice(0, 500)}`);
     } else {
-      console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | no groundingMetadata on candidate`);
+      console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | full response: ${JSON.stringify(resp).slice(0, 800)}`);
     }
   } catch (err) {
     console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | logGrounding error: ${err.message}`);

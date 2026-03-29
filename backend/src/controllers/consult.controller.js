@@ -164,6 +164,24 @@ function mergeHistory(msgs) {
 }
 
 /**
+ * Log Google Search grounding metadata if Gemini used search for this response.
+ */
+function logGrounding(result, phoneTag, sessionId) {
+  try {
+    const meta = result.response.candidates?.[0]?.groundingMetadata;
+    if (!meta) return;
+    const queries = meta.webSearchQueries || [];
+    const chunks  = meta.groundingChunks  || [];
+    if (queries.length === 0 && chunks.length === 0) return;
+    console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | queries=${JSON.stringify(queries)}`);
+    if (chunks.length) {
+      const sources = chunks.slice(0, 5).map(c => c.web?.uri || c.web?.title || '?');
+      console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | sources=${JSON.stringify(sources)}`);
+    }
+  } catch { /* non-fatal */ }
+}
+
+/**
  * Send a message to Gemini with up to 3 retries for transient 503/overload errors.
  */
 async function sendWithRetry(geminiChat, message, sessionId) {
@@ -290,6 +308,7 @@ async function onboard(req, res) {
 
     console.log(`[CONSULT][gemini][res] ${phoneTag} | session=${sessionId} | replyLen=${reply.length} | elapsed=${elapsed}ms`);
     console.log(`[CONSULT][gemini][res] ${phoneTag} | Full reply: ${reply.replace(/\n/g, '\\n')}`);
+    logGrounding(result, phoneTag, sessionId);
 
     consultSessions.set(session_token, { chat, lastUsed: Date.now() });
 
@@ -357,6 +376,7 @@ async function chat(req, res) {
 
     console.log(`[CONSULT][gemini][res] ${phoneTag} | session=${sessionId} | replyLen=${reply.length} | elapsed=${elapsed}ms`);
     console.log(`[CONSULT][gemini][res] ${phoneTag} | Full reply: ${reply.replace(/\n/g, '\\n')}`);
+    logGrounding(result, phoneTag, sessionId);
 
     // Split on [[MSG_BREAK]] — same pattern as main gemini service
     const parts = reply.split('[[MSG_BREAK]]').map(p => p.trim()).filter(Boolean);

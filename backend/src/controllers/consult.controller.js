@@ -76,14 +76,41 @@ If the user mixes both (Singlish) → match their style.
 Never switch languages mid-conversation unless the user switches first.
 `.trim();
 
+// ── Multilingual language detection block (always appended) ──────────────────
+
+const MULTILINGUAL_BLOCK = `
+━━━ Language Detection (MANDATORY) ━━━
+Every user message is wrapped with [CURRENT_MESSAGE_START] and [CURRENT_MESSAGE_END] markers.
+Detect the language of the text inside those markers and respond in that SAME language.
+If the user writes in Sinhala → reply in Sinhala.
+If the user writes in English → reply in English.
+If the user mixes both (Singlish) → match their style.
+Never switch languages mid-conversation unless the user switches first.
+`.trim();
+
+/**
+ * Build the effective system prompt:
+ * - Strips [[MULTILINGUAL]] control flag (not AI content — it's a marker)
+ * - Always appends the language detection block if not already present
+ */
+function buildEffectivePrompt(rawPrompt) {
+  let prompt = (rawPrompt || DEFAULT_SYSTEM_PROMPT)
+    .replace(/^\[\[MULTILINGUAL\]\]\s*/i, '')
+    .trim();
+  if (!prompt.includes('[CURRENT_MESSAGE_START]')) {
+    prompt += '\n\n' + MULTILINGUAL_BLOCK;
+  }
+  return prompt;
+}
+
 // ── Gemini factory ────────────────────────────────────────────────────────────
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-function getConsultModel(systemPrompt) {
+function getConsultModel(rawPrompt) {
   return genAI.getGenerativeModel({
     model: 'gemini-3.1-flash-lite-preview',
-    systemInstruction: systemPrompt || DEFAULT_SYSTEM_PROMPT,
+    systemInstruction: buildEffectivePrompt(rawPrompt),
     tools: [{ googleSearch: {} }, { codeExecution: {} }],
   });
 }
@@ -242,19 +269,27 @@ async function onboard(req, res) {
 
   // Raw text stored in DB; wrapped only for the Gemini call
   const firstMessage = `Hi, I'm ${name || 'there'}. My business is ${business_name || 'not named yet'}, which is a ${business_type || 'general'} business. My WhatsApp number is ${phone ? '+94' + phone : 'not provided'}.`;
+  const phoneTag = `+94${phone || '?'}`;
 
   try {
-    const config = await getConsultConfig();
-    const model  = getConsultModel(config.system_prompt);
-    const chat   = model.startChat({ history: [] });
+    const config       = await getConsultConfig();
+    const activePrompt = buildEffectivePrompt(config.system_prompt);
+    const model        = getConsultModel(config.system_prompt);
+    const chat         = model.startChat({ history: [] });
+    const wrapped      = wrapMessage(firstMessage);
 
-    console.log(`[CONSULT][gemini][req] onboard session=${sessionId} historyTurns=0 msgLen=${firstMessage.length}`);
-    const t0     = Date.now();
-    const result = await sendWithRetry(chat, wrapMessage(firstMessage), sessionId);
-    const reply  = result.response.text();
+    console.log(`[CONSULT][session] ${phoneTag} | session=${sessionId} | model=gemini-3.1-flash-lite-preview | instrLen=${activePrompt.length}`);
+    console.log(`[CONSULT][session] System instruction: ${activePrompt.replace(/\n/g, '\\n')}`);
+    console.log(`[CONSULT][gemini][req] ${phoneTag} | session=${sessionId} | historyTurns=0 | msgLen=${wrapped.length}`);
+    console.log(`[CONSULT][gemini][req] ${phoneTag} | Full prompt: ${wrapped.replace(/\n/g, '\\n')}`);
+
+    const t0      = Date.now();
+    const result  = await sendWithRetry(chat, wrapped, sessionId);
+    const reply   = result.response.text();
     const elapsed = Date.now() - t0;
 
-    console.log(`[CONSULT][gemini][res] onboard session=${sessionId} replyLen=${reply.length} elapsed=${elapsed}ms`);
+    console.log(`[CONSULT][gemini][res] ${phoneTag} | session=${sessionId} | replyLen=${reply.length} | elapsed=${elapsed}ms`);
+    console.log(`[CONSULT][gemini][res] ${phoneTag} | Full reply: ${reply.replace(/\n/g, '\\n')}`);
 
     consultSessions.set(session_token, { chat, lastUsed: Date.now() });
 
@@ -266,7 +301,7 @@ async function onboard(req, res) {
 
     res.json({ reply });
   } catch (e) {
-    console.error(`[CONSULT][error] onboard failed for session ${sessionId}:`, e.message);
+    console.error(`[CONSULT][error] ${phoneTag} | session=${sessionId} | onboard failed: ${e.message}`);
     res.status(500).json({ error: 'Failed to start consultation' });
   }
 }
@@ -276,16 +311,16 @@ async function chat(req, res) {
   if (!session_token || !message) return res.status(400).json({ error: 'session_token and message required' });
 
   const { rows } = await db.pgQuery(
-    `SELECT id FROM consult_sessions WHERE session_token=$1`, [session_token]
+    `SELECT id, phone FROM consult_sessions WHERE session_token=$1`, [session_token]
   );
   if (!rows.length) {
     console.warn(`[CONSULT][chat] Session not found: ${session_token.slice(0,8)}...`);
     return res.status(404).json({ error: 'Session not found' });
   }
   const sessionId = rows[0].id;
+  const phoneTag  = `+94${rows[0].phone || '?'}`;
 
-  const preview = message.slice(0, 60) + (message.length > 60 ? '...' : '');
-  console.log(`[CONSULT][chat] session=${sessionId} msg="${preview}"`);
+  console.log(`[CONSULT][chat] ${phoneTag} | session=${sessionId} | IN: "${message.slice(0,80).replace(/\n/g,'\\n')}"`);
 
   try {
     const geminiChat = await getOrRebuildChat(session_token);
@@ -298,14 +333,22 @@ async function chat(req, res) {
       [sessionId]
     );
     geminiChat._history = mergeHistory(histMsgs);
-    console.log(`[CONSULT][gemini][req] session=${sessionId} historyTurns=${geminiChat._history.length} msgLen=${message.length}`);
+
+    const config       = await getConsultConfig();
+    const activePrompt = buildEffectivePrompt(config.system_prompt);
+    const wrapped      = wrapMessage(message);
+
+    console.log(`[CONSULT][session] ${phoneTag} | session=${sessionId} | System instruction: ${activePrompt.replace(/\n/g, '\\n')}`);
+    console.log(`[CONSULT][gemini][req] ${phoneTag} | session=${sessionId} | historyTurns=${geminiChat._history.length} | instrLen=${activePrompt.length} | msgLen=${wrapped.length}`);
+    console.log(`[CONSULT][gemini][req] ${phoneTag} | Full prompt: ${wrapped.replace(/\n/g, '\\n')}`);
 
     const t0      = Date.now();
-    const result  = await sendWithRetry(geminiChat, wrapMessage(message), sessionId);
+    const result  = await sendWithRetry(geminiChat, wrapped, sessionId);
     const reply   = result.response.text();
     const elapsed = Date.now() - t0;
 
-    console.log(`[CONSULT][gemini][res] session=${sessionId} replyLen=${reply.length} elapsed=${elapsed}ms`);
+    console.log(`[CONSULT][gemini][res] ${phoneTag} | session=${sessionId} | replyLen=${reply.length} | elapsed=${elapsed}ms`);
+    console.log(`[CONSULT][gemini][res] ${phoneTag} | Full reply: ${reply.replace(/\n/g, '\\n')}`);
 
     // Store raw text (without wrapper markers) in DB
     await db.pgQuery(
@@ -315,7 +358,7 @@ async function chat(req, res) {
 
     res.json({ reply });
   } catch (e) {
-    console.error(`[CONSULT][error] chat failed for session ${sessionId}:`, e.message);
+    console.error(`[CONSULT][error] ${phoneTag} | session=${sessionId} | chat failed: ${e.message}`);
     res.status(500).json({ error: 'Failed to get response' });
   }
 }
@@ -405,4 +448,33 @@ async function updateConfig(req, res) {
   res.json({ ok: true });
 }
 
-module.exports = { startSession, onboard, chat, resumeSession, getSessions, getSessionMessages, getConfig, updateConfig };
+async function deleteSession(req, res) {
+  if (req.user?.role !== 'superadmin') return res.status(403).json({ error: 'Forbidden' });
+  const { token } = req.params;
+  const { rows } = await db.pgQuery(
+    `DELETE FROM consult_sessions WHERE session_token=$1 RETURNING id`, [token]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Session not found' });
+  // Remove from in-memory map too
+  consultSessions.delete(token);
+  console.log(`[CONSULT][admin] Session ${rows[0].id} deleted by superadmin`);
+  res.json({ ok: true });
+}
+
+async function clearMessages(req, res) {
+  if (req.user?.role !== 'superadmin') return res.status(403).json({ error: 'Forbidden' });
+  const { token } = req.params;
+  const { rows } = await db.pgQuery(
+    `SELECT id FROM consult_sessions WHERE session_token=$1`, [token]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Session not found' });
+  const { rowCount } = await db.pgQuery(
+    `DELETE FROM consult_messages WHERE session_id=$1`, [rows[0].id]
+  );
+  // Drop in-memory chat so it rebuilds fresh (empty history)
+  consultSessions.delete(token);
+  console.log(`[CONSULT][admin] Cleared ${rowCount} messages from session ${rows[0].id}`);
+  res.json({ ok: true, deleted: rowCount });
+}
+
+module.exports = { startSession, onboard, chat, resumeSession, getSessions, getSessionMessages, getConfig, updateConfig, deleteSession, clearMessages };

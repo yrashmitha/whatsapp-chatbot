@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Layout from '../components/Layout';
 import api from '../lib/api';
 import { formatDateTime } from '../lib/utils';
@@ -14,6 +14,8 @@ function parseMarkdown(text) {
 export default function ConsultAdmin() {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState(null); // session_token
+  const [actionLoading, setActionLoading] = useState(null); // 'delete' | 'clear'
+  const qc = useQueryClient();
 
   const { data: sessionsData, isLoading } = useQuery({
     queryKey: ['consult-sessions', page],
@@ -26,6 +28,32 @@ export default function ConsultAdmin() {
     queryFn: () => api.get(`/consult/sessions/${selected}`).then(r => r.data),
     enabled: !!selected,
   });
+
+  async function handleDeleteSession() {
+    if (!selected) return;
+    if (!window.confirm('Delete this session and all its messages? This cannot be undone.')) return;
+    setActionLoading('delete');
+    try {
+      await api.delete(`/consult/sessions/${selected}`);
+      qc.invalidateQueries({ queryKey: ['consult-sessions'] });
+      setSelected(null);
+    } catch (e) {
+      alert(e?.response?.data?.error || 'Failed to delete session');
+    } finally { setActionLoading(null); }
+  }
+
+  async function handleClearMessages() {
+    if (!selected) return;
+    if (!window.confirm('Clear all messages in this session? The session profile will be kept.')) return;
+    setActionLoading('clear');
+    try {
+      await api.delete(`/consult/sessions/${selected}/messages`);
+      qc.invalidateQueries({ queryKey: ['consult-thread', selected] });
+      qc.invalidateQueries({ queryKey: ['consult-sessions'] });
+    } catch (e) {
+      alert(e?.response?.data?.error || 'Failed to clear messages');
+    } finally { setActionLoading(null); }
+  }
 
   const sessions = sessionsData?.sessions || [];
   const total = sessionsData?.total || 0;
@@ -150,22 +178,49 @@ export default function ConsultAdmin() {
                 <div style={{
                   padding: '12px 20px', borderBottom: '1px solid var(--border)',
                   background: 'var(--bg-surface)', flexShrink: 0,
-                  display: 'flex', gap: '24px', flexWrap: 'wrap',
+                  display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap',
                 }}>
-                  {[
-                    { label: 'Name', value: selectedSession.name },
-                    { label: 'Business', value: selectedSession.business_name },
-                    { label: 'Type', value: selectedSession.business_type },
-                    { label: 'Phone', value: selectedSession.phone ? `+94${selectedSession.phone}` : null },
-                    { label: 'Started', value: formatDateTime(selectedSession.created_at) },
-                  ].filter(f => f.value).map(f => (
-                    <div key={f.label}>
-                      <div style={{ fontSize: '10px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        {f.label}
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', flex: 1 }}>
+                    {[
+                      { label: 'Name', value: selectedSession.name },
+                      { label: 'Business', value: selectedSession.business_name },
+                      { label: 'Type', value: selectedSession.business_type },
+                      { label: 'Phone', value: selectedSession.phone ? `+94${selectedSession.phone}` : null },
+                      { label: 'Started', value: formatDateTime(selectedSession.created_at) },
+                    ].filter(f => f.value).map(f => (
+                      <div key={f.label}>
+                        <div style={{ fontSize: '10px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          {f.label}
+                        </div>
+                        <div style={{ fontSize: '13px', color: 'var(--text-1)', fontWeight: 500 }}>{f.value}</div>
                       </div>
-                      <div style={{ fontSize: '13px', color: 'var(--text-1)', fontWeight: 500 }}>{f.value}</div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                  {/* Action buttons */}
+                  <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                    <button
+                      onClick={handleClearMessages}
+                      disabled={!!actionLoading}
+                      style={{
+                        fontSize: '12px', padding: '5px 12px', borderRadius: '8px', cursor: 'pointer',
+                        border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-2)',
+                        opacity: actionLoading ? 0.5 : 1,
+                      }}
+                    >
+                      {actionLoading === 'clear' ? 'Clearing…' : 'Clear Messages'}
+                    </button>
+                    <button
+                      onClick={handleDeleteSession}
+                      disabled={!!actionLoading}
+                      style={{
+                        fontSize: '12px', padding: '5px 12px', borderRadius: '8px', cursor: 'pointer',
+                        border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: '#ef4444',
+                        opacity: actionLoading ? 0.5 : 1,
+                      }}
+                    >
+                      {actionLoading === 'delete' ? 'Deleting…' : 'Delete Session'}
+                    </button>
+                  </div>
                 </div>
               )}
 

@@ -82,7 +82,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 function getConsultModel(systemPrompt) {
   return genAI.getGenerativeModel({
-    model: 'gemini-3.1-flash-lite',
+    model: 'gemini-3.1-flash-lite-preview',
     systemInstruction: systemPrompt || DEFAULT_SYSTEM_PROMPT,
     tools: [{ googleSearch: {} }, { codeExecution: {} }],
   });

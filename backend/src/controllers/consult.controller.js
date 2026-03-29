@@ -111,7 +111,7 @@ function getConsultModel(rawPrompt) {
   return genAI.getGenerativeModel({
     model: 'gemini-3.1-flash-lite-preview',
     systemInstruction: buildEffectivePrompt(rawPrompt),
-    tools: [{ googleSearch: {} }],
+    tools: [{ googleSearchRetrieval: {} }],
   });
 }
 
@@ -168,25 +168,19 @@ function mergeHistory(msgs) {
  */
 function logGrounding(result, phoneTag, sessionId) {
   try {
-    const resp = result.response;
-    console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | response keys: ${JSON.stringify(Object.keys(resp))}`);
-    const raw = resp.candidates?.[0]?.content?.parts || [];
-    const toolParts = raw.filter(p => p.functionCall || p.executableCode || p.codeExecutionResult);
-    if (toolParts.length) {
-      console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | tool parts: ${JSON.stringify(toolParts).slice(0, 600)}`);
+    const candidate = result.response.candidates?.[0];
+    if (!candidate) return;
+    const meta = candidate.groundingMetadata;
+    if (!meta) return; // model did not use search grounding for this response
+    const queries = meta.webSearchQueries || [];
+    const chunks  = meta.groundingChunks  || [];
+    if (queries.length === 0 && chunks.length === 0) return;
+    console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | queries=${JSON.stringify(queries)}`);
+    if (chunks.length) {
+      const sources = chunks.slice(0, 5).map(c => c.web?.uri || c.web?.title || '?');
+      console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | sources=${JSON.stringify(sources)}`);
     }
-    // Check for grounding on the raw response object (some SDK versions use _proto or direct props)
-    const meta = resp.candidates?.[0]?.groundingMetadata
-      || resp.groundingMetadata
-      || resp.candidates?.[0]?.citationMetadata;
-    if (meta) {
-      console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | meta: ${JSON.stringify(meta).slice(0, 500)}`);
-    } else {
-      console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | full response: ${JSON.stringify(resp).slice(0, 800)}`);
-    }
-  } catch (err) {
-    console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | logGrounding error: ${err.message}`);
-  }
+  } catch { /* non-fatal */ }
 }
 
 /**

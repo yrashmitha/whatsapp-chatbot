@@ -111,7 +111,7 @@ function getConsultModel(rawPrompt) {
   return genAI.getGenerativeModel({
     model: 'gemini-3.1-flash-lite-preview',
     systemInstruction: buildEffectivePrompt(rawPrompt),
-    tools: [{ googleSearchRetrieval: {} }],
+    tools: [{ googleSearch: {} }],
   });
 }
 

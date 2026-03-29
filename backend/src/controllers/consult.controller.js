@@ -347,6 +347,19 @@ async function chat(req, res) {
   const sessionId = rows[0].id;
   const phoneTag  = `+94${rows[0].phone || '?'}`;
 
+  // Check model message count — hard limit of 50 replies per session
+  const { rows: countRows } = await db.pgQuery(
+    `SELECT COUNT(*)::int AS total FROM consult_messages WHERE session_id=$1 AND role='model'`,
+    [sessionId]
+  );
+  const config      = await getConsultConfig();
+  const msgLimit    = config.max_messages || 50;
+  if (countRows[0].total >= msgLimit) {
+    console.log(`[CONSULT][limit] ${phoneTag} | session=${sessionId} | message limit reached (${countRows[0].total}/${msgLimit} model msgs)`);
+    const limitMsg = `It's been a pleasure talking with you and I truly hope our conversation has been helpful for your business journey.\n\nMy creator has set a hard limit for each session because he is spending his own money to run me and offer this service to you completely free. To make sure everyone gets a fair opportunity, he had to limit each session to 50 replies.\n\nIf you'd like to share your thoughts or feedback on this experience, he'd really appreciate a comment on his Facebook page. It means a lot when people take a moment to do that.\n\nWishing you the very best with your business. You've got this.`;
+    return res.json({ parts: [limitMsg], limit_reached: true });
+  }
+
   console.log(`[CONSULT][chat] ${phoneTag} | session=${sessionId} | IN: "${message.slice(0,80).replace(/\n/g,'\\n')}"`);
 
   try {
@@ -361,7 +374,6 @@ async function chat(req, res) {
     );
     geminiChat._history = mergeHistory(histMsgs);
 
-    const config       = await getConsultConfig();
     const activePrompt = buildEffectivePrompt(config.system_prompt);
     const wrapped      = wrapMessage(message);
 
@@ -449,15 +461,16 @@ async function getConfig(req, res) {
   const config = await getConsultConfig();
   // Don't expose access_code as plaintext — just indicate if it's set
   res.json({
-    system_prompt: config.system_prompt || '',
-    max_sessions:  config.max_sessions,
+    system_prompt:   config.system_prompt || '',
+    max_sessions:    config.max_sessions,
+    max_messages:    config.max_messages ?? 50,
     access_code_set: !!(config.access_code || process.env.CONSULT_ACCESS_CODE),
   });
 }
 
 async function updateConfig(req, res) {
   if (req.user?.role !== 'superadmin') return res.status(403).json({ error: 'Forbidden' });
-  const { system_prompt, max_sessions, access_code } = req.body;
+  const { system_prompt, max_sessions, max_messages, access_code } = req.body;
 
   const fields = [];
   const vals   = [];
@@ -465,6 +478,7 @@ async function updateConfig(req, res) {
 
   if (system_prompt !== undefined) { fields.push(`system_prompt=$${i++}`); vals.push(system_prompt || null); }
   if (max_sessions  !== undefined) { fields.push(`max_sessions=$${i++}`);  vals.push(Math.max(1, parseInt(max_sessions) || 10)); }
+  if (max_messages  !== undefined) { fields.push(`max_messages=$${i++}`);  vals.push(Math.max(1, parseInt(max_messages) || 50)); }
   if (access_code   !== undefined && access_code.trim()) {
     fields.push(`access_code=$${i++}`);
     vals.push(access_code.trim());

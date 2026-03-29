@@ -38,6 +38,7 @@ export default function Consult() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [limitReached, setLimitReached] = useState(false);
   const [slideDir, setSlideDir] = useState('right');
   const messagesEndRef = useRef(null);
 
@@ -131,7 +132,7 @@ export default function Consult() {
   async function handleSend(e) {
     e?.preventDefault();
     const text = input.trim();
-    if (!text || loading) return;
+    if (!text || loading || limitReached) return;
     setInput('');
     setMessages(prev => [...prev, { role: 'user', text }]);
     setLoading(true);
@@ -142,6 +143,7 @@ export default function Consult() {
         setMessages(prev => [...prev, { role: 'model', text: parts[i] }]);
         if (i < parts.length - 1) await new Promise(r => setTimeout(r, 600));
       }
+      if (data.limit_reached) setLimitReached(true);
     } catch {
       setMessages(prev => [...prev, { role: 'model', text: "Sorry, I hit a snag. Please try again in a moment." }]);
     } finally {
@@ -491,6 +493,11 @@ export default function Consult() {
         padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,0.08)',
         background: 'rgba(255,255,255,0.03)', flexShrink: 0,
       }}>
+        {limitReached ? (
+          <div style={{ textAlign: 'center', fontSize: '13px', color: 'rgba(255,255,255,0.4)', padding: '8px 0' }}>
+            This session has ended. Thank you for chatting with Nova.
+          </div>
+        ) : (
         <form onSubmit={handleSend} style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
           <textarea
             value={input}
@@ -523,6 +530,7 @@ export default function Consult() {
             </svg>
           </button>
         </form>
+        )}
       </div>
 
       <style>{`

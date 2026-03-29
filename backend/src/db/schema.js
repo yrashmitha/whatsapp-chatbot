@@ -411,10 +411,12 @@ async function init() {
         id            INT PRIMARY KEY DEFAULT 1 CHECK(id = 1),
         system_prompt TEXT,
         max_sessions  INT NOT NULL DEFAULT 10,
+        max_messages  INT NOT NULL DEFAULT 50,
         access_code   TEXT,
         updated_at    TIMESTAMPTZ DEFAULT NOW()
       );
       INSERT INTO consult_config (id) VALUES (1) ON CONFLICT DO NOTHING;
+      ALTER TABLE consult_config ADD COLUMN IF NOT EXISTS max_messages INT NOT NULL DEFAULT 50;
 
       CREATE TABLE IF NOT EXISTS consult_sessions (
         id            SERIAL PRIMARY KEY,

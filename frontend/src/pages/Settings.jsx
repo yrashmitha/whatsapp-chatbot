@@ -67,6 +67,7 @@ export default function Settings() {
   // ── Consultation config (superadmin only) ─────────────────────────────────
   const [consultPrompt, setConsultPrompt]     = useState('');
   const [consultMax, setConsultMax]           = useState(10);
+  const [consultMsgLimit, setConsultMsgLimit] = useState(50);
   const [consultCode, setConsultCode]         = useState('');
   const [consultCodeSet, setConsultCodeSet]   = useState(false);
   const [consultSaving, setConsultSaving]     = useState(false);
@@ -80,6 +81,7 @@ export default function Settings() {
     if (consultConfig) {
       setConsultPrompt(consultConfig.system_prompt || '');
       setConsultMax(consultConfig.max_sessions ?? 10);
+      setConsultMsgLimit(consultConfig.max_messages ?? 50);
       setConsultCodeSet(!!consultConfig.access_code_set);
     }
   }, [consultConfig]);
@@ -88,7 +90,7 @@ export default function Settings() {
     e.preventDefault();
     setConsultSaving(true);
     try {
-      const body = { system_prompt: consultPrompt, max_sessions: consultMax };
+      const body = { system_prompt: consultPrompt, max_sessions: consultMax, max_messages: consultMsgLimit };
       if (consultCode.trim()) body.access_code = consultCode.trim();
       await api.patch('/consult/config', body);
       toast.success('Consultation settings saved');
@@ -512,6 +514,18 @@ export default function Settings() {
                     style={{ maxWidth: '120px' }}
                   />
                   <p className="text-xs text-slate-400 mt-1">Maximum number of people that can start a consultation. New sessions are blocked once this limit is reached.</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1.5">Max Messages per Session</label>
+                  <input
+                    type="number" min={1} max={500}
+                    value={consultMsgLimit}
+                    onChange={e => setConsultMsgLimit(parseInt(e.target.value) || 1)}
+                    className={inpCls}
+                    style={{ maxWidth: '120px' }}
+                  />
+                  <p className="text-xs text-slate-400 mt-1">Number of Nova replies allowed per session before the session ends.</p>
                 </div>
 
                 <div>

@@ -115,7 +115,8 @@ export default function Consult() {
         business_type: form.business_type,
         phone: form.phone,
       });
-      setMessages([{ role: 'model', text: data.reply }]);
+      const parts = data.parts || (data.reply ? [data.reply] : []);
+      setMessages(parts.map(text => ({ role: 'model', text })));
       setPhase('chat');
     } catch (err) {
       console.error(err);
@@ -136,7 +137,11 @@ export default function Consult() {
     setLoading(true);
     try {
       const { data } = await api.post('/chat', { session_token: sessionToken, message: text });
-      setMessages(prev => [...prev, { role: 'model', text: data.reply }]);
+      const parts = data.parts || (data.reply ? [data.reply] : []);
+      for (let i = 0; i < parts.length; i++) {
+        setMessages(prev => [...prev, { role: 'model', text: parts[i] }]);
+        if (i < parts.length - 1) await new Promise(r => setTimeout(r, 600));
+      }
     } catch {
       setMessages(prev => [...prev, { role: 'model', text: "Sorry, I hit a snag. Please try again in a moment." }]);
     } finally {

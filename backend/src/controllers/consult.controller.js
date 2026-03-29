@@ -111,7 +111,7 @@ function getConsultModel(rawPrompt) {
   return genAI.getGenerativeModel({
     model: 'gemini-3.1-flash-lite-preview',
     systemInstruction: buildEffectivePrompt(rawPrompt),
-    tools: [{ googleSearch: {} }, { codeExecution: {} }],
+    tools: [{ googleSearch: {} }],
   });
 }
 
@@ -293,13 +293,21 @@ async function onboard(req, res) {
 
     consultSessions.set(session_token, { chat, lastUsed: Date.now() });
 
-    // Store raw text (without wrapper markers) in DB
+    // Split on [[MSG_BREAK]] — same pattern as main gemini service
+    const parts = reply.split('[[MSG_BREAK]]').map(p => p.trim()).filter(Boolean);
+    const replyForDb = parts.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+
+    if (parts.length > 1) {
+      console.log(`[CONSULT][gemini][res] ${phoneTag} | session=${sessionId} | MSG_BREAK split into ${parts.length} parts`);
+    }
+
+    // Store clean text (markers stripped) in DB
     await db.pgQuery(
       `INSERT INTO consult_messages (session_id, role, text) VALUES ($1,'user',$2),($1,'model',$3)`,
-      [sessionId, firstMessage, reply]
+      [sessionId, firstMessage, replyForDb]
     );
 
-    res.json({ reply });
+    res.json({ parts });
   } catch (e) {
     console.error(`[CONSULT][error] ${phoneTag} | session=${sessionId} | onboard failed: ${e.message}`);
     res.status(500).json({ error: 'Failed to start consultation' });
@@ -350,13 +358,21 @@ async function chat(req, res) {
     console.log(`[CONSULT][gemini][res] ${phoneTag} | session=${sessionId} | replyLen=${reply.length} | elapsed=${elapsed}ms`);
     console.log(`[CONSULT][gemini][res] ${phoneTag} | Full reply: ${reply.replace(/\n/g, '\\n')}`);
 
-    // Store raw text (without wrapper markers) in DB
+    // Split on [[MSG_BREAK]] — same pattern as main gemini service
+    const parts = reply.split('[[MSG_BREAK]]').map(p => p.trim()).filter(Boolean);
+    const replyForDb = parts.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+
+    if (parts.length > 1) {
+      console.log(`[CONSULT][gemini][res] ${phoneTag} | session=${sessionId} | MSG_BREAK split into ${parts.length} parts`);
+    }
+
+    // Store clean text (markers stripped) in DB
     await db.pgQuery(
       `INSERT INTO consult_messages (session_id, role, text) VALUES ($1,'user',$2),($1,'model',$3)`,
-      [sessionId, message, reply]
+      [sessionId, message, replyForDb]
     );
 
-    res.json({ reply });
+    res.json({ parts });
   } catch (e) {
     console.error(`[CONSULT][error] ${phoneTag} | session=${sessionId} | chat failed: ${e.message}`);
     res.status(500).json({ error: 'Failed to get response' });

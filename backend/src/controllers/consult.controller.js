@@ -78,15 +78,13 @@ Never switch languages mid-conversation unless the user switches first.
 
 // ── Multilingual language detection block (always appended) ──────────────────
 
-const MULTILINGUAL_BLOCK = `
-━━━ Language Detection (MANDATORY) ━━━
-Every user message is wrapped with [CURRENT_MESSAGE_START] and [CURRENT_MESSAGE_END] markers.
-Detect the language of the text inside those markers and respond in that SAME language.
-If the user writes in Sinhala → reply in Sinhala.
-If the user writes in English → reply in English.
-If the user mixes both (Singlish) → match their style.
-Never switch languages mid-conversation unless the user switches first.
-`.trim();
+const MULTILINGUAL_BLOCK = `LANGUAGE RULE — HIGHEST PRIORITY:
+The customer's current message is always wrapped between [CURRENT_MESSAGE_START] and [CURRENT_MESSAGE_END] markers. Detect the language of the text inside those markers and reply accordingly:
+- If the message is in English → reply in English
+- If the message is in Sinhala script (Unicode) → reply in Sinhala script
+- If the message is in Singlish (Sinhala written using Latin/English letters) → reply in proper Sinhala script (Unicode), NOT in Singlish. Singlish uses common Sinhala words romanized, such as: mama, mata, eka, denna, ganna, kohomada, api, oya, danne, inne, hadanna, puluwan, kiyanna, karana, thibba, awilla, yanna, wage, wenna, karanna, wisthara, hari, nehe, ow, mokakda, kawda, koheda, kiyala, danna, gatta, aawa, giyaa, hitiye, hitiye, pennanna, oyata, oyage
+- For any other language → reply in that same language
+Ignore the language of all previous messages in the conversation history.`.trim();
 
 /**
  * Build the effective system prompt:
@@ -97,7 +95,7 @@ function buildEffectivePrompt(rawPrompt) {
   let prompt = (rawPrompt || DEFAULT_SYSTEM_PROMPT)
     .replace(/^\[\[MULTILINGUAL\]\]\s*/i, '')
     .trim();
-  if (!prompt.includes('[CURRENT_MESSAGE_START]')) {
+  if (!prompt.includes('[CURRENT_MESSAGE_START]') && !prompt.includes('LANGUAGE RULE')) {
     prompt += '\n\n' + MULTILINGUAL_BLOCK;
   }
   return prompt;
@@ -175,7 +173,9 @@ function logGrounding(result, phoneTag, sessionId) {
     const queries = meta.webSearchQueries || [];
     const chunks  = meta.groundingChunks  || [];
     if (queries.length === 0 && chunks.length === 0) return;
-    console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | queries=${JSON.stringify(queries)}`);
+    if (queries.length) {
+      console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | queries=${JSON.stringify(queries)}`);
+    }
     if (chunks.length) {
       const sources = chunks.slice(0, 5).map(c => c.web?.uri || c.web?.title || '?');
       console.log(`[CONSULT][search] ${phoneTag} | session=${sessionId} | sources=${JSON.stringify(sources)}`);

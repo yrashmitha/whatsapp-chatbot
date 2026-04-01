@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const db = require('../db');
+const { detectPhase, validatePhase, buildPhasePrompt } = require('../services/phaseEngine');
 
 // ── Default system prompt (fallback if DB has none) ───────────────────────────
 
@@ -105,11 +106,15 @@ function buildEffectivePrompt(rawPrompt) {
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-function getConsultModel(rawPrompt) {
+function getConsultModel(rawPrompt, phaseTools = []) {
+  // Always include googleSearch; add function declarations for phase-enabled tools
+  const tools = [{ googleSearch: {} }];
+  // Phase tools are informational strings (search_knowledge, send_image) — not FC tools in consult
+  // They're used to shape the system prompt, not as actual Gemini function declarations
   return genAI.getGenerativeModel({
     model: 'gemini-3.1-flash-lite-preview',
     systemInstruction: buildEffectivePrompt(rawPrompt),
-    tools: [{ googleSearch: {} }],
+    tools,
   });
 }
 
@@ -340,14 +345,16 @@ async function chat(req, res) {
   if (!session_token || !message) return res.status(400).json({ error: 'session_token and message required' });
 
   const { rows } = await db.pgQuery(
-    `SELECT id, phone FROM consult_sessions WHERE session_token=$1`, [session_token]
+    `SELECT id, phone, current_phase, completed_phases FROM consult_sessions WHERE session_token=$1`,
+    [session_token]
   );
   if (!rows.length) {
     console.warn(`[CONSULT][chat] Session not found: ${session_token.slice(0,8)}...`);
     return res.status(404).json({ error: 'Session not found' });
   }
-  const sessionId = rows[0].id;
-  const phoneTag  = `+94${rows[0].phone || '?'}`;
+  const sessionId       = rows[0].id;
+  const phoneTag        = `+94${rows[0].phone || '?'}`;
+  const completedPhases = rows[0].completed_phases || [];
 
   // Check model message count — hard limit of 50 replies per session
   const { rows: countRows } = await db.pgQuery(
@@ -377,7 +384,27 @@ async function chat(req, res) {
     geminiChat._history = mergeHistory(histMsgs);
 
     const activePrompt = buildEffectivePrompt(config.system_prompt);
-    const wrapped      = wrapMessage(message);
+
+    // ── Phase Engine (if consult has a flow_config configured) ───────────────
+    let messageToSend = wrapMessage(message);
+    let resolvedPhase = null;
+
+    if (config.flow_config?.nodes?.length) {
+      try {
+        const detectedId = await detectPhase(config.flow_config.nodes, geminiChat._history, message);
+        const validation = validatePhase(detectedId, completedPhases, config.flow_config);
+        const { instructionBlock } = buildPhasePrompt(validation.resolvedPhase, validation, config.flow_config);
+
+        resolvedPhase = validation.resolvedPhase;
+        messageToSend = `${instructionBlock}\n\n${wrapMessage(message)}`;
+
+        console.log(`[CONSULT][phase] ${phoneTag} | session=${sessionId} | detected="${detectedId}" resolved="${resolvedPhase}" completed=${JSON.stringify(completedPhases)}`);
+      } catch (phaseErr) {
+        console.error(`[CONSULT][phase] error (non-fatal, continuing without phase): ${phaseErr.message}`);
+      }
+    }
+
+    const wrapped = messageToSend;
 
     console.log(`[CONSULT][session] ${phoneTag} | session=${sessionId} | System instruction: ${activePrompt.replace(/\n/g, '\\n')}`);
     console.log(`[CONSULT][gemini][req] ${phoneTag} | session=${sessionId} | historyTurns=${geminiChat._history.length} | instrLen=${activePrompt.length} | msgLen=${wrapped.length}`);
@@ -405,6 +432,15 @@ async function chat(req, res) {
       `INSERT INTO consult_messages (session_id, role, text) VALUES ($1,'user',$2),($1,'model',$3)`,
       [sessionId, message, replyForDb]
     );
+
+    // Persist phase state to DB if phase engine was active
+    if (resolvedPhase) {
+      const nowCompleted = [...new Set([...completedPhases, resolvedPhase])];
+      await db.pgQuery(
+        `UPDATE consult_sessions SET current_phase=$1, completed_phases=$2 WHERE id=$3`,
+        [resolvedPhase, JSON.stringify(nowCompleted), sessionId]
+      );
+    }
 
     res.json({ parts });
   } catch (e) {
@@ -455,7 +491,12 @@ async function getSessionMessages(req, res) {
     `SELECT role, text, created_at FROM consult_messages WHERE session_id=$1 ORDER BY created_at ASC`,
     [sessionRows[0].id]
   );
-  res.json({ session: sessionRows[0], messages });
+  res.json({
+    session: sessionRows[0],
+    messages,
+    currentPhase:    sessionRows[0].current_phase    || null,
+    completedPhases: sessionRows[0].completed_phases || [],
+  });
 }
 
 async function getConfig(req, res) {

@@ -30,6 +30,14 @@ const icons = {
   calls:        <IC d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />,
   packages:     <IC d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10" />,
   consult:      <IC d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />,
+  flowBuilder: (
+    <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <rect x="2" y="3" width="6" height="4" rx="1" />
+      <rect x="16" y="3" width="6" height="4" rx="1" />
+      <rect x="9" y="17" width="6" height="4" rx="1" />
+      <path strokeLinecap="round" d="M5 7v4M19 7v4M5 11l7 6M19 11l-7 6" />
+    </svg>
+  ),
 };
 
 const ALL_NAV = [
@@ -46,6 +54,7 @@ const ALL_NAV = [
   { to: '/plugins',       label: 'Plugins',  icon: icons.plugins              },
   { to: '/settings',      label: 'Settings', icon: icons.settings             },
   { to: '/consult-admin', label: 'Consult',  icon: icons.consult, adminOnly: true },
+  { to: '/flow-builder',  label: 'Flow Builder', icon: icons.flowBuilder },
 ];
 
 export default function Layout({ children }) {

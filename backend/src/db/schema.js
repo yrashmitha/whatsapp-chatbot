@@ -436,6 +436,14 @@ async function init() {
       );
       CREATE INDEX IF NOT EXISTS idx_consult_messages_session ON consult_messages (session_id, created_at);
     `);
+
+    // ── Flow Builder ──────────────────────────────────────────────────────────
+    await pool.query(`
+      ALTER TABLE clients ADD COLUMN IF NOT EXISTS flow_config JSONB DEFAULT NULL;
+      ALTER TABLE consult_sessions ADD COLUMN IF NOT EXISTS current_phase TEXT DEFAULT NULL;
+      ALTER TABLE consult_sessions ADD COLUMN IF NOT EXISTS completed_phases JSONB DEFAULT '[]';
+      ALTER TABLE consult_config ADD COLUMN IF NOT EXISTS flow_config JSONB DEFAULT NULL;
+    `);
   } else {
     db.exec(`PRAGMA foreign_keys = ON;`);
     db.exec(`

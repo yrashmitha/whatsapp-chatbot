@@ -27,6 +27,7 @@ const adminRoutes        = require('./admin.routes');
 const quickRepliesRoutes = require('./quickReplies.routes');
 const callsRoutes        = require('./calls.routes');
 const { publicRouter: consultPublic, adminRouter: consultAdmin } = require('./consult.routes');
+const flowConfigRoutes = require('./flowconfig.routes');
 
 const jwtAuth = require('../middleware/jwtAuth');
 const { upload } = require('../config/multer');
@@ -80,6 +81,7 @@ function mountRoutes(app) {
   app.use('/api/catalog',      catalogRoutes);
   app.use('/consult',          consultPublic);
   app.use('/api/consult',      jwtAuth, consultAdmin);
+  app.use('/api/flow-config',  jwtAuth, flowConfigRoutes);
 
   // Customer, message, client routes (all sub-paths defined inside the router)
   app.use('/api',              customerRoutes);

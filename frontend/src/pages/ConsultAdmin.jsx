@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Layout from '../components/Layout';
+import FlowViewer from '../components/FlowViewer';
 import api from '../lib/api';
 import { formatDateTime } from '../lib/utils';
 
@@ -14,6 +15,7 @@ function parseMarkdown(text) {
 export default function ConsultAdmin() {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState(null); // session_token
+  const [activeTab, setActiveTab] = useState('conversation'); // 'conversation' | 'flow'
   const [actionLoading, setActionLoading] = useState(null); // 'delete' | 'clear'
   const qc = useQueryClient();
 
@@ -27,6 +29,13 @@ export default function ConsultAdmin() {
     queryKey: ['consult-thread', selected],
     queryFn: () => api.get(`/consult/sessions/${selected}`).then(r => r.data),
     enabled: !!selected,
+  });
+
+  const { data: flowData } = useQuery({
+    queryKey: ['consult-session-flow', selected],
+    queryFn: () => api.get(`/api/flow-config/session/${selected}`).then(r => r.data),
+    enabled: !!selected && activeTab === 'flow',
+    refetchInterval: activeTab === 'flow' ? 5000 : false,
   });
 
   async function handleDeleteSession() {
@@ -91,7 +100,7 @@ export default function ConsultAdmin() {
             {sessions.map(s => (
               <div
                 key={s.session_token}
-                onClick={() => setSelected(s.session_token)}
+                onClick={() => { setSelected(s.session_token); setActiveTab('conversation'); }}
                 style={{
                   padding: '12px 16px', cursor: 'pointer', borderBottom: '1px solid var(--border)',
                   background: selected === s.session_token ? 'rgba(99,102,241,0.08)' : 'transparent',
@@ -224,34 +233,68 @@ export default function ConsultAdmin() {
                 </div>
               )}
 
-              {/* Messages */}
-              <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {threadLoading && (
-                  <div style={{ textAlign: 'center', color: 'var(--text-3)', fontSize: '13px', marginTop: '24px' }}>
-                    Loading conversation...
-                  </div>
-                )}
-                {messages.map((msg, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
-                    <div style={{
-                      maxWidth: '70%', padding: '10px 14px', borderRadius: '16px',
-                      fontSize: '13px', lineHeight: '1.6',
-                      ...(msg.role === 'user'
-                        ? {
-                            background: 'rgba(99,102,241,0.15)', color: 'var(--text-1)',
-                            border: '1px solid rgba(99,102,241,0.25)', borderBottomRightRadius: '4px',
-                          }
-                        : {
-                            background: 'var(--bg-card)', color: 'var(--text-1)',
-                            border: '1px solid var(--border)', borderBottomLeftRadius: '4px',
-                          }
-                      ),
+              {/* Tab bar */}
+              <div style={{
+                display: 'flex', borderBottom: '1px solid var(--border)',
+                background: 'var(--bg-surface)', flexShrink: 0,
+              }}>
+                {['conversation', 'flow'].map(tab => (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    style={{
+                      padding: '8px 18px', fontSize: '12px', fontWeight: 500,
+                      border: 'none', cursor: 'pointer', textTransform: 'capitalize',
+                      background: 'transparent',
+                      color: activeTab === tab ? 'var(--accent)' : 'var(--text-3)',
+                      borderBottom: activeTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
+                      transition: 'color 0.15s',
                     }}
-                      dangerouslySetInnerHTML={{ __html: parseMarkdown(msg.text) }}
-                    />
-                  </div>
+                  >{tab}</button>
                 ))}
               </div>
+
+              {/* Conversation tab */}
+              {activeTab === 'conversation' && (
+                <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {threadLoading && (
+                    <div style={{ textAlign: 'center', color: 'var(--text-3)', fontSize: '13px', marginTop: '24px' }}>
+                      Loading conversation...
+                    </div>
+                  )}
+                  {messages.map((msg, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                      <div style={{
+                        maxWidth: '70%', padding: '10px 14px', borderRadius: '16px',
+                        fontSize: '13px', lineHeight: '1.6',
+                        ...(msg.role === 'user'
+                          ? {
+                              background: 'rgba(99,102,241,0.15)', color: 'var(--text-1)',
+                              border: '1px solid rgba(99,102,241,0.25)', borderBottomRightRadius: '4px',
+                            }
+                          : {
+                              background: 'var(--bg-card)', color: 'var(--text-1)',
+                              border: '1px solid var(--border)', borderBottomLeftRadius: '4px',
+                            }
+                        ),
+                      }}
+                        dangerouslySetInnerHTML={{ __html: parseMarkdown(msg.text) }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Flow tab */}
+              {activeTab === 'flow' && (
+                <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+                  <FlowViewer
+                    flowConfig={flowData?.flowConfig}
+                    currentPhase={flowData?.currentPhase}
+                    completedPhases={flowData?.completedPhases || []}
+                  />
+                </div>
+              )}
             </>
           )}
         </div>

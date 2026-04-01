@@ -181,7 +181,7 @@ async function buildChatSession(phoneNumber, client) {
         temperature: parseFloat(client.temperature) || 0.7,
         topP: 0.95,
         topK: 64,
-        maxOutputTokens: 1024,
+        maxOutputTokens: 3000,
         thinkingConfig: { thinkingBudget: 1024 },
       },
     });

@@ -31,7 +31,7 @@ const model = genAI.getGenerativeModel({
     topP: 0.95,
     topK: 64,
     maxOutputTokens: 4096,
-    thinkingConfig: { thinkingBudget: 1024 },
+    thinkingConfig: { thinkingBudget: 0 },
   }
 });
 
@@ -182,7 +182,7 @@ async function buildChatSession(phoneNumber, client) {
         topP: 0.95,
         topK: 64,
         maxOutputTokens: 3000,
-        thinkingConfig: { thinkingBudget: 1024 },
+        thinkingConfig: { thinkingBudget: 0 },
       },
     });
     console.log(`[SESSION] Built client model for ${client.id} | mode=${client.system_prompt_mode} | orderFields=${client.order_fields?.length || 0} | contactNumber=${client.contact_number || 'none'} | instructionLen=${fullInstruction.length}`);

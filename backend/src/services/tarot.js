@@ -134,7 +134,14 @@ STRICT RULES:
   });
 
   const result = await model.generateContent(prompt);
-  const reading = result.response.text();
+
+  // Filter out thought/thinking parts — same pattern as gemini.js
+  // result.response.text() includes thinking tokens; we want only the final response
+  const rawParts = result.response.candidates?.[0]?.content?.parts || [];
+  const reading  = rawParts
+    .filter(p => !p.thought && typeof p.text === 'string')
+    .map(p => p.text)
+    .join('') || result.response.text();
 
   console.log(`[TAROT] Gemini reading (${reading.length} chars)`);
 

@@ -102,18 +102,37 @@ async function generateTarotReading(clientId, question, customPrompt = null) {
   const drawn = drawCards(3);
   const spreadText = formatSpread(drawn);
 
+  console.log(`[TAROT] client=${clientId} | drawing 3 cards`);
+  drawn.forEach(({ card, reversed }, i) => {
+    console.log(`[TAROT]   ${SPREAD_POSITIONS[i]}: ${card.sinhala_name || card.name} (${card.name}) ${reversed ? '(Reversed)' : '(Upright)'}`);
+  });
+
   const promptTemplate = customPrompt || DEFAULT_TAROT_PROMPT;
-  const prompt = promptTemplate
+
+  // Replace {question} and {spread} placeholders
+  let prompt = promptTemplate
     .replace('{question}', question)
     .replace('{spread}', spreadText);
 
-  console.log(`[TAROT] client=${clientId} | drawing 3 cards`);
-  drawn.forEach(({ card, reversed }, i) => {
-    console.log(`[TAROT]   ${SPREAD_POSITIONS[i]}: ${card.name} ${reversed ? '(Reversed)' : '(Upright)'}`);
-  });
-  console.log(`[TAROT] Gemini prompt:\n${prompt}`);
+  // Safety guard: if customPrompt didn't include {spread}, append the cards explicitly
+  if (customPrompt && !customPrompt.includes('{spread}')) {
+    prompt += `\n\n---\nCUSTOMER'S QUESTION: ${question}\n\nDRAWN CARDS (interpret ONLY these 3, no others):\n${spreadText}`;
+    console.log(`[TAROT] WARNING: custom prompt missing {spread} — appended cards explicitly`);
+  }
 
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+  console.log(`[TAROT] Injected spread:\n${spreadText}`);
+  console.log(`[TAROT] Full prompt sent to Gemini:\n${prompt}`);
+
+  // Use systemInstruction to hard-enforce the card constraint with thinking models
+  const model = genAI.getGenerativeModel({
+    model: 'gemini-2.5-flash',
+    systemInstruction: `You are a tarot card reader providing a personalised reading.
+STRICT RULES:
+1. Interpret ONLY the exact 3 cards listed in the prompt. Do NOT invent, substitute, or mention any other tarot cards.
+2. Use the card names exactly as given (use the Sinhala name if provided).
+3. Respond in the same language the customer used in their question.`,
+  });
+
   const result = await model.generateContent(prompt);
   const reading = result.response.text();
 

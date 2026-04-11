@@ -198,40 +198,163 @@ async function triggerTarotReading(req, res) {
       return res.status(403).json({ error: 'tarot_reading addon not enabled' });
     }
 
-    // If order_id given and not regenerating, return saved reading if it exists
-    if (order_id && !regenerate) {
-      const existing = await db.pgQuery(
-        `SELECT tarot_data FROM orders WHERE order_id=$1`, [order_id]
-      );
+    // ── Chat context (no order_id): synchronous — return reading directly ──
+    if (!order_id) {
+      let customPrompt = null;
+      try {
+        const config = await db.getPluginConfig(clientId, 'tarot_reading');
+        customPrompt = config?.prompt || null;
+      } catch { /* no config */ }
+
+      console.log(`[TAROT] Sync reading for ${phone} | client=${clientId}`);
+      const { reading, cards } = await generateTarotReading(clientId, question, customPrompt);
+      return res.json({ ok: true, reading, cards, question });
+    }
+
+    // ── Orders context (order_id present): background mode ──
+
+    // Return cached if not regenerating and saved reading already exists
+    if (!regenerate) {
+      const existing = await db.pgQuery(`SELECT tarot_data FROM orders WHERE order_id=$1`, [order_id]);
       const td = existing.rows[0]?.tarot_data;
       if (td && td.reading && td.cards) {
-        console.log(`[TAROT] Returning saved reading for order ${order_id}`);
+        console.log(`[TAROT] Returning cached reading for order ${order_id}`);
         return res.json({ ok: true, reading: td.reading, cards: td.cards, question: td.question, fromCache: true });
       }
     }
+
+    // Mark as generating so frontend can show progress
+    await db.pgQuery(
+      `UPDATE orders SET tarot_data=$1 WHERE order_id=$2`,
+      [JSON.stringify({ generating: true, question }), order_id]
+    ).catch(() => {});
+
+    // Return immediately — generation runs in background
+    res.json({ ok: true, generating: true });
 
     // Load optional custom prompt
     let customPrompt = null;
     try {
       const config = await db.getPluginConfig(clientId, 'tarot_reading');
       customPrompt = config?.prompt || null;
-    } catch { /* no config — use default */ }
+    } catch { /* no config */ }
 
-    console.log(`[TAROT] Generating reading for ${phone} | order=${order_id || 'none'} | client=${clientId}`);
-    const { reading, cards } = await generateTarotReading(clientId, question, customPrompt);
-
-    // Save to orders.tarot_data if order_id was provided
-    if (order_id) {
+    console.log(`[TAROT] Background generation for ${phone} | order=${order_id} | client=${clientId}`);
+    generateTarotReading(clientId, question, customPrompt).then(async ({ reading, cards }) => {
       const tarotData = { question, reading, cards, generated_at: new Date().toISOString() };
       await db.pgQuery(
         `UPDATE orders SET tarot_data=$1 WHERE order_id=$2`,
         [JSON.stringify(tarotData), order_id]
       ).catch(e => console.warn('[TAROT] Failed to save tarot_data:', e.message));
-    }
+      console.log(`[TAROT] Background generation complete for order ${order_id}`);
+    }).catch(async (e) => {
+      console.error('[TAROT] Background generation error:', e.message);
+      await db.pgQuery(
+        `UPDATE orders SET tarot_data=$1 WHERE order_id=$2`,
+        [JSON.stringify({ error: e.message, question }), order_id]
+      ).catch(() => {});
+    });
 
-    res.json({ ok: true, reading, cards, question });
   } catch (e) {
     console.error('[TAROT] triggerTarotReading error:', e.message);
+    if (!res.headersSent) res.status(500).json({ error: e.message });
+  }
+}
+
+/**
+ * PATCH /api/crm/tarot-reading/sections/:orderId — update reading text and/or cards.
+ */
+async function updateTarotSections(req, res) {
+  const { orderId } = req.params;
+  const { reading, cards } = req.body;
+  try {
+    const existing = await db.pgQuery('SELECT tarot_data FROM orders WHERE order_id=$1', [orderId]);
+    if (!existing.rows.length) return res.status(404).json({ error: 'Order not found' });
+    const td = (typeof existing.rows[0].tarot_data === 'string')
+      ? JSON.parse(existing.rows[0].tarot_data || '{}')
+      : (existing.rows[0].tarot_data || {});
+    if (reading !== undefined) td.reading = reading;
+    if (cards   !== undefined) td.cards   = cards;
+    await db.pgQuery('UPDATE orders SET tarot_data=$1 WHERE order_id=$2', [JSON.stringify(td), orderId]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+/**
+ * GET /api/crm/tarot-reading/download/:orderId — stream .docx for an order.
+ */
+async function downloadTarotDocx(req, res) {
+  const { orderId } = req.params;
+  try {
+    const r = await db.pgQuery('SELECT phone_number, tarot_data FROM orders WHERE order_id=$1', [orderId]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Order not found' });
+    const td = (typeof r.rows[0].tarot_data === 'string')
+      ? JSON.parse(r.rows[0].tarot_data || '{}')
+      : (r.rows[0].tarot_data || {});
+    if (!td.reading || !td.cards) return res.status(404).json({ error: 'No tarot reading saved' });
+
+    const docxBuffer = await buildTarotDoc({ question: td.question || '', reading: td.reading, cards: td.cards });
+    const last4 = (r.rows[0].phone_number || '').replace(/\D/g, '').slice(-4) || '0000';
+    const filename = `tarot-reading-${last4}.docx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(docxBuffer);
+  } catch (e) {
+    console.error('[TAROT DOCX] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+}
+
+/**
+ * GET /api/crm/tarot-reading/download-pdf/:orderId — stream PDF for an order.
+ */
+async function downloadTarotPdfByOrder(req, res) {
+  const { orderId } = req.params;
+  const { exec } = require('child_process');
+  const fs   = require('fs');
+  const os   = require('os');
+  const path = require('path');
+
+  try {
+    const r = await db.pgQuery('SELECT phone_number, tarot_data FROM orders WHERE order_id=$1', [orderId]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Order not found' });
+    const td = (typeof r.rows[0].tarot_data === 'string')
+      ? JSON.parse(r.rows[0].tarot_data || '{}')
+      : (r.rows[0].tarot_data || {});
+    if (!td.reading || !td.cards) return res.status(404).json({ error: 'No tarot reading saved' });
+
+    const uid     = `tarot-${Date.now()}`;
+    const tmpDocx = path.join(os.tmpdir(), `${uid}.docx`);
+    const tmpPdf  = path.join(os.tmpdir(), `${uid}.pdf`);
+
+    const docxBuffer = await buildTarotDoc({ question: td.question || '', reading: td.reading, cards: td.cards });
+    fs.writeFileSync(tmpDocx, docxBuffer);
+
+    await new Promise((resolve, reject) => {
+      exec(
+        `soffice --headless --convert-to pdf --outdir "${os.tmpdir()}" "${tmpDocx}"`,
+        (err, _stdout, stderr) => { if (err) reject(new Error(stderr || err.message)); else resolve(); }
+      );
+    });
+
+    const { PDFDocument } = require('pdf-lib');
+    const rawPdf = fs.readFileSync(tmpPdf);
+    const pdfDoc = await PDFDocument.load(rawPdf);
+    pdfDoc.setTitle('Tarot Card Reading');
+    pdfDoc.setAuthor('Tarot Reading Service');
+    pdfDoc.setCreator(''); pdfDoc.setProducer('');
+    pdfDoc.setSubject('Tarot Reading'); pdfDoc.setKeywords([]);
+    const buffer = Buffer.from(await pdfDoc.save());
+
+    fs.unlink(tmpDocx, () => {}); fs.unlink(tmpPdf, () => {});
+
+    const last4    = (r.rows[0].phone_number || '').replace(/\D/g, '').slice(-4) || '0000';
+    const filename = `tarot-reading-${last4}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
+  } catch (e) {
+    console.error('[TAROT PDF] error:', e.message);
     res.status(500).json({ error: e.message });
   }
 }
@@ -323,4 +446,4 @@ async function downloadTarotPdf(req, res) {
   }
 }
 
-module.exports = { ADDON_CATALOG, listAddons, toggleAddon, getAddonsStatus, sendMedia, triggerTarotReading, downloadTarotPdf };
+module.exports = { ADDON_CATALOG, listAddons, toggleAddon, getAddonsStatus, sendMedia, triggerTarotReading, updateTarotSections, downloadTarotDocx, downloadTarotPdfByOrder, downloadTarotPdf };

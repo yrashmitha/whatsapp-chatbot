@@ -12,7 +12,8 @@ import ChatThread from '../components/chat/ChatThread';
 import CreateOrderDrawer from '../components/chat/CreateOrderDrawer';
 import HoroscopeModal from '../components/orders/HoroscopeModal';
 import HoroscopeEditorDrawer from '../components/orders/HoroscopeEditorDrawer';
-import TarotModal from '../components/chat/TarotModal';
+import TarotGenerateModal from '../components/orders/TarotGenerateModal';
+import TarotEditorDrawer from '../components/orders/TarotEditorDrawer';
 
 function parseCustomFields(raw) {
   if (!raw) return null;
@@ -37,9 +38,10 @@ export default function Orders() {
   const [productPopup, setProductPopup] = useState(null); // product object or 'loading'
   const [drawerCustomer, setDrawerCustomer] = useState(null); // { phone, name }
   const [showCreate, setShowCreate] = useState(false);
-  const [horoscopeOrder, setHoroscopeOrder] = useState(null);   // order object for generate modal
-  const [editorOrder, setEditorOrder]       = useState(null);   // order object for editor drawer
-  const [tarotOrder, setTarotOrder] = useState(null); // order object for tarot modal
+  const [horoscopeOrder, setHoroscopeOrder]   = useState(null);  // horoscope generate modal
+  const [editorOrder, setEditorOrder]         = useState(null);  // horoscope editor drawer
+  const [tarotOrder, setTarotOrder]           = useState(null);  // tarot generate modal
+  const [tarotEditorOrder, setTarotEditorOrder] = useState(null); // tarot editor drawer
   const toast = useToast();
   const qc = useQueryClient();
 
@@ -72,13 +74,17 @@ export default function Orders() {
 
   const orders = data?.orders || [];
 
-  // Update hasGenerating whenever orders data changes
+  // Update hasGenerating whenever orders data changes (includes both horoscope and tarot)
   React.useEffect(() => {
     const anyGenerating = orders.some(o => {
       const hd = o.horoscope_data && typeof o.horoscope_data === 'string'
         ? (() => { try { return JSON.parse(o.horoscope_data); } catch { return {}; } })()
         : (o.horoscope_data || {});
-      return hd.generating === true;
+      if (hd.generating === true) return true;
+      const td = o.tarot_data && typeof o.tarot_data === 'string'
+        ? (() => { try { return JSON.parse(o.tarot_data); } catch { return {}; } })()
+        : (o.tarot_data || {});
+      return td.generating === true;
     });
     setHasGenerating(anyGenerating);
   }, [orders]);
@@ -199,7 +205,9 @@ export default function Orders() {
                   const td = o.tarot_data && typeof o.tarot_data === 'string'
                     ? (() => { try { return JSON.parse(o.tarot_data); } catch { return null; } })()
                     : (o.tarot_data || null);
-                  const tarotDone = !!(td?.reading && td?.cards);
+                  const tarotGenerating = td?.generating === true;
+                  const tarotError      = td?.error || null;
+                  const tarotDone       = !!(td?.reading && td?.cards);
 
                   return (
                     <React.Fragment key={o.id}>
@@ -275,15 +283,36 @@ export default function Orders() {
                               </>
                             )}
                             {showTarot && (
-                              <button
-                                onClick={() => setTarotOrder(o)}
-                                title={tarotDone ? 'Tarot reading saved — click to view, regenerate, or download PDF' : 'Generate tarot reading'}
-                                className={`text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 ${
-                                  tarotDone
-                                    ? 'bg-teal-100 text-teal-700 hover:bg-teal-200'
-                                    : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
-                                }`}
-                              >🃏</button>
+                              <>
+                                {tarotGenerating ? (
+                                  <span className="flex items-center gap-1 text-xs text-purple-600 font-medium">
+                                    <span className="w-3 h-3 border-2 border-purple-300 border-t-purple-600 rounded-full animate-spin inline-block" />
+                                    Generating…
+                                  </span>
+                                ) : tarotError ? (
+                                  <>
+                                    <span title={tarotError} className="text-xs px-1.5 py-0.5 rounded border-0 bg-red-100 text-red-600 cursor-default">⚠ Error</span>
+                                    <button
+                                      onClick={() => setTarotOrder(o)}
+                                      title="Retry tarot generation"
+                                      className="text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 bg-purple-100 text-purple-700 hover:bg-purple-200"
+                                    >🃏</button>
+                                  </>
+                                ) : (
+                                  <button
+                                    onClick={() => setTarotOrder(o)}
+                                    title={tarotDone ? 'Regenerate tarot reading' : 'Generate tarot reading'}
+                                    className="text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 bg-purple-100 text-purple-700 hover:bg-purple-200"
+                                  >🃏</button>
+                                )}
+                                {tarotDone && (
+                                  <button
+                                    onClick={() => setTarotEditorOrder(o)}
+                                    title="View / edit tarot reading"
+                                    className="text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 bg-teal-100 text-teal-700 hover:bg-teal-200"
+                                  >✏</button>
+                                )}
+                              </>
                             )}
                           </div>
                         </td>
@@ -473,23 +502,22 @@ export default function Orders() {
         />
       )}
       {tarotOrder && (
-        <TarotModal
-          phone={tarotOrder.phone || tarotOrder.phone_number}
-          orderId={tarotOrder.order_id}
+        <TarotGenerateModal
+          order={tarotOrder}
           clientId={clientId}
-          savedData={(() => {
-            const td = tarotOrder.tarot_data && typeof tarotOrder.tarot_data === 'string'
-              ? (() => { try { return JSON.parse(tarotOrder.tarot_data); } catch { return null; } })()
-              : (tarotOrder.tarot_data || null);
-            return (td?.reading && td?.cards) ? td : null;
-          })()}
           onClose={() => setTarotOrder(null)}
-          onResult={() => {
+          onGenerated={() => {
             qc.invalidateQueries({ queryKey: ['orders'] });
             setTarotOrder(null);
           }}
         />
       )}
+      <TarotEditorDrawer
+        order={tarotEditorOrder}
+        clientId={clientId}
+        open={!!tarotEditorOrder}
+        onClose={() => setTarotEditorOrder(null)}
+      />
       <HoroscopeEditorDrawer
         order={editorOrder}
         clientId={clientId}

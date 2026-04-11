@@ -42,16 +42,19 @@ const DEFAULT_TAROT_PROMPT = `You are a warm, insightful tarot reader. A custome
 
 "{question}"
 
-You have drawn the following 3-card spread for them:
+You have physically drawn exactly these 3 cards for them. You MUST interpret ONLY these cards and no others — do not invent, substitute, or reference any other tarot cards:
 
 {spread}
 
 Please provide a thoughtful, compassionate tarot reading that:
-1. Interprets each card in the context of its position (Past, Present, Future)
-2. Connects the cards to the customer's specific question or situation
-3. Offers guidance and insight based on the overall message of the spread
-4. Ends with an encouraging, supportive closing message
+1. Interprets each of the 3 cards above in the context of its position (Past, Present, Future)
+2. Refers to each card by the name given above — use the Sinhala name if one is provided
+3. Connects the cards to the customer's specific question or situation
+4. Offers guidance and insight based on the overall message of the spread
+5. Ends with an encouraging, supportive closing message
 
+IMPORTANT: Only mention the 3 cards listed above. Do not reference any other tarot cards.
+Respond in the same language the customer used in their question.
 Keep the tone warm, empathetic, and spiritual. Write in a flowing, readable style suitable for WhatsApp.`;
 
 /**
@@ -76,10 +79,14 @@ function drawCards(count) {
  */
 function formatSpread(drawn) {
   return drawn.map(({ card, reversed }, i) => {
-    const position = SPREAD_POSITIONS[i] || `Position ${i + 1}`;
+    const position    = SPREAD_POSITIONS[i] || `Position ${i + 1}`;
     const orientation = reversed ? '(Reversed)' : '(Upright)';
-    const meaning = reversed ? card.meaning_rev : card.meaning_up;
-    return `**${position}: ${card.name} ${orientation}**\nMeaning: ${meaning}`;
+    const meaning     = reversed ? card.meaning_rev : card.meaning_up;
+    // Include Sinhala name alongside English so Gemini uses the right name in its response
+    const nameLabel   = card.sinhala_name
+      ? `${card.sinhala_name} (${card.name})`
+      : card.name;
+    return `**${position}: ${nameLabel} ${orientation}**\nMeaning: ${meaning}`;
   }).join('\n\n');
 }
 

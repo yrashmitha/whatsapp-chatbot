@@ -55,6 +55,8 @@ export default function Settings() {
   const [pluginEnabled, setPluginEnabled]             = useState(false);
   const [orderFields, setOrderFields]                 = useState([]);
   const [newField, setNewField]                       = useState({ key: '', label: '', description: '', required: true });
+  const [editingField, setEditingField]               = useState(null); // key of field being edited
+  const [editingFieldData, setEditingFieldData]       = useState({});   // { label, description, required }
   const [promptLoading, setPromptLoading]             = useState(false);
 
   // ── API Keys ──────────────────────────────────────────────────────────────
@@ -214,8 +216,15 @@ export default function Settings() {
     setOrderFields(p => [...p, { key, label, description: newField.description.trim(), required: newField.required }]);
     setNewField({ key: '', label: '', description: '', required: true });
   };
-  const removeField    = (key) => setOrderFields(p => p.filter(f => f.key !== key));
+  const removeField    = (key) => { setOrderFields(p => p.filter(f => f.key !== key)); if (editingField === key) setEditingField(null); };
   const toggleRequired = (key) => setOrderFields(p => p.map(f => f.key === key ? { ...f, required: !f.required } : f));
+  const startEditField = (f) => { setEditingField(f.key); setEditingFieldData({ label: f.label, description: f.description || '', required: f.required }); };
+  const saveEditField  = (key) => {
+    const label = editingFieldData.label.trim();
+    if (!label) { toast.error('Label is required'); return; }
+    setOrderFields(p => p.map(f => f.key === key ? { ...f, label, description: editingFieldData.description.trim(), required: editingFieldData.required } : f));
+    setEditingField(null);
+  };
 
   // ── Quick replies handlers ────────────────────────────────────────────────
   const openNew  = () => { setEditingId('new'); setFormTitle(''); setFormText(''); };
@@ -334,18 +343,52 @@ export default function Settings() {
                     {orderFields.length > 0 && (
                       <div className="flex flex-col gap-2 mb-3">
                         {orderFields.map(f => (
-                          <div key={f.key} className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg">
-                            <div className="flex-1 min-w-0">
-                              <span className="text-sm font-medium text-slate-800">{f.label}</span>
-                              <span className="ml-1.5 text-xs font-mono text-slate-400">({f.key})</span>
-                              {f.description && <div className="text-xs text-slate-500 mt-0.5 truncate">{f.description}</div>}
+                          editingField === f.key ? (
+                            <div key={f.key} className="flex flex-col gap-2 px-3 py-2.5 bg-violet-50 border border-violet-200 rounded-lg">
+                              <div className="flex gap-2 flex-wrap">
+                                <input
+                                  type="text"
+                                  value={editingFieldData.label}
+                                  onChange={e => setEditingFieldData(p => ({ ...p, label: e.target.value }))}
+                                  placeholder="Label"
+                                  className="flex-1 min-w-[140px] text-sm border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-violet-400"
+                                  autoFocus
+                                />
+                                <span className="text-xs font-mono text-slate-400 self-center px-1">key: {f.key}</span>
+                              </div>
+                              <input
+                                type="text"
+                                value={editingFieldData.description}
+                                onChange={e => setEditingFieldData(p => ({ ...p, description: e.target.value }))}
+                                placeholder="Description / hint for AI (optional)"
+                                className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-violet-400"
+                              />
+                              <div className="flex items-center justify-between">
+                                <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none">
+                                  <input type="checkbox" checked={editingFieldData.required} onChange={e => setEditingFieldData(p => ({ ...p, required: e.target.checked }))} className="accent-violet-500" />
+                                  Required field
+                                </label>
+                                <div className="flex gap-2">
+                                  <button type="button" onClick={() => setEditingField(null)} className="text-xs text-slate-500 hover:text-slate-700 transition-colors">Cancel</button>
+                                  <button type="button" onClick={() => saveEditField(f.key)} className="text-xs bg-violet-600 hover:bg-violet-700 text-white rounded-lg px-3 py-1 transition-colors">Save</button>
+                                </div>
+                              </div>
                             </div>
-                            <label className="flex items-center gap-1 text-xs text-slate-600 shrink-0 cursor-pointer select-none">
-                              <input type="checkbox" checked={f.required} onChange={() => toggleRequired(f.key)} className="accent-violet-500" />
-                              Required
-                            </label>
-                            <button type="button" onClick={() => removeField(f.key)} className="text-slate-400 hover:text-red-500 text-xs px-1 transition-colors">Remove</button>
-                          </div>
+                          ) : (
+                            <div key={f.key} className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg">
+                              <div className="flex-1 min-w-0">
+                                <span className="text-sm font-medium text-slate-800">{f.label}</span>
+                                <span className="ml-1.5 text-xs font-mono text-slate-400">({f.key})</span>
+                                {f.description && <div className="text-xs text-slate-500 mt-0.5 truncate">{f.description}</div>}
+                              </div>
+                              <label className="flex items-center gap-1 text-xs text-slate-600 shrink-0 cursor-pointer select-none">
+                                <input type="checkbox" checked={f.required} onChange={() => toggleRequired(f.key)} className="accent-violet-500" />
+                                Required
+                              </label>
+                              <button type="button" onClick={() => startEditField(f)} className="text-slate-400 hover:text-violet-600 text-xs px-1 transition-colors">Edit</button>
+                              <button type="button" onClick={() => removeField(f.key)} className="text-slate-400 hover:text-red-500 text-xs px-1 transition-colors">Remove</button>
+                            </div>
+                          )
                         ))}
                       </div>
                     )}

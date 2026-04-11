@@ -498,16 +498,21 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   }
 
   // Filter out thought parts so they never reach the customer.
-  // IMPORTANT: do NOT fall back to candidate.text() — that SDK helper concatenates
-  // ALL parts including thought parts, which leaks Nova's reasoning to the user.
+  // Use candidates[0].content.parts and skip any part with thought:true.
+  // Only fall back to candidate.text() if rawParts is completely empty (SDK version mismatch),
+  // and in that case strip any <think>…</think> blocks before using it.
   const rawParts = candidate.candidates?.[0]?.content?.parts || [];
   const nonThoughtText = rawParts
     .filter(p => !p.thought && typeof p.text === 'string')
     .map(p => p.text)
     .join('');
-  // If rawParts is empty (old SDK path), attempt text() and strip anything between
-  // <think>…</think> or similar patterns, then use it — but prefer the parts filter.
-  const rawReply = nonThoughtText;
+  let rawReply = nonThoughtText;
+  if (!rawReply && rawParts.length === 0) {
+    // rawParts empty → SDK didn't expose parts; use text() but strip think blocks
+    const sdkText = candidate.text?.() || '';
+    rawReply = sdkText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    if (rawReply) log.warn('[GEMINI] rawParts empty — used candidate.text() with think-block strip as fallback');
+  }
   log.info(`[GEMINI] Raw response JSON: ${JSON.stringify({ parts: rawParts.map(p => ({ thought: !!p.thought, text: p.text?.slice(0, 300) })), rawReply: rawReply.slice(0, 500) })}`);
 
   let botReply  = rawReply

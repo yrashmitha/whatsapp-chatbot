@@ -200,7 +200,7 @@ const SINHALA_POSITIONS = { Past: 'අතීතය', Present: 'වර්තම�
 const SINHALA_UPRIGHT   = 'ඍජු';
 const SINHALA_REVERSED  = 'ආපසු';
 const SINHALA_QUESTION_HEADING = 'ඔබේ ප්‍රශ්නය / තත්ත්වය';
-const SINHALA_CARDS_HEADING    = 'ඇඳගත් පත්තු — අතීතය · වර්තමානය · අනාගතය';
+const SINHALA_CARDS_HEADING    = 'ඔබට ඇදුනු කාඩ් - අතීතය · වර්තමානය · අනාගතය';
 const SINHALA_READING_HEADING  = 'ඔබේ කියවීම';
 
 async function buildTarotDoc({ question, reading, cards }) {

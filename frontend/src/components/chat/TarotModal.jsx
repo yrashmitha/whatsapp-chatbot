@@ -11,12 +11,12 @@ import { useToast } from '../ui/Toast';
  *   onClose   {Function} Close the modal
  *   onResult  {Function} Called with reading text so admin can paste it into chat
  */
-export default function TarotModal({ phone, clientId, onClose, onResult }) {
+export default function TarotModal({ phone, clientId, onClose, onResult, initialResult = null }) {
   const toast = useToast();
 
-  const [question, setQuestion]   = useState('');
+  const [question, setQuestion]   = useState(initialResult?.question || '');
   const [loading, setLoading]     = useState(false);
-  const [result, setResult]       = useState(null);   // { reading, cards }
+  const [result, setResult]       = useState(initialResult);   // { reading, cards, question }
   const [downloading, setDownloading] = useState(false);
 
   const handleGenerate = async () => {
@@ -26,7 +26,7 @@ export default function TarotModal({ phone, clientId, onClose, onResult }) {
     try {
       const params = clientId ? { params: { client_id: clientId } } : {};
       const res = await api.post('/crm/tarot-reading', { phone, question: question.trim() }, params);
-      setResult(res.data);
+      setResult({ ...res.data, question: question.trim() });
     } catch (e) {
       toast.error(e?.response?.data?.error || 'Failed to generate reading');
     } finally {
@@ -67,7 +67,9 @@ export default function TarotModal({ phone, clientId, onClose, onResult }) {
 
   const handleSendToChat = () => {
     if (!result) return;
-    onResult?.(result.reading);
+    // In Chat context onResult receives the reading text (string) to prefill.
+    // In Orders context onResult receives the full result object to store + close.
+    onResult?.(result);
     onClose();
   };
 

@@ -12,6 +12,7 @@ import ChatThread from '../components/chat/ChatThread';
 import CreateOrderDrawer from '../components/chat/CreateOrderDrawer';
 import HoroscopeModal from '../components/orders/HoroscopeModal';
 import HoroscopeEditorDrawer from '../components/orders/HoroscopeEditorDrawer';
+import TarotModal from '../components/chat/TarotModal';
 
 function parseCustomFields(raw) {
   if (!raw) return null;
@@ -23,6 +24,13 @@ export default function Orders() {
   const { user, selectedClientId } = useAuthStore();
   const superAdmin = isSuperAdmin(user);
   const showHoroscope = superAdmin || !!user?.horoscope_enabled;
+
+  const { data: addonsStatus } = useQuery({
+    queryKey: ['addons-status', clientId],
+    queryFn: () => api.get('/crm/addons-status', { params: clientId ? { client_id: clientId } : {} }).then(r => r.data),
+    enabled: !!clientId,
+  });
+  const showTarot = addonsStatus?.addons?.includes('tarot_reading');
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -37,6 +45,9 @@ export default function Orders() {
   const [showCreate, setShowCreate] = useState(false);
   const [horoscopeOrder, setHoroscopeOrder] = useState(null);   // order object for generate modal
   const [editorOrder, setEditorOrder]       = useState(null);   // order object for editor drawer
+  const [tarotOrder, setTarotOrder]         = useState(null);   // order object for tarot modal
+  // Tracks completed tarot readings this session: orderId → { reading, cards, question }
+  const [tarotResults, setTarotResults]     = useState({});
   const toast = useToast();
   const qc = useQueryClient();
 
@@ -260,6 +271,21 @@ export default function Orders() {
                                 )}
                               </>
                             )}
+                            {showTarot && (() => {
+                              const ordKey = o.order_id || o.id;
+                              const hasTarot = !!tarotResults[ordKey];
+                              return (
+                                <button
+                                  onClick={() => setTarotOrder(o)}
+                                  title={hasTarot ? 'Tarot reading done — click to view or redraw' : 'Generate tarot reading'}
+                                  className={`text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 ${
+                                    hasTarot
+                                      ? 'bg-teal-100 text-teal-700 hover:bg-teal-200'
+                                      : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                                  }`}
+                                >🃏</button>
+                              );
+                            })()}
                           </div>
                         </td>
                         {superAdmin && <td className="py-2.5 pr-4 text-violet-500 text-xs">{o.client_id}</td>}
@@ -445,6 +471,18 @@ export default function Orders() {
           clientId={clientId}
           onClose={() => setHoroscopeOrder(null)}
           onGenerated={() => qc.invalidateQueries({ queryKey: ['orders'] })}
+        />
+      )}
+      {tarotOrder && (
+        <TarotModal
+          phone={tarotOrder.phone || tarotOrder.phone_number}
+          clientId={clientId}
+          initialResult={tarotResults[tarotOrder.order_id || tarotOrder.id] || null}
+          onClose={() => setTarotOrder(null)}
+          onResult={(result) => {
+            setTarotResults(prev => ({ ...prev, [tarotOrder.order_id || tarotOrder.id]: result }));
+            setTarotOrder(null);
+          }}
         />
       )}
       <HoroscopeEditorDrawer

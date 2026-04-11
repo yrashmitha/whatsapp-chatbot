@@ -342,8 +342,8 @@ export default function ChatThread({ customer, clientId, onCustomerDeleted }) {
           phone={phone}
           clientId={clientId}
           onClose={() => setTarotModalOpen(false)}
-          onResult={(text) => {
-            setMessagePrefill(text);
+          onResult={(result) => {
+            setMessagePrefill(typeof result === 'string' ? result : result.reading);
             setTarotModalOpen(false);
           }}
         />

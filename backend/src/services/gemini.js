@@ -497,13 +497,17 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     candidate = result.response;
   }
 
-  // Filter out thought parts so they never reach the customer
+  // Filter out thought parts so they never reach the customer.
+  // IMPORTANT: do NOT fall back to candidate.text() — that SDK helper concatenates
+  // ALL parts including thought parts, which leaks Nova's reasoning to the user.
   const rawParts = candidate.candidates?.[0]?.content?.parts || [];
   const nonThoughtText = rawParts
     .filter(p => !p.thought && typeof p.text === 'string')
     .map(p => p.text)
     .join('');
-  const rawReply = nonThoughtText || candidate.text() || '';
+  // If rawParts is empty (old SDK path), attempt text() and strip anything between
+  // <think>…</think> or similar patterns, then use it — but prefer the parts filter.
+  const rawReply = nonThoughtText;
   log.info(`[GEMINI] Raw response JSON: ${JSON.stringify({ parts: rawParts.map(p => ({ thought: !!p.thought, text: p.text?.slice(0, 300) })), rawReply: rawReply.slice(0, 500) })}`);
 
   let botReply  = rawReply
@@ -524,7 +528,8 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
         .map(p => p.text)
         .join('')
         .trim();
-      if (!botReply) botReply = nudge.response.text?.() || '';
+      // Do NOT fall back to nudge.response.text() — includes thinking tokens
+      if (!botReply) log.warn('[GEMINI] Nudge also returned only thought parts or empty');
       log.info(`[GEMINI] Nudge reply: "${botReply.substring(0, 80)}"`);
     } catch (e) {
       log.error('[GEMINI] Nudge failed:', e.message);

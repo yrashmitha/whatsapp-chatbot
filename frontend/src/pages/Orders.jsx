@@ -45,9 +45,7 @@ export default function Orders() {
   const [showCreate, setShowCreate] = useState(false);
   const [horoscopeOrder, setHoroscopeOrder] = useState(null);   // order object for generate modal
   const [editorOrder, setEditorOrder]       = useState(null);   // order object for editor drawer
-  const [tarotOrder, setTarotOrder]         = useState(null);   // order object for tarot modal
-  // Tracks completed tarot readings this session: orderId → { reading, cards, question }
-  const [tarotResults, setTarotResults]     = useState({});
+  const [tarotOrder, setTarotOrder] = useState(null); // order object for tarot modal
   const toast = useToast();
   const qc = useQueryClient();
 
@@ -197,6 +195,10 @@ export default function Orders() {
                   const paymentIdentified = cf?.payment_identified || null;
                   const horoscopeError = hd?.error || null;
                   const horoscopeDone = hd?.sections && Object.keys(hd.sections).length > 0;
+                  const td = o.tarot_data && typeof o.tarot_data === 'string'
+                    ? (() => { try { return JSON.parse(o.tarot_data); } catch { return null; } })()
+                    : (o.tarot_data || null);
+                  const tarotDone = !!(td?.reading && td?.cards);
 
                   return (
                     <React.Fragment key={o.id}>
@@ -271,21 +273,17 @@ export default function Orders() {
                                 )}
                               </>
                             )}
-                            {showTarot && (() => {
-                              const ordKey = o.order_id || o.id;
-                              const hasTarot = !!tarotResults[ordKey];
-                              return (
-                                <button
-                                  onClick={() => setTarotOrder(o)}
-                                  title={hasTarot ? 'Tarot reading done — click to view or redraw' : 'Generate tarot reading'}
-                                  className={`text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 ${
-                                    hasTarot
-                                      ? 'bg-teal-100 text-teal-700 hover:bg-teal-200'
-                                      : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
-                                  }`}
-                                >🃏</button>
-                              );
-                            })()}
+                            {showTarot && (
+                              <button
+                                onClick={() => setTarotOrder(o)}
+                                title={tarotDone ? 'Tarot reading saved — click to view, regenerate, or download PDF' : 'Generate tarot reading'}
+                                className={`text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 ${
+                                  tarotDone
+                                    ? 'bg-teal-100 text-teal-700 hover:bg-teal-200'
+                                    : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                                }`}
+                              >🃏</button>
+                            )}
                           </div>
                         </td>
                         {superAdmin && <td className="py-2.5 pr-4 text-violet-500 text-xs">{o.client_id}</td>}
@@ -476,11 +474,17 @@ export default function Orders() {
       {tarotOrder && (
         <TarotModal
           phone={tarotOrder.phone || tarotOrder.phone_number}
+          orderId={tarotOrder.order_id}
           clientId={clientId}
-          initialResult={tarotResults[tarotOrder.order_id || tarotOrder.id] || null}
+          savedData={(() => {
+            const td = tarotOrder.tarot_data && typeof tarotOrder.tarot_data === 'string'
+              ? (() => { try { return JSON.parse(tarotOrder.tarot_data); } catch { return null; } })()
+              : (tarotOrder.tarot_data || null);
+            return (td?.reading && td?.cards) ? td : null;
+          })()}
           onClose={() => setTarotOrder(null)}
-          onResult={(result) => {
-            setTarotResults(prev => ({ ...prev, [tarotOrder.order_id || tarotOrder.id]: result }));
+          onResult={() => {
+            qc.invalidateQueries({ queryKey: ['orders'] });
             setTarotOrder(null);
           }}
         />

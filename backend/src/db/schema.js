@@ -325,6 +325,8 @@ async function init() {
     `);
     // ── Horoscope reading data ────────────────────────────────────────────────
     await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS horoscope_data JSONB`);
+    // ── Tarot reading data ────────────────────────────────────────────────────
+    await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS tarot_data JSONB`);
 
     // ── Global AI kill switch per client ─────────────────────────────────────
     await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS ai_enabled BOOLEAN NOT NULL DEFAULT TRUE`);
@@ -580,6 +582,8 @@ async function init() {
     `);
     // ── Horoscope reading data (SQLite) ──────────────────────────────────────
     try { db.exec(`ALTER TABLE orders ADD COLUMN horoscope_data TEXT`); } catch (_) {}
+    // ── Tarot reading data (SQLite) ───────────────────────────────────────────
+    try { db.exec(`ALTER TABLE orders ADD COLUMN tarot_data TEXT`); } catch (_) {}
 
     // ── Quick replies (SQLite) ────────────────────────────────────────────────
     db.exec(`

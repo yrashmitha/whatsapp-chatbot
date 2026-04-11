@@ -184,7 +184,7 @@ async function sendMedia(req, res) {
  */
 async function triggerTarotReading(req, res) {
   const clientId = resolveClientId(req);
-  const { phone, question } = req.body;
+  const { phone, question, order_id, regenerate } = req.body;
 
   if (!phone)    return res.status(400).json({ error: 'phone required' });
   if (!question) return res.status(400).json({ error: 'question required' });
@@ -198,17 +198,38 @@ async function triggerTarotReading(req, res) {
       return res.status(403).json({ error: 'tarot_reading addon not enabled' });
     }
 
-    // Load optional custom prompt from plugin config
+    // If order_id given and not regenerating, return saved reading if it exists
+    if (order_id && !regenerate) {
+      const existing = await db.pgQuery(
+        `SELECT tarot_data FROM orders WHERE order_id=$1`, [order_id]
+      );
+      const td = existing.rows[0]?.tarot_data;
+      if (td && td.reading && td.cards) {
+        console.log(`[TAROT] Returning saved reading for order ${order_id}`);
+        return res.json({ ok: true, reading: td.reading, cards: td.cards, question: td.question, fromCache: true });
+      }
+    }
+
+    // Load optional custom prompt
     let customPrompt = null;
     try {
       const config = await db.getPluginConfig(clientId, 'tarot_reading');
       customPrompt = config?.prompt || null;
-    } catch { /* no config row — use default */ }
+    } catch { /* no config — use default */ }
 
-    console.log(`[TAROT] Admin triggered reading for ${phone} | client=${clientId}`);
+    console.log(`[TAROT] Generating reading for ${phone} | order=${order_id || 'none'} | client=${clientId}`);
     const { reading, cards } = await generateTarotReading(clientId, question, customPrompt);
 
-    res.json({ ok: true, reading, cards });
+    // Save to orders.tarot_data if order_id was provided
+    if (order_id) {
+      const tarotData = { question, reading, cards, generated_at: new Date().toISOString() };
+      await db.pgQuery(
+        `UPDATE orders SET tarot_data=$1 WHERE order_id=$2`,
+        [JSON.stringify(tarotData), order_id]
+      ).catch(e => console.warn('[TAROT] Failed to save tarot_data:', e.message));
+    }
+
+    res.json({ ok: true, reading, cards, question });
   } catch (e) {
     console.error('[TAROT] triggerTarotReading error:', e.message);
     res.status(500).json({ error: e.message });
@@ -226,9 +247,28 @@ async function triggerTarotReading(req, res) {
  * @returns {Promise<void>}
  */
 async function downloadTarotPdf(req, res) {
-  const { phone, question, reading, cards } = req.body;
+  let { phone, order_id, question, reading, cards } = req.body;
+
+  // If order_id provided, load from DB (allows PDF re-generation without re-passing all data)
+  if (order_id && (!reading || !cards)) {
+    try {
+      const r = await db.pgQuery(
+        `SELECT phone_number, tarot_data FROM orders WHERE order_id=$1`, [order_id]
+      );
+      if (!r.rows.length) return res.status(404).json({ error: 'Order not found' });
+      const td = r.rows[0].tarot_data;
+      if (!td || !td.reading) return res.status(404).json({ error: 'No tarot reading saved for this order' });
+      phone    = phone    || r.rows[0].phone_number;
+      question = question || td.question;
+      reading  = td.reading;
+      cards    = td.cards;
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
   if (!question || !reading || !cards) {
-    return res.status(400).json({ error: 'question, reading, and cards are required' });
+    return res.status(400).json({ error: 'question, reading, and cards are required (or provide order_id)' });
   }
 
   const { exec } = require('child_process');

@@ -9,6 +9,7 @@
 const db   = require('../db');
 const { generateAstroMessage, DEFAULT_ASTRO_PROMPT } = require('../services/astro');
 const { generateHoroscope, buildHoroscopeDoc, SECTIONS, parseSinhalaDate } = require('../services/horoscope');
+const { DEFAULT_TAROT_PROMPT } = require('../services/tarot');
 const resolveClientId = require('../middleware/resolveClientId');
 
 /**
@@ -36,6 +37,8 @@ async function getPluginConfig(req, res) {
         name: 'Image Analyzer',
         verification_prompt: 'When a customer sends a payment slip:\n1. The amount and date must match one of their pending orders. Do NOT check the payer name — payments may be made by someone else on behalf of the customer.\n2. If the amount and date look correct and no fraud flags are raised, tell the customer their payment is received and being verified by the team. Then output: [[PAYMENT_IDENTIFIED:{"order_id":"ORDER_ID_HERE","amount":"AMOUNT","date":"DATE","bank":"BANK","ref":"REF"}]]\n3. If there are FRAUD CHECK flags (suspicious date etc.), politely ask the customer to clarify — do not accuse them. Output: [[UPDATE_SUMMARY:⚠️ SUSPICIOUS PAYMENT — Team review needed. Describe what was suspicious.]]\n4. If the amount does not match any pending order, politely ask the customer to check and clarify.\n5. Always mention the extracted amount and date so the customer can confirm.',
       };
+    } else if (pluginId === 'tarot_reading') {
+      defaults = { name: 'Tarot Reading', prompt: DEFAULT_TAROT_PROMPT };
     } else {
       defaults = { name: pluginId, prompt: '' };
     }

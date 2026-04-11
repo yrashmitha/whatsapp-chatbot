@@ -4,6 +4,7 @@ import api from '../../lib/api';
 import MessageBubble from './MessageBubble';
 import MessageInput from './MessageInput';
 import AstroChartModal from './AstroChartModal';
+import TarotModal from './TarotModal';
 import CreateOrderDrawer from './CreateOrderDrawer';
 import Spinner from '../ui/Spinner';
 import Button from '../ui/Button';
@@ -14,7 +15,8 @@ export default function ChatThread({ customer, clientId, onCustomerDeleted }) {
   const { phone, name } = customer;
   const [ordersOpen, setOrdersOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const [astroModalOpen, setAstroModalOpen] = useState(false);
+  const [astroModalOpen, setAstroModalOpen]   = useState(false);
+  const [tarotModalOpen, setTarotModalOpen]   = useState(false);
   const [createOrderOpen, setCreateOrderOpen] = useState(false);
   const [messagePrefill, setMessagePrefill] = useState('');
   const toast = useToast();
@@ -216,6 +218,15 @@ export default function ChatThread({ customer, clientId, onCustomerDeleted }) {
               ✨ Astro
             </button>
           )}
+          {addonsData?.addons?.includes('tarot_reading') && (
+            <button
+              onClick={() => setTarotModalOpen(true)}
+              className="text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-purple-100 text-purple-700 hover:bg-purple-200"
+              title="Generate tarot card reading for this customer"
+            >
+              🔮 Tarot
+            </button>
+          )}
           <button
             onClick={() => setCreateOrderOpen(true)}
             className="text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
@@ -321,6 +332,19 @@ export default function ChatThread({ customer, clientId, onCustomerDeleted }) {
           onResult={(text) => {
             setMessagePrefill(text);
             setAstroModalOpen(false);
+          }}
+        />
+      )}
+
+      {/* Tarot Modal */}
+      {tarotModalOpen && (
+        <TarotModal
+          phone={phone}
+          clientId={clientId}
+          onClose={() => setTarotModalOpen(false)}
+          onResult={(text) => {
+            setMessagePrefill(text);
+            setTarotModalOpen(false);
           }}
         />
       )}

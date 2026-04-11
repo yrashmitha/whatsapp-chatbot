@@ -12,6 +12,7 @@ const clientRouter = require('../services/clientRouter');
 const { waToken, waPhoneId } = require('../services/whatsapp');
 const { PUBLIC_URL } = require('../config/env');
 const resolveClientId = require('../middleware/resolveClientId');
+const { generateTarotReading, buildTarotDoc } = require('../services/tarot');
 
 /**
  * Catalog of available addons with their metadata.
@@ -42,6 +43,11 @@ const ADDON_CATALOG = [
     id: 'image_analyzer',
     name: 'Image Analyzer',
     description: 'Analyzes customer payment slips and documents (images and PDFs) using Gemini Vision — extracts amount, date, and reference, and flags suspicious slips.',
+  },
+  {
+    id: 'tarot_reading',
+    name: 'Tarot Reading',
+    description: 'Generates a personalised 3-card tarot reading (Past / Present / Future) for a customer based on their question, interpreted by Gemini.',
   },
 ];
 
@@ -165,4 +171,116 @@ async function sendMedia(req, res) {
   }
 }
 
-module.exports = { ADDON_CATALOG, listAddons, toggleAddon, getAddonsStatus, sendMedia };
+/**
+ * POST /api/crm/tarot-reading — Admin triggers a tarot reading for a customer.
+ * Returns the reading text and card draw details; does NOT auto-send to WhatsApp.
+ * The admin reviews the reading in the CRM and sends it manually.
+ *
+ * Body: { phone, question }
+ *
+ * @param {import('express').Request}  req
+ * @param {import('express').Response} res
+ * @returns {Promise<void>}
+ */
+async function triggerTarotReading(req, res) {
+  const clientId = resolveClientId(req);
+  const { phone, question } = req.body;
+
+  if (!phone)    return res.status(400).json({ error: 'phone required' });
+  if (!question) return res.status(400).json({ error: 'question required' });
+
+  try {
+    const addonCheck = await db.pgQuery(
+      `SELECT enabled FROM client_addons WHERE client_id=$1 AND addon_id='tarot_reading' AND enabled=TRUE`,
+      [clientId]
+    );
+    if (!addonCheck.rows.length) {
+      return res.status(403).json({ error: 'tarot_reading addon not enabled' });
+    }
+
+    // Load optional custom prompt from plugin config
+    let customPrompt = null;
+    try {
+      const config = await db.getPluginConfig(clientId, 'tarot_reading');
+      customPrompt = config?.prompt || null;
+    } catch { /* no config row — use default */ }
+
+    console.log(`[TAROT] Admin triggered reading for ${phone} | client=${clientId}`);
+    const { reading, cards } = await generateTarotReading(clientId, question, customPrompt);
+
+    res.json({ ok: true, reading, cards });
+  } catch (e) {
+    console.error('[TAROT] triggerTarotReading error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+}
+
+/**
+ * POST /api/crm/tarot-reading/pdf — Build and stream a PDF for a tarot reading.
+ * Accepts the reading data in the request body (no DB storage needed).
+ *
+ * Body: { phone, question, reading, cards }
+ *
+ * @param {import('express').Request}  req
+ * @param {import('express').Response} res
+ * @returns {Promise<void>}
+ */
+async function downloadTarotPdf(req, res) {
+  const { phone, question, reading, cards } = req.body;
+  if (!question || !reading || !cards) {
+    return res.status(400).json({ error: 'question, reading, and cards are required' });
+  }
+
+  const { exec } = require('child_process');
+  const fs   = require('fs');
+  const os   = require('os');
+  const path = require('path');
+
+  const uid     = `tarot-${Date.now()}`;
+  const tmpDocx = path.join(os.tmpdir(), `${uid}.docx`);
+  const tmpPdf  = path.join(os.tmpdir(), `${uid}.pdf`);
+
+  try {
+    const docxBuffer = await buildTarotDoc({ question, reading, cards });
+    fs.writeFileSync(tmpDocx, docxBuffer);
+
+    await new Promise((resolve, reject) => {
+      exec(
+        `soffice --headless --convert-to pdf --outdir "${os.tmpdir()}" "${tmpDocx}"`,
+        (err, _stdout, stderr) => {
+          if (err) reject(new Error(stderr || err.message));
+          else resolve();
+        }
+      );
+    });
+
+    // Strip PDF metadata
+    const { PDFDocument } = require('pdf-lib');
+    const rawPdf = fs.readFileSync(tmpPdf);
+    const pdfDoc = await PDFDocument.load(rawPdf);
+    pdfDoc.setTitle('Tarot Card Reading');
+    pdfDoc.setAuthor('Tarot Reading Service');
+    pdfDoc.setCreator('');
+    pdfDoc.setProducer('');
+    pdfDoc.setSubject('Tarot Reading');
+    pdfDoc.setKeywords([]);
+    const buffer = Buffer.from(await pdfDoc.save());
+
+    fs.unlink(tmpDocx, () => {});
+    fs.unlink(tmpPdf, () => {});
+
+    const last4    = (phone || '').replace(/\D/g, '').slice(-4) || '0000';
+    const filename = `tarot-reading-${last4}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
+  } catch (e) {
+    fs.unlink(tmpDocx, () => {});
+    fs.unlink(tmpPdf, () => {});
+    console.error('[TAROT PDF] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+}
+
+module.exports = { ADDON_CATALOG, listAddons, toggleAddon, getAddonsStatus, sendMedia, triggerTarotReading, downloadTarotPdf };

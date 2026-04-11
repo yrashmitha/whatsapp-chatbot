@@ -26,6 +26,11 @@ const ALL_PLUGINS = [
     defaultName: 'Image Analyzer',
     description: 'Analyzes customer payment slips and PDFs using Gemini Vision. Extracts amount, date, and reference, and flags suspicious slips.',
   },
+  {
+    id: 'tarot_reading',
+    defaultName: 'Tarot Reading',
+    description: 'Generates a 3-card tarot spread (Past / Present / Future) from the 78-card deck for a customer, interpreted by Gemini.',
+  },
 ];
 
 function PluginCard({ pluginMeta, clientId, superAdmin }) {
@@ -33,6 +38,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
   const isHoroscope     = pluginMeta.id === 'horoscope_reading';
   const isCallAnswering = pluginMeta.id === 'ai_call_answering';
   const isImageAnalyzer = pluginMeta.id === 'image_analyzer';
+  const isTarot         = pluginMeta.id === 'tarot_reading';
 
   const [config, setConfig] = useState(null);
   const [name, setName] = useState('');
@@ -94,7 +100,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
       } else if (isImageAnalyzer) {
         body.verification_prompt = verificationPrompt;
       } else {
-        body.prompt = prompt;
+        body.prompt = prompt; // covers astro_vedic_chart, tarot_reading, and any generic plugin
       }
       await api.put(`/plugins/${pluginMeta.id}/config`, body);
       toast.success('Plugin config saved');
@@ -133,7 +139,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         </div>
       )}
 
-      {!isCallAnswering && !isImageAnalyzer && (
+      {!isCallAnswering && !isImageAnalyzer && !isTarot && (
       <div>
         <label className="text-xs font-medium text-slate-500 block mb-1">FreeAstro API Key</label>
         <input
@@ -220,10 +226,9 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         </div>
       )}
 
-      {!isHoroscope && !isCallAnswering && !isImageAnalyzer && (
+      {!isHoroscope && !isCallAnswering && !isImageAnalyzer && !isTarot && (
         <div>
           <label className="text-xs font-medium text-slate-500 block mb-1">Gemini Prompt</label>
-
           <p className="text-xs text-slate-400 mb-1.5">
             Use <code className="font-mono bg-slate-100 px-1 rounded">{'{chart_json}'}</code> where chart data will be inserted.
           </p>
@@ -232,6 +237,24 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
             onChange={e => setPrompt(e.target.value)}
             rows={8}
             className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
+          />
+        </div>
+      )}
+
+      {isTarot && (
+        <div>
+          <label className="text-xs font-medium text-slate-500 block mb-1">Reading Prompt</label>
+          <p className="text-xs text-slate-400 mb-1.5">
+            Customize how Gemini interprets the cards. Available placeholders:{' '}
+            <code className="font-mono bg-slate-100 px-1 rounded">{'{question}'}</code> (customer's situation) and{' '}
+            <code className="font-mono bg-slate-100 px-1 rounded">{'{spread}'}</code> (the 3 drawn cards with meanings).
+          </p>
+          <textarea
+            value={prompt}
+            onChange={e => setPrompt(e.target.value)}
+            rows={10}
+            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
+            placeholder="You are a warm, insightful tarot reader. A customer has come to you with the following question or situation:&#10;&#10;&quot;{question}&quot;&#10;&#10;You have drawn the following 3-card spread:&#10;&#10;{spread}"
           />
         </div>
       )}

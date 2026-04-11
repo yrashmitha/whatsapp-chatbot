@@ -115,9 +115,13 @@ async function generateTarotReading(clientId, question, customPrompt = null) {
   const cards = drawn.map(({ card, reversed }, i) => ({
     position: SPREAD_POSITIONS[i],
     name: card.name,
+    sinhala_name: card.sinhala_name || card.name,
     type: card.type,
     reversed,
     meaning: reversed ? card.meaning_rev : card.meaning_up,
+    sinhala_meaning: reversed
+      ? (card.sinhala_meaning_rev || card.meaning_rev)
+      : (card.sinhala_meaning_up  || card.meaning_up),
   }));
 
   return { reading, cards };
@@ -191,21 +195,22 @@ function contentToParagraphs(content) {
  * @param {Array}  params.cards      - Array of { position, name, reversed, meaning }
  * @returns {Promise<Buffer>} docx buffer
  */
+// Sinhala labels used in the document
+const SINHALA_POSITIONS = { Past: 'අතීතය', Present: 'වර්තමානය', Future: 'අනාගතය' };
+const SINHALA_UPRIGHT   = 'ඍජු';
+const SINHALA_REVERSED  = 'ආපසු';
+const SINHALA_QUESTION_HEADING = 'ඔබේ ප්‍රශ්නය / තත්ත්වය';
+const SINHALA_CARDS_HEADING    = 'ඇඳගත් පත්තු — අතීතය · වර්තමානය · අනාගතය';
+const SINHALA_READING_HEADING  = 'ඔබේ කියවීම';
+
 async function buildTarotDoc({ question, reading, cards }) {
   ensureDocx();
 
   const children = [];
 
-  // Title
+  // Question heading
   children.push(new Paragraph({
-    children: [new TextRun({ text: '🔮 Tarot Card Reading', bold: true, size: 56, font: 'Calibri' })],
-    alignment: AlignmentType.CENTER,
-    spacing: { after: 400 },
-  }));
-
-  // Customer's question
-  children.push(new Paragraph({
-    children: [new TextRun({ text: 'Your Question / Situation', bold: true, size: 28, font: 'Calibri' })],
+    children: [new TextRun({ text: SINHALA_QUESTION_HEADING, bold: true, size: 28, font: 'Calibri' })],
     alignment: AlignmentType.LEFT,
     spacing: { before: 160, after: 120 },
   }));
@@ -215,24 +220,28 @@ async function buildTarotDoc({ question, reading, cards }) {
     spacing: { after: 320 },
   }));
 
-  // The 3 cards drawn
+  // Cards drawn heading
   children.push(new Paragraph({
-    children: [new TextRun({ text: 'Cards Drawn — Past · Present · Future', bold: true, size: 28, font: 'Calibri' })],
+    children: [new TextRun({ text: SINHALA_CARDS_HEADING, bold: true, size: 28, font: 'Calibri' })],
     alignment: AlignmentType.LEFT,
     spacing: { before: 160, after: 200 },
   }));
 
   for (const c of cards) {
-    const orientation = c.reversed ? 'Reversed' : 'Upright';
+    const posLabel   = SINHALA_POSITIONS[c.position] || c.position;
+    const oriLabel   = c.reversed ? SINHALA_REVERSED : SINHALA_UPRIGHT;
+    const cardName   = c.sinhala_name || c.name;
+    const cardMeaning = c.sinhala_meaning || c.meaning;
+
     children.push(new Paragraph({
       children: [
-        new TextRun({ text: `${c.position}: `, bold: true, size: 24, font: 'Calibri' }),
-        new TextRun({ text: `${c.name} (${orientation})`, size: 24, font: 'Calibri' }),
+        new TextRun({ text: `${posLabel}: `, bold: true, size: 24, font: 'Calibri' }),
+        new TextRun({ text: `${cardName} (${oriLabel})`, size: 24, font: 'Calibri' }),
       ],
       spacing: { after: 60 },
     }));
     children.push(new Paragraph({
-      children: [new TextRun({ text: c.meaning, size: 22, font: 'Calibri', color: '555555' })],
+      children: [new TextRun({ text: cardMeaning, size: 22, font: 'Calibri', color: '555555' })],
       spacing: { after: 160 },
     }));
   }
@@ -240,7 +249,7 @@ async function buildTarotDoc({ question, reading, cards }) {
   // Reading
   children.push(new PageBreak());
   children.push(new Paragraph({
-    children: [new TextRun({ text: 'Your Reading', bold: true, size: 36, font: 'Calibri' })],
+    children: [new TextRun({ text: SINHALA_READING_HEADING, bold: true, size: 36, font: 'Calibri' })],
     alignment: AlignmentType.LEFT,
     spacing: { before: 0, after: 280 },
   }));
@@ -248,10 +257,7 @@ async function buildTarotDoc({ question, reading, cards }) {
   children.push(...contentToParagraphs(reading));
 
   const doc = new Document({
-    sections: [{
-      properties: {},
-      children,
-    }],
+    sections: [{ properties: {}, children }],
   });
 
   return Packer.toBuffer(doc);

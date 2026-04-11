@@ -25,12 +25,6 @@ export default function Orders() {
   const superAdmin = isSuperAdmin(user);
   const showHoroscope = superAdmin || !!user?.horoscope_enabled;
 
-  const { data: addonsStatus } = useQuery({
-    queryKey: ['addons-status', clientId],
-    queryFn: () => api.get('/crm/addons-status', { params: clientId ? { client_id: clientId } : {} }).then(r => r.data),
-    enabled: !!clientId,
-  });
-  const showTarot = addonsStatus?.addons?.includes('tarot_reading');
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -50,6 +44,13 @@ export default function Orders() {
   const qc = useQueryClient();
 
   const clientId = superAdmin ? (selectedClientId || null) : user?.clientId;
+
+  const { data: addonsStatus } = useQuery({
+    queryKey: ['addons-status', clientId],
+    queryFn: () => api.get('/crm/addons-status', { params: clientId ? { client_id: clientId } : {} }).then(r => r.data),
+    enabled: !!clientId,
+  });
+  const showTarot = addonsStatus?.addons?.includes('tarot_reading');
 
   const params = {
     page, limit: 20,

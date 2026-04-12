@@ -168,13 +168,13 @@ STRICT RULES:
 function parseRuns(line) {
   const runs = [];
   if (!line.includes('**') && !line.includes('*')) {
-    runs.push(new TextRun({ text: line, size: 24, font: 'Calibri' }));
+    runs.push(new TextRun({ text: line, size: 24, font: 'Abhaya Libre' }));
     return runs;
   }
   const normalised = line.replace(/\*\*/g, '*');
   const parts = normalised.split('*');
   parts.forEach((part, i) => {
-    if (part) runs.push(new TextRun({ text: part, bold: i % 2 !== 0, size: 24, font: 'Calibri' }));
+    if (part) runs.push(new TextRun({ text: part, bold: i % 2 !== 0, size: 24, font: 'Abhaya Libre' }));
   });
   return runs;
 }
@@ -197,7 +197,7 @@ function contentToParagraphs(content) {
     if (line.startsWith('###') || line.startsWith('##') || line.startsWith('#')) {
       const text = line.replace(/^#+\s*/, '').replace(/\*/g, '').trim();
       paragraphs.push(new Paragraph({
-        children: [new TextRun({ text, bold: true, size: 28, font: 'Calibri' })],
+        children: [new TextRun({ text, bold: true, size: 28, font: 'Abhaya Libre' })],
         alignment: AlignmentType.LEFT,
         spacing: { before: 240, after: 120 },
       }));
@@ -272,7 +272,7 @@ const DEFAULT_PAGE4_BODY = [
 /** Helper: build a heading paragraph for constant pages */
 function makeHeading(text) {
   return new Paragraph({
-    children: [new TextRun({ text, bold: true, size: 36, font: 'Calibri', color: '000000' })],
+    children: [new TextRun({ text, bold: true, size: 36, font: 'Abhaya Libre', color: '000000' })],
     alignment: AlignmentType.LEFT,
     spacing: { before: 480, after: 320 },
   });
@@ -281,7 +281,7 @@ function makeHeading(text) {
 /** Helper: build body paragraphs for constant pages from a newline-separated string */
 function makeBodyParagraphs(text) {
   return text.split('\n').filter(l => l.trim()).map(line => new Paragraph({
-    children: [new TextRun({ text: line, size: 24, font: 'Calibri' })],
+    children: [new TextRun({ text: line, size: 24, font: 'Abhaya Libre' })],
     alignment: AlignmentType.JUSTIFIED,
     spacing: { after: 200 },
   }));
@@ -304,18 +304,18 @@ async function buildTarotDoc({ question, reading, cards, page1_body, page2_body,
 
   // ── Page 3: Question + Cards drawn ──────────────────────────────────────
   children.push(new Paragraph({
-    children: [new TextRun({ text: SINHALA_QUESTION_HEADING, bold: true, size: 28, font: 'Calibri' })],
+    children: [new TextRun({ text: SINHALA_QUESTION_HEADING, bold: true, size: 28, font: 'Abhaya Libre' })],
     alignment: AlignmentType.LEFT,
     spacing: { before: 160, after: 120 },
   }));
   children.push(new Paragraph({
-    children: [new TextRun({ text: question, size: 24, font: 'Calibri', italics: true })],
+    children: [new TextRun({ text: question, size: 24, font: 'Abhaya Libre', italics: true })],
     alignment: AlignmentType.JUSTIFIED,
     spacing: { after: 320 },
   }));
 
   children.push(new Paragraph({
-    children: [new TextRun({ text: SINHALA_CARDS_HEADING, bold: true, size: 28, font: 'Calibri' })],
+    children: [new TextRun({ text: SINHALA_CARDS_HEADING, bold: true, size: 28, font: 'Abhaya Libre' })],
     alignment: AlignmentType.LEFT,
     spacing: { before: 160, after: 200 },
   }));
@@ -328,13 +328,13 @@ async function buildTarotDoc({ question, reading, cards, page1_body, page2_body,
 
     children.push(new Paragraph({
       children: [
-        new TextRun({ text: `${posLabel}: `, bold: true, size: 24, font: 'Calibri' }),
-        new TextRun({ text: `${cardName} (${oriLabel})`, size: 24, font: 'Calibri' }),
+        new TextRun({ text: `${posLabel}: `, bold: true, size: 24, font: 'Abhaya Libre' }),
+        new TextRun({ text: `${cardName} (${oriLabel})`, size: 24, font: 'Abhaya Libre' }),
       ],
       spacing: { after: 60 },
     }));
     children.push(new Paragraph({
-      children: [new TextRun({ text: cardMeaning, size: 22, font: 'Calibri', color: '555555' })],
+      children: [new TextRun({ text: cardMeaning, size: 22, font: 'Abhaya Libre', color: '555555' })],
       spacing: { after: 160 },
     }));
   }
@@ -342,7 +342,7 @@ async function buildTarotDoc({ question, reading, cards, page1_body, page2_body,
   // ── Reading (continues on same or new page) ───────────────────────────────
   children.push(new PageBreak());
   children.push(new Paragraph({
-    children: [new TextRun({ text: SINHALA_READING_HEADING, bold: true, size: 36, font: 'Calibri' })],
+    children: [new TextRun({ text: SINHALA_READING_HEADING, bold: true, size: 36, font: 'Abhaya Libre' })],
     alignment: AlignmentType.LEFT,
     spacing: { before: 0, after: 280 },
   }));

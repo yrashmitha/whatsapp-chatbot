@@ -187,33 +187,34 @@ function parseRuns(line) {
 function contentToParagraphs(content) {
   const paragraphs = [];
   if (!content) return paragraphs;
-  const lines = content.split('\n');
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (!line) {
-      paragraphs.push(new Paragraph({ children: [], spacing: { after: 80 } }));
-      continue;
-    }
-    if (line.startsWith('###') || line.startsWith('##') || line.startsWith('#')) {
-      const text = line.replace(/^#+\s*/, '').replace(/\*/g, '').trim();
-      paragraphs.push(new Paragraph({
-        children: [new TextRun({ text, bold: true, size: 28, font: 'Abhaya Libre' })],
-        alignment: AlignmentType.LEFT,
-        spacing: { before: 240, after: 120 },
-      }));
-    } else if (line.startsWith('- ') || line.startsWith('* ')) {
-      paragraphs.push(new Paragraph({
-        children: parseRuns(line.slice(2).trim()),
-        bullet: { level: 0 },
-        alignment: AlignmentType.LEFT,
-        spacing: { after: 80 },
-      }));
-    } else {
-      paragraphs.push(new Paragraph({
-        children: parseRuns(line),
-        alignment: AlignmentType.JUSTIFIED,
-        spacing: { after: 160 },
-      }));
+  // Split into paragraph blocks on double newlines; treat single newlines as continuations
+  const blocks = content.replace(/\n\n/g, '[[PARA]]').split('[[PARA]]');
+  for (const block of blocks) {
+    const lines = block.split('\n');
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) continue; // skip blank lines — use paragraph spacing instead
+      if (line.startsWith('###') || line.startsWith('##') || line.startsWith('#')) {
+        const text = line.replace(/^#+\s*/, '').replace(/\*/g, '').trim();
+        paragraphs.push(new Paragraph({
+          children: [new TextRun({ text, bold: true, size: 32, font: 'Abhaya Libre' })],
+          alignment: AlignmentType.LEFT,
+          spacing: { before: 240, after: 120 },
+        }));
+      } else if (line.startsWith('- ') || line.startsWith('* ')) {
+        paragraphs.push(new Paragraph({
+          children: parseRuns(line.slice(2).trim()),
+          bullet: { level: 0 },
+          alignment: AlignmentType.LEFT,
+          spacing: { after: 80 },
+        }));
+      } else {
+        paragraphs.push(new Paragraph({
+          children: parseRuns(line),
+          alignment: AlignmentType.JUSTIFIED,
+          spacing: { after: 160 },
+        }));
+      }
     }
   }
   return paragraphs;
@@ -367,7 +368,7 @@ async function buildTarotDoc({ question, reading, cards, page1_body, page2_body,
       default: {
         document: {
           run: { font: 'Abhaya Libre', size: 24 },
-          paragraph: { alignment: AlignmentType.JUSTIFIED, spacing: { after: 160, line: 360, lineRule: 'auto' } },
+          paragraph: { alignment: AlignmentType.JUSTIFIED, spacing: { after: 160 } },
         },
       },
     },

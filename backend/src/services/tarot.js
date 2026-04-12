@@ -10,10 +10,10 @@
 
 const { genAI } = require('./gemini');
 
-let Document, Packer, Paragraph, TextRun, AlignmentType, PageBreak;
+let Document, Packer, Paragraph, TextRun, AlignmentType, PageBreak, Footer, PageNumber, NumberFormat;
 function ensureDocx() {
   if (!Document) {
-    ({ Document, Packer, Paragraph, TextRun, AlignmentType, PageBreak } = require('docx'));
+    ({ Document, Packer, Paragraph, TextRun, AlignmentType, PageBreak, Footer, PageNumber, NumberFormat } = require('docx'));
   }
 }
 
@@ -272,7 +272,7 @@ const DEFAULT_PAGE4_BODY = [
 /** Helper: build a heading paragraph for constant pages */
 function makeHeading(text) {
   return new Paragraph({
-    children: [new TextRun({ text, bold: true, size: 36, font: 'Calibri', color: '3730a3' })],
+    children: [new TextRun({ text, bold: true, size: 36, font: 'Calibri', color: '000000' })],
     alignment: AlignmentType.LEFT,
     spacing: { before: 480, after: 320 },
   });
@@ -355,7 +355,25 @@ async function buildTarotDoc({ question, reading, cards, page1_body, page2_body,
   children.push(...makeBodyParagraphs(page4_body || DEFAULT_PAGE4_BODY));
 
   const doc = new Document({
-    sections: [{ properties: {}, children }],
+    sections: [{
+      properties: {
+        page: {
+          pageNumbers: { start: 1, formatType: NumberFormat.DECIMAL },
+        },
+      },
+      footers: {
+        default: new Footer({
+          children: [new Paragraph({
+            children: [
+              new TextRun({ text: 'පුරාණ ජෝතිර්වේදය හදහන් සේවය | පිටුව: ', size: 20, font: 'Abhaya Libre' }),
+              new TextRun({ children: [PageNumber.CURRENT], size: 20, font: 'Abhaya Libre' }),
+            ],
+            alignment: AlignmentType.CENTER,
+          })],
+        }),
+      },
+      children,
+    }],
   });
 
   return Packer.toBuffer(doc);

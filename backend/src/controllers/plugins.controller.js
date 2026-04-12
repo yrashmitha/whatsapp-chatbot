@@ -38,7 +38,8 @@ async function getPluginConfig(req, res) {
         verification_prompt: 'When a customer sends a payment slip:\n1. The amount and date must match one of their pending orders. Do NOT check the payer name — payments may be made by someone else on behalf of the customer.\n2. If the amount and date look correct and no fraud flags are raised, tell the customer their payment is received and being verified by the team. Then output: [[PAYMENT_IDENTIFIED:{"order_id":"ORDER_ID_HERE","amount":"AMOUNT","date":"DATE","bank":"BANK","ref":"REF"}]]\n3. If there are FRAUD CHECK flags (suspicious date etc.), politely ask the customer to clarify — do not accuse them. Output: [[UPDATE_SUMMARY:⚠️ SUSPICIOUS PAYMENT — Team review needed. Describe what was suspicious.]]\n4. If the amount does not match any pending order, politely ask the customer to check and clarify.\n5. Always mention the extracted amount and date so the customer can confirm.',
       };
     } else if (pluginId === 'tarot_reading') {
-      defaults = { name: 'Tarot Reading', prompt: DEFAULT_TAROT_PROMPT };
+      const { DEFAULT_PAGE1_BODY, DEFAULT_PAGE2_BODY, DEFAULT_PAGE4_BODY } = require('../services/tarot');
+      defaults = { name: 'Tarot Reading', prompt: DEFAULT_TAROT_PROMPT, page1_body: DEFAULT_PAGE1_BODY, page2_body: DEFAULT_PAGE2_BODY, page4_body: DEFAULT_PAGE4_BODY };
     } else {
       defaults = { name: pluginId, prompt: '' };
     }
@@ -60,7 +61,7 @@ async function updatePluginConfig(req, res) {
     return res.status(403).json({ error: 'Forbidden' });
   }
   const { pluginId } = req.params;
-  const { name, prompt, api_key, system_prompt, special_note, greeting, tts_voice, stt_language, verification_prompt } = req.body;
+  const { name, prompt, api_key, system_prompt, special_note, greeting, tts_voice, stt_language, verification_prompt, page1_body, page2_body, page4_body } = req.body;
   try {
     const existing = await db.getPluginConfig(clientId, pluginId);
     const update = { ...existing };
@@ -73,6 +74,9 @@ async function updatePluginConfig(req, res) {
     if (tts_voice !== undefined)     update.tts_voice     = tts_voice;
     if (stt_language !== undefined)         update.stt_language         = stt_language;
     if (verification_prompt !== undefined)  update.verification_prompt  = verification_prompt;
+    if (page1_body !== undefined)    update.page1_body    = page1_body;
+    if (page2_body !== undefined)    update.page2_body    = page2_body;
+    if (page4_body !== undefined)    update.page4_body    = page4_body;
     await db.upsertPluginConfig(clientId, pluginId, update);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }

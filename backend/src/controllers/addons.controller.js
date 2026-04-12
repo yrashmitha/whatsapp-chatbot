@@ -285,15 +285,24 @@ async function updateTarotSections(req, res) {
  */
 async function downloadTarotDocx(req, res) {
   const { orderId } = req.params;
+  const clientId = resolveClientId(req);
   try {
-    const r = await db.pgQuery('SELECT phone_number, tarot_data FROM orders WHERE order_id=$1', [orderId]);
+    const [r, pluginCfg] = await Promise.all([
+      db.pgQuery('SELECT phone_number, tarot_data FROM orders WHERE order_id=$1', [orderId]),
+      clientId ? db.getPluginConfig(clientId, 'tarot_reading').catch(() => ({})) : Promise.resolve({}),
+    ]);
     if (!r.rows.length) return res.status(404).json({ error: 'Order not found' });
     const td = (typeof r.rows[0].tarot_data === 'string')
       ? JSON.parse(r.rows[0].tarot_data || '{}')
       : (r.rows[0].tarot_data || {});
     if (!td.reading || !td.cards) return res.status(404).json({ error: 'No tarot reading saved' });
 
-    const docxBuffer = await buildTarotDoc({ question: td.question || '', reading: td.reading, cards: td.cards });
+    const docxBuffer = await buildTarotDoc({
+      question: td.question || '', reading: td.reading, cards: td.cards,
+      page1_body: pluginCfg.page1_body || undefined,
+      page2_body: pluginCfg.page2_body || undefined,
+      page4_body: pluginCfg.page4_body || undefined,
+    });
     const last4 = (r.rows[0].phone_number || '').replace(/\D/g, '').slice(-4) || '0000';
     const filename = `tarot-reading-${last4}.docx`;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
@@ -310,13 +319,17 @@ async function downloadTarotDocx(req, res) {
  */
 async function downloadTarotPdfByOrder(req, res) {
   const { orderId } = req.params;
+  const clientId = resolveClientId(req);
   const { exec } = require('child_process');
   const fs   = require('fs');
   const os   = require('os');
   const path = require('path');
 
   try {
-    const r = await db.pgQuery('SELECT phone_number, tarot_data FROM orders WHERE order_id=$1', [orderId]);
+    const [r, pluginCfg] = await Promise.all([
+      db.pgQuery('SELECT phone_number, tarot_data FROM orders WHERE order_id=$1', [orderId]),
+      clientId ? db.getPluginConfig(clientId, 'tarot_reading').catch(() => ({})) : Promise.resolve({}),
+    ]);
     if (!r.rows.length) return res.status(404).json({ error: 'Order not found' });
     const td = (typeof r.rows[0].tarot_data === 'string')
       ? JSON.parse(r.rows[0].tarot_data || '{}')
@@ -327,7 +340,12 @@ async function downloadTarotPdfByOrder(req, res) {
     const tmpDocx = path.join(os.tmpdir(), `${uid}.docx`);
     const tmpPdf  = path.join(os.tmpdir(), `${uid}.pdf`);
 
-    const docxBuffer = await buildTarotDoc({ question: td.question || '', reading: td.reading, cards: td.cards });
+    const docxBuffer = await buildTarotDoc({
+      question: td.question || '', reading: td.reading, cards: td.cards,
+      page1_body: pluginCfg.page1_body || undefined,
+      page2_body: pluginCfg.page2_body || undefined,
+      page4_body: pluginCfg.page4_body || undefined,
+    });
     fs.writeFileSync(tmpDocx, docxBuffer);
 
     await new Promise((resolve, reject) => {

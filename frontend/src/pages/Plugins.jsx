@@ -50,6 +50,9 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
   const [ttsVoice, setTtsVoice]                   = useState('');
   const [sttLanguage, setSttLanguage]             = useState('');
   const [verificationPrompt, setVerificationPrompt] = useState('');
+  const [page1Body, setPage1Body] = useState('');
+  const [page2Body, setPage2Body] = useState('');
+  const [page4Body, setPage4Body] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -69,6 +72,9 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         setTtsVoice(GEMINI_VOICES.includes(savedVoice) ? r.data.tts_voice : 'Kore');
         setSttLanguage(r.data.stt_language || 'en-US');
         setVerificationPrompt(r.data.verification_prompt || '');
+        setPage1Body(r.data.page1_body || '');
+        setPage2Body(r.data.page2_body || '');
+        setPage4Body(r.data.page4_body || '');
       })
       .catch(() => {
         setConfig({});
@@ -81,6 +87,9 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         setTtsVoice('Kore');
         setSttLanguage('en-US');
         setVerificationPrompt('');
+        setPage1Body('');
+        setPage2Body('');
+        setPage4Body('');
       });
   }, [pluginMeta.id, clientId]);
 
@@ -99,8 +108,13 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         body.stt_language  = sttLanguage;
       } else if (isImageAnalyzer) {
         body.verification_prompt = verificationPrompt;
+      } else if (isTarot) {
+        body.prompt     = prompt;
+        body.page1_body = page1Body;
+        body.page2_body = page2Body;
+        body.page4_body = page4Body;
       } else {
-        body.prompt = prompt; // covers astro_vedic_chart, tarot_reading, and any generic plugin
+        body.prompt = prompt; // covers astro_vedic_chart and any generic plugin
       }
       await api.put(`/plugins/${pluginMeta.id}/config`, body);
       toast.success('Plugin config saved');
@@ -242,21 +256,62 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
       )}
 
       {isTarot && (
-        <div>
-          <label className="text-xs font-medium text-slate-500 block mb-1">Reading Prompt</label>
-          <p className="text-xs text-slate-400 mb-1.5">
-            Customize how Gemini interprets the cards. Available placeholders:{' '}
-            <code className="font-mono bg-slate-100 px-1 rounded">{'{question}'}</code> (customer's situation) and{' '}
-            <code className="font-mono bg-slate-100 px-1 rounded">{'{spread}'}</code> (the 3 drawn cards with meanings).
-          </p>
-          <textarea
-            value={prompt}
-            onChange={e => setPrompt(e.target.value)}
-            rows={10}
-            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
-            placeholder="You are a warm, insightful tarot reader. A customer has come to you with the following question or situation:&#10;&#10;&quot;{question}&quot;&#10;&#10;You have drawn the following 3-card spread:&#10;&#10;{spread}"
-          />
-        </div>
+        <>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Reading Prompt</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              Customize how Gemini interprets the cards. Available placeholders:{' '}
+              <code className="font-mono bg-slate-100 px-1 rounded">{'{question}'}</code> (customer's situation) and{' '}
+              <code className="font-mono bg-slate-100 px-1 rounded">{'{spread}'}</code> (the 3 drawn cards with meanings).
+            </p>
+            <textarea
+              value={prompt}
+              onChange={e => setPrompt(e.target.value)}
+              rows={10}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
+              placeholder="You are a warm, insightful tarot reader. A customer has come to you with the following question or situation:&#10;&#10;&quot;{question}&quot;&#10;&#10;You have drawn the following 3-card spread:&#10;&#10;{spread}"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Page 1 — ටැරෝ කාඩ්පත් යනු කුමක්ද? (What is Tarot?)</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              First page of every Word document. One paragraph per line. Leave blank to use the default Sinhala text.
+            </p>
+            <textarea
+              value={page1Body}
+              onChange={e => setPage1Body(e.target.value)}
+              rows={7}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
+              placeholder="ටැරෝ කාඩ්පත් යනු…"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Page 2 — ටැරෝ කාඩ්පත් ක්‍රියා කරන්නේ කෙසේද? (How does Tarot work?)</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              Second page of every Word document. One paragraph per line. Leave blank to use the default Sinhala text.
+            </p>
+            <textarea
+              value={page2Body}
+              onChange={e => setPage2Body(e.target.value)}
+              rows={7}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
+              placeholder="ටැරෝ කාඩ්පත් ක්‍රියා කරන්නේ…"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Final Page — ආධ්‍යාත්මික වගකීම් ප්‍රකාශය (Spiritual Disclaimer)</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              Last page of every Word document. One paragraph per line. Leave blank to use the default Sinhala text.
+            </p>
+            <textarea
+              value={page4Body}
+              onChange={e => setPage4Body(e.target.value)}
+              rows={6}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
+              placeholder="මෙම ටැරෝ කාඩ්පත් කියවීම…"
+            />
+          </div>
+        </>
       )}
 
       {isHoroscope && (

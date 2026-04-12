@@ -363,6 +363,14 @@ async function buildTarotDoc({ question, reading, cards, page1_body, page2_body,
   children.push(...makeBodyParagraphs(page4_body || DEFAULT_PAGE4_BODY));
 
   const doc = new Document({
+    styles: {
+      default: {
+        document: {
+          run: { font: 'Abhaya Libre', size: 24 },
+          paragraph: { alignment: AlignmentType.JUSTIFIED, spacing: { after: 160, line: 360, lineRule: 'auto' } },
+        },
+      },
+    },
     sections: [{
       properties: {
         page: {

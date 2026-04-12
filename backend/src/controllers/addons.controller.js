@@ -337,8 +337,24 @@ async function downloadTarotPdfByOrder(req, res) {
     if (!td.reading || !td.cards) return res.status(404).json({ error: 'No tarot reading saved' });
 
     const uid     = `tarot-${Date.now()}`;
+    const tmpHome = path.join(os.tmpdir(), `lo-home-${uid}`);
     const tmpDocx = path.join(os.tmpdir(), `${uid}.docx`);
     const tmpPdf  = path.join(os.tmpdir(), `${uid}.pdf`);
+
+    // Copy bundled fonts into all locations LibreOffice checks (same as horoscope)
+    const fontSrc  = path.join(__dirname, '../assets/fonts');
+    const fontDirs = [
+      path.join(tmpHome, '.fonts'),
+      path.join(tmpHome, '.local', 'share', 'fonts'),
+      path.join(tmpHome, '.config', 'libreoffice', '4', 'user', 'fonts'),
+    ];
+    for (const dir of fontDirs) {
+      fs.mkdirSync(dir, { recursive: true });
+      for (const f of fs.readdirSync(fontSrc)) {
+        if (f.endsWith('.ttf')) fs.copyFileSync(path.join(fontSrc, f), path.join(dir, f));
+      }
+    }
+    const fontDest = fontDirs[0];
 
     const docxBuffer = await buildTarotDoc({
       question: td.question || '', reading: td.reading, cards: td.cards,
@@ -350,7 +366,8 @@ async function downloadTarotPdfByOrder(req, res) {
 
     await new Promise((resolve, reject) => {
       exec(
-        `soffice --headless --convert-to pdf --outdir "${os.tmpdir()}" "${tmpDocx}"`,
+        `fc-cache -f "${fontDest}" 2>/dev/null; soffice --headless --convert-to pdf --outdir "${os.tmpdir()}" "${tmpDocx}"`,
+        { env: { ...process.env, HOME: tmpHome } },
         (err, _stdout, stderr) => { if (err) reject(new Error(stderr || err.message)); else resolve(); }
       );
     });
@@ -364,6 +381,7 @@ async function downloadTarotPdfByOrder(req, res) {
     pdfDoc.setSubject('Tarot Reading'); pdfDoc.setKeywords([]);
     const buffer = Buffer.from(await pdfDoc.save());
 
+    fs.rm(tmpHome, { recursive: true, force: true }, () => {});
     fs.unlink(tmpDocx, () => {}); fs.unlink(tmpPdf, () => {});
 
     const last4    = (r.rows[0].phone_number || '').replace(/\D/g, '').slice(-4) || '0000';
@@ -418,8 +436,24 @@ async function downloadTarotPdf(req, res) {
   const path = require('path');
 
   const uid     = `tarot-${Date.now()}`;
+  const tmpHome = path.join(os.tmpdir(), `lo-home-${uid}`);
   const tmpDocx = path.join(os.tmpdir(), `${uid}.docx`);
   const tmpPdf  = path.join(os.tmpdir(), `${uid}.pdf`);
+
+  // Copy bundled fonts into all locations LibreOffice checks (same as horoscope)
+  const fontSrc2  = path.join(__dirname, '../assets/fonts');
+  const fontDirs2 = [
+    path.join(tmpHome, '.fonts'),
+    path.join(tmpHome, '.local', 'share', 'fonts'),
+    path.join(tmpHome, '.config', 'libreoffice', '4', 'user', 'fonts'),
+  ];
+  for (const dir of fontDirs2) {
+    fs.mkdirSync(dir, { recursive: true });
+    for (const f of fs.readdirSync(fontSrc2)) {
+      if (f.endsWith('.ttf')) fs.copyFileSync(path.join(fontSrc2, f), path.join(dir, f));
+    }
+  }
+  const fontDest2 = fontDirs2[0];
 
   try {
     const docxBuffer = await buildTarotDoc({ question, reading, cards });
@@ -427,7 +461,8 @@ async function downloadTarotPdf(req, res) {
 
     await new Promise((resolve, reject) => {
       exec(
-        `soffice --headless --convert-to pdf --outdir "${os.tmpdir()}" "${tmpDocx}"`,
+        `fc-cache -f "${fontDest2}" 2>/dev/null; soffice --headless --convert-to pdf --outdir "${os.tmpdir()}" "${tmpDocx}"`,
+        { env: { ...process.env, HOME: tmpHome } },
         (err, _stdout, stderr) => {
           if (err) reject(new Error(stderr || err.message));
           else resolve();
@@ -447,6 +482,7 @@ async function downloadTarotPdf(req, res) {
     pdfDoc.setKeywords([]);
     const buffer = Buffer.from(await pdfDoc.save());
 
+    fs.rm(tmpHome, { recursive: true, force: true }, () => {});
     fs.unlink(tmpDocx, () => {});
     fs.unlink(tmpPdf, () => {});
 

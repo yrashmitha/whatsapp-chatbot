@@ -269,12 +269,18 @@ const DEFAULT_PAGE4_BODY = [
   'ජීවිතයේ සෑම ගමනක්ම ඔබේම ශක්තිය හා සිතිවිලි මත රඳා පවතී. ටැරෝ කාඩ්පත් ඔබේ ගමනේ එළිය වන ආකාරය ගැන දැනුවත් කිරීමට ගෙන ඒ ආලෝකය ලබා ගන්නේ ඔබ ය.',
 ].join('\n');
 
-/** Helper: build a heading paragraph for constant pages */
-function makeHeading(text) {
+/**
+ * Helper: heading paragraph for constant pages.
+ * Pass pageBreak=true to embed a page break before the heading text (like horoscope pattern).
+ */
+function makeHeading(text, pageBreak = false) {
   return new Paragraph({
-    children: [new TextRun({ text, bold: true, size: 36, font: 'Abhaya Libre', color: '000000' })],
+    children: [
+      ...(pageBreak ? [new PageBreak()] : []),
+      new TextRun({ text, bold: true, size: 36, font: 'Abhaya Libre', color: '000000' }),
+    ],
     alignment: AlignmentType.LEFT,
-    spacing: { before: 480, after: 320 },
+    spacing: { before: pageBreak ? 0 : 480, after: 320 },
   });
 }
 
@@ -295,18 +301,19 @@ async function buildTarotDoc({ question, reading, cards, page1_body, page2_body,
   // ── Page 1: ටැරෝ කාඩ්පත් යනු කුමක්ද? ──────────────────────────────────
   children.push(makeHeading(PAGE1_HEADING));
   children.push(...makeBodyParagraphs(page1_body || DEFAULT_PAGE1_BODY));
-  children.push(new PageBreak());
 
-  // ── Page 2: ටැරෝ කාඩ්පත් ක්‍රියා කරන්නේ කෙසේද? ────────────────────────
-  children.push(makeHeading(PAGE2_HEADING));
+  // ── Page 2: ටැරෝ කාඩ්පත් ක්‍රියා කරන්නේ කෙසේද? — page break embedded in heading
+  children.push(makeHeading(PAGE2_HEADING, true));
   children.push(...makeBodyParagraphs(page2_body || DEFAULT_PAGE2_BODY));
-  children.push(new PageBreak());
 
-  // ── Page 3: Question + Cards drawn ──────────────────────────────────────
+  // ── Page 3: Question + Cards drawn — page break embedded in heading
   children.push(new Paragraph({
-    children: [new TextRun({ text: SINHALA_QUESTION_HEADING, bold: true, size: 28, font: 'Abhaya Libre' })],
+    children: [
+      new PageBreak(),
+      new TextRun({ text: SINHALA_QUESTION_HEADING, bold: true, size: 28, font: 'Abhaya Libre' }),
+    ],
     alignment: AlignmentType.LEFT,
-    spacing: { before: 160, after: 120 },
+    spacing: { before: 0, after: 120 },
   }));
   children.push(new Paragraph({
     children: [new TextRun({ text: question, size: 24, font: 'Abhaya Libre', italics: true })],
@@ -339,19 +346,20 @@ async function buildTarotDoc({ question, reading, cards, page1_body, page2_body,
     }));
   }
 
-  // ── Reading (continues on same or new page) ───────────────────────────────
-  children.push(new PageBreak());
+  // ── Reading — page break embedded in heading
   children.push(new Paragraph({
-    children: [new TextRun({ text: SINHALA_READING_HEADING, bold: true, size: 36, font: 'Abhaya Libre' })],
+    children: [
+      new PageBreak(),
+      new TextRun({ text: SINHALA_READING_HEADING, bold: true, size: 36, font: 'Abhaya Libre' }),
+    ],
     alignment: AlignmentType.LEFT,
     spacing: { before: 0, after: 280 },
   }));
 
   children.push(...contentToParagraphs(reading));
 
-  // ── Final page: ආධ්‍යාත්මික වගකීම් ප්‍රකාශය ─────────────────────────────
-  children.push(new PageBreak());
-  children.push(makeHeading(PAGE4_HEADING));
+  // ── Final page: ආධ්‍යාත්මික වගකීම් ප්‍රකාශය — page break embedded in heading
+  children.push(makeHeading(PAGE4_HEADING, true));
   children.push(...makeBodyParagraphs(page4_body || DEFAULT_PAGE4_BODY));
 
   const doc = new Document({

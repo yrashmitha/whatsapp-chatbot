@@ -43,6 +43,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
   })();
 
   const hasChart = !!existingHd.chart_data;
+  const [showChartData, setShowChartData] = useState(false);
 
   // Editable birth fields
   const [customerName, setCustomerName] = useState(cf.customer_name || '');
@@ -231,6 +232,25 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
                   </div>
                 )}
               </div>
+            )}
+          </div>
+        )}
+
+        {/* Chart data panel */}
+        {hasChart && (
+          <div className="border-b border-slate-100">
+            <button
+              type="button"
+              onClick={() => setShowChartData(v => !v)}
+              className="w-full flex items-center justify-between px-5 py-2.5 bg-emerald-50 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 border-0 cursor-pointer"
+            >
+              <span>📊 Saved Chart Data (freeastroapi)</span>
+              <span className="text-emerald-400 text-base leading-none">{showChartData ? '▲' : '▼'}</span>
+            </button>
+            {showChartData && (
+              <pre className="px-5 py-3 bg-slate-950 text-emerald-300 text-xs overflow-auto max-h-72 leading-relaxed font-mono whitespace-pre-wrap">
+                {JSON.stringify(existingHd.chart_data, null, 2)}
+              </pre>
             )}
           </div>
         )}

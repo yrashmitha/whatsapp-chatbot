@@ -430,6 +430,7 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
       house_system: 'whole_sign',
       node_type: 'mean',
       vargas: [1, 9, 7],
+      dasha_levels: 2,
     };
     console.log('[HOROSCOPE] Calling freeastroapi for', orderId);
     const astroResp = await require('axios').post(

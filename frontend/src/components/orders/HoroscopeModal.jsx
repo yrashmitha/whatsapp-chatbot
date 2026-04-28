@@ -25,9 +25,17 @@ function toISODate(raw) {
   return '';
 }
 
+// Aura score → color band
+function auraScoreColor(score) {
+  if (score >= 0.8) return '#16a34a';
+  if (score >= 0.5) return '#d97706';
+  return '#dc2626';
+}
+
 export default function HoroscopeModal({ order, clientId, onClose, onGenerated }) {
-  const toast = useToast();
+  const toast  = useToast();
   const geoRef = useRef();
+  const auraFileRef = useRef();
   const [showOrderDetails, setShowOrderDetails] = useState(true);
 
   const cf = (() => {
@@ -39,20 +47,20 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
   const existingHd = (() => {
     if (!order?.horoscope_data) return {};
     if (typeof order.horoscope_data === 'object') return order.horoscope_data;
-    try { return JSON.parse(order.horoscope_data); } catch { return {};  }
+    try { return JSON.parse(order.horoscope_data); } catch { return {}; }
   })();
 
-  const hasChart = !!existingHd.chart_data;
+  const hasChart    = !!existingHd.chart_data;
+  const hasSections = !!(existingHd.sections && Object.keys(existingHd.sections).length > 0);
   const [showChartData, setShowChartData] = useState(false);
 
-  // Editable birth fields
+  // ── Birth fields ───────────────────────────────────────────────────────────
   const [customerName, setCustomerName] = useState(cf.customer_name || '');
   const [birthDate, setBirthDate]       = useState(toISODate(cf.birth_date || ''));
   const [birthHour, setBirthHour]       = useState('07');
   const [birthMinute, setBirthMinute]   = useState('00');
   const [overrideAstro, setOverrideAstro] = useState(false);
 
-  // Parse existing birth_time into hour/minute on mount
   useEffect(() => {
     const raw = cf.birth_time || '';
     if (/^\d{1,2}:\d{2}$/.test(raw)) {
@@ -60,7 +68,6 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
       setBirthHour(h.padStart(2, '0'));
       setBirthMinute(m.padStart(2, '0'));
     } else {
-      // Try to parse Sinhala time for display
       const isPM = raw.includes('රාත්‍රී') || raw.includes('රාත්රී') || raw.includes('දහවල්') ||
                    (raw.includes('ප.ව') && !raw.includes('පෙ.ව')) || raw.includes('සවස');
       const timePart = raw.replace(/[^\d.]/g, '').trim();
@@ -75,11 +82,13 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
     }
   }, []);
 
-  // Location picker
-  const [geoQuery, setGeoQuery]         = useState(cf.birth_place || '');
+  // ── Location picker ────────────────────────────────────────────────────────
+  const [geoQuery, setGeoQuery]           = useState(cf.birth_place || '');
   const [geoSuggestions, setGeoSuggestions] = useState([]);
   const [selectedPlace, setSelectedPlace]   = useState(
-    hasChart && existingHd.lat ? { lat: existingHd.lat, lng: existingHd.lng, name: existingHd.birth_place_name || cf.birth_place || '' } : null
+    hasChart && existingHd.lat
+      ? { lat: existingHd.lat, lng: existingHd.lng, name: existingHd.birth_place_name || cf.birth_place || '' }
+      : null
   );
   const debounceRef = useRef(null);
 
@@ -98,27 +107,18 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
     }, 400);
   }, []);
 
-  const handleGeoInput = (e) => {
-    setGeoQuery(e.target.value);
-    setSelectedPlace(null);
-    searchGeo(e.target.value);
-  };
+  const handleGeoInput = (e) => { setGeoQuery(e.target.value); setSelectedPlace(null); searchGeo(e.target.value); };
+  const selectPlace    = (place) => { setSelectedPlace(place); setGeoQuery(place.name); setGeoSuggestions([]); };
 
-  const selectPlace = (place) => {
-    setSelectedPlace(place);
-    setGeoQuery(place.name);
-    setGeoSuggestions([]);
-  };
-
-  // Package selection
+  // ── Package ────────────────────────────────────────────────────────────────
   const [packageType, setPackageType] = useState('1000');
 
-  // Special questions
+  // ── Special questions ──────────────────────────────────────────────────────
   const [specialQuestions, setSpecialQuestions] = useState([]);
-  const [newQuestion, setNewQuestion] = useState('');
-  const [editingQIdx, setEditingQIdx] = useState(null);
-  const [editingQText, setEditingQText] = useState('');
-  const newQuestionRef = useRef(null);
+  const [newQuestion, setNewQuestion]           = useState('');
+  const [editingQIdx, setEditingQIdx]           = useState(null);
+  const [editingQText, setEditingQText]         = useState('');
+  const newQuestionRef  = useRef(null);
   const editingInputRef = useRef(null);
 
   const addQuestion = () => {
@@ -126,25 +126,50 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
     if (!q) return;
     setSpecialQuestions(prev => [...prev, q]);
     setNewQuestion('');
-    if (newQuestionRef.current) {
-      newQuestionRef.current.value = '';
-      newQuestionRef.current.style.height = 'auto';
-    }
+    if (newQuestionRef.current) { newQuestionRef.current.value = ''; newQuestionRef.current.style.height = 'auto'; }
   };
-
-  const removeQuestion = (i) => {
-    setSpecialQuestions(prev => prev.filter((_, idx) => idx !== i));
-    if (editingQIdx === i) setEditingQIdx(null);
-  };
-
+  const removeQuestion = (i) => { setSpecialQuestions(prev => prev.filter((_, idx) => idx !== i)); if (editingQIdx === i) setEditingQIdx(null); };
   const startEdit = (i) => { setEditingQIdx(i); setEditingQText(specialQuestions[i]); };
-
-  const saveEdit = (i) => {
+  const saveEdit  = (i) => {
     const t = (editingInputRef.current?.value ?? editingQText).trim();
     if (t) setSpecialQuestions(prev => prev.map((q, idx) => idx === i ? t : q));
     setEditingQIdx(null);
   };
 
+  // ── Aura & Quantum state ───────────────────────────────────────────────────
+  const [includeQuantum, setIncludeQuantum] = useState(false);
+  const [activeName, setActiveName]         = useState(existingHd.quantum_data?.active_name || '');
+  const [auraAnalysis, setAuraAnalysis]     = useState(existingHd.aura_analysis || null);
+  const [auraUploading, setAuraUploading]   = useState(false);
+  const [overrideAura, setOverrideAura]     = useState(false);
+
+  // Chips: unique non-empty words from customerName
+  const nameChips = [...new Set(customerName.trim().split(/\s+/).filter(Boolean))];
+
+  const handleAuraFile = async (file) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { toast.error('Please select an image file'); return; }
+    setAuraUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+      formData.append('order_id', order.order_id);
+      if (overrideAura) formData.append('override', '1');
+      if (clientId) formData.append('client_id', clientId);
+      const r = await api.post('/plugins/horoscope/analyze-aura', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setAuraAnalysis(r.data.aura_analysis);
+      setOverrideAura(false);
+      toast.success(r.data.cached ? 'Using saved aura analysis' : 'Aura analysis complete');
+    } catch (e) {
+      toast.error('Aura analysis failed: ' + (e?.response?.data?.error || e.message));
+    } finally {
+      setAuraUploading(false);
+    }
+  };
+
+  // ── Generating ─────────────────────────────────────────────────────────────
   const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
@@ -154,26 +179,32 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
   }, [onClose]);
 
   const handleGenerate = async () => {
-    if (!selectedPlace) return toast.error('Please select a birth place');
+    if (!selectedPlace)    return toast.error('Please select a birth place');
     if (!birthDate.trim()) return toast.error('Birth date is required');
+    if (includeQuantum) {
+      if (!activeName.trim()) return toast.error('Active name required for Quantum Code');
+      if (!auraAnalysis)      return toast.error('Please upload a photo for Aura analysis first');
+    }
     setGenerating(true);
     try {
       await api.post('/plugins/horoscope/generate', {
-        order_id: order.order_id,
-        lat: selectedPlace.lat,
-        lng: selectedPlace.lng,
+        order_id:         order.order_id,
+        lat:              selectedPlace.lat,
+        lng:              selectedPlace.lng,
         birth_place_name: selectedPlace.name,
-        override_astro: overrideAstro,
+        override_astro:   overrideAstro,
         special_questions: specialQuestions,
-        package_type: packageType,
-        birth_overrides: {
-          customer_name: customerName,
-          birth_date: birthDate,
-          birth_time: `${birthHour}:${birthMinute}`,
-        },
+        package_type:     packageType,
+        birth_overrides:  { customer_name: customerName, birth_date: birthDate, birth_time: `${birthHour}:${birthMinute}` },
+        include_quantum:  includeQuantum,
+        active_name:      activeName.trim(),
         ...(clientId && { client_id: clientId }),
       });
-      toast.success('Generation started. Takes about 2 min. You can navigate away.');
+      toast.success(
+        hasSections && includeQuantum && !overrideAstro
+          ? 'Quantum Code added. Download the updated PDF.'
+          : 'Generation started. Takes about 2 min. You can navigate away.'
+      );
       onGenerated?.();
       onClose();
     } catch (e) {
@@ -201,7 +232,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 bg-transparent border-0 cursor-pointer text-xl leading-none">×</button>
         </div>
 
-        {/* Fixed customer details — outside scroll area */}
+        {/* Customer details */}
         {Object.keys(cf).length > 0 && (
           <div className="border-b border-slate-100">
             <button
@@ -268,20 +299,13 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
           <div>
             <label className={labelCls}>Birth Date</label>
             {cf.birth_date && <p className="text-xs text-amber-600 mb-1">From order: <span className="font-mono">{cf.birth_date}</span></p>}
-            <input
-              type="date"
-              className={inputCls}
-              value={birthDate}
-              onChange={e => setBirthDate(e.target.value)}
-            />
+            <input type="date" className={inputCls} value={birthDate} onChange={e => setBirthDate(e.target.value)} />
           </div>
 
           {/* Birth time */}
           <div>
             <label className={labelCls}>Birth Time (24h)</label>
-            {cf.birth_time && (
-              <p className="text-xs text-amber-600 mb-1">Original: <span className="font-mono">{cf.birth_time}</span></p>
-            )}
+            {cf.birth_time && <p className="text-xs text-amber-600 mb-1">Original: <span className="font-mono">{cf.birth_time}</span></p>}
             <div className="flex gap-2">
               <select value={birthHour} onChange={e => setBirthHour(e.target.value)}
                 className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 bg-white">
@@ -297,9 +321,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
           {/* Birth place */}
           <div className="relative">
             <label className={labelCls}>Birth Place</label>
-            {cf.birth_place && (
-              <p className="text-xs text-amber-600 mb-1">From order: <span className="font-mono">{cf.birth_place}</span></p>
-            )}
+            {cf.birth_place && <p className="text-xs text-amber-600 mb-1">From order: <span className="font-mono">{cf.birth_place}</span></p>}
             <input
               ref={geoRef}
               type="text"
@@ -322,9 +344,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
               </ul>
             )}
             {selectedPlace && (
-              <p className="text-xs text-emerald-600 mt-1">
-                ✓ {selectedPlace.lat.toFixed(4)}, {selectedPlace.lng.toFixed(4)}
-              </p>
+              <p className="text-xs text-emerald-600 mt-1">✓ {selectedPlace.lat.toFixed(4)}, {selectedPlace.lng.toFixed(4)}</p>
             )}
           </div>
 
@@ -351,6 +371,149 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
             </div>
           </div>
 
+          {/* ── Aura & Quantum Code toggle ──────────────────────────────── */}
+          <div className="border border-indigo-200 rounded-xl overflow-hidden">
+            <label className="flex items-center gap-3 px-4 py-3 bg-indigo-50 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeQuantum}
+                onChange={e => setIncludeQuantum(e.target.checked)}
+                className="w-4 h-4 accent-indigo-600"
+              />
+              <div>
+                <span className="text-sm font-semibold text-indigo-800">✦ Include Aura Analysis & Quantum Code</span>
+                <p className="text-xs text-indigo-500 mt-0.5">Adds a Quantum Code page to the PDF · requires customer selfie</p>
+              </div>
+            </label>
+
+            {includeQuantum && (
+              <div className="px-4 pb-4 pt-3 flex flex-col gap-3 bg-white">
+
+                {/* Active name with chips */}
+                <div>
+                  <label className={labelCls}>
+                    Active Name <span className="text-slate-400 font-normal">(used for numerology vibration)</span>
+                  </label>
+                  {nameChips.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {nameChips.map(chip => (
+                        <button
+                          key={chip}
+                          type="button"
+                          onClick={() => setActiveName(chip)}
+                          className={`px-2.5 py-1 text-xs rounded-full border cursor-pointer transition-colors ${
+                            activeName === chip
+                              ? 'bg-indigo-600 text-white border-indigo-600'
+                              : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'
+                          }`}
+                        >
+                          {chip}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <input
+                    className={inputCls}
+                    value={activeName}
+                    onChange={e => setActiveName(e.target.value)}
+                    placeholder="Type the name used daily (e.g. Malith)…"
+                  />
+                </div>
+
+                {/* Saved aura card */}
+                {auraAnalysis && !overrideAura && (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold text-emerald-800">✦ Aura Analysis</span>
+                      <button
+                        type="button"
+                        onClick={() => setOverrideAura(true)}
+                        className="text-xs text-slate-400 hover:text-slate-600 bg-transparent border-0 cursor-pointer underline"
+                      >
+                        Upload new photo
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="inline-block w-3 h-3 rounded-full"
+                            style={{ background: auraScoreColor(auraAnalysis.af_score) }}
+                          />
+                          <span className="text-sm font-bold text-slate-800">
+                            Af Score: {auraAnalysis.af_score.toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="mt-1 w-full bg-slate-200 rounded-full h-1.5">
+                          <div
+                            className="h-1.5 rounded-full"
+                            style={{
+                              width: `${auraAnalysis.af_score * 100}%`,
+                              background: auraScoreColor(auraAnalysis.af_score),
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                      {auraAnalysis.energy_level   && <span className="text-slate-500">Energy: <b className="text-slate-700">{auraAnalysis.energy_level}</b></span>}
+                      {auraAnalysis.dominant_color  && <span className="text-slate-500">Color: <b className="text-slate-700">{auraAnalysis.dominant_color}</b></span>}
+                      {auraAnalysis.primary_chakra  && <span className="text-slate-500">Chakra: <b className="text-slate-700">{auraAnalysis.primary_chakra}</b></span>}
+                      {auraAnalysis.aura_stability  && <span className="text-slate-500">Stability: <b className="text-slate-700">{auraAnalysis.aura_stability}</b></span>}
+                    </div>
+                    {auraAnalysis.recommendation_hint && (
+                      <p className="mt-2 text-xs text-indigo-700 italic">{auraAnalysis.recommendation_hint}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Upload area (shown when no aura yet, or override requested) */}
+                {(!auraAnalysis || overrideAura) && (
+                  <div>
+                    <label className={labelCls}>
+                      Customer Selfie {overrideAura && <span className="text-amber-600">(replacing saved analysis)</span>}
+                    </label>
+                    <div
+                      className="border-2 border-dashed border-indigo-200 rounded-xl p-4 text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50 transition-colors relative"
+                      onClick={() => auraFileRef.current?.click()}
+                      onDragOver={e => e.preventDefault()}
+                      onDrop={e => { e.preventDefault(); handleAuraFile(e.dataTransfer.files[0]); }}
+                    >
+                      <input
+                        ref={auraFileRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={e => handleAuraFile(e.target.files[0])}
+                      />
+                      {auraUploading ? (
+                        <div className="flex flex-col items-center gap-2 py-2">
+                          <span className="w-6 h-6 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin block" />
+                          <span className="text-xs text-indigo-600 font-medium">Analysing aura…</span>
+                        </div>
+                      ) : (
+                        <>
+                          <p className="text-xs text-slate-500">Click or drag a selfie here</p>
+                          <p className="text-xs text-slate-400 mt-1">JPEG / PNG · max 10 MB</p>
+                        </>
+                      )}
+                    </div>
+                    {overrideAura && (
+                      <button
+                        type="button"
+                        onClick={() => setOverrideAura(false)}
+                        className="mt-1 text-xs text-slate-400 hover:text-slate-600 bg-transparent border-0 cursor-pointer underline"
+                      >
+                        Cancel — keep saved analysis
+                      </button>
+                    )}
+                  </div>
+                )}
+
+              </div>
+            )}
+          </div>
+
           {/* Special questions */}
           <div>
             <label className={labelCls}>Special Questions <span className="text-slate-400 font-normal">(optional)</span></label>
@@ -366,9 +529,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
                   e.target.style.height = 'auto';
                   e.target.style.height = e.target.scrollHeight + 'px';
                 }}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addQuestion(); }
-                }}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addQuestion(); } }}
                 placeholder="Type a question and press Enter or Add…"
               />
               <button
@@ -392,7 +553,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
                         onBlur={() => saveEdit(i)}
                       />
                     ) : (
-                      <span className="flex-1 cursor-pointer hover:text-violet-700" onClick={() => startEdit(i)} title="Click or press Enter to edit">{i + 1}. {q}</span>
+                      <span className="flex-1 cursor-pointer hover:text-violet-700" onClick={() => startEdit(i)} title="Click to edit">{i + 1}. {q}</span>
                     )}
                     <button type="button" onClick={() => removeQuestion(i)} className="text-slate-400 hover:text-red-500 bg-transparent border-0 cursor-pointer leading-none shrink-0">×</button>
                   </li>
@@ -401,7 +562,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
             )}
           </div>
 
-          {/* Override astro checkbox (only if chart already exists) */}
+          {/* Override astro checkbox */}
           {hasChart && (
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -427,7 +588,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
           </button>
           <button
             onClick={handleGenerate}
-            disabled={generating || !selectedPlace || !birthDate.trim()}
+            disabled={generating || !selectedPlace || !birthDate.trim() || auraUploading}
             className="flex-1 py-2.5 text-sm font-medium text-white rounded-xl border-0 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
             style={{ background: generating ? '#7c3aed' : 'linear-gradient(135deg,#7c3aed,#a855f7)' }}
           >
@@ -436,7 +597,11 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
                 <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin block" />
                 Starting…
               </>
-            ) : '🔮 Generate Reading'}
+            ) : (
+              hasSections && includeQuantum && !overrideAstro
+                ? '✦ Add Quantum Code'
+                : '🔮 Generate Reading'
+            )}
           </button>
         </div>
       </div>

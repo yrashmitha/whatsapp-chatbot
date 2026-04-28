@@ -10,6 +10,7 @@
 const axios  = require('axios');
 const db     = require('../db');
 const { genAI } = require('./gemini');
+const { extractPlanetDegreesSum, generateQuantumCode, generateQuantumReading } = require('./quantumCode');
 // Lazy-loaded on first use to avoid crashing the server on startup if the
 // package isn't installed yet (e.g. stale Railway build cache).
 let Document, Packer, Paragraph, TextRun, AlignmentType, PageBreak, Footer, PageNumber, NumberFormat;
@@ -238,7 +239,7 @@ function contentToParagraphs(content) {
   return paragraphs;
 }
 
-async function buildHoroscopeDoc({ customerName, sections, specialAnswers, specialNote }) {
+async function buildHoroscopeDoc({ customerName, sections, specialAnswers, specialNote, quantumData, auraAnalysis, quantumReading }) {
   ensureDocx();
   const children = [];
 
@@ -339,6 +340,150 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
     alignment: AlignmentType.RIGHT,
   }));
 
+  // ── Quantum Code page (only when quantum data is present) ─────────────────
+  if (quantumData && quantumData.status === 'Success' && auraAnalysis) {
+    const sep = '─'.repeat(48);
+
+    // Page break + section title
+    children.push(new Paragraph({
+      children: [
+        new PageBreak(),
+        new TextRun({ text: 'ක්වොන්ටම් ශක්ති කේතය', bold: true, size: 40, font: 'Abhaya Libre' }),
+      ],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 80 },
+    }));
+    children.push(new Paragraph({
+      children: [new TextRun({ text: 'Quantum Energy Code & Aura Analysis', size: 22, font: 'Abhaya Libre' })],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 320 },
+    }));
+
+    // QC identifier
+    children.push(new Paragraph({
+      children: [new TextRun({ text: 'ඔබේ ශ්‍රේණිය / Your Unique Identifier', size: 22, font: 'Abhaya Libre' })],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 100 },
+    }));
+    children.push(new Paragraph({
+      children: [new TextRun({ text: quantumData.quantum_id, bold: true, size: 56, font: 'Abhaya Libre' })],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 280 },
+    }));
+    children.push(new Paragraph({
+      children: [new TextRun({ text: sep, size: 20, font: 'Abhaya Libre' })],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 280 },
+    }));
+
+    // Aura subsection
+    children.push(new Paragraph({
+      children: [new TextRun({ text: 'ඕරා ශ්‍රීති විශ්ලේෂණය  (Aura Frequency Analysis)', bold: true, size: 30, font: 'Abhaya Libre' })],
+      alignment: AlignmentType.LEFT,
+      spacing: { after: 160 },
+    }));
+
+    const auraRows = [
+      [`ශ්‍රීති ලකුණු (Af Score)`,     `${auraAnalysis.af_score.toFixed(2)} / 1.0`],
+      [`ශක්ති මට්ටම (Energy Level)`,    auraAnalysis.energy_level || '—'],
+      [`ඕරා වර්ණය (Dominant Color)`,   auraAnalysis.dominant_color || '—'],
+      [`ප්‍රධාන චක්‍රය (Primary Chakra)`, auraAnalysis.primary_chakra || '—'],
+      [`ඕරා ස්ථාවරත්වය (Stability)`,    auraAnalysis.aura_stability || '—'],
+    ];
+    for (const [label, value] of auraRows) {
+      children.push(new Paragraph({
+        children: [
+          new TextRun({ text: `${label}: `, bold: true, size: 24, font: 'Abhaya Libre' }),
+          new TextRun({ text: value, size: 24, font: 'Abhaya Libre' }),
+        ],
+        alignment: AlignmentType.LEFT,
+        spacing: { after: 80 },
+      }));
+    }
+
+    // Detected blockages
+    if (Array.isArray(auraAnalysis.detected_blockages) && auraAnalysis.detected_blockages.length) {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: 'ශක්ති රටා (Detected Energy Patterns):', bold: true, size: 24, font: 'Abhaya Libre' })],
+        spacing: { before: 120, after: 60 },
+      }));
+      for (const b of auraAnalysis.detected_blockages) {
+        children.push(new Paragraph({
+          children: [new TextRun({ text: b, size: 24, font: 'Abhaya Libre' })],
+          bullet: { level: 0 },
+          spacing: { after: 60 },
+        }));
+      }
+    }
+
+    // Recommendation
+    if (auraAnalysis.recommendation_hint) {
+      children.push(new Paragraph({
+        children: [
+          new TextRun({ text: 'නිර්දේශය (Recommendation): ', bold: true, size: 24, font: 'Abhaya Libre' }),
+          new TextRun({ text: auraAnalysis.recommendation_hint, size: 24, font: 'Abhaya Libre' }),
+        ],
+        spacing: { before: 120, after: 240 },
+      }));
+    }
+
+    children.push(new Paragraph({
+      children: [new TextRun({ text: sep, size: 20, font: 'Abhaya Libre' })],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 280 },
+    }));
+
+    // Quantum metrics subsection
+    children.push(new Paragraph({
+      children: [new TextRun({ text: 'ක්වොන්ටම් ගණනය  (Quantum Resonance Metrics)', bold: true, size: 30, font: 'Abhaya Libre' })],
+      alignment: AlignmentType.LEFT,
+      spacing: { after: 160 },
+    }));
+
+    const qcRows = [
+      ['Active Name (Ia ගණනය)',               quantumData.active_name || '—'],
+      ['Base Frequency — Fb',                  quantumData.base_frequency.toFixed(6)],
+      ['Identity Vibration — Ia',              quantumData.identity_vibration.toFixed(6)],
+      ['Quantum Core Score — QC',              quantumData.qc_score.toFixed(6)],
+    ];
+    for (const [label, value] of qcRows) {
+      children.push(new Paragraph({
+        children: [
+          new TextRun({ text: `${label}: `, bold: true, size: 24, font: 'Abhaya Libre' }),
+          new TextRun({ text: value, size: 24, font: 'Abhaya Libre' }),
+        ],
+        alignment: AlignmentType.LEFT,
+        spacing: { after: 80 },
+      }));
+    }
+
+    children.push(new Paragraph({
+      children: [new TextRun({ text: sep, size: 20, font: 'Abhaya Libre' })],
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 200, after: 280 },
+    }));
+
+    // Quantum Life Architect narrative
+    if (quantumReading) {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: 'ක්වොන්ටම් ජීවන වාර්තාව  (Quantum Life Architect Reading)', bold: true, size: 30, font: 'Abhaya Libre' })],
+        alignment: AlignmentType.LEFT,
+        spacing: { after: 200 },
+      }));
+      children.push(...contentToParagraphs(quantumReading));
+      children.push(new Paragraph({
+        children: [new TextRun({ text: sep, size: 20, font: 'Abhaya Libre' })],
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 200, after: 160 },
+      }));
+    }
+
+    children.push(new Paragraph({
+      children: [new TextRun({ text: `Generated: ${new Date().toISOString().slice(0, 10)}`, size: 20, font: 'Abhaya Libre' })],
+      alignment: AlignmentType.CENTER,
+    }));
+  }
+
   const doc = new Document({
     styles: {
       default: {
@@ -380,7 +525,7 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
 
 // ─── Main generation function ─────────────────────────────────────────────────
 
-async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, birth_place_name, overrideAstro, specialQuestions = [], isVip = false) {
+async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, birth_place_name, overrideAstro, specialQuestions = [], isVip = false, includeQuantum = false, activeName = '') {
   // 1. Fetch order
   const orderRes = await db.pgQuery(
     'SELECT custom_fields, horoscope_data FROM orders WHERE order_id=$1',
@@ -409,6 +554,46 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
 
   const { year, month, day } = dateInfo;
   const { hour, minute } = timeInfo;
+
+  // 2.5 Fast path: if sections already exist and quantum is the only new thing,
+  //     skip all Gemini calls and just compute / update the QC block.
+  const hasExistingSections = !!(existingHd.sections && Object.keys(existingHd.sections).length > 0);
+  if (includeQuantum && hasExistingSections && !overrideAstro) {
+    console.log('[HOROSCOPE] Fast path: sections exist — computing QC only for', orderId);
+    if (!existingHd.aura_analysis) throw new Error('Aura analysis not found. Please upload a photo for aura analysis first.');
+    if (!existingHd.chart_data)    throw new Error('No chart data found in existing horoscope. Cannot compute Quantum Code.');
+
+    const fastPlanetSum = extractPlanetDegreesSum(existingHd.chart_data);
+    if (fastPlanetSum === null)    throw new Error('Cannot extract planet degrees from saved chart data.');
+
+    const fastBirthMin = hour * 60 + minute;
+    if (fastBirthMin === 0)        throw new Error('Birth time resolves to midnight (0 minutes) — cannot compute Base Frequency.');
+
+    const fastQR = generateQuantumCode({
+      full_name:           activeName,
+      lat:                 parseFloat(lat),
+      long:                parseFloat(lng),
+      planet_degrees_sum:  fastPlanetSum,
+      birth_time_min:      fastBirthMin,
+      aura_score:          existingHd.aura_analysis.af_score,
+    });
+    if (fastQR.status === 'Error') throw new Error(`Quantum Code generation failed: ${fastQR.message}`);
+
+    const fastReading = await generateQuantumReading(fastQR, existingHd.aura_analysis);
+    const fastUpdated = {
+      ...existingHd,
+      quantum_data:    fastQR,
+      quantum_id:      fastQR.quantum_id,
+      quantum_reading: fastReading,
+    };
+    delete fastUpdated.generating;
+    await db.pgQuery(
+      'UPDATE orders SET horoscope_data=$1 WHERE order_id=$2',
+      [JSON.stringify(fastUpdated), orderId]
+    );
+    console.log('[HOROSCOPE] Fast path: QC + reading saved for', orderId, fastQR.quantum_id);
+    return fastUpdated;
+  }
 
   // 3. Get plugin config
   const config = await db.getPluginConfig(clientId, 'horoscope_reading');
@@ -445,6 +630,32 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
       [JSON.stringify(chartData), orderId]
     );
     console.log('[HOROSCOPE] Chart data saved for', orderId);
+  }
+
+  // 4.5. Quantum Code computation (full path — runs before Gemini so a QC
+  //      failure hard-fails the job before burning expensive API calls).
+  let quantumResult = null;
+  if (includeQuantum) {
+    const savedAura = existingHd.aura_analysis;
+    if (!savedAura) throw new Error('Aura analysis not found. Please upload a photo for aura analysis before generating.');
+
+    const planetSum = extractPlanetDegreesSum(chartData);
+    if (planetSum === null) throw new Error('Cannot extract planet degrees from chart data. Quantum Code cannot be computed.');
+
+    const birthTimeMin = hour * 60 + minute;
+    if (birthTimeMin === 0) throw new Error('Birth time resolves to midnight (0 minutes) — cannot compute Base Frequency.');
+
+    quantumResult = generateQuantumCode({
+      full_name:          activeName,
+      lat:                parseFloat(lat),
+      long:               parseFloat(lng),
+      planet_degrees_sum: planetSum,
+      birth_time_min:     birthTimeMin,
+      aura_score:         savedAura.af_score,
+    });
+    if (quantumResult.status === 'Error') throw new Error(`Quantum Code generation failed: ${quantumResult.message}`);
+    console.log('[HOROSCOPE] Quantum Code computed:', quantumResult.quantum_id);
+    quantumResult._reading = await generateQuantumReading(quantumResult, savedAura);
   }
 
   // 5. Only send chart data to Gemini — no order/customer details
@@ -489,13 +700,20 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
 
   // 9. Save all results
   const horoscopeData = {
-    chart_data: chartData,
-    sections: sectionsMap,
-    special_answers: specialAnswers,
-    generated_at: new Date().toISOString(),
+    // Preserve aura_analysis if it was saved by the analyze-aura endpoint
+    ...(existingHd.aura_analysis && { aura_analysis: existingHd.aura_analysis }),
+    chart_data:       chartData,
+    sections:         sectionsMap,
+    special_answers:  specialAnswers,
+    generated_at:     new Date().toISOString(),
     birth_place_name: birth_place_name || '',
-    lat: parseFloat(lat),
-    lng: parseFloat(lng),
+    lat:              parseFloat(lat),
+    lng:              parseFloat(lng),
+    ...(quantumResult && {
+      quantum_data:    quantumResult,
+      quantum_id:      quantumResult.quantum_id,
+      quantum_reading: quantumResult._reading || null,
+    }),
   };
   await db.pgQuery(
     'UPDATE orders SET horoscope_data=$1 WHERE order_id=$2',

@@ -5,6 +5,7 @@
 
 'use strict';
 
+const multer  = require('multer');
 const router  = require('express').Router();
 const jwtAuth = require('../middleware/jwtAuth');
 const {
@@ -12,16 +13,25 @@ const {
   updatePluginConfig,
   getPluginCustomerData,
   generateAstroChart,
+  analyzeAuraImage,
   generateHoroscopeReading,
   updateHoroscopeSections,
   downloadHoroscope,
   downloadHoroscopePdf,
 } = require('../controllers/plugins.controller');
 
+// Memory-storage upload for aura selfie (max 10 MB, images only)
+const auraUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null, /^image\//.test(file.mimetype)),
+});
+
 router.get('/:pluginId/config',                   jwtAuth, getPluginConfig);
 router.put('/:pluginId/config',                   jwtAuth, updatePluginConfig);
 router.get('/:pluginId/customer-data/:phone',     jwtAuth, getPluginCustomerData);
 router.post('/astro-chart',                       jwtAuth, generateAstroChart);
+router.post('/horoscope/analyze-aura',            jwtAuth, auraUpload.single('image'), analyzeAuraImage);
 router.post('/horoscope/generate',                jwtAuth, generateHoroscopeReading);
 router.patch('/horoscope/sections/:orderId',      jwtAuth, updateHoroscopeSections);
 router.get('/horoscope/download/:orderId',        jwtAuth, downloadHoroscope);

@@ -9,6 +9,7 @@
 const db   = require('../db');
 const { generateAstroMessage, DEFAULT_ASTRO_PROMPT } = require('../services/astro');
 const { generateHoroscope, buildHoroscopeDoc, SECTIONS, parseSinhalaDate } = require('../services/horoscope');
+const { analyzeAura } = require('../services/quantumCode');
 const { DEFAULT_TAROT_PROMPT } = require('../services/tarot');
 const resolveClientId = require('../middleware/resolveClientId');
 
@@ -152,15 +153,74 @@ async function generateAstroChart(req, res) {
 }
 
 /**
+ * POST /api/plugins/horoscope/analyze-aura — run Gemini Vision aura analysis on a selfie.
+ *
+ * Accepts multipart/form-data with field "image".
+ * Saves result to horoscope_data.aura_analysis (reuses saved result unless ?override=1).
+ * Returns the aura_analysis JSON so the frontend can display it immediately.
+ */
+async function analyzeAuraImage(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+
+  const { order_id, override } = req.body;
+  if (!order_id) return res.status(400).json({ error: 'order_id required' });
+  if (!req.file)  return res.status(400).json({ error: 'image file required' });
+
+  try {
+    // Load existing horoscope_data
+    const r = await db.pgQuery(
+      'SELECT horoscope_data FROM orders WHERE order_id=$1',
+      [order_id]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Order not found' });
+
+    const hd = (typeof r.rows[0].horoscope_data === 'string')
+      ? JSON.parse(r.rows[0].horoscope_data || '{}')
+      : (r.rows[0].horoscope_data || {});
+
+    // Return cached result unless override is explicitly requested
+    if (hd.aura_analysis && override !== '1' && override !== 'true') {
+      console.log('[AURA] Returning cached aura_analysis for order', order_id);
+      return res.json({ aura_analysis: hd.aura_analysis, cached: true });
+    }
+
+    const config  = await db.getPluginConfig(clientId, 'horoscope_reading');
+    const apiKey  = config.gemini_api_key || process.env.GEMINI_API_KEY;
+
+    const auraAnalysis = await analyzeAura(req.file.buffer, req.file.mimetype, apiKey);
+
+    // Save to horoscope_data.aura_analysis (jsonb_set preserves all other keys)
+    await db.pgQuery(
+      `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), '{aura_analysis}', $1::jsonb) WHERE order_id=$2`,
+      [JSON.stringify(auraAnalysis), order_id]
+    );
+
+    console.log('[AURA] Saved aura_analysis for order', order_id, '| af_score:', auraAnalysis.af_score);
+    res.json({ aura_analysis: auraAnalysis, cached: false });
+  } catch (e) {
+    console.error('[AURA] Error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+}
+
+/**
  * POST /api/plugins/horoscope/generate — generate full horoscope reading for an order.
  */
 async function generateHoroscopeReading(req, res) {
   const clientId = resolveClientId(req);
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
 
-  const { order_id, lat, lng, birth_place_name, birth_overrides, override_astro, special_questions, package_type } = req.body;
+  const {
+    order_id, lat, lng, birth_place_name, birth_overrides,
+    override_astro, special_questions, package_type,
+    include_quantum, active_name,
+  } = req.body;
   if (!order_id || lat == null || lng == null) {
     return res.status(400).json({ error: 'order_id, lat, lng required' });
+  }
+  if (include_quantum && !active_name?.trim()) {
+    return res.status(400).json({ error: 'active_name required when include_quantum is true' });
   }
 
   const addonCheck = await db.pgQuery(
@@ -187,7 +247,9 @@ async function generateHoroscopeReading(req, res) {
     birth_place_name || '',
     !!override_astro,
     Array.isArray(special_questions) ? special_questions : [],
-    package_type === '1500'
+    package_type === '1500',
+    !!include_quantum,
+    (active_name || '').trim()
   ).catch(async (e) => {
     console.error('[HOROSCOPE] generate error:', e.message);
     const detail = e?.response?.data?.detail;
@@ -248,10 +310,13 @@ async function downloadHoroscope(req, res) {
     const config = clientId ? await db.getPluginConfig(clientId, 'horoscope_reading') : {};
 
     const buffer = await buildHoroscopeDoc({
-      customerName: cf.customer_name || '',
-      sections: hd.sections,
-      specialAnswers: hd.special_answers || [],
-      specialNote: config.special_note || '',
+      customerName:   cf.customer_name || '',
+      sections:       hd.sections,
+      specialAnswers: hd.special_answers  || [],
+      specialNote:    config.special_note || '',
+      quantumData:    hd.quantum_data     || null,
+      auraAnalysis:   hd.aura_analysis    || null,
+      quantumReading: hd.quantum_reading  || null,
     });
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
@@ -290,10 +355,13 @@ async function downloadHoroscopePdf(req, res) {
     const config = clientId ? await db.getPluginConfig(clientId, 'horoscope_reading') : {};
 
     const docxBuffer = await buildHoroscopeDoc({
-      customerName: cf.customer_name || '',
-      sections: hd.sections,
-      specialAnswers: hd.special_answers || [],
-      specialNote: config.special_note || '',
+      customerName:   cf.customer_name || '',
+      sections:       hd.sections,
+      specialAnswers: hd.special_answers  || [],
+      specialNote:    config.special_note || '',
+      quantumData:    hd.quantum_data     || null,
+      auraAnalysis:   hd.aura_analysis    || null,
+      quantumReading: hd.quantum_reading  || null,
     });
 
     const { exec } = require('child_process');
@@ -364,5 +432,6 @@ async function downloadHoroscopePdf(req, res) {
 
 module.exports = {
   getPluginConfig, updatePluginConfig, getPluginCustomerData, generateAstroChart,
+  analyzeAuraImage,
   generateHoroscopeReading, updateHoroscopeSections, downloadHoroscope, downloadHoroscopePdf,
 };

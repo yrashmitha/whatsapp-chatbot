@@ -501,6 +501,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
                   </div>
                 )}
 
+            </div>
           )}
 
           {/* Special questions */}

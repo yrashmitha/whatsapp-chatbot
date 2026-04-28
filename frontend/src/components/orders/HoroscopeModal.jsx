@@ -137,7 +137,8 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
   };
 
   // ── Aura & Quantum state ───────────────────────────────────────────────────
-  const [includeQuantum, setIncludeQuantum] = useState(false);
+  // includeQuantum is derived — selecting the 1500_aura package enables it
+  const includeQuantum = packageType === '1500_aura';
   const [activeName, setActiveName]         = useState(existingHd.quantum_data?.active_name || '');
   const [auraAnalysis, setAuraAnalysis]     = useState(existingHd.aura_analysis || null);
   const [auraUploading, setAuraUploading]   = useState(false);
@@ -194,7 +195,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
         birth_place_name: selectedPlace.name,
         override_astro:   overrideAstro,
         special_questions: specialQuestions,
-        package_type:     packageType,
+        package_type:     includeQuantum ? '1500' : packageType,
         birth_overrides:  { customer_name: customerName, birth_date: birthDate, birth_time: `${birthHour}:${birthMinute}` },
         include_quantum:  includeQuantum,
         active_name:      activeName.trim(),
@@ -215,8 +216,6 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
 
   const inputCls = 'w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100';
   const labelCls = 'text-xs font-medium text-slate-500 block mb-1';
-
-  console.log('[HoroscopeModal] render — includeQuantum:', includeQuantum, '| hasChart:', hasChart, '| hasSections:', hasSections);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -353,47 +352,33 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
           {/* Package selection */}
           <div>
             <label className={labelCls}>Package</label>
-            <div className="flex gap-4">
-              {['1000', '1500'].map(pkg => (
-                <label key={pkg} className="flex items-center gap-2 cursor-pointer">
+            <div className="flex flex-wrap gap-3">
+              {[
+                { value: '1000',      label: 'Rs. 1000' },
+                { value: '1500',      label: 'Rs. 1500',      badge: '+ VIP Section' },
+                { value: '1500_aura', label: 'Rs. 1500',      badge: '+ VIP + Aura' },
+              ].map(({ value, label, badge }) => (
+                <label key={value} className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="radio"
                     name="package_type"
-                    value={pkg}
-                    checked={packageType === pkg}
-                    onChange={() => setPackageType(pkg)}
+                    value={value}
+                    checked={packageType === value}
+                    onChange={() => setPackageType(value)}
                     className="w-4 h-4 accent-violet-600"
                   />
                   <span className="text-sm text-slate-700 font-medium">
-                    Rs. {pkg}
-                    {pkg === '1500' && <span className="ml-1 text-xs text-violet-600 font-semibold">+ VIP Section</span>}
+                    {label}
+                    {badge && <span className="ml-1 text-xs text-violet-600 font-semibold">{badge}</span>}
                   </span>
                 </label>
               ))}
             </div>
           </div>
 
-          {/* ── Aura & Quantum Code toggle ──────────────────────────────── */}
-          <div data-testid="quantum-toggle" className="border border-indigo-200 rounded-xl overflow-hidden">
-            <div
-              className="flex items-center gap-3 px-4 py-3 bg-indigo-50 cursor-pointer"
-              onClick={() => setIncludeQuantum(v => !v)}
-            >
-              <input
-                type="checkbox"
-                checked={includeQuantum}
-                onChange={e => setIncludeQuantum(e.target.checked)}
-                className="w-4 h-4 accent-indigo-600"
-                onClick={e => e.stopPropagation()}
-              />
-              <div>
-                <div className="text-sm font-semibold text-indigo-800">✦ Include Aura Analysis &amp; Quantum Code</div>
-                <div className="text-xs text-indigo-500" style={{ marginTop: '2px' }}>Adds a Quantum Code page to the PDF · requires customer selfie</div>
-              </div>
-            </div>
-
-            {includeQuantum && (
-              <div className="px-4 pb-4 pt-3 flex flex-col gap-3 bg-white">
+          {/* Aura & Quantum expanded section — shown when 1500_aura is selected */}
+          {includeQuantum && (
+            <div className="flex flex-col gap-3">
 
                 {/* Active name with chips */}
                 <div>
@@ -516,9 +501,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
                   </div>
                 )}
 
-              </div>
-            )}
-          </div>
+          )}
 
           {/* Special questions */}
           <div>

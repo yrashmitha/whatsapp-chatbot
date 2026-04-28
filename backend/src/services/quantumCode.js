@@ -30,14 +30,14 @@ const PYTHAGOREAN_MAP = {
   I: 9, R: 9,
 };
 
-const AURA_PROMPT = `Role: You are a Bio-Energy Image Analysis Expert. Your task is to analyze the attached human selfie to determine the "Aura Frequency Score" and identify bio-energetic patterns.
+const AURA_PROMPT = `You are a Bio-Energy Image Analysis Expert. Analyze the attached human selfie.
 
-Analysis Criteria:
-- Luminosity Score: Analyze eye radiance, skin clarity, and light diffraction around the subject. Scale: 0.1 (Critically Low) to 1.0 (Peak Energy).
-- Chakra Alignment: Identify the dominant energy center based on facial micro-expressions and tonal symmetry.
-- Energy Blockages: Detect any visual tension patterns in the facial muscles that indicate stress or energy leaks.
+Scoring rules:
+- af_score: 0.1 (critically low energy) to 1.0 (peak energy). Base on eye radiance, skin clarity, posture.
+- primary_chakra: dominant energy center from facial symmetry and tonal patterns.
+- detected_blockages: list of visible stress or tension patterns (empty array if none).
 
-Output Requirement: Return the analysis ONLY as valid JSON. No markdown fences, no conversational text. Start with { and end with }.
+CRITICAL: You MUST return ONLY a single JSON object with EXACTLY this structure. No markdown fences, no extra text, no missing fields.
 
 {
   "aura_analysis": {
@@ -45,11 +45,13 @@ Output Requirement: Return the analysis ONLY as valid JSON. No markdown fences, 
     "dominant_color": "Electric Blue",
     "energy_level": "High/Vibrant",
     "primary_chakra": "Throat/Third Eye",
-    "detected_blockages": ["Minor tension in the jaw area"],
     "aura_stability": "Stable",
+    "detected_blockages": ["Minor tension in the jaw area"],
     "recommendation_hint": "Focus on creative expression and hydration."
   }
-}`;
+}
+
+All 7 fields inside aura_analysis are required. af_score must be a number between 0.1 and 1.0.`;
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -149,13 +151,29 @@ async function analyzeAura(imageBuffer, mimeType, apiKey) {
   if (!cleaned) throw new Error('Aura analysis returned no parseable JSON');
 
   const parsed = JSON.parse(cleaned);
-  const a = parsed?.aura_analysis;
-  if (!a) throw new Error('Aura response missing aura_analysis key');
-  if (typeof a.af_score !== 'number') throw new Error('af_score must be a number');
+
+  // Accept {aura_analysis:{...}} or the object directly
+  const a = (parsed?.aura_analysis && typeof parsed.aura_analysis === 'object')
+    ? parsed.aura_analysis
+    : parsed;
+
+  if (!a || typeof a !== 'object') throw new Error('Aura response is not a valid object');
+
+  // Fill defaults for any field Gemini omitted
+  if (typeof a.af_score !== 'number' || isNaN(a.af_score)) {
+    console.warn('[AURA] af_score missing or invalid — defaulting to 0.60');
+    a.af_score = 0.60;
+  }
   if (a.af_score < 0.1 || a.af_score > 1.0) {
     console.log(`[AURA] af_score ${a.af_score} out of range — clamping`);
     a.af_score = Math.max(0.1, Math.min(1.0, a.af_score));
   }
+  a.dominant_color      = a.dominant_color      || 'Unknown';
+  a.energy_level        = a.energy_level        || 'Moderate';
+  a.primary_chakra      = a.primary_chakra      || 'Heart';
+  a.aura_stability      = a.aura_stability      || 'Moderate';
+  a.detected_blockages  = Array.isArray(a.detected_blockages) ? a.detected_blockages : [];
+  a.recommendation_hint = a.recommendation_hint || '';
 
   console.log('[AURA] ── PARSED RESULT ─────────────────────────────────');
   console.log(JSON.stringify(a, null, 2));

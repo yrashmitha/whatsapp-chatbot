@@ -216,6 +216,8 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
   const inputCls = 'w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100';
   const labelCls = 'text-xs font-medium text-slate-500 block mb-1';
 
+  console.log('[HoroscopeModal] render — includeQuantum:', includeQuantum, '| hasChart:', hasChart, '| hasSections:', hasSections);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div
@@ -372,7 +374,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
           </div>
 
           {/* ── Aura & Quantum Code toggle ──────────────────────────────── */}
-          <div className="border border-indigo-200 rounded-xl overflow-hidden">
+          <div data-testid="quantum-toggle" className="border border-indigo-200 rounded-xl overflow-hidden">
             <label className="flex items-center gap-3 px-4 py-3 bg-indigo-50 cursor-pointer">
               <input
                 type="checkbox"

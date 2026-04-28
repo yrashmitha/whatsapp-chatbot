@@ -375,18 +375,22 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
 
           {/* ── Aura & Quantum Code toggle ──────────────────────────────── */}
           <div data-testid="quantum-toggle" className="border border-indigo-200 rounded-xl overflow-hidden">
-            <label className="flex items-center gap-3 px-4 py-3 bg-indigo-50 cursor-pointer">
+            <div
+              className="flex items-center gap-3 px-4 py-3 bg-indigo-50 cursor-pointer"
+              onClick={() => setIncludeQuantum(v => !v)}
+            >
               <input
                 type="checkbox"
                 checked={includeQuantum}
                 onChange={e => setIncludeQuantum(e.target.checked)}
                 className="w-4 h-4 accent-indigo-600"
+                onClick={e => e.stopPropagation()}
               />
               <div>
-                <span className="text-sm font-semibold text-indigo-800">✦ Include Aura Analysis & Quantum Code</span>
-                <p className="text-xs text-indigo-500 mt-0.5">Adds a Quantum Code page to the PDF · requires customer selfie</p>
+                <div className="text-sm font-semibold text-indigo-800">✦ Include Aura Analysis &amp; Quantum Code</div>
+                <div className="text-xs text-indigo-500" style={{ marginTop: '2px' }}>Adds a Quantum Code page to the PDF · requires customer selfie</div>
               </div>
-            </label>
+            </div>
 
             {includeQuantum && (
               <div className="px-4 pb-4 pt-3 flex flex-col gap-3 bg-white">

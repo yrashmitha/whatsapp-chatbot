@@ -52,14 +52,16 @@ app.use((req, _res, next) => {
 
 // ── Static file serving ───────────────────────────────────────────────────────
 const FRONTEND_DIST = path.join(__dirname, '../frontend/dist');
+const INDEX_HTML    = path.join(FRONTEND_DIST, 'index.html');
+
 if (fs.existsSync(FRONTEND_DIST)) {
-  // Hashed JS/CSS assets: cache for 1 year
+  // Hashed JS/CSS assets (Vite content-hash filenames): safe to cache long-term
   app.use('/assets', express.static(path.join(FRONTEND_DIST, 'assets'), {
     maxAge: '1y',
     immutable: true,
   }));
-  // Everything else (including index.html): no cache so deploys are instant
-  app.use(express.static(FRONTEND_DIST, { maxAge: 0, etag: false }));
+  // All other static files (fonts, images, etc.)
+  app.use(express.static(FRONTEND_DIST, { index: false }));
   console.log('[STARTUP] Serving React frontend from', FRONTEND_DIST);
 }
 // Persistent volume for customer-uploaded files
@@ -72,15 +74,14 @@ app.use('/templates', express.static(path.join(__dirname, 'public', 'templates')
 // ── Routes ────────────────────────────────────────────────────────────────────
 mountRoutes(app);
 
-// ── SPA catch-all — serve index.html for any non-API GET ─────────────────────
-if (fs.existsSync(FRONTEND_DIST)) {
-  const INDEX_HTML = path.join(FRONTEND_DIST, 'index.html');
+// ── SPA catch-all — serves index.html with no-store for all non-API routes ───
+// index: false above means express.static never serves index.html itself,
+// so every page load (including /) comes through here with no-store headers,
+// ensuring Cloudflare/browsers never cache the HTML entry point.
+if (fs.existsSync(INDEX_HTML)) {
+  const API_PREFIXES = ['/api', '/auth', '/webhook', '/uploads', '/legacy', '/templates'];
   app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api') || req.path.startsWith('/auth') ||
-        req.path.startsWith('/webhook') || req.path.startsWith('/uploads') ||
-        req.path.startsWith('/legacy') || req.path.startsWith('/templates')) {
-      return next();
-    }
+    if (API_PREFIXES.some(p => req.path.startsWith(p))) return next();
     res.setHeader('Cache-Control', 'no-store');
     res.sendFile(INDEX_HTML);
   });

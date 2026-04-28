@@ -2,28 +2,23 @@
 
 ## Monorepo structure
 - `backend/` — Express + Node.js API, entry point `backend/app.js`
-- `frontend/` — Vite + React SPA
+- `frontend/` — Vite + React SPA (source only; dist is gitignored and built by Railway)
 - Railway runs a single service: builds frontend then starts backend
 
-## Frontend deployment (IMPORTANT)
-`frontend/dist` is **committed to git** and must be kept up to date.
+## Frontend deployment
+Railway's Nixpacks runs `npm run build` (root package.json) on every push, which
+executes `npm install --prefix frontend && npm run build --prefix frontend`.
+The compiled `frontend/dist` is produced at build time and served by Express.
 
-Railway's Nixpacks build cache was serving stale bundles that didn't include
-new frontend code. The fix was to commit the compiled dist so Railway serves
-it directly without rebuilding.
+`frontend/dist` is **gitignored** — never commit it.
 
-**After any frontend change:**
-1. Run `npm run build --prefix frontend` from the repo root
-2. `git add frontend/dist`
-3. Commit dist together with the source changes
-4. Push
-
-Backend-only changes do not need a frontend rebuild.
+Express serves `index.html` with `Cache-Control: no-store` (commit 87e8db8) so
+browsers always fetch the latest bundle after a deploy.
 
 ## Railway deploy config
-- Build command: `npm run build` (root package.json — builds frontend)
+- Build command (railway.toml): `npm run build`
 - Start command: `node --max-old-space-size=768 backend/app.js`
-- Express serves `frontend/dist` as static files with `no-store` on index.html
+- Express serves `frontend/dist` as static files; `/assets/*` cached 1 year (immutable hashes)
 
 ## Key services
 - `backend/src/services/quantumCode.js` — Aura (Gemini Vision) + Quantum Code math + Sinhala reading

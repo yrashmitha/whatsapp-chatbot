@@ -53,7 +53,13 @@ app.use((req, _res, next) => {
 // ── Static file serving ───────────────────────────────────────────────────────
 const FRONTEND_DIST = path.join(__dirname, '../frontend/dist');
 if (fs.existsSync(FRONTEND_DIST)) {
-  app.use(express.static(FRONTEND_DIST));
+  // Hashed JS/CSS assets: cache for 1 year
+  app.use('/assets', express.static(path.join(FRONTEND_DIST, 'assets'), {
+    maxAge: '1y',
+    immutable: true,
+  }));
+  // Everything else (including index.html): no cache so deploys are instant
+  app.use(express.static(FRONTEND_DIST, { maxAge: 0, etag: false }));
   console.log('[STARTUP] Serving React frontend from', FRONTEND_DIST);
 }
 // Persistent volume for customer-uploaded files
@@ -65,6 +71,20 @@ app.use('/templates', express.static(path.join(__dirname, 'public', 'templates')
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 mountRoutes(app);
+
+// ── SPA catch-all — serve index.html for any non-API GET ─────────────────────
+if (fs.existsSync(FRONTEND_DIST)) {
+  const INDEX_HTML = path.join(FRONTEND_DIST, 'index.html');
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/auth') ||
+        req.path.startsWith('/webhook') || req.path.startsWith('/uploads') ||
+        req.path.startsWith('/legacy') || req.path.startsWith('/templates')) {
+      return next();
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    res.sendFile(INDEX_HTML);
+  });
+}
 
 // ── Global error handler — never expose internal error details to clients ─────
 // eslint-disable-next-line no-unused-vars

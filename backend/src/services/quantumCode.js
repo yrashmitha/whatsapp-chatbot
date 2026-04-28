@@ -202,42 +202,42 @@ function buildQuantumReadingPrompt(quantumData, auraAnalysis) {
   const energyMatchPct = (Math.min(Number(fb), Number(ia)) / Math.max(Number(fb), Number(ia)) * 100).toFixed(2);
   const isImbalanced   = Number(ia) < Number(fb) * 0.7 || Number(af) < 0.5;
 
-  return `පාරිභෝගිකයාගේ ශ්‍රීති ශක්ති ගොනුව:
+  return `Customer Quantum Profile Data:
 
-ක්‍රියාශීලී නාමය        : ${active_name}
-ශ්‍රේණිය (ID)           : ${quantum_id}
-මූලික සංඛ්‍යාතය (Fb)   : ${Number(fb).toFixed(6)}
-නාම කම්පනය (Ia)        : ${Number(ia).toFixed(6)}
-ශ්‍රීති කේතය (QC)       : ${Number(qc).toFixed(6)}
-ශ්‍රීති ලකුණු (Af)      : ${Number(af).toFixed(2)}
-ශ්‍රීති වර්ණය           : ${color}
-ශක්ති මට්ටම            : ${level}
-ප්‍රධාන ශක්ති කේන්ද්‍රය  : ${chakra}
-ශ්‍රීති ස්ථාවරත්වය      : ${stability}
-ශක්ති බාධා             : ${blockages}
-${hint ? `නිර්දේශය              : ${hint}` : ''}
+Active Name     : ${active_name}
+Quantum ID      : ${quantum_id}
+Base Frequency  : Fb = ${Number(fb).toFixed(6)}
+Identity Vibration : Ia = ${Number(ia).toFixed(6)}
+Quantum Core    : QC = ${Number(qc).toFixed(6)}
+Aura Af Score   : ${Number(af).toFixed(2)}
+Dominant Color  : ${color}
+Energy Level    : ${level}
+Primary Chakra  : ${chakra}
+Aura Stability  : ${stability}
+Detected Blockages : ${blockages}
+${hint ? `Recommendation  : ${hint}` : ''}
 
-ශ්‍රීති ගණනය:
-  Fb = ((දේශාංශ × රේඛාංශ) + ග්‍රහාංශ එකතුව) ÷ උපන් කාල මිනිත්තු = ${Number(fb).toFixed(6)}
-  Ia = Σ(නාම පයිතගෝරස් අගය_i × 1/i) — "${active_name}" = ${Number(ia).toFixed(6)}
+Equations used:
+  Fb = ((lat × lng) + planet_degrees_sum) / birth_time_min = ${Number(fb).toFixed(6)}
+  Ia = Σ(pythagorean_value_i × 1/i) for "${active_name}" = ${Number(ia).toFixed(6)}
   QC = √(|(Fb + Ia) × Af|) mod 1.618033 = ${Number(qc).toFixed(6)}
-  ශක්ති ගැලපීම = (min/max) × 100 = ${energyMatchPct}%
+  Energy Match % = (min(Fb,Ia) / max(Fb,Ia)) × 100 = ${energyMatchPct}%
 
 පහත කොටස් 4 ගෙනෙ, **සම්පූර්ණයෙන්ම සිංහල භාෂාවෙන් පමණක්**, ### ශීර්ෂකයන් සහිතව ලියන්න. ඉංග්‍රීසි වචනයක් කිසිවිටෙකත් නොයොදන්න:
 
 ### ශක්ති ගැලපීම
-ශ්‍රේණිය ${energyMatchPct}% ක් ලෙස ගණනය වේ. Fb (${Number(fb).toFixed(4)}) සහ Ia (${Number(ia).toFixed(4)}) අතර මෙම ශක්ති ගැලපීමේ තත්ත්වය ගැන, "ශ්‍රීති ගැලපීම" සංකල්පය ලෙස, ගැඹුරු ශ්‍රීති විශ්ලේෂණයක් ගලාගෙන යන ශෛලියෙන් ලබා දෙන්න.
+Energy Match ${energyMatchPct}%. Fb (${Number(fb).toFixed(4)}) and Ia (${Number(ia).toFixed(4)}) — write a deep Sinhala narrative about what this match percentage means for this person's inner energy coherence.
 
 ### වර්තමාන ශක්ති තත්ත්වය
-Af ලකුණ ${af} සහ ශ්‍රීති වර්ණය "${color}" මත පදනම්ව, ශ්‍රීති ස්ථාවරත්වය ("${stability}") ඇතුළු, දැනට ශ්‍රීති ශක්තියේ පවතින ගතිකත්වය ගලාගෙන යන ශෛලියෙන් විස්තර කරන්න.
+Af score ${af}, dominant color "${color}", stability "${stability}" — write a flowing Sinhala narrative about the current energetic state and what it reveals about this person.
 
 ### ශ්‍රීති බාධා රටා
-"${blockages}" — මෙම ශ්‍රීති බාධාවල ශරීරය, මනස සහ ශ්‍රීති ක්ෂේත්‍රය මත ඇති ගැඹුරු බලපෑම, empathetic observer ශෛලියෙන් විස්තර කරන්න.
+Detected blockages: "${blockages}" — write a deep empathetic Sinhala narrative about how these blockages manifest in the body, mind and aura field.
 
 ### ශ්‍රීති යථා තත්ත්වයට පත් කිරීමේ ක්‍රම
 ${isImbalanced
-  ? `Ia (${Number(ia).toFixed(4)}) සහ Fb (${Number(fb).toFixed(4)}) අතර ශේෂය අවකලිත බැවින්, ශ්‍රීති සමතුලිතතාවය යළි ගොඩනැගීමට භෞතික, මානසික සහ ශ්‍රීති ශ්‍රේණිවල ප්‍රායෝගික ක්‍රම ලබා දෙන්න.`
-  : `ශ්‍රීති ශ්‍රේණිය සමතුලිතව පවතී. ශ්‍රීති ශක්තිය ආරක්ෂා කරගෙන, ශ්‍රේණිය තවදුරටත් ශක්තිමත් කිරීමට කළ හැකි ප්‍රායෝගික ජීවන රටා ක්‍රම ලබා දෙන්න.`}`;
+  ? `Ia (${Number(ia).toFixed(4)}) is significantly lower than Fb (${Number(fb).toFixed(4)}) — write Sinhala practical steps to restore energy balance.`
+  : `Metrics are balanced — write Sinhala practical lifestyle steps to maintain and strengthen this energy field.`}`;
 }
 
 /**

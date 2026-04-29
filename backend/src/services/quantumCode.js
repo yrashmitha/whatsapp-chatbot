@@ -348,6 +348,12 @@ function generateQuantumCode({ full_name, lat, long: lng, planet_degrees_sum, bi
     // ── Step B: Identity Vibration ──────────────────────────────────────────
     const nameClean = full_name.trim();
     const letters = nameClean.toUpperCase().replace(/[^A-Z]/g, '');
+    if (letters.length === 0) {
+      return {
+        status: 'Error',
+        message: `Active name "${nameClean}" contains no English letters. Pythagorean numerology requires the name in Latin/English script (e.g. "Malith", not "මලිත්").`,
+      };
+    }
     console.log(`[QC]  STEP B — Identity Vibration (Ia)`);
     console.log(`[QC]    formula  : Ia = Σ (pythagorean_value_i × 1/i)  for each letter`);
     console.log(`[QC]    name     : "${nameClean}"  →  letters: "${letters}"`);

@@ -183,8 +183,9 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
     if (!selectedPlace)    return toast.error('Please select a birth place');
     if (!birthDate.trim()) return toast.error('Birth date is required');
     if (includeQuantum) {
-      if (!activeName.trim()) return toast.error('Active name required for Quantum Code');
-      if (!auraAnalysis)      return toast.error('Please upload a photo for Aura analysis first');
+      if (!activeName.trim())              return toast.error('Active name required for Quantum Code');
+      if (!/[A-Za-z]/.test(activeName))   return toast.error('Active name must contain English letters (e.g. "Malith") for numerology');
+      if (!auraAnalysis)                   return toast.error('Please upload a photo for Aura analysis first');
     }
     setGenerating(true);
     try {
@@ -383,7 +384,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
                 {/* Active name with chips */}
                 <div>
                   <label className={labelCls}>
-                    Active Name <span className="text-slate-400 font-normal">(used for numerology vibration)</span>
+                    Active Name <span className="text-slate-400 font-normal">(English letters only — used for Pythagorean numerology)</span>
                   </label>
                   {nameChips.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 mb-2">
@@ -407,8 +408,11 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
                     className={inputCls}
                     value={activeName}
                     onChange={e => setActiveName(e.target.value)}
-                    placeholder="Type the name used daily (e.g. Malith)…"
+                    placeholder="e.g. Malith, Nilushya, Kavinda…"
                   />
+                  {activeName.trim() && !/[A-Za-z]/.test(activeName) && (
+                    <p className="text-xs text-red-500 mt-1">Name must contain English letters (e.g. &quot;Malith&quot; not &quot;මලිත්&quot;) for the numerology calculation.</p>
+                  )}
                 </div>
 
                 {/* Saved aura card */}

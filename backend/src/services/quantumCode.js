@@ -37,17 +37,19 @@ Scoring rules:
 - primary_chakra: dominant energy center from facial symmetry and tonal patterns.
 - detected_blockages: list of visible stress or tension patterns (empty array if none).
 
+LANGUAGE: All string values must be written in Sinhala (සිංහල). Only af_score is a number.
+
 CRITICAL: You MUST return ONLY a single JSON object with EXACTLY this structure. No markdown fences, no extra text, no missing fields.
 
 {
   "aura_analysis": {
     "af_score": 0.82,
-    "dominant_color": "Electric Blue",
-    "energy_level": "High/Vibrant",
-    "primary_chakra": "Throat/Third Eye",
-    "aura_stability": "Stable",
-    "detected_blockages": ["Minor tension in the jaw area"],
-    "recommendation_hint": "Focus on creative expression and hydration."
+    "dominant_color": "විදුලි නිල්",
+    "energy_level": "ඉහළ / ජීවමාන",
+    "primary_chakra": "කණ්ඨ චක්‍රය / තෙවන නේත්‍රය",
+    "aura_stability": "ස්ථාවර",
+    "detected_blockages": ["හකු ප්‍රදේශයේ සුළු ආතතියක්"],
+    "recommendation_hint": "නිර්මාණශීලී ප්‍රකාශනය හා ජල පානය කෙරෙහි අවධානය යොමු කරන්න."
   }
 }
 

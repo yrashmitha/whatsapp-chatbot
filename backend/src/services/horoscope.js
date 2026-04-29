@@ -378,13 +378,13 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
 
     // Aura subsection
     children.push(new Paragraph({
-      children: [new TextRun({ text: 'ඕරා ශ්‍රීති විශ්ලේෂණය  (Aura Frequency Analysis)', bold: true, size: 30, font: 'Abhaya Libre' })],
+      children: [new TextRun({ text: 'ඕරා ශක්ති විශ්ලේෂණය  (Aura Frequency Analysis)', bold: true, size: 30, font: 'Abhaya Libre' })],
       alignment: AlignmentType.LEFT,
       spacing: { after: 160 },
     }));
 
     const auraRows = [
-      [`ශ්‍රීති ලකුණු (Af Score)`,     `${auraAnalysis.af_score.toFixed(2)} / 1.0`],
+      [`ශක්ති ලකුණු (Af Score)`,     `${auraAnalysis.af_score.toFixed(2)} / 1.0`],
       [`ශක්ති මට්ටම (Energy Level)`,    auraAnalysis.energy_level || '—'],
       [`ඕරා වර්ණය (Dominant Color)`,   auraAnalysis.dominant_color || '—'],
       [`ප්‍රධාන චක්‍රය (Primary Chakra)`, auraAnalysis.primary_chakra || '—'],

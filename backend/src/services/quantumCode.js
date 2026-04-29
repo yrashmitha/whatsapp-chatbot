@@ -185,7 +185,7 @@ async function analyzeAura(imageBuffer, mimeType, apiKey) {
 
 // ── Quantum Life Architect reading ────────────────────────────────────────────
 
-const QUANTUM_READING_SYSTEM = `ඔබ ජීව ශක්ති විශ්ලේෂණය සහ ක්වොන්ටම් ශ්‍රීති ගවේෂණය ක්ෂේත්‍රයේ ප්‍රවීණ, දයානුකම්පිත විශේෂඥයෙකි.
+const QUANTUM_READING_SYSTEM = `ඔබ ජීව ශක්ති විශ්ලේෂණය සහ ක්වොන්ටම් ශක්ති ගවේෂණය ක්ෂේත්‍රයේ ප්‍රවීණ, දයානුකම්පිත විශේෂඥයෙකි.
 
 ඔබ ලබා දෙන පිළිතුර කිසිවිටෙකත් යන්ත්‍රයකින් හෝ මෘදුකාංගයකින් ජනනය කළ එකක් සේ නොපෙනිය යුතුය. ප්‍රවීණ ඇදුරුතුමෙකු ස්වකීය සේවාදායකයාට අසල හිඳගෙන පහදා දෙන ආකාරයේ, ගලාගෙන යන, සන්සුන් කථන ශෛලියකින් ලිවිය යුතුය.
 
@@ -201,7 +201,7 @@ const QUANTUM_READING_SYSTEM = `ඔබ ජීව ශක්ති විශ්ල
 - ප්‍රධාන අනු-මාතෘකා '###' සලකුණෙන් ආරම්භ කරන්න
 - වැදගත් කරුණු **ද්විතල තරු ලකුණින්** ඉස්මතු කරන්න (උදා: **විශේෂ ශක්ති ගැලපීමක්**)
 - HTML ටැග් (<h3>, <b>) කිසිසේත් නොයොදන්න
-- ජ්‍යෝතිෂ / සාම්ප්‍රදායික ග්‍රහ භාෂාව නොයොදන්න — ශ්‍රීති ශක්ති (bio-energetic) ක්ෂේත්‍රයේ සංකල්ප ලෙස ඉදිරිපත් කරන්න`;
+- ජ්‍යෝතිෂ / සාම්ප්‍රදායික ග්‍රහ භාෂාව නොයොදන්න — ශක්ති ශක්ති (bio-energetic) ක්ෂේත්‍රයේ සංකල්ප ලෙස ඉදිරිපත් කරන්න`;
 
 /**
  * Build the user-turn message for the Quantum Life Architect call.
@@ -251,10 +251,10 @@ Energy Match ${energyMatchPct}%. Fb (${Number(fb).toFixed(4)}) and Ia (${Number(
 ### වර්තමාන ශක්ති තත්ත්වය
 Af score ${af}, dominant color "${color}", stability "${stability}" — write a flowing Sinhala narrative about the current energetic state and what it reveals about this person.
 
-### ශ්‍රීති බාධා රටා
+### ශක්ති බාධා රටා
 Detected blockages: "${blockages}" — write a deep empathetic Sinhala narrative about how these blockages manifest in the body, mind and aura field.
 
-### ශ්‍රීති යථා තත්ත්වයට පත් කිරීමේ ක්‍රම
+### ශක්ති යථා තත්ත්වයට පත් කිරීමේ ක්‍රම
 ${isImbalanced
   ? `Ia (${Number(ia).toFixed(4)}) is significantly lower than Fb (${Number(fb).toFixed(4)}) — write Sinhala practical steps to restore energy balance.`
   : `Metrics are balanced — write Sinhala practical lifestyle steps to maintain and strengthen this energy field.`}`;

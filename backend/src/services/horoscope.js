@@ -342,8 +342,6 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
 
   // ── Quantum Code page (only when quantum data is present) ─────────────────
   if (quantumData && quantumData.status === 'Success' && auraAnalysis) {
-    const sep = '─'.repeat(48);
-
     // Page break + section title
     children.push(new Paragraph({
       children: [
@@ -351,29 +349,19 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
         new TextRun({ text: 'ක්වොන්ටම් ශක්ති කේතය', bold: true, size: 40, font: 'Abhaya Libre' }),
       ],
       alignment: AlignmentType.CENTER,
-      spacing: { after: 80 },
-    }));
-    children.push(new Paragraph({
-      children: [new TextRun({ text: 'Quantum Energy Code & Aura Analysis', size: 22, font: 'Abhaya Libre' })],
-      alignment: AlignmentType.CENTER,
       spacing: { after: 320 },
     }));
 
     // QC identifier
     children.push(new Paragraph({
-      children: [new TextRun({ text: 'ඔබේ ශ්‍රේණිය / Your Unique Identifier', size: 22, font: 'Abhaya Libre' })],
+      children: [new TextRun({ text: 'ඔබේ ශ්‍රේණිය', size: 22, font: 'Abhaya Libre' })],
       alignment: AlignmentType.CENTER,
       spacing: { after: 100 },
     }));
     children.push(new Paragraph({
       children: [new TextRun({ text: quantumData.quantum_id, bold: true, size: 56, font: 'Abhaya Libre' })],
       alignment: AlignmentType.CENTER,
-      spacing: { after: 280 },
-    }));
-    children.push(new Paragraph({
-      children: [new TextRun({ text: sep, size: 20, font: 'Abhaya Libre' })],
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 280 },
+      spacing: { after: 320 },
     }));
 
     // Aura subsection
@@ -427,12 +415,6 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
       }));
     }
 
-    children.push(new Paragraph({
-      children: [new TextRun({ text: sep, size: 20, font: 'Abhaya Libre' })],
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 280 },
-    }));
-
     // Quantum metrics subsection
     children.push(new Paragraph({
       children: [new TextRun({ text: 'ක්වොන්ටම් ගණනය  (Quantum Resonance Metrics)', bold: true, size: 30, font: 'Abhaya Libre' })],
@@ -457,12 +439,6 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
       }));
     }
 
-    children.push(new Paragraph({
-      children: [new TextRun({ text: sep, size: 20, font: 'Abhaya Libre' })],
-      alignment: AlignmentType.CENTER,
-      spacing: { before: 200, after: 280 },
-    }));
-
     // Quantum Life Architect narrative
     if (quantumReading) {
       children.push(new Paragraph({
@@ -471,17 +447,7 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
         spacing: { after: 200 },
       }));
       children.push(...contentToParagraphs(quantumReading));
-      children.push(new Paragraph({
-        children: [new TextRun({ text: sep, size: 20, font: 'Abhaya Libre' })],
-        alignment: AlignmentType.CENTER,
-        spacing: { before: 200, after: 160 },
-      }));
     }
-
-    children.push(new Paragraph({
-      children: [new TextRun({ text: `Generated: ${new Date().toISOString().slice(0, 10)}`, size: 20, font: 'Abhaya Libre' })],
-      alignment: AlignmentType.CENTER,
-    }));
   }
 
   const doc = new Document({

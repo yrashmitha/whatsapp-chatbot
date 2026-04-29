@@ -385,7 +385,7 @@ function generateQuantumCode({ full_name, lat, long: lng, planet_degrees_sum, bi
     console.log(`[QC] ${S}`);
 
     // ── Quantum ID assembly ────────────────────────────────────────────────
-    const prefix = nameClean.replace(/\s+/g, '').toUpperCase().slice(0, 3);
+    const prefix = letters.slice(0, 3); // letters is already A-Z only, uppercase
     const sumInt = Math.trunc(fbPlusIa);
     const suffix = hashSuffix(aura_score, birth_time_min);
     const quantum_id = `QC-${prefix}-${sumInt}-${suffix}`;

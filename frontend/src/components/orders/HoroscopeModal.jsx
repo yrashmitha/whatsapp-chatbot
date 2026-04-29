@@ -144,6 +144,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
   const [auraUploading, setAuraUploading]   = useState(false);
   const [overrideAura, setOverrideAura]     = useState(false);
 
+
   // Chips: unique non-empty words from customerName
   const nameChips = [...new Set(customerName.trim().split(/\s+/).filter(Boolean))];
 
@@ -198,8 +199,8 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
         special_questions: specialQuestions,
         package_type:     includeQuantum ? '1500' : packageType,
         birth_overrides:  { customer_name: customerName, birth_date: birthDate, birth_time: `${birthHour}:${birthMinute}` },
-        include_quantum:  includeQuantum,
-        active_name:      activeName.trim(),
+        include_quantum: includeQuantum,
+        active_name:     activeName.trim(),
         ...(clientId && { client_id: clientId }),
       });
       toast.success(
@@ -504,6 +505,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
                     )}
                   </div>
                 )}
+
 
             </div>
           )}

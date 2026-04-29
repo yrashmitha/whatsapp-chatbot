@@ -579,7 +579,8 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
     });
     if (fastQR.status === 'Error') throw new Error(`Quantum Code generation failed: ${fastQR.message}`);
 
-    const fastReading = await generateQuantumReading(fastQR, existingHd.aura_analysis);
+    const fastConfig  = await db.getPluginConfig(clientId, 'horoscope_reading');
+    const fastReading = await generateQuantumReading(fastQR, existingHd.aura_analysis, undefined, fastConfig.quantum_system_prompt || '');
     const fastUpdated = {
       ...existingHd,
       quantum_data:    fastQR,
@@ -597,9 +598,10 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
 
   // 3. Get plugin config
   const config = await db.getPluginConfig(clientId, 'horoscope_reading');
-  const apiKey = config.api_key || process.env.FREEASTRO_API_KEY;
-  const systemPrompt = config.system_prompt || '';
-  const specialNote = config.special_note || '';
+  const apiKey              = config.api_key || process.env.FREEASTRO_API_KEY;
+  const systemPrompt        = config.system_prompt || '';
+  const specialNote         = config.special_note || '';
+  const quantumSystemPrompt = config.quantum_system_prompt || '';
 
   // 4. Astro chart — reuse or fetch
   let chartData;
@@ -655,7 +657,7 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
     });
     if (quantumResult.status === 'Error') throw new Error(`Quantum Code generation failed: ${quantumResult.message}`);
     console.log('[HOROSCOPE] Quantum Code computed:', quantumResult.quantum_id);
-    quantumResult._reading = await generateQuantumReading(quantumResult, savedAura);
+    quantumResult._reading = await generateQuantumReading(quantumResult, savedAura, undefined, quantumSystemPrompt);
   }
 
   // 5. Only send chart data to Gemini — no order/customer details

@@ -201,7 +201,7 @@ const QUANTUM_READING_SYSTEM = `ඔබ ජීව ශක්ති විශ්ල
 - ප්‍රධාන අනු-මාතෘකා '###' සලකුණෙන් ආරම්භ කරන්න
 - වැදගත් කරුණු **ද්විතල තරු ලකුණින්** ඉස්මතු කරන්න (උදා: **විශේෂ ශක්ති ගැලපීමක්**)
 - HTML ටැග් (<h3>, <b>) කිසිසේත් නොයොදන්න
-- ජ්‍යෝතිෂ / සාම්ප්‍රදායික ග්‍රහ භාෂාව නොයොදන්න — ශක්ති ශක්ති (bio-energetic) ක්ෂේත්‍රයේ සංකල්ප ලෙස ඉදිරිපත් කරන්න`;
+- ජ්‍යෝතිෂ / සාම්ප්‍රදායික ග්‍රහ භාෂාව නොයොදන්න — ජෛව ශක්ති (bio-energetic) ක්ෂේත්‍රයේ සංකල්ප ලෙස ඉදිරිපත් කරන්න`;
 
 /**
  * Build the user-turn message for the Quantum Life Architect call.
@@ -268,15 +268,20 @@ ${isImbalanced
  * @param {string} [apiKey]
  * @returns {Promise<string>}    The Sinhala narrative text
  */
-async function generateQuantumReading(quantumData, auraAnalysis, apiKey) {
+async function generateQuantumReading(quantumData, auraAnalysis, apiKey, systemPromptOverride) {
   const key = apiKey || process.env.GEMINI_API_KEY;
   if (!key) throw new Error('GEMINI_API_KEY not configured');
+
+  const sysPrompt = (systemPromptOverride && systemPromptOverride.trim())
+    ? systemPromptOverride.trim()
+    : QUANTUM_READING_SYSTEM;
 
   const prompt = buildQuantumReadingPrompt(quantumData, auraAnalysis);
 
   console.log('[QR] ── INPUT ───────────────────────────────────────────');
-  console.log(`[QR] model        : gemini-2.5-flash  temperature=0.5  maxTokens=2048`);
-  console.log('[QR] systemPrompt :\n' + QUANTUM_READING_SYSTEM);
+  console.log(`[QR] model        : gemini-2.5-flash  temperature=0.5  maxTokens=4096`);
+  console.log(`[QR] systemPrompt : ${systemPromptOverride ? '(CUSTOM OVERRIDE)' : '(default)'}`);
+  console.log('[QR] systemPrompt :\n' + sysPrompt);
   console.log('[QR] userPrompt   :\n' + prompt);
   console.log('[QR] ───────────────────────────────────────────────────');
 
@@ -288,7 +293,7 @@ async function generateQuantumReading(quantumData, auraAnalysis, apiKey) {
       maxOutputTokens: 4096,
       thinkingConfig: { thinkingBudget: 1024 },
     },
-    systemInstruction: QUANTUM_READING_SYSTEM,
+    systemInstruction: sysPrompt,
   });
 
   const result = await model.generateContent(prompt);
@@ -423,4 +428,4 @@ function generateQuantumCode({ full_name, lat, long: lng, planet_degrees_sum, bi
   }
 }
 
-module.exports = { extractPlanetDegreesSum, analyzeAura, generateQuantumCode, generateQuantumReading };
+module.exports = { extractPlanetDegreesSum, analyzeAura, generateQuantumCode, generateQuantumReading, QUANTUM_READING_SYSTEM };

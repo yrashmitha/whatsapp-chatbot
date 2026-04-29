@@ -30,7 +30,7 @@ async function getPluginConfig(req, res) {
     if (pluginId === 'astro_vedic_chart') {
       defaults = { name: 'Vedic Astro Chart', prompt: DEFAULT_ASTRO_PROMPT };
     } else if (pluginId === 'horoscope_reading') {
-      defaults = { name: 'Horoscope Reading', system_prompt: '', special_note: '', api_key: '' };
+      defaults = { name: 'Horoscope Reading', system_prompt: '', quantum_system_prompt: '', special_note: '', api_key: '' };
     } else if (pluginId === 'ai_call_answering') {
       defaults = { name: 'AI Call Answering', system_prompt: '', greeting: 'Hello, how can I help you today?', tts_voice: 'Kore', stt_language: 'en-US' };
     } else if (pluginId === 'image_analyzer') {
@@ -62,15 +62,16 @@ async function updatePluginConfig(req, res) {
     return res.status(403).json({ error: 'Forbidden' });
   }
   const { pluginId } = req.params;
-  const { name, prompt, api_key, system_prompt, special_note, greeting, tts_voice, stt_language, verification_prompt, page1_body, page2_body, page4_body } = req.body;
+  const { name, prompt, api_key, system_prompt, quantum_system_prompt, special_note, greeting, tts_voice, stt_language, verification_prompt, page1_body, page2_body, page4_body } = req.body;
   try {
     const existing = await db.getPluginConfig(clientId, pluginId);
     const update = { ...existing };
     if (name !== undefined)          update.name          = name;
     if (prompt !== undefined)        update.prompt        = prompt;
     if (api_key !== undefined)       update.api_key       = api_key;
-    if (system_prompt !== undefined) update.system_prompt = system_prompt;
-    if (special_note !== undefined)  update.special_note  = special_note;
+    if (system_prompt !== undefined)         update.system_prompt         = system_prompt;
+    if (quantum_system_prompt !== undefined) update.quantum_system_prompt = quantum_system_prompt;
+    if (special_note !== undefined)          update.special_note          = special_note;
     if (greeting !== undefined)      update.greeting      = greeting;
     if (tts_voice !== undefined)     update.tts_voice     = tts_voice;
     if (stt_language !== undefined)         update.stt_language         = stt_language;

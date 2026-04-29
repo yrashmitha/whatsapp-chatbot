@@ -44,8 +44,9 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
   const [name, setName] = useState('');
   const [prompt, setPrompt] = useState('');
   const [apiKey, setApiKey] = useState('');
-  const [systemPrompt, setSystemPrompt] = useState('');
-  const [specialNote, setSpecialNote]   = useState('');
+  const [systemPrompt, setSystemPrompt]               = useState('');
+  const [quantumSystemPrompt, setQuantumSystemPrompt] = useState('');
+  const [specialNote, setSpecialNote]                 = useState('');
   const [greeting, setGreeting]         = useState('');
   const [ttsVoice, setTtsVoice]                   = useState('');
   const [sttLanguage, setSttLanguage]             = useState('');
@@ -65,6 +66,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         setPrompt(r.data.prompt || '');
         setApiKey(r.data.api_key || '');
         setSystemPrompt(r.data.system_prompt || '');
+        setQuantumSystemPrompt(r.data.quantum_system_prompt || '');
         setSpecialNote(r.data.special_note || '');
         setGreeting(r.data.greeting || '');
         const GEMINI_VOICES = ['achernar','achird','algenib','algieba','alnilam','aoede','autonoe','callirrhoe','charon','despina','enceladus','erinome','fenrir','gacrux','iapetus','kore','laomedeia','leda','orus','puck','pulcherrima','rasalgethi','sadachbia','sadaltager','schedar','sulafat','umbriel','vindemiatrix','zephyr','zubenelgenubi'];
@@ -82,6 +84,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         setPrompt('');
         setApiKey('');
         setSystemPrompt('');
+        setQuantumSystemPrompt('');
         setSpecialNote('');
         setGreeting('');
         setTtsVoice('Kore');
@@ -99,8 +102,9 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
       const body = { client_id: clientId, api_key: apiKey };
       if (superAdmin) body.name = name;
       if (isHoroscope) {
-        body.system_prompt = systemPrompt;
-        body.special_note  = specialNote;
+        body.system_prompt         = systemPrompt;
+        body.quantum_system_prompt = quantumSystemPrompt;
+        body.special_note          = specialNote;
       } else if (isCallAnswering) {
         body.system_prompt = systemPrompt;
         body.greeting      = greeting;
@@ -327,6 +331,19 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
               rows={12}
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
               placeholder="ඔබ දක්ෂ වෛදික ජ්‍යෝතිෂ විශේෂඥයෙකි…"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Quantum Reading System Prompt</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              Gemini system instruction used when generating the Quantum Code reading (Aura + numerology section). Leave blank to use the built-in default Sinhala prompt.
+            </p>
+            <textarea
+              value={quantumSystemPrompt}
+              onChange={e => setQuantumSystemPrompt(e.target.value)}
+              rows={12}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
+              placeholder="Leave blank to use built-in default…"
             />
           </div>
           <div>

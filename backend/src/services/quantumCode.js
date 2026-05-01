@@ -237,12 +237,6 @@ Aura Stability  : ${stability}
 Detected Blockages : ${blockages}
 ${hint ? `Recommendation  : ${hint}` : ''}
 
-Equations used:
-  Fb = ((lat × lng) + planet_degrees_sum) / birth_time_min = ${Number(fb).toFixed(6)}
-  Ia = Σ(pythagorean_value_i × 1/i) for "${active_name}" = ${Number(ia).toFixed(6)}
-  QC = √(|(Fb + Ia) × Af|) mod 1.618033 = ${Number(qc).toFixed(6)}
-  Energy Match % = (min(Fb,Ia) / max(Fb,Ia)) × 100 = ${energyMatchPct}%
-
 පහත කොටස් 4 ගෙනෙ, **සම්පූර්ණයෙන්ම සිංහල භාෂාවෙන් පමණක්**, ### ශීර්ෂකයන් සහිතව ලියන්න. ඉංග්‍රීසි වචනයක් කිසිවිටෙකත් නොයොදන්න:
 
 ### ශක්ති ගැලපීම

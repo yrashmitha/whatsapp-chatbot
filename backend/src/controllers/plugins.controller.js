@@ -584,15 +584,11 @@ async function downloadQuantumPdf(req, res) {
     fs.unlink(tmpPdf, () => {});
 
     const phone    = (r.rows[0].phone_number || orderId).replace(/\D/g, '');
-    const last4    = phone.slice(-4) || '0000';
     const parsed   = parseSinhalaDate(cf.birth_date || '');
     const birthday = parsed
       ? `${parsed.year}${String(parsed.month).padStart(2,'0')}${String(parsed.day).padStart(2,'0')}`
       : (cf.birth_date || 'unknown').replace(/[^0-9]/g, '').slice(0, 8);
-    const auraScore = hd.aura_analysis?.af_score != null
-      ? String(hd.aura_analysis.af_score.toFixed(2)).replace('.', '')
-      : 'aura';
-    const filename = `quantum-${last4}-${birthday}-${auraScore}.pdf`;
+    const filename = `${phone}-${birthday}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buffer);

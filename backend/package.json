@@ -4,7 +4,8 @@
   "description": "WhatsApp AI Sales Bot using Meta Cloud API, Gemini, and SQLite",
   "main": "app.js",
   "scripts": {
-    "start": "node --max-old-space-size=1024 app.js"
+    "start": "node --max-old-space-size=1024 app.js",
+    "dev": "nodemon app.js"
   },
   "engines": {
     "node": ">=22.5.0"
@@ -20,7 +21,12 @@
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.2",
+    "pdf-lib": "^1.17.1",
     "pdfkit": "^0.18.0",
-    "pg": "^8.11.0"
+    "pg": "^8.11.0",
+    "uuid": "^14.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
   }
 }

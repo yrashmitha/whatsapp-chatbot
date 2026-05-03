@@ -49,7 +49,7 @@ CRITICAL: You MUST return ONLY a single JSON object with EXACTLY this structure.
     "primary_chakra": "කණ්ඨ චක්‍රය / තෙවන නේත්‍රය",
     "aura_stability": "ස්ථාවර",
     "detected_blockages": ["හකු ප්‍රදේශයේ සුළු ආතතියක්"],
-    "recommendation_hint": "නිර්මාණශීලී ප්‍රකාශනය හා ජල පානය කෙරෙහි අවධානය යොමු කරන්න."
+    "recommendation_hint": ["නිර්මාණශීලී ප්‍රකාශනය කෙරෙහි අවධානය යොමු කරන්න.", "දිනපතා ජල පානය වැඩි කරන්න."]
   }
 }
 
@@ -106,19 +106,24 @@ function extractPlanetDegreesSum(chartData) {
  * Call Gemini Vision to produce an aura_analysis from a selfie image.
  *
  * @param {Buffer} imageBuffer
- * @param {string} mimeType    e.g. 'image/jpeg'
+ * @param {string} mimeType           e.g. 'image/jpeg'
  * @param {string} [apiKey]
+ * @param {string} [systemPromptOverride]  Replace the built-in AURA_PROMPT if provided.
  * @returns {Promise<object>}  The aura_analysis inner object.
  */
-async function analyzeAura(imageBuffer, mimeType, apiKey) {
+async function analyzeAura(imageBuffer, mimeType, apiKey, systemPromptOverride) {
   const key = apiKey || process.env.GEMINI_API_KEY;
   if (!key) throw new Error('GEMINI_API_KEY not configured');
+
+  const prompt = (systemPromptOverride && systemPromptOverride.trim())
+    ? systemPromptOverride.trim()
+    : AURA_PROMPT;
 
   console.log('[AURA] ── INPUT ─────────────────────────────────────────');
   console.log(`[AURA] mimeType : ${mimeType}`);
   console.log(`[AURA] imageSize: ${imageBuffer.length} bytes`);
   console.log(`[AURA] model    : gemini-2.5-flash  temperature=0.2  maxTokens=1024`);
-  console.log('[AURA] prompt   :\n' + AURA_PROMPT);
+  console.log(`[AURA] prompt   : ${systemPromptOverride ? '(CUSTOM OVERRIDE)' : '(default)'}\n` + prompt);
   console.log('[AURA] ─────────────────────────────────────────────────');
 
   const genAI = new GoogleGenerativeAI(key);
@@ -133,7 +138,7 @@ async function analyzeAura(imageBuffer, mimeType, apiKey) {
 
   const result = await model.generateContent([
     { inlineData: { data: imageBuffer.toString('base64'), mimeType } },
-    { text: AURA_PROMPT },
+    { text: prompt },
   ]);
 
   const usage = result.response.usageMetadata;
@@ -175,7 +180,7 @@ async function analyzeAura(imageBuffer, mimeType, apiKey) {
   a.primary_chakra      = a.primary_chakra      || 'Heart';
   a.aura_stability      = a.aura_stability      || 'Moderate';
   a.detected_blockages  = Array.isArray(a.detected_blockages) ? a.detected_blockages : [];
-  a.recommendation_hint = a.recommendation_hint || '';
+  a.recommendation_hint = Array.isArray(a.recommendation_hint) ? a.recommendation_hint : (a.recommendation_hint ? [a.recommendation_hint] : []);
 
   console.log('[AURA] ── PARSED RESULT ─────────────────────────────────');
   console.log(JSON.stringify(a, null, 2));
@@ -217,7 +222,8 @@ function buildQuantumReadingPrompt(quantumData, auraAnalysis) {
   const blockages = Array.isArray(auraAnalysis?.detected_blockages) && auraAnalysis.detected_blockages.length
     ? auraAnalysis.detected_blockages.join('; ')
     : 'කිසිවක් හඳුනාගෙන නැත';
-  const hint = auraAnalysis?.recommendation_hint || '';
+  const hintArr = Array.isArray(auraAnalysis?.recommendation_hint) ? auraAnalysis.recommendation_hint : (auraAnalysis?.recommendation_hint ? [auraAnalysis.recommendation_hint] : []);
+  const hint = hintArr.join('; ');
 
   const energyMatchPct = (Math.min(Number(fb), Number(ia)) / Math.max(Number(fb), Number(ia)) * 100).toFixed(2);
   const isImbalanced   = Number(ia) < Number(fb) * 0.7 || Number(af) < 0.5;
@@ -422,4 +428,103 @@ function generateQuantumCode({ full_name, lat, long: lng, planet_degrees_sum, bi
   }
 }
 
-module.exports = { extractPlanetDegreesSum, analyzeAura, generateQuantumCode, generateQuantumReading, QUANTUM_READING_SYSTEM };
+// ── Quantum sections generation ────────────────────────────────────────────────
+
+/**
+ * Build the shared profile-data context string used by section prompts.
+ */
+function buildQuantumProfileContext(quantumData, auraAnalysis) {
+  const { active_name, quantum_id, base_frequency: fb, identity_vibration: ia, qc_score: qc, aura_score } = quantumData;
+  const af       = aura_score ?? auraAnalysis?.af_score ?? '—';
+  const color    = auraAnalysis?.dominant_color    || '—';
+  const level    = auraAnalysis?.energy_level      || '—';
+  const chakra   = auraAnalysis?.primary_chakra    || '—';
+  const stability = auraAnalysis?.aura_stability   || '—';
+  const blockages = Array.isArray(auraAnalysis?.detected_blockages) && auraAnalysis.detected_blockages.length
+    ? auraAnalysis.detected_blockages.join('; ')
+    : 'කිසිවක් හඳුනාගෙන නැත';
+  const hintArr2 = Array.isArray(auraAnalysis?.recommendation_hint) ? auraAnalysis.recommendation_hint : (auraAnalysis?.recommendation_hint ? [auraAnalysis.recommendation_hint] : []);
+  const hint = hintArr2.join('; ');
+  const matchPct = (Math.min(Number(fb), Number(ia)) / Math.max(Number(fb), Number(ia)) * 100).toFixed(2);
+
+  return `Customer Quantum Profile Data:
+
+Active Name        : ${active_name}
+Quantum ID         : ${quantum_id}
+Base Frequency     : Fb = ${Number(fb).toFixed(6)}
+Identity Vibration : Ia = ${Number(ia).toFixed(6)}
+Quantum Core       : QC = ${Number(qc).toFixed(6)}
+Energy Match       : ${matchPct}%
+Aura Af Score      : ${Number(af).toFixed(2)}
+Dominant Color     : ${color}
+Energy Level       : ${level}
+Primary Chakra     : ${chakra}
+Aura Stability     : ${stability}
+Detected Blockages : ${blockages}${hint ? `\nRecommendation     : ${hint}` : ''}`;
+}
+
+/**
+ * Generate one Gemini call per configured section and return an array of {label, content}.
+ *
+ * @param {object}   quantumData      Result from generateQuantumCode()
+ * @param {object}   auraAnalysis     Result from analyzeAura()
+ * @param {Array<{label:string,guide:string}>} sections  Section definitions from plugin config
+ * @param {string}   [apiKey]
+ * @param {string}   [systemPrompt]     Override for QUANTUM_READING_SYSTEM
+ * @param {object}   [vimshottariDasha] vimshottari_dasha object from the freeastroapi chart response
+ * @returns {Promise<Array<{label:string,content:string}>>}
+ */
+async function generateQuantumSections(quantumData, auraAnalysis, sections, apiKey, systemPrompt, vimshottariDasha) {
+  const key = apiKey || process.env.GEMINI_API_KEY;
+  if (!key) throw new Error('GEMINI_API_KEY not configured');
+  if (!Array.isArray(sections) || sections.length === 0) return [];
+
+  const sysPrompt = (systemPrompt && systemPrompt.trim())
+    ? systemPrompt.trim()
+    : QUANTUM_READING_SYSTEM;
+
+  const quantumContext = buildQuantumProfileContext(quantumData, auraAnalysis);
+
+  // Append dasha data so Gemini can reason about current/upcoming planetary periods
+  let dashaContext = '';
+  if (vimshottariDasha && typeof vimshottariDasha === 'object') {
+    dashaContext = '\n\n─── Vimshottari Dasha ───\n' + JSON.stringify(vimshottariDasha, null, 2);
+  }
+
+  const genAI = new GoogleGenerativeAI(key);
+  const model = genAI.getGenerativeModel({
+    model: 'gemini-2.5-flash',
+    generationConfig: {
+      temperature: 0.5,
+      maxOutputTokens: 2048,
+      thinkingConfig: { thinkingBudget: 512 },
+    },
+    systemInstruction: sysPrompt,
+  });
+
+  const results = [];
+  for (const sec of sections) {
+    const label = (sec.label || '').trim();
+    const guide = (sec.guide  || '').trim();
+    if (!label) continue;
+
+    const userPrompt = [
+      quantumContext,
+      dashaContext,
+      '',
+      `දැන් ඔබ විශ්ලේෂණය කළ යුත්තේ "${label}" යන අංශය පිළිබඳව පමණි.`,
+      guide ? `\n**ඇතුළත් කළ යුතු කරුණු:** ${guide}` : '',
+      '\nසම්පූර්ණයෙන්ම සිංහල භාෂාවෙන්, ගලාගෙන යන ශෛලියෙන්, ### ශීර්ෂකයන් සහිතව ලියන්න.',
+    ].join('\n');
+
+    console.log(`[QS] Generating section: "${label}" ${dashaContext ? '(with dasha context)' : ''}`);
+    const result  = await model.generateContent(userPrompt);
+    const usage   = result.response.usageMetadata;
+    const content = result.response.text().trim();
+    results.push({ label, content });
+    console.log(`[QS] Section "${label}" done: ${content.length} chars  tokens in=${usage?.promptTokenCount ?? '?'} out=${usage?.candidatesTokenCount ?? '?'}`);
+  }
+  return results;
+}
+
+module.exports = { extractPlanetDegreesSum, analyzeAura, generateQuantumCode, generateQuantumReading, generateQuantumSections, QUANTUM_READING_SYSTEM };

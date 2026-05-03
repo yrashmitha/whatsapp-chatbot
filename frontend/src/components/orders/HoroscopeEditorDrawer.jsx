@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import Drawer from '../ui/Drawer';
 import { useToast } from '../ui/Toast';
 import api from '../../lib/api';
+import QuantumEditorDrawer from './QuantumEditorDrawer';
 
 const SECTION_LABELS = [
   'Personality',
@@ -86,7 +87,8 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
   const [downloading, setDownloading]         = useState(false);
   const [downloadingPdf, setDownloadingPdf]   = useState(false);
   const [downloadingQPdf, setDownloadingQPdf] = useState(false);
-  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [loadingPreview, setLoadingPreview]   = useState(false);
+  const [quantumEditorOpen, setQuantumEditorOpen] = useState(false);
 
   useEffect(() => {
     setSections({ ...savedSections });
@@ -363,13 +365,23 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
             {downloadingPdf ? 'Preparing…' : '⬇ Download PDF'}
           </button>
           {hd.quantum_data && hd.aura_analysis && (
-            <button
-              onClick={handleDownloadQuantumPdf}
-              disabled={downloadingQPdf}
-              style={{ padding: '8px 18px', fontSize: 13, background: '#7c3aed', color: '#ffffff', border: 0, borderRadius: 8, cursor: downloadingQPdf ? 'not-allowed' : 'pointer', opacity: downloadingQPdf ? 0.6 : 1 }}
-            >
-              {downloadingQPdf ? 'Preparing…' : '✦ Quantum PDF'}
-            </button>
+            <>
+              {Array.isArray(hd.quantum_sections_data) && hd.quantum_sections_data.length > 0 && (
+                <button
+                  onClick={() => setQuantumEditorOpen(true)}
+                  style={{ padding: '8px 18px', fontSize: 13, background: '#ffffff', color: '#7c3aed', border: '1px solid #7c3aed', borderRadius: 8, cursor: 'pointer' }}
+                >
+                  ✏ Quantum Sections
+                </button>
+              )}
+              <button
+                onClick={handleDownloadQuantumPdf}
+                disabled={downloadingQPdf}
+                style={{ padding: '8px 18px', fontSize: 13, background: '#7c3aed', color: '#ffffff', border: 0, borderRadius: 8, cursor: downloadingQPdf ? 'not-allowed' : 'pointer', opacity: downloadingQPdf ? 0.6 : 1 }}
+              >
+                {downloadingQPdf ? 'Preparing…' : '✦ Quantum PDF'}
+              </button>
+            </>
           )}
           <button
             onClick={handleSave}
@@ -380,6 +392,12 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
           </button>
         </div>
       </div>
+      <QuantumEditorDrawer
+        order={order}
+        clientId={clientId}
+        open={quantumEditorOpen}
+        onClose={() => setQuantumEditorOpen(false)}
+      />
     </Drawer>
   );
 }

@@ -8,7 +8,7 @@
 
 const db   = require('../db');
 const { generateAstroMessage, DEFAULT_ASTRO_PROMPT } = require('../services/astro');
-const { generateHoroscope, buildHoroscopeDoc, buildQuantumDoc, SECTIONS, parseSinhalaDate } = require('../services/horoscope');
+const { generateHoroscope, buildHoroscopeDoc, buildQuantumDoc, SECTIONS, SECTION_GUIDES, parseSinhalaDate } = require('../services/horoscope');
 const { analyzeAura } = require('../services/quantumCode');
 const { DEFAULT_TAROT_PROMPT } = require('../services/tarot');
 const resolveClientId = require('../middleware/resolveClientId');
@@ -30,7 +30,7 @@ async function getPluginConfig(req, res) {
     if (pluginId === 'astro_vedic_chart') {
       defaults = { name: 'Vedic Astro Chart', prompt: DEFAULT_ASTRO_PROMPT };
     } else if (pluginId === 'horoscope_reading') {
-      defaults = { name: 'Horoscope Reading', system_prompt: '', quantum_system_prompt: '', special_note: '', api_key: '' };
+      defaults = { name: 'Horoscope Reading', system_prompt: '', quantum_system_prompt: '', aura_system_prompt: '', horoscope_sections: [], quantum_sections: [], section_guides: SECTION_GUIDES, special_note: '', api_key: '' };
     } else if (pluginId === 'ai_call_answering') {
       defaults = { name: 'AI Call Answering', system_prompt: '', greeting: 'Hello, how can I help you today?', tts_voice: 'Kore', stt_language: 'en-US' };
     } else if (pluginId === 'image_analyzer') {
@@ -62,7 +62,7 @@ async function updatePluginConfig(req, res) {
     return res.status(403).json({ error: 'Forbidden' });
   }
   const { pluginId } = req.params;
-  const { name, prompt, api_key, system_prompt, quantum_system_prompt, special_note, greeting, tts_voice, stt_language, verification_prompt, page1_body, page2_body, page4_body } = req.body;
+  const { name, prompt, api_key, system_prompt, quantum_system_prompt, aura_system_prompt, horoscope_sections, quantum_sections, section_guides, special_note, greeting, tts_voice, stt_language, verification_prompt, page1_body, page2_body, page4_body } = req.body;
   try {
     const existing = await db.getPluginConfig(clientId, pluginId);
     const update = { ...existing };
@@ -71,6 +71,10 @@ async function updatePluginConfig(req, res) {
     if (api_key !== undefined)       update.api_key       = api_key;
     if (system_prompt !== undefined)         update.system_prompt         = system_prompt;
     if (quantum_system_prompt !== undefined) update.quantum_system_prompt = quantum_system_prompt;
+    if (aura_system_prompt !== undefined)    update.aura_system_prompt    = aura_system_prompt;
+    if (horoscope_sections !== undefined)    update.horoscope_sections    = horoscope_sections;
+    if (quantum_sections !== undefined)      update.quantum_sections      = quantum_sections;
+    if (section_guides !== undefined)        update.section_guides        = section_guides;
     if (special_note !== undefined)          update.special_note          = special_note;
     if (greeting !== undefined)      update.greeting      = greeting;
     if (tts_voice !== undefined)     update.tts_voice     = tts_voice;
@@ -189,7 +193,7 @@ async function analyzeAuraImage(req, res) {
     const config  = await db.getPluginConfig(clientId, 'horoscope_reading');
     const apiKey  = config.gemini_api_key || process.env.GEMINI_API_KEY;
 
-    const auraAnalysis = await analyzeAura(req.file.buffer, req.file.mimetype, apiKey);
+    const auraAnalysis = await analyzeAura(req.file.buffer, req.file.mimetype, apiKey, config.aura_system_prompt || '');
 
     // Save to horoscope_data.aura_analysis (jsonb_set preserves all other keys)
     await db.pgQuery(
@@ -432,6 +436,26 @@ async function downloadHoroscopePdf(req, res) {
 }
 
 /**
+ * PATCH /api/plugins/horoscope/quantum-sections/:orderId — update saved quantum section content.
+ */
+async function updateQuantumSections(req, res) {
+  const { orderId } = req.params;
+  const { quantum_sections_data } = req.body;
+  try {
+    const existing = await db.pgQuery(
+      'SELECT horoscope_data FROM orders WHERE order_id=$1', [orderId]
+    );
+    if (!existing.rows.length) return res.status(404).json({ error: 'Order not found' });
+    const hd = (typeof existing.rows[0].horoscope_data === 'string')
+      ? JSON.parse(existing.rows[0].horoscope_data || '{}')
+      : (existing.rows[0].horoscope_data || {});
+    if (quantum_sections_data !== undefined) hd.quantum_sections_data = quantum_sections_data;
+    await db.pgQuery('UPDATE orders SET horoscope_data=$1 WHERE order_id=$2', [JSON.stringify(hd), orderId]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+/**
  * GET /api/plugins/horoscope/download-quantum-pdf/:orderId — stream standalone Quantum+Aura PDF.
  */
 async function downloadQuantumPdf(req, res) {
@@ -451,10 +475,11 @@ async function downloadQuantumPdf(req, res) {
       : (r.rows[0].custom_fields || {});
 
     const docxBuffer = await buildQuantumDoc({
-      customerName:   cf.customer_name || '',
-      quantumData:    hd.quantum_data,
-      auraAnalysis:   hd.aura_analysis,
-      quantumReading: hd.quantum_reading || null,
+      customerName:        cf.customer_name || '',
+      quantumData:         hd.quantum_data,
+      auraAnalysis:        hd.aura_analysis,
+      quantumReading:      hd.quantum_reading      || null,
+      quantumSectionsData: hd.quantum_sections_data || null,
     });
 
     const { exec } = require('child_process');
@@ -514,6 +539,6 @@ async function downloadQuantumPdf(req, res) {
 module.exports = {
   getPluginConfig, updatePluginConfig, getPluginCustomerData, generateAstroChart,
   analyzeAuraImage,
-  generateHoroscopeReading, updateHoroscopeSections, downloadHoroscope, downloadHoroscopePdf,
-  downloadQuantumPdf,
+  generateHoroscopeReading, updateHoroscopeSections, updateQuantumSections,
+  downloadHoroscope, downloadHoroscopePdf, downloadQuantumPdf,
 };

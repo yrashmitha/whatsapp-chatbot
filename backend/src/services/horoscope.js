@@ -10,7 +10,7 @@
 const axios  = require('axios');
 const db     = require('../db');
 const { genAI } = require('./gemini');
-const { extractPlanetDegreesSum, generateQuantumCode, generateQuantumReading } = require('./quantumCode');
+const { extractPlanetDegreesSum, generateQuantumCode, generateQuantumReading, generateQuantumSections } = require('./quantumCode');
 // Lazy-loaded on first use to avoid crashing the server on startup if the
 // package isn't installed yet (e.g. stale Railway build cache).
 let Document, Packer, Paragraph, TextRun, AlignmentType, PageBreak, Footer, PageNumber, NumberFormat;
@@ -406,21 +406,26 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
     }
 
     // Recommendation
-    if (auraAnalysis.recommendation_hint) {
+    const hints1 = Array.isArray(auraAnalysis.recommendation_hint) ? auraAnalysis.recommendation_hint : (auraAnalysis.recommendation_hint ? [auraAnalysis.recommendation_hint] : []);
+    if (hints1.length > 0) {
       children.push(new Paragraph({
-        children: [
-          new TextRun({ text: 'නිර්දේශය (Recommendation): ', bold: true, size: 24, font: 'Abhaya Libre' }),
-          new TextRun({ text: auraAnalysis.recommendation_hint, size: 24, font: 'Abhaya Libre' }),
-        ],
-        spacing: { before: 120, after: 240 },
+        children: [new TextRun({ text: 'නිර්දේශය (Recommendation):', bold: true, size: 24, font: 'Abhaya Libre' })],
+        spacing: { before: 120, after: 60 },
       }));
+      for (const h of hints1) {
+        children.push(new Paragraph({
+          children: [new TextRun({ text: h, size: 24, font: 'Abhaya Libre' })],
+          bullet: { level: 0 },
+          spacing: { after: 60 },
+        }));
+      }
     }
 
     // Quantum metrics subsection
     children.push(new Paragraph({
       children: [new TextRun({ text: 'ක්වොන්ටම් ගණනය  (Quantum Resonance Metrics)', bold: true, size: 30, font: 'Abhaya Libre' })],
       alignment: AlignmentType.LEFT,
-      spacing: { after: 160 },
+      spacing: { before: 200, after: 160 },
     }));
 
     const qcRows = [
@@ -492,7 +497,7 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
 
 // ─── Standalone Quantum / Aura document builder ──────────────────────────────
 
-async function buildQuantumDoc({ customerName, quantumData, auraAnalysis, quantumReading }) {
+async function buildQuantumDoc({ customerName, quantumData, auraAnalysis, quantumReading, quantumSectionsData }) {
   ensureDocx();
   if (!quantumData || quantumData.status !== 'Success' || !auraAnalysis) {
     throw new Error('Quantum data or aura analysis not available');
@@ -557,21 +562,26 @@ async function buildQuantumDoc({ customerName, quantumData, auraAnalysis, quantu
     }
   }
 
-  if (auraAnalysis.recommendation_hint) {
+  const hints2 = Array.isArray(auraAnalysis.recommendation_hint) ? auraAnalysis.recommendation_hint : (auraAnalysis.recommendation_hint ? [auraAnalysis.recommendation_hint] : []);
+  if (hints2.length > 0) {
     children.push(new Paragraph({
-      children: [
-        new TextRun({ text: 'නිර්දේශය (Recommendation): ', bold: true, size: 24, font: 'Abhaya Libre' }),
-        new TextRun({ text: auraAnalysis.recommendation_hint, size: 24, font: 'Abhaya Libre' }),
-      ],
-      spacing: { before: 120, after: 320 },
+      children: [new TextRun({ text: 'නිර්දේශය (Recommendation):', bold: true, size: 24, font: 'Abhaya Libre' })],
+      spacing: { before: 120, after: 60 },
     }));
+    for (const h of hints2) {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: h, size: 24, font: 'Abhaya Libre' })],
+        bullet: { level: 0 },
+        spacing: { after: 60 },
+      }));
+    }
   }
 
   // Quantum metrics subsection
   children.push(new Paragraph({
     children: [new TextRun({ text: 'ක්වොන්ටම් ගණනය  (Quantum Resonance Metrics)', bold: true, size: 30, font: 'Abhaya Libre' })],
     alignment: AlignmentType.LEFT,
-    spacing: { after: 160 },
+    spacing: { before: 200, after: 160 },
   }));
 
   const qcRows = [
@@ -591,8 +601,23 @@ async function buildQuantumDoc({ customerName, quantumData, auraAnalysis, quantu
     }));
   }
 
-  // Quantum Life Architect narrative
-  if (quantumReading) {
+  // Quantum sections (configurable multi-section output) — preferred over single reading
+  if (Array.isArray(quantumSectionsData) && quantumSectionsData.length > 0) {
+    for (let i = 0; i < quantumSectionsData.length; i++) {
+      const { label, content } = quantumSectionsData[i];
+      if (!content) continue;
+      children.push(new Paragraph({
+        children: [
+          ...(i > 0 ? [new PageBreak()] : []),
+          new TextRun({ text: label, bold: true, size: 32, font: 'Abhaya Libre' }),
+        ],
+        alignment: AlignmentType.LEFT,
+        spacing: { before: i === 0 ? 320 : 0, after: 200 },
+      }));
+      children.push(...contentToParagraphs(content));
+    }
+  } else if (quantumReading) {
+    // Fallback: legacy single-block reading
     children.push(new Paragraph({
       children: [new TextRun({ text: 'ක්වොන්ටම් ජීවන වාර්තාව  (Quantum Life Architect Reading)', bold: true, size: 30, font: 'Abhaya Libre' })],
       alignment: AlignmentType.LEFT,
@@ -696,11 +721,23 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
 
     const fastConfig  = await db.getPluginConfig(clientId, 'horoscope_reading');
     const fastReading = await generateQuantumReading(fastQR, existingHd.aura_analysis, undefined, fastConfig.quantum_system_prompt || '');
+
+    let fastSectionsData = null;
+    if (Array.isArray(fastConfig.quantum_sections) && fastConfig.quantum_sections.length > 0) {
+      fastSectionsData = await generateQuantumSections(
+        fastQR, existingHd.aura_analysis,
+        fastConfig.quantum_sections, undefined,
+        fastConfig.quantum_system_prompt || '',
+        existingHd.chart_data?.vimshottari_dasha || null
+      );
+    }
+
     const fastUpdated = {
       ...existingHd,
       quantum_data:    fastQR,
       quantum_id:      fastQR.quantum_id,
       quantum_reading: fastReading,
+      ...(fastSectionsData && { quantum_sections_data: fastSectionsData }),
     };
     delete fastUpdated.generating;
     await db.pgQuery(
@@ -772,7 +809,7 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
     });
     if (quantumResult.status === 'Error') throw new Error(`Quantum Code generation failed: ${quantumResult.message}`);
     console.log('[HOROSCOPE] Quantum Code computed:', quantumResult.quantum_id);
-    quantumResult._reading = await generateQuantumReading(quantumResult, savedAura, undefined, quantumSystemPrompt);
+    // Quantum Gemini calls run at step 8.5, after all horoscope sections + special questions
   }
 
   // 5. Only send chart data to Gemini — no order/customer details
@@ -787,18 +824,28 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
 
   const chat = geminiModel.startChat({});
 
-  // 7. Determine sections
-  const activeSections = isVip ? [...SECTIONS, VIP_SECTION] : [...SECTIONS];
+  // 7. Horoscope sections
+  // If horoscope_sections config is set, use that order + guides; otherwise fall back to defaults.
+  let activeSections;
+  let sectionGuidesOverride;
+  if (Array.isArray(config.horoscope_sections) && config.horoscope_sections.length > 0) {
+    activeSections = config.horoscope_sections.map(s => s.label).filter(Boolean);
+    sectionGuidesOverride = Object.fromEntries(
+      config.horoscope_sections.map(s => [s.label, s.guide || ''])
+    );
+  } else {
+    activeSections = isVip ? [...SECTIONS, VIP_SECTION] : [...SECTIONS];
+    sectionGuidesOverride = config.section_guides || null;
+  }
 
   const sectionsMap = {};
-  const sectionGuidesOverride = config.section_guides || null;
   for (const sec of activeSections) {
     console.log('[HOROSCOPE] Generating section:', sec);
     const result = await chat.sendMessage(buildSectionPrompt(sec, sectionGuidesOverride));
     sectionsMap[sec] = result.response.text();
   }
 
-  // 8. Special questions (passed from frontend, one by one)
+  // 8. Special questions
   const specialAnswers = [];
   if (specialQuestions.length > 0) {
     const specialModel = genAI.getGenerativeModel({
@@ -813,6 +860,22 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
         buildSpecialQuestionPrompt(question, systemPrompt, chartDataJson)
       );
       specialAnswers.push({ question, answer: qResult.response.text() });
+    }
+  }
+
+  // 8.5. Quantum Gemini calls — run after all horoscope sections + special questions
+  //      so the full reading context can be passed in.
+  if (quantumResult) {
+    const savedAuraForQ = existingHd.aura_analysis;
+    quantumResult._reading = await generateQuantumReading(quantumResult, savedAuraForQ, undefined, quantumSystemPrompt);
+
+    if (Array.isArray(config.quantum_sections) && config.quantum_sections.length > 0) {
+      quantumResult._sections_data = await generateQuantumSections(
+        quantumResult, savedAuraForQ,
+        config.quantum_sections, undefined,
+        quantumSystemPrompt,
+        chartData?.vimshottari_dasha || null
+      );
     }
   }
 
@@ -831,6 +894,7 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
       quantum_data:    quantumResult,
       quantum_id:      quantumResult.quantum_id,
       quantum_reading: quantumResult._reading || null,
+      ...(quantumResult._sections_data && { quantum_sections_data: quantumResult._sections_data }),
     }),
   };
   await db.pgQuery(
@@ -849,4 +913,5 @@ module.exports = {
   parseSinhalaDate,
   parseSinhalaTime,
   SECTIONS,
+  SECTION_GUIDES,
 };

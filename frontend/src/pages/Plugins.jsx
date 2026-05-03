@@ -46,6 +46,10 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
   const [apiKey, setApiKey] = useState('');
   const [systemPrompt, setSystemPrompt]               = useState('');
   const [quantumSystemPrompt, setQuantumSystemPrompt] = useState('');
+  const [auraSystemPrompt, setAuraSystemPrompt]       = useState('');
+  const [horoscopeSections, setHoroscopeSections]     = useState([]);
+  const [quantumSections, setQuantumSections]         = useState([]);
+  const [sectionGuides, setSectionGuides]             = useState({});
   const [specialNote, setSpecialNote]                 = useState('');
   const [greeting, setGreeting]         = useState('');
   const [ttsVoice, setTtsVoice]                   = useState('');
@@ -67,6 +71,10 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         setApiKey(r.data.api_key || '');
         setSystemPrompt(r.data.system_prompt || '');
         setQuantumSystemPrompt(r.data.quantum_system_prompt || '');
+        setAuraSystemPrompt(r.data.aura_system_prompt || '');
+        setHoroscopeSections(Array.isArray(r.data.horoscope_sections) ? r.data.horoscope_sections : []);
+        setQuantumSections(Array.isArray(r.data.quantum_sections) ? r.data.quantum_sections : []);
+        setSectionGuides(r.data.section_guides && typeof r.data.section_guides === 'object' ? r.data.section_guides : {});
         setSpecialNote(r.data.special_note || '');
         setGreeting(r.data.greeting || '');
         const GEMINI_VOICES = ['achernar','achird','algenib','algieba','alnilam','aoede','autonoe','callirrhoe','charon','despina','enceladus','erinome','fenrir','gacrux','iapetus','kore','laomedeia','leda','orus','puck','pulcherrima','rasalgethi','sadachbia','sadaltager','schedar','sulafat','umbriel','vindemiatrix','zephyr','zubenelgenubi'];
@@ -85,6 +93,10 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         setApiKey('');
         setSystemPrompt('');
         setQuantumSystemPrompt('');
+        setAuraSystemPrompt('');
+        setHoroscopeSections([]);
+        setQuantumSections([]);
+        setSectionGuides({});
         setSpecialNote('');
         setGreeting('');
         setTtsVoice('Kore');
@@ -104,6 +116,10 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
       if (isHoroscope) {
         body.system_prompt         = systemPrompt;
         body.quantum_system_prompt = quantumSystemPrompt;
+        body.aura_system_prompt    = auraSystemPrompt;
+        body.horoscope_sections    = horoscopeSections;
+        body.quantum_sections      = quantumSections;
+        body.section_guides        = sectionGuides;
         body.special_note          = specialNote;
       } else if (isCallAnswering) {
         body.system_prompt = systemPrompt;
@@ -347,6 +363,115 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
             />
           </div>
           <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Aura Analysis Prompt</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              The prompt sent to Gemini Vision when analyzing aura selfies. Leave blank to use the built-in default (7-field JSON output in Sinhala).
+            </p>
+            <textarea
+              value={auraSystemPrompt}
+              onChange={e => setAuraSystemPrompt(e.target.value)}
+              rows={10}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
+              placeholder="Leave blank to use built-in default…"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Quantum Sections</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              Each section triggers a separate Gemini call using the Quantum Reading system prompt. Full horoscope context is included. Leave empty to use the built-in 4-section reading.
+            </p>
+            {quantumSections.map((sec, i) => (
+              <div key={i} className="flex gap-2 mb-2 items-start">
+                <div className="flex flex-col gap-1 shrink-0 mt-1">
+                  <button
+                    onClick={() => { if (i === 0) return; const u = [...quantumSections]; [u[i-1], u[i]] = [u[i], u[i-1]]; setQuantumSections(u); }}
+                    disabled={i === 0}
+                    className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 disabled:opacity-30 cursor-pointer bg-white text-xs"
+                  >▲</button>
+                  <button
+                    onClick={() => { if (i === quantumSections.length - 1) return; const u = [...quantumSections]; [u[i], u[i+1]] = [u[i+1], u[i]]; setQuantumSections(u); }}
+                    disabled={i === quantumSections.length - 1}
+                    className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 disabled:opacity-30 cursor-pointer bg-white text-xs"
+                  >▼</button>
+                </div>
+                <input
+                  type="text"
+                  value={sec.label}
+                  onChange={e => { const u = [...quantumSections]; u[i] = { ...u[i], label: e.target.value }; setQuantumSections(u); }}
+                  placeholder="Section label…"
+                  className="w-40 shrink-0 px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                />
+                <textarea
+                  value={sec.guide}
+                  onChange={e => { const u = [...quantumSections]; u[i] = { ...u[i], guide: e.target.value }; setQuantumSections(u); }}
+                  placeholder="Guide instructions for Gemini…"
+                  rows={3}
+                  className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
+                />
+                <button
+                  onClick={() => setQuantumSections(quantumSections.filter((_, j) => j !== i))}
+                  className="mt-1 w-7 h-7 shrink-0 flex items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-300 cursor-pointer bg-white text-xs font-bold"
+                >×</button>
+              </div>
+            ))}
+            <button
+              onClick={() => setQuantumSections([...quantumSections, { label: '', guide: '' }])}
+              className="mt-1 px-3 py-1.5 text-xs border border-dashed border-violet-300 text-violet-600 rounded-xl hover:bg-violet-50 cursor-pointer bg-white"
+            >+ Add Section</button>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Horoscope Sections</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              Define which sections to generate and in what order. Each section has a label (the heading) and guide text (instructions for Gemini). Leave empty to use built-in default 10 sections.
+            </p>
+            {horoscopeSections.map((sec, i) => (
+              <div key={i} className="flex gap-2 mb-2 items-start">
+                <div className="flex flex-col gap-1 shrink-0 mt-1">
+                  <button
+                    onClick={() => { if (i === 0) return; const u = [...horoscopeSections]; [u[i-1], u[i]] = [u[i], u[i-1]]; setHoroscopeSections(u); }}
+                    disabled={i === 0}
+                    className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 disabled:opacity-30 cursor-pointer bg-white text-xs"
+                  >▲</button>
+                  <button
+                    onClick={() => { if (i === horoscopeSections.length - 1) return; const u = [...horoscopeSections]; [u[i], u[i+1]] = [u[i+1], u[i]]; setHoroscopeSections(u); }}
+                    disabled={i === horoscopeSections.length - 1}
+                    className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 disabled:opacity-30 cursor-pointer bg-white text-xs"
+                  >▼</button>
+                </div>
+                <input
+                  type="text"
+                  value={sec.label}
+                  onChange={e => { const u = [...horoscopeSections]; u[i] = { ...u[i], label: e.target.value }; setHoroscopeSections(u); }}
+                  placeholder="Section label (heading)…"
+                  className="w-48 shrink-0 px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                />
+                <textarea
+                  value={sec.guide}
+                  onChange={e => { const u = [...horoscopeSections]; u[i] = { ...u[i], guide: e.target.value }; setHoroscopeSections(u); }}
+                  placeholder="Guide instructions for Gemini…"
+                  rows={3}
+                  className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
+                />
+                <button
+                  onClick={() => setHoroscopeSections(horoscopeSections.filter((_, j) => j !== i))}
+                  className="mt-1 w-7 h-7 shrink-0 flex items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-300 cursor-pointer bg-white text-xs font-bold"
+                >×</button>
+              </div>
+            ))}
+            <div className="flex gap-2 mt-1">
+              <button
+                onClick={() => setHoroscopeSections([...horoscopeSections, { label: '', guide: '' }])}
+                className="px-3 py-1.5 text-xs border border-dashed border-violet-300 text-violet-600 rounded-xl hover:bg-violet-50 cursor-pointer bg-white"
+              >+ Add Section</button>
+              {horoscopeSections.length === 0 && Object.keys(sectionGuides).length > 0 && (
+                <button
+                  onClick={() => setHoroscopeSections(Object.entries(sectionGuides).map(([label, guide]) => ({ label, guide })))}
+                  className="px-3 py-1.5 text-xs border border-dashed border-slate-300 text-slate-500 rounded-xl hover:bg-slate-50 cursor-pointer bg-white"
+                >↺ Load defaults</button>
+              )}
+            </div>
+          </div>
+          <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">Special Note (Final Page)</label>
             <p className="text-xs text-slate-400 mb-1.5">
               Static text added as the last page of every Word document (e.g. disclaimer, contact info).
@@ -392,7 +517,7 @@ export default function Plugins() {
 
   return (
     <Layout>
-      <div className="p-6 max-w-2xl overflow-y-auto h-full">
+      <div className="p-6 overflow-y-auto h-full">
         <h1 className="text-lg font-bold text-slate-800 mb-1">Plugins</h1>
         <p className="text-sm text-slate-500 mb-6">
           Configure plugin settings and custom prompts.

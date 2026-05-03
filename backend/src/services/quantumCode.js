@@ -119,11 +119,9 @@ async function analyzeAura(imageBuffer, mimeType, apiKey, systemPromptOverride) 
     ? systemPromptOverride.trim()
     : AURA_PROMPT;
 
-  console.log('[AURA] ── INPUT ─────────────────────────────────────────');
-  console.log(`[AURA] mimeType : ${mimeType}`);
-  console.log(`[AURA] imageSize: ${imageBuffer.length} bytes`);
-  console.log(`[AURA] model    : gemini-2.5-flash  temperature=0.2  maxTokens=1024`);
-  console.log(`[AURA] prompt   : ${systemPromptOverride ? '(CUSTOM OVERRIDE)' : '(default)'}\n` + prompt);
+  console.log('[AURA] ── REQUEST ───────────────────────────────────────');
+  console.log(`[AURA] model: gemini-2.5-flash  temperature=0.2  maxTokens=1024  mimeType=${mimeType}  imageSize=${imageBuffer.length} bytes`);
+  console.log('[AURA] systemInstruction:\n' + prompt);
   console.log('[AURA] ─────────────────────────────────────────────────');
 
   const genAI = new GoogleGenerativeAI(key);
@@ -278,12 +276,11 @@ async function generateQuantumReading(quantumData, auraAnalysis, apiKey, systemP
 
   const prompt = buildQuantumReadingPrompt(quantumData, auraAnalysis);
 
-  console.log('[QR] ── INPUT ───────────────────────────────────────────');
-  console.log(`[QR] model        : gemini-2.5-flash  temperature=0.5  maxTokens=4096`);
-  console.log(`[QR] systemPrompt : ${systemPromptOverride ? '(CUSTOM OVERRIDE)' : '(default)'}`);
-  console.log('[QR] systemPrompt :\n' + sysPrompt);
-  console.log('[QR] userPrompt   :\n' + prompt);
-  console.log('[QR] ───────────────────────────────────────────────────');
+  console.log('[QR] ── REQUEST ─────────────────────────────────────────');
+  console.log(`[QR] model: gemini-2.5-flash  temperature=0.5  maxTokens=4096`);
+  console.log('[QR] systemInstruction:\n' + sysPrompt);
+  console.log('[QR] userPrompt:\n' + prompt);
+  console.log('[QR] ────────────────────────────────────────────────────');
 
   const genAI = new GoogleGenerativeAI(key);
   const model = genAI.getGenerativeModel({
@@ -496,11 +493,19 @@ async function generateQuantumSections(quantumData, auraAnalysis, sections, apiK
     model: 'gemini-2.5-flash',
     generationConfig: {
       temperature: 0.5,
-      maxOutputTokens: 2048,
-      thinkingConfig: { thinkingBudget: 512 },
+      maxOutputTokens: 8192,
+      thinkingConfig: { thinkingBudget: 1024 },
     },
     systemInstruction: sysPrompt,
   });
+
+  console.log('[QS] ══ SESSION START ════════════════════════════════════════════');
+  console.log(`[QS] model: gemini-2.5-flash  temperature=0.5  maxTokens=2048  thinkingBudget=512`);
+  console.log(`[QS] systemPrompt: ${systemPrompt ? '(CUSTOM OVERRIDE)' : '(default QUANTUM_READING_SYSTEM)'}`);
+  console.log('[QS] systemPrompt:\n' + sysPrompt);
+  console.log(`[QS] sections to generate: ${sections.map(s => s.label).join(', ')}`);
+  console.log(`[QS] dashaContext: ${dashaContext ? dashaContext.length + ' chars' : 'none'}`);
+  console.log('[QS] ════════════════════════════════════════════════════════════');
 
   const results = [];
   for (const sec of sections) {
@@ -517,12 +522,18 @@ async function generateQuantumSections(quantumData, auraAnalysis, sections, apiK
       '\nසම්පූර්ණයෙන්ම සිංහල භාෂාවෙන්, ගලාගෙන යන ශෛලියෙන්, ### ශීර්ෂකයන් සහිතව ලියන්න.',
     ].join('\n');
 
-    console.log(`[QS] Generating section: "${label}" ${dashaContext ? '(with dasha context)' : ''}`);
+    console.log(`\n[QS] ── REQUEST: "${label}" ${'─'.repeat(Math.max(0, 52 - label.length))}`);
+    console.log('[QS] systemInstruction:\n' + sysPrompt);
+    console.log('[QS] userPrompt:\n' + userPrompt);
+    console.log('[QS] ──────────────────────────────────────────────────────────');
     const result  = await model.generateContent(userPrompt);
     const usage   = result.response.usageMetadata;
     const content = result.response.text().trim();
+    console.log(`[QS] ── RESPONSE: "${label}" ${'─'.repeat(Math.max(0, 51 - label.length))}`);
+    console.log(content);
+    console.log(`[QS] tokens in=${usage?.promptTokenCount ?? '?'}  out=${usage?.candidatesTokenCount ?? '?'}  chars=${content.length}`);
+    console.log('[QS] ──────────────────────────────────────────────────────────');
     results.push({ label, content });
-    console.log(`[QS] Section "${label}" done: ${content.length} chars  tokens in=${usage?.promptTokenCount ?? '?'} out=${usage?.candidatesTokenCount ?? '?'}`);
   }
   return results;
 }

@@ -19,31 +19,14 @@ const SECTION_LABELS = [
   'VIP Section',
 ];
 
-// Expected Sinhala section key order (strip ZWJ for comparison)
-const SECTION_ORDER_STRIPPED = [
-  'පෞරුෂය',
-  'අධ්‍යාපනය',
-  'වෘත්තීය ජීවිතය සහ ආර්ථික ශක්තිය',
-  'ප්‍රේමය සහ විවාහ ජීවිතය',
-  'දේපළ, භූමිය, නිවාස සහ වාහන භාග්‍යය',
-  'ශාරීරික සෞඛ්‍යය, මාරක අපල, හදිසි අනතුරු',
-  'දරු පල',
-  'මෙතෙක් දැක්වූ කරුණු අනුව ජීවන ගමනේ සමස්ත සාරාංශය',
-  'වර්තමාන දශාව අනුව පලාපල',
-  'ජීවිතයේ අභියෝග ජයගැනීම සඳහා වූ පොදු ශාස්ත්‍රීය සහ බෞද්ධ පිළියම්',
-].map(s => s.replace(/\u200D/g, ''));
-
-function sortSectionKeys(keys) {
-  return [...keys].sort((a, b) => {
-    const sa = a.replace(/\u200D/g, '');
-    const sb = b.replace(/\u200D/g, '');
-    const ia = SECTION_ORDER_STRIPPED.findIndex(s => s === sa || sa.startsWith(s.slice(0, 6)));
-    const ib = SECTION_ORDER_STRIPPED.findIndex(s => s === sb || sb.startsWith(s.slice(0, 6)));
-    if (ia === -1 && ib === -1) return 0;
-    if (ia === -1) return 1;
-    if (ib === -1) return -1;
-    return ia - ib;
-  });
+function applyHoroscopeOrder(keys, configOrder) {
+  if (!Array.isArray(configOrder) || configOrder.length === 0) return keys;
+  const configLabels = configOrder.map(s => s.label || s);
+  const keySet = new Set(keys);
+  const sorted = configLabels.filter(l => keySet.has(l));
+  const inConfig = new Set(configLabels);
+  keys.filter(k => !inConfig.has(k)).forEach(k => sorted.push(k));
+  return sorted;
 }
 
 export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }) {
@@ -59,9 +42,44 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
 
   const savedSections = hd.sections || {};
   const savedSpecial  = hd.special_answers || [];
-  const sectionKeys   = Object.keys(savedSections).length > 0 ? sortSectionKeys(Object.keys(savedSections)) : [];
 
-  // Build tab list: S1..SN then Q1..QN
+  const [configSectionOrder, setConfigSectionOrder] = useState([]);
+
+  // Editor state
+  const [outerTab, setOuterTab]     = useState('edit');
+  const [activeTab, setActiveTab]   = useState(null);
+  const [sections, setSections]     = useState({ ...savedSections });
+  const [specialAnswers, setSpecialAnswers] = useState(savedSpecial.map(qa => ({ ...qa })));
+  const [saving, setSaving]                   = useState(false);
+  const [downloading, setDownloading]         = useState(false);
+  const [downloadingPdf, setDownloadingPdf]   = useState(false);
+  const [downloadingQPdf, setDownloadingQPdf] = useState(false);
+  const [loadingPreview, setLoadingPreview]   = useState(false);
+  const [quantumEditorOpen, setQuantumEditorOpen] = useState(false);
+
+  // Fetch config order when drawer opens
+  useEffect(() => {
+    if (!open) return;
+    const params = clientId ? `?client_id=${clientId}` : '';
+    api.get(`/plugins/horoscope_reading/config${params}`)
+      .then(r => {
+        const order = Array.isArray(r.data?.horoscope_sections) ? r.data.horoscope_sections : [];
+        setConfigSectionOrder(order);
+      })
+      .catch(() => {});
+  }, [open, order?.order_id]);
+
+  useEffect(() => {
+    setSections({ ...savedSections });
+    setSpecialAnswers(savedSpecial.map(qa => ({ ...qa })));
+    setActiveTab(null);
+    setOuterTab('edit');
+  }, [order?.order_id]);
+
+  // Derive ordered section keys from config
+  const rawKeys = Object.keys(savedSections);
+  const sectionKeys = rawKeys.length > 0 ? applyHoroscopeOrder(rawKeys, configSectionOrder) : [];
+
   const sectionTabs = sectionKeys.map((key, i) => ({
     id: `s-${i}`,
     label: `S${i + 1}`,
@@ -78,25 +96,12 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
   }));
   const allTabs = [...sectionTabs, ...questionTabs];
 
-  // Editor state
-  const [outerTab, setOuterTab]     = useState('edit');
-  const [activeTab, setActiveTab]   = useState(allTabs[0]?.id || null);
-  const [sections, setSections]     = useState({ ...savedSections });
-  const [specialAnswers, setSpecialAnswers] = useState(savedSpecial.map(qa => ({ ...qa })));
-  const [saving, setSaving]                   = useState(false);
-  const [downloading, setDownloading]         = useState(false);
-  const [downloadingPdf, setDownloadingPdf]   = useState(false);
-  const [downloadingQPdf, setDownloadingQPdf] = useState(false);
-  const [loadingPreview, setLoadingPreview]   = useState(false);
-  const [quantumEditorOpen, setQuantumEditorOpen] = useState(false);
-
+  // Set first tab when tabs become available
   useEffect(() => {
-    setSections({ ...savedSections });
-    setSpecialAnswers(savedSpecial.map(qa => ({ ...qa })));
-    const newTabs = [...sectionKeys.map((_, i) => `s-${i}`), ...savedSpecial.map((_, i) => `q-${i}`)];
-    setActiveTab(newTabs[0] || null);
-    setOuterTab('edit');
-  }, [order?.order_id]);
+    if (allTabs.length > 0 && !activeTab) {
+      setActiveTab(allTabs[0].id);
+    }
+  }, [allTabs.length, activeTab]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -125,7 +130,6 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
       });
       if (!res.ok) throw new Error('Download failed');
       const blob = await res.blob();
-      // Use filename from Content-Disposition if available, else build from order data
       const cd = res.headers.get('Content-Disposition') || '';
       const match = cd.match(/filename="([^"]+)"/);
       const last4    = (order.phone_number || '').replace(/\D/g, '').slice(-4) || '0000';

@@ -17,6 +17,8 @@ const {
   generateHoroscopeReading,
   updateHoroscopeSections,
   updateQuantumSections,
+  regenerateQuantumSections,
+  downloadQuantumDocx,
   downloadHoroscope,
   downloadHoroscopePdf,
   downloadQuantumPdf,
@@ -36,9 +38,11 @@ router.post('/astro-chart',                       jwtAuth, generateAstroChart);
 router.post('/horoscope/analyze-aura',            jwtAuth, auraUpload.single('image'), analyzeAuraImage);
 router.post('/horoscope/generate',                jwtAuth, generateHoroscopeReading);
 router.patch('/horoscope/sections/:orderId',         jwtAuth, updateHoroscopeSections);
-router.patch('/horoscope/quantum-sections/:orderId', jwtAuth, updateQuantumSections);
+router.patch('/horoscope/quantum-sections/:orderId',    jwtAuth, updateQuantumSections);
+router.post('/horoscope/regenerate-quantum/:orderId',   jwtAuth, regenerateQuantumSections);
 router.get('/horoscope/download/:orderId',        jwtAuth, downloadHoroscope);
 router.get('/horoscope/download-pdf/:orderId',    jwtAuth, downloadHoroscopePdf);
-router.get('/horoscope/download-quantum-pdf/:orderId', jwtAuth, downloadQuantumPdf);
+router.get('/horoscope/download-quantum-docx/:orderId', jwtAuth, downloadQuantumDocx);
+router.get('/horoscope/download-quantum-pdf/:orderId',  jwtAuth, downloadQuantumPdf);
 
 module.exports = router;

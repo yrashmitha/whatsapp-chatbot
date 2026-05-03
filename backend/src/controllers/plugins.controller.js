@@ -9,9 +9,59 @@
 const db   = require('../db');
 const { generateAstroMessage, DEFAULT_ASTRO_PROMPT } = require('../services/astro');
 const { generateHoroscope, buildHoroscopeDoc, buildQuantumDoc, SECTIONS, SECTION_GUIDES, parseSinhalaDate } = require('../services/horoscope');
-const { analyzeAura } = require('../services/quantumCode');
+const { analyzeAura, generateQuantumReading, generateQuantumSections } = require('../services/quantumCode');
 const { DEFAULT_TAROT_PROMPT } = require('../services/tarot');
 const resolveClientId = require('../middleware/resolveClientId');
+
+const { exec } = require('child_process');
+const fs   = require('fs');
+const os   = require('os');
+const path = require('path');
+
+function findSoffice() {
+  if (process.platform !== 'win32') return 'soffice';
+  const candidates = [
+    'C:\\Program Files\\LibreOffice\\program\\soffice.exe',
+    'C:\\Program Files (x86)\\LibreOffice\\program\\soffice.exe',
+    'C:\\Program Files\\LibreOffice 7\\program\\soffice.exe',
+    'C:\\Program Files\\LibreOffice 6\\program\\soffice.exe',
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) { console.log('[PDF] Found soffice at', c); return `"${c}"`; }
+  }
+  throw new Error('LibreOffice not found on this machine. Install it from https://www.libreoffice.org/download/download/ — PDF generation requires LibreOffice.');
+}
+
+async function convertDocxToPdf(tmpDocx, outDir, tmpHome, fontDir) {
+  const soffice = findSoffice();
+  console.log(`[PDF] platform=${process.platform}  soffice=${soffice}  tmpDocx=${tmpDocx}  outDir=${outDir}`);
+
+  if (process.platform !== 'win32') {
+    await new Promise(resolve =>
+      exec(`fc-cache -f "${fontDir}"`, { env: { ...process.env, HOME: tmpHome } }, (err, stdout, stderr) => {
+        if (err) console.warn('[PDF] fc-cache warning:', stderr || err.message);
+        resolve();
+      })
+    );
+  }
+
+  await new Promise((resolve, reject) =>
+    exec(
+      `${soffice} --headless --convert-to pdf --outdir "${outDir}" "${tmpDocx}"`,
+      { env: { ...process.env, HOME: tmpHome } },
+      (err, stdout, stderr) => {
+        console.log('[PDF] soffice stdout:', stdout);
+        if (stderr) console.log('[PDF] soffice stderr:', stderr);
+        if (err) {
+          console.error('[PDF] soffice error:', err.message);
+          reject(new Error(stderr || err.message));
+        } else {
+          resolve();
+        }
+      }
+    )
+  );
+}
 
 /**
  * GET /api/plugins/:pluginId/config — get plugin config for the current client.
@@ -252,7 +302,7 @@ async function generateHoroscopeReading(req, res) {
     birth_place_name || '',
     !!override_astro,
     Array.isArray(special_questions) ? special_questions : [],
-    package_type === '1500',
+    true,
     !!include_quantum,
     (active_name || '').trim()
   ).catch(async (e) => {
@@ -319,9 +369,9 @@ async function downloadHoroscope(req, res) {
       sections:       hd.sections,
       specialAnswers: hd.special_answers  || [],
       specialNote:    config.special_note || '',
-      quantumData:    hd.quantum_data     || null,
-      auraAnalysis:   hd.aura_analysis    || null,
-      quantumReading: hd.quantum_reading  || null,
+      birthDate:      cf.birth_date || '',
+      birthTime:      cf.birth_time || '',
+      sectionOrder:   config.horoscope_sections || [],
     });
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
@@ -364,21 +414,16 @@ async function downloadHoroscopePdf(req, res) {
       sections:       hd.sections,
       specialAnswers: hd.special_answers  || [],
       specialNote:    config.special_note || '',
-      quantumData:    hd.quantum_data     || null,
-      auraAnalysis:   hd.aura_analysis    || null,
-      quantumReading: hd.quantum_reading  || null,
+      birthDate:      cf.birth_date || '',
+      birthTime:      cf.birth_time || '',
+      sectionOrder:   config.horoscope_sections || [],
     });
 
-    const { exec } = require('child_process');
-    const fs   = require('fs');
-    const os   = require('os');
-    const path = require('path');
     const uid  = `${orderId}-${Date.now()}`;
     const tmpHome = path.join(os.tmpdir(), `lo-home-${uid}`);
     const tmpDocx = path.join(os.tmpdir(), `horo-${uid}.docx`);
     const tmpPdf  = path.join(os.tmpdir(), `horo-${uid}.pdf`);
 
-    // Copy fonts into all locations LibreOffice checks
     const fontSrc = path.join(__dirname, '../assets/fonts');
     const fontDirs = [
       path.join(tmpHome, '.fonts'),
@@ -391,21 +436,10 @@ async function downloadHoroscopePdf(req, res) {
         if (f.endsWith('.ttf')) fs.copyFileSync(path.join(fontSrc, f), path.join(dir, f));
       }
     }
-    const fontDest = fontDirs[0];
 
     fs.writeFileSync(tmpDocx, docxBuffer);
-    await new Promise((resolve, reject) => {
-      exec(
-        `fc-cache -f "${fontDest}" 2>/dev/null; soffice --headless --convert-to pdf --outdir "${os.tmpdir()}" "${tmpDocx}"`,
-        { env: { ...process.env, HOME: tmpHome } },
-        (err, _stdout, stderr) => {
-          if (err) reject(new Error(stderr || err.message));
-          else resolve();
-        }
-      );
-    });
+    await convertDocxToPdf(tmpDocx, os.tmpdir(), tmpHome, fontDirs[0]);
 
-    // Update PDF metadata to hide software origin
     const { PDFDocument } = require('pdf-lib');
     const rawPdf = fs.readFileSync(tmpPdf);
     const pdfDoc = await PDFDocument.load(rawPdf);
@@ -456,6 +490,38 @@ async function updateQuantumSections(req, res) {
 }
 
 /**
+ * GET /api/plugins/horoscope/download-quantum-docx/:orderId — stream raw Quantum+Aura .docx for preview.
+ */
+async function downloadQuantumDocx(req, res) {
+  const { orderId } = req.params;
+  try {
+    const r = await db.pgQuery(
+      'SELECT custom_fields, horoscope_data FROM orders WHERE order_id=$1', [orderId]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Order not found' });
+    const hd = (typeof r.rows[0].horoscope_data === 'string')
+      ? JSON.parse(r.rows[0].horoscope_data || '{}')
+      : (r.rows[0].horoscope_data || {});
+    if (!hd.quantum_data || !hd.aura_analysis) return res.status(404).json({ error: 'No quantum/aura data yet' });
+    const cf = (typeof r.rows[0].custom_fields === 'string')
+      ? JSON.parse(r.rows[0].custom_fields || '{}')
+      : (r.rows[0].custom_fields || {});
+
+    const buffer = await buildQuantumDoc({
+      customerName:        cf.customer_name || '',
+      quantumData:         hd.quantum_data,
+      auraAnalysis:        hd.aura_analysis,
+      quantumReading:      hd.quantum_reading      || null,
+      quantumSectionsData: hd.quantum_sections_data || null,
+    });
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="quantum-${orderId}.docx"`);
+    res.send(buffer);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+/**
  * GET /api/plugins/horoscope/download-quantum-pdf/:orderId — stream standalone Quantum+Aura PDF.
  */
 async function downloadQuantumPdf(req, res) {
@@ -482,10 +548,6 @@ async function downloadQuantumPdf(req, res) {
       quantumSectionsData: hd.quantum_sections_data || null,
     });
 
-    const { exec } = require('child_process');
-    const fs   = require('fs');
-    const os   = require('os');
-    const path = require('path');
     const uid  = `${orderId}-qc-${Date.now()}`;
     const tmpHome = path.join(os.tmpdir(), `lo-home-${uid}`);
     const tmpDocx = path.join(os.tmpdir(), `qc-${uid}.docx`);
@@ -505,13 +567,7 @@ async function downloadQuantumPdf(req, res) {
     }
 
     fs.writeFileSync(tmpDocx, docxBuffer);
-    await new Promise((resolve, reject) => {
-      exec(
-        `fc-cache -f "${fontDirs[0]}" 2>/dev/null; soffice --headless --convert-to pdf --outdir "${os.tmpdir()}" "${tmpDocx}"`,
-        { env: { ...process.env, HOME: tmpHome } },
-        (err, _stdout, stderr) => { if (err) reject(new Error(stderr || err.message)); else resolve(); }
-      );
-    });
+    await convertDocxToPdf(tmpDocx, os.tmpdir(), tmpHome, fontDirs[0]);
 
     const { PDFDocument } = require('pdf-lib');
     const rawPdf = fs.readFileSync(tmpPdf);
@@ -536,9 +592,81 @@ async function downloadQuantumPdf(req, res) {
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 
+async function regenerateQuantumSections(req, res) {
+  const { orderId } = req.params;
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+
+  try {
+    const r = await db.pgQuery(
+      'SELECT horoscope_data FROM orders WHERE order_id=$1', [orderId]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Order not found' });
+
+    const hd = (typeof r.rows[0].horoscope_data === 'string')
+      ? JSON.parse(r.rows[0].horoscope_data || '{}')
+      : (r.rows[0].horoscope_data || {});
+
+    if (!hd.quantum_data)   return res.status(400).json({ error: 'No quantum data. Generate horoscope with quantum first.' });
+    if (!hd.aura_analysis)  return res.status(400).json({ error: 'No aura analysis found.' });
+
+    // Mark quantum as generating so the drawer can reflect this even if reopened
+    await db.pgQuery(
+      `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), '{quantum_generating}', 'true'::jsonb) WHERE order_id=$1`,
+      [orderId]
+    );
+
+    res.json({ ok: true, generating: true });
+
+    const config = await db.getPluginConfig(clientId, 'horoscope_reading');
+    const quantumSystemPrompt = config.quantum_system_prompt || '';
+    const hasConfigSections = Array.isArray(config.quantum_sections) && config.quantum_sections.length > 0;
+
+    console.log('[REGEN-QUANTUM] Starting for order', orderId);
+    console.log('[REGEN-QUANTUM] config.quantum_system_prompt:', quantumSystemPrompt ? `(${quantumSystemPrompt.length} chars) "${quantumSystemPrompt.slice(0, 120)}${quantumSystemPrompt.length > 120 ? '...' : ''}"` : '(empty — will use built-in default)');
+
+    let reading = null;
+    let sectionsData = null;
+
+    if (hasConfigSections) {
+      sectionsData = await generateQuantumSections(
+        hd.quantum_data, hd.aura_analysis,
+        config.quantum_sections, undefined,
+        quantumSystemPrompt,
+        hd.chart_data?.vimshottari_dasha || null
+      );
+    } else {
+      reading = await generateQuantumReading(
+        hd.quantum_data, hd.aura_analysis, undefined, quantumSystemPrompt
+      );
+    }
+
+    const updated = {
+      ...hd,
+      ...(reading      && { quantum_reading: reading }),
+      ...(sectionsData && { quantum_sections_data: sectionsData }),
+    };
+    delete updated.quantum_generating;
+    await db.pgQuery(
+      'UPDATE orders SET horoscope_data=$1 WHERE order_id=$2',
+      [JSON.stringify(updated), orderId]
+    );
+    console.log('[REGEN-QUANTUM] Done for order', orderId);
+  } catch (e) {
+    console.error('[REGEN-QUANTUM] Error:', e.message);
+    // Clear the generating flag even on error so the drawer doesn't get stuck
+    await db.pgQuery(
+      `UPDATE orders SET horoscope_data = horoscope_data - 'quantum_generating' WHERE order_id=$1`,
+      [orderId]
+    ).catch(() => {});
+  }
+}
+
 module.exports = {
   getPluginConfig, updatePluginConfig, getPluginCustomerData, generateAstroChart,
   analyzeAuraImage,
   generateHoroscopeReading, updateHoroscopeSections, updateQuantumSections,
+  regenerateQuantumSections,
+  downloadQuantumDocx,
   downloadHoroscope, downloadHoroscopePdf, downloadQuantumPdf,
 };

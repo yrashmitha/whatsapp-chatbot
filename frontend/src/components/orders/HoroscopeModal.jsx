@@ -111,7 +111,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
   const selectPlace    = (place) => { setSelectedPlace(place); setGeoQuery(place.name); setGeoSuggestions([]); };
 
   // ── Package ────────────────────────────────────────────────────────────────
-  const [packageType, setPackageType] = useState('1000');
+  const [packageType, setPackageType] = useState('2990');
 
   // ── Special questions ──────────────────────────────────────────────────────
   const [specialQuestions, setSpecialQuestions] = useState([]);
@@ -137,8 +137,8 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
   };
 
   // ── Aura & Quantum state ───────────────────────────────────────────────────
-  // includeQuantum is derived — selecting the 1500_aura package enables it
-  const includeQuantum = packageType === '1500_aura';
+  // includeQuantum is derived — selecting the 3490 full package enables it
+  const includeQuantum = packageType === '3490';
   const [activeName, setActiveName]         = useState(existingHd.quantum_data?.active_name || '');
   const [auraAnalysis, setAuraAnalysis]     = useState(existingHd.aura_analysis || null);
   const [auraUploading, setAuraUploading]   = useState(false);
@@ -197,7 +197,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
         birth_place_name: selectedPlace.name,
         override_astro:   overrideAstro,
         special_questions: specialQuestions,
-        package_type:     includeQuantum ? '1500' : packageType,
+        package_type:     packageType,
         birth_overrides:  { customer_name: customerName, birth_date: birthDate, birth_time: `${birthHour}:${birthMinute}` },
         include_quantum: includeQuantum,
         active_name:     activeName.trim(),
@@ -356,9 +356,8 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
             <label className={labelCls}>Package</label>
             <div className="flex flex-wrap gap-3">
               {[
-                { value: '1000',      label: 'Rs. 1000' },
-                { value: '1500',      label: 'Rs. 1500',      badge: '+ VIP Section' },
-                { value: '1500_aura', label: 'Rs. 1500',      badge: '+ VIP + Aura' },
+                { value: '2990', label: 'Rs. 2990', badge: 'Basic' },
+                { value: '3490', label: 'Rs. 3490', badge: '+ Aura & Quantum' },
               ].map(({ value, label, badge }) => (
                 <label key={value} className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -584,7 +583,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
           </button>
           <button
             onClick={handleGenerate}
-            disabled={generating || !selectedPlace || !birthDate.trim() || auraUploading}
+            disabled={generating || !selectedPlace || !birthDate.trim() || auraUploading || (includeQuantum && (!auraAnalysis || !activeName.trim()))}
             className="flex-1 py-2.5 text-sm font-medium text-white rounded-xl border-0 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
             style={{ background: generating ? '#7c3aed' : 'linear-gradient(135deg,#7c3aed,#a855f7)' }}
           >

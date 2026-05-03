@@ -1,12 +1,14 @@
 import { formatMessageTime } from '../../lib/utils';
 
-// Resolve media URLs: if already absolute, use as-is; if starts with /uploads/, prepend backend origin.
-// In production the frontend and backend share the same origin so window.location.origin works.
+// In production frontend+backend share the same origin so relative /uploads/ paths work as-is.
+// In dev, set VITE_BACKEND_URL=https://your-app.railway.app in frontend/.env.local to load
+// media files from the production Railway volume.
+const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL || '').replace(/\/$/, '');
+
 function resolveMediaUrl(url) {
   if (!url) return null;
   if (url.startsWith('http://') || url.startsWith('https://')) return url;
-  // Relative path like /uploads/... — prepend origin so <img> tags work correctly
-  return `${window.location.origin}${url}`;
+  return `${BACKEND_URL}${url}`;
 }
 
 export default function MessageBubble({ msg, onDelete }) {

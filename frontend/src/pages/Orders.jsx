@@ -80,7 +80,7 @@ export default function Orders() {
       const hd = o.horoscope_data && typeof o.horoscope_data === 'string'
         ? (() => { try { return JSON.parse(o.horoscope_data); } catch { return {}; } })()
         : (o.horoscope_data || {});
-      if (hd.generating === true) return true;
+      if (hd.generating === true || hd.quantum_generating === true) return true;
       const td = o.tarot_data && typeof o.tarot_data === 'string'
         ? (() => { try { return JSON.parse(o.tarot_data); } catch { return {}; } })()
         : (o.tarot_data || {});

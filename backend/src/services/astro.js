@@ -68,7 +68,6 @@ async function generateAstroMessage(clientId, phone, birthData, apiKey) {
     { headers: { 'x-api-key': resolvedApiKey, 'Content-Type': 'application/json' } }
   );
   const chartData = astroResp.data;
-  console.log('[ASTRO] freeastroapi response:', JSON.stringify(chartData));
 
   // Save birth details + raw chart data for future use / pre-fill
   await db.upsertPluginCustomerData(clientId, phone, 'astro_vedic_chart', {

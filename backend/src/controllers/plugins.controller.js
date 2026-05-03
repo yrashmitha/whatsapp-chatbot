@@ -8,7 +8,7 @@
 
 const db   = require('../db');
 const { generateAstroMessage, DEFAULT_ASTRO_PROMPT } = require('../services/astro');
-const { generateHoroscope, buildHoroscopeDoc, SECTIONS, parseSinhalaDate } = require('../services/horoscope');
+const { generateHoroscope, buildHoroscopeDoc, buildQuantumDoc, SECTIONS, parseSinhalaDate } = require('../services/horoscope');
 const { analyzeAura } = require('../services/quantumCode');
 const { DEFAULT_TAROT_PROMPT } = require('../services/tarot');
 const resolveClientId = require('../middleware/resolveClientId');
@@ -431,8 +431,89 @@ async function downloadHoroscopePdf(req, res) {
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 
+/**
+ * GET /api/plugins/horoscope/download-quantum-pdf/:orderId — stream standalone Quantum+Aura PDF.
+ */
+async function downloadQuantumPdf(req, res) {
+  const { orderId } = req.params;
+  try {
+    const r = await db.pgQuery(
+      'SELECT phone_number, custom_fields, horoscope_data FROM orders WHERE order_id=$1', [orderId]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Order not found' });
+    const hd = (typeof r.rows[0].horoscope_data === 'string')
+      ? JSON.parse(r.rows[0].horoscope_data || '{}')
+      : (r.rows[0].horoscope_data || {});
+    if (!hd.quantum_data || !hd.aura_analysis) return res.status(404).json({ error: 'No quantum/aura data yet' });
+
+    const cf = (typeof r.rows[0].custom_fields === 'string')
+      ? JSON.parse(r.rows[0].custom_fields || '{}')
+      : (r.rows[0].custom_fields || {});
+
+    const docxBuffer = await buildQuantumDoc({
+      customerName:   cf.customer_name || '',
+      quantumData:    hd.quantum_data,
+      auraAnalysis:   hd.aura_analysis,
+      quantumReading: hd.quantum_reading || null,
+    });
+
+    const { exec } = require('child_process');
+    const fs   = require('fs');
+    const os   = require('os');
+    const path = require('path');
+    const uid  = `${orderId}-qc-${Date.now()}`;
+    const tmpHome = path.join(os.tmpdir(), `lo-home-${uid}`);
+    const tmpDocx = path.join(os.tmpdir(), `qc-${uid}.docx`);
+    const tmpPdf  = path.join(os.tmpdir(), `qc-${uid}.pdf`);
+
+    const fontSrc  = path.join(__dirname, '../assets/fonts');
+    const fontDirs = [
+      path.join(tmpHome, '.fonts'),
+      path.join(tmpHome, '.local', 'share', 'fonts'),
+      path.join(tmpHome, '.config', 'libreoffice', '4', 'user', 'fonts'),
+    ];
+    for (const dir of fontDirs) {
+      fs.mkdirSync(dir, { recursive: true });
+      for (const f of fs.readdirSync(fontSrc)) {
+        if (f.endsWith('.ttf')) fs.copyFileSync(path.join(fontSrc, f), path.join(dir, f));
+      }
+    }
+
+    fs.writeFileSync(tmpDocx, docxBuffer);
+    await new Promise((resolve, reject) => {
+      exec(
+        `fc-cache -f "${fontDirs[0]}" 2>/dev/null; soffice --headless --convert-to pdf --outdir "${os.tmpdir()}" "${tmpDocx}"`,
+        { env: { ...process.env, HOME: tmpHome } },
+        (err, _stdout, stderr) => { if (err) reject(new Error(stderr || err.message)); else resolve(); }
+      );
+    });
+
+    const { PDFDocument } = require('pdf-lib');
+    const rawPdf = fs.readFileSync(tmpPdf);
+    const pdfDoc = await PDFDocument.load(rawPdf);
+    pdfDoc.setTitle('ක්වොන්ටම් ශක්ති කේතය');
+    pdfDoc.setAuthor('පුරාණ ජෝතිර්වේදය හදහන් සේවය');
+    pdfDoc.setCreator('පුරාණ ජෝතිර්වේදය');
+    pdfDoc.setProducer('පුරාණ ජෝතිර්වේදය');
+    pdfDoc.setSubject('ක්වොන්ටම් ශක්ති කේතය');
+    pdfDoc.setKeywords([]);
+    const buffer = Buffer.from(await pdfDoc.save());
+    fs.rm(tmpHome, { recursive: true, force: true }, () => {});
+    fs.unlink(tmpDocx, () => {});
+    fs.unlink(tmpPdf, () => {});
+
+    const phone    = (r.rows[0].phone_number || orderId).replace(/\D/g, '');
+    const last4    = phone.slice(-4) || '0000';
+    const filename = `quantum-${last4}-${hd.quantum_data.quantum_id || orderId}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
 module.exports = {
   getPluginConfig, updatePluginConfig, getPluginCustomerData, generateAstroChart,
   analyzeAuraImage,
   generateHoroscopeReading, updateHoroscopeSections, downloadHoroscope, downloadHoroscopePdf,
+  downloadQuantumPdf,
 };

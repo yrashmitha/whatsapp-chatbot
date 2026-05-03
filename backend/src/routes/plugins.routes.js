@@ -18,6 +18,7 @@ const {
   updateHoroscopeSections,
   downloadHoroscope,
   downloadHoroscopePdf,
+  downloadQuantumPdf,
 } = require('../controllers/plugins.controller');
 
 // Memory-storage upload for aura selfie (max 10 MB, images only)
@@ -36,5 +37,6 @@ router.post('/horoscope/generate',                jwtAuth, generateHoroscopeRead
 router.patch('/horoscope/sections/:orderId',      jwtAuth, updateHoroscopeSections);
 router.get('/horoscope/download/:orderId',        jwtAuth, downloadHoroscope);
 router.get('/horoscope/download-pdf/:orderId',    jwtAuth, downloadHoroscopePdf);
+router.get('/horoscope/download-quantum-pdf/:orderId', jwtAuth, downloadQuantumPdf);
 
 module.exports = router;

@@ -82,9 +82,10 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
   const [activeTab, setActiveTab]   = useState(allTabs[0]?.id || null);
   const [sections, setSections]     = useState({ ...savedSections });
   const [specialAnswers, setSpecialAnswers] = useState(savedSpecial.map(qa => ({ ...qa })));
-  const [saving, setSaving]         = useState(false);
-  const [downloading, setDownloading] = useState(false);
-  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [saving, setSaving]                   = useState(false);
+  const [downloading, setDownloading]         = useState(false);
+  const [downloadingPdf, setDownloadingPdf]   = useState(false);
+  const [downloadingQPdf, setDownloadingQPdf] = useState(false);
   const [loadingPreview, setLoadingPreview] = useState(false);
 
   useEffect(() => {
@@ -162,6 +163,31 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
       toast.error('Failed to download PDF');
     } finally {
       setDownloadingPdf(false);
+    }
+  };
+
+  const handleDownloadQuantumPdf = async () => {
+    if (downloadingQPdf) return;
+    setDownloadingQPdf(true);
+    try {
+      const token  = localStorage.getItem('crm_token');
+      const params = clientId ? `?client_id=${clientId}` : '';
+      const res = await fetch(`/api/plugins/horoscope/download-quantum-pdf/${order.order_id}${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Download failed');
+      const blob = await res.blob();
+      const cd = res.headers.get('Content-Disposition') || '';
+      const match = cd.match(/filename="([^"]+)"/);
+      const filename = match ? match[1] : `quantum-${order.order_id}.pdf`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Failed to download Quantum PDF');
+    } finally {
+      setDownloadingQPdf(false);
     }
   };
 
@@ -336,6 +362,15 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
           >
             {downloadingPdf ? 'Preparing…' : '⬇ Download PDF'}
           </button>
+          {hd.quantum_data && hd.aura_analysis && (
+            <button
+              onClick={handleDownloadQuantumPdf}
+              disabled={downloadingQPdf}
+              style={{ padding: '8px 18px', fontSize: 13, background: '#7c3aed', color: '#ffffff', border: 0, borderRadius: 8, cursor: downloadingQPdf ? 'not-allowed' : 'pointer', opacity: downloadingQPdf ? 0.6 : 1 }}
+            >
+              {downloadingQPdf ? 'Preparing…' : '✦ Quantum PDF'}
+            </button>
+          )}
           <button
             onClick={handleSave}
             disabled={saving}

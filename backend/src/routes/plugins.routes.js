@@ -18,6 +18,8 @@ const {
   updateHoroscopeSections,
   updateQuantumSections,
   regenerateQuantumSections,
+  regenerateQuantumSection,
+  regenerateHoroscopeSectionHandler,
   downloadQuantumDocx,
   downloadHoroscope,
   downloadHoroscopePdf,
@@ -39,7 +41,9 @@ router.post('/horoscope/analyze-aura',            jwtAuth, auraUpload.single('im
 router.post('/horoscope/generate',                jwtAuth, generateHoroscopeReading);
 router.patch('/horoscope/sections/:orderId',         jwtAuth, updateHoroscopeSections);
 router.patch('/horoscope/quantum-sections/:orderId',    jwtAuth, updateQuantumSections);
-router.post('/horoscope/regenerate-quantum/:orderId',   jwtAuth, regenerateQuantumSections);
+router.post('/horoscope/regenerate-quantum/:orderId',         jwtAuth, regenerateQuantumSections);
+router.post('/horoscope/regenerate-quantum-section/:orderId',   jwtAuth, regenerateQuantumSection);
+router.post('/horoscope/regenerate-section/:orderId',            jwtAuth, regenerateHoroscopeSectionHandler);
 router.get('/horoscope/download/:orderId',        jwtAuth, downloadHoroscope);
 router.get('/horoscope/download-pdf/:orderId',    jwtAuth, downloadHoroscopePdf);
 router.get('/horoscope/download-quantum-docx/:orderId', jwtAuth, downloadQuantumDocx);

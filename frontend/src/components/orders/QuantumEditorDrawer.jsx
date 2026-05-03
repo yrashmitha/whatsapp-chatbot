@@ -19,10 +19,11 @@ export default function QuantumEditorDrawer({ order, clientId, open, onClose }) 
   const [outerTab, setOuterTab]             = useState('edit');
   const [activeTab, setActiveTab]           = useState(null);
   const [sections, setSections]             = useState([]);
-  const [saving, setSaving]                 = useState(false);
-  const [regenerating, setRegenerating]     = useState(false);
-  const [downloadingPdf, setDownloadingPdf] = useState(false);
-  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [saving, setSaving]                   = useState(false);
+  const [regenerating, setRegenerating]       = useState(false);
+  const [regeneratingSection, setRegeneratingSection] = useState(null); // label of section being regenerated
+  const [downloadingPdf, setDownloadingPdf]   = useState(false);
+  const [loadingPreview, setLoadingPreview]   = useState(false);
 
   function applyConfigOrder(savedData, order) {
     if (!Array.isArray(savedData) || savedData.length === 0) return [];
@@ -95,6 +96,21 @@ export default function QuantumEditorDrawer({ order, clientId, open, onClose }) 
     } catch (e) {
       toast.error(e?.response?.data?.error || 'Failed to regenerate');
       setRegenerating(false);
+    }
+  };
+
+  const handleRegenerateSection = async (label) => {
+    setRegeneratingSection(label);
+    try {
+      const params = clientId ? `?client_id=${clientId}` : '';
+      const res = await api.post(`/plugins/horoscope/regenerate-quantum-section/${order.order_id}${params}`, { label });
+      const newContent = res.data.content || '';
+      setSections(prev => prev.map(s => s.label === label ? { ...s, content: newContent } : s));
+      toast.success(`"${label}" regenerated`);
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Failed to regenerate section');
+    } finally {
+      setRegeneratingSection(null);
     }
   };
 
@@ -216,21 +232,38 @@ export default function QuantumEditorDrawer({ order, clientId, open, onClose }) 
             <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
               {activeTabData ? (
                 <>
-                  <p style={{ margin: '0 0 8px 0', fontSize: 13, fontWeight: 700, color: '#7c3aed' }}>
-                    {activeTabData.title}
-                  </p>
-                  <textarea
-                    key={activeTabData.id}
-                    style={{ width: '100%', padding: '10px 12px', fontSize: 13, fontFamily: 'monospace', border: '1px solid #cbd5e1', borderRadius: 8, outline: 'none', background: '#ffffff', color: '#1e293b', resize: 'vertical', lineHeight: 1.6, boxSizing: 'border-box' }}
-                    value={sections[activeTabData.index]?.content || ''}
-                    onChange={e => {
-                      const updated = [...sections];
-                      updated[activeTabData.index] = { ...updated[activeTabData.index], content: e.target.value };
-                      setSections(updated);
-                    }}
-                    rows={22}
-                    placeholder={`Enter content for ${activeTabData.title}…`}
-                  />
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#7c3aed' }}>
+                      {activeTabData.title}
+                    </p>
+                    <button
+                      onClick={() => handleRegenerateSection(activeTabData.title)}
+                      disabled={!!regeneratingSection}
+                      style={{ padding: '4px 12px', fontSize: 12, background: regeneratingSection === activeTabData.title ? '#e2e8f0' : '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: 6, cursor: regeneratingSection ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}
+                    >
+                      {regeneratingSection === activeTabData.title ? '⏳ Generating…' : '↺ Regenerate'}
+                    </button>
+                  </div>
+                  {regeneratingSection === activeTabData.title ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 320, gap: 14 }}>
+                      <span className="w-8 h-8 border-2 border-violet-200 border-t-violet-600 rounded-full animate-spin block" />
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#7c3aed' }}>Generating "{activeTabData.title}"…</span>
+                      <span style={{ fontSize: 12, color: '#94a3b8' }}>This may take 20–40 seconds</span>
+                    </div>
+                  ) : (
+                    <textarea
+                      key={activeTabData.id}
+                      style={{ width: '100%', padding: '10px 12px', fontSize: 13, fontFamily: 'monospace', border: '1px solid #cbd5e1', borderRadius: 8, outline: 'none', background: '#ffffff', color: '#1e293b', resize: 'vertical', lineHeight: 1.6, boxSizing: 'border-box' }}
+                      value={sections[activeTabData.index]?.content || ''}
+                      onChange={e => {
+                        const updated = [...sections];
+                        updated[activeTabData.index] = { ...updated[activeTabData.index], content: e.target.value };
+                        setSections(updated);
+                      }}
+                      rows={22}
+                      placeholder={`Enter content for ${activeTabData.title}…`}
+                    />
+                  )}
                 </>
               ) : (
                 <p style={{ fontSize: 13, color: '#94a3b8' }}>

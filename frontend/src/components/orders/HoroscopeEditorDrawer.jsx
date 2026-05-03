@@ -51,6 +51,7 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
   const [sections, setSections]     = useState({ ...savedSections });
   const [specialAnswers, setSpecialAnswers] = useState(savedSpecial.map(qa => ({ ...qa })));
   const [saving, setSaving]                   = useState(false);
+  const [regeneratingSection, setRegeneratingSection] = useState(null);
   const [downloading, setDownloading]         = useState(false);
   const [downloadingPdf, setDownloadingPdf]   = useState(false);
   const [downloadingQPdf, setDownloadingQPdf] = useState(false);
@@ -102,6 +103,20 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
       setActiveTab(allTabs[0].id);
     }
   }, [allTabs.length, activeTab]);
+
+  const handleRegenerateSection = async (key) => {
+    setRegeneratingSection(key);
+    try {
+      const params = clientId ? `?client_id=${clientId}` : '';
+      const res = await api.post(`/plugins/horoscope/regenerate-section/${order.order_id}${params}`, { label: key });
+      setSections(prev => ({ ...prev, [key]: res.data.content || '' }));
+      toast.success(`"${key}" regenerated`);
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Failed to regenerate section');
+    } finally {
+      setRegeneratingSection(null);
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -275,18 +290,37 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
             <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
               {activeTabData ? (
                 <>
-                  <p style={{ margin: '0 0 8px 0', fontSize: 13, fontWeight: 700, color: '#6366f1' }}>
-                    {activeTabData.title}
-                  </p>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#6366f1' }}>
+                      {activeTabData.title}
+                    </p>
+                    {activeTabData.type === 'section' && (
+                      <button
+                        onClick={() => handleRegenerateSection(activeTabData.key)}
+                        disabled={!!regeneratingSection}
+                        style={{ padding: '4px 12px', fontSize: 12, background: regeneratingSection === activeTabData.key ? '#e2e8f0' : '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: 6, cursor: regeneratingSection ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}
+                      >
+                        {regeneratingSection === activeTabData.key ? '⏳ Generating…' : '↺ Regenerate'}
+                      </button>
+                    )}
+                  </div>
                   {activeTabData.type === 'section' ? (
-                    <textarea
-                      key={activeTabData.id}
-                      style={{ width: '100%', padding: '10px 12px', fontSize: 13, fontFamily: 'monospace', border: '1px solid #cbd5e1', borderRadius: 8, outline: 'none', background: '#ffffff', color: '#1e293b', resize: 'vertical', lineHeight: 1.6, boxSizing: 'border-box' }}
-                      value={sections[activeTabData.key] || ''}
-                      onChange={e => setSections(prev => ({ ...prev, [activeTabData.key]: e.target.value }))}
-                      rows={22}
-                      placeholder={`Enter content for ${activeTabData.title}…`}
-                    />
+                    regeneratingSection === activeTabData.key ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 320, gap: 14 }}>
+                        <span className="w-8 h-8 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin block" />
+                        <span style={{ fontSize: 13, fontWeight: 600, color: '#6366f1' }}>Generating "{activeTabData.key}"…</span>
+                        <span style={{ fontSize: 12, color: '#94a3b8' }}>This may take 20–40 seconds</span>
+                      </div>
+                    ) : (
+                      <textarea
+                        key={activeTabData.id}
+                        style={{ width: '100%', padding: '10px 12px', fontSize: 13, fontFamily: 'monospace', border: '1px solid #cbd5e1', borderRadius: 8, outline: 'none', background: '#ffffff', color: '#1e293b', resize: 'vertical', lineHeight: 1.6, boxSizing: 'border-box' }}
+                        value={sections[activeTabData.key] || ''}
+                        onChange={e => setSections(prev => ({ ...prev, [activeTabData.key]: e.target.value }))}
+                        rows={22}
+                        placeholder={`Enter content for ${activeTabData.title}…`}
+                      />
+                    )
                   ) : (
                     <>
                       <p style={{ margin: '0 0 4px 0', fontSize: 11, color: '#64748b', fontWeight: 600 }}>Question text (editable):</p>

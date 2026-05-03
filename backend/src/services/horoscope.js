@@ -870,10 +870,40 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
   return horoscopeData;
 }
 
+/**
+ * Regenerate a single horoscope section using saved chart data.
+ * Returns the new section text.
+ */
+async function regenerateHoroscopeSection({ chartData, systemPrompt, sectionKey, sectionGuide }) {
+  const chartDataJson = JSON.stringify(chartData, null, 2);
+  const sysInstruction = systemPrompt + '\n\nමෙම කේන්ද්‍ර දත්ත සම්පූර්ණ වාර්තාව සඳහා පදනම වේ:\n\n' + chartDataJson;
+
+  const guidesOverride = sectionGuide ? { [sectionKey]: sectionGuide } : null;
+  const prompt = buildSectionPrompt(sectionKey, guidesOverride);
+
+  console.log(`[REGEN-SECTION] key="${sectionKey}"`);
+  console.log('[REGEN-SECTION] systemInstruction:\n' + sysInstruction);
+  console.log('[REGEN-SECTION] userPrompt:\n' + prompt);
+
+  const model = genAI.getGenerativeModel({
+    model: 'gemini-2.5-flash',
+    generationConfig: { temperature: 0.4, topP: 0.8, topK: 40 },
+    systemInstruction: sysInstruction,
+  });
+
+  const chat = model.startChat({});
+  const result = await chat.sendMessage(prompt);
+  const text = result.response.text();
+  const usage = result.response.usageMetadata;
+  console.log(`[REGEN-SECTION] tokens in=${usage?.promptTokenCount ?? '?'}  out=${usage?.candidatesTokenCount ?? '?'}  chars=${text.length}`);
+  return text;
+}
+
 module.exports = {
   generateHoroscope,
   buildHoroscopeDoc,
   buildQuantumDoc,
+  regenerateHoroscopeSection,
   parseSinhalaDate,
   parseSinhalaTime,
   SECTIONS,

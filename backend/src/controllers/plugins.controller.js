@@ -8,7 +8,7 @@
 
 const db   = require('../db');
 const { generateAstroMessage, DEFAULT_ASTRO_PROMPT } = require('../services/astro');
-const { generateHoroscope, buildHoroscopeDoc, buildQuantumDoc, SECTIONS, SECTION_GUIDES, parseSinhalaDate } = require('../services/horoscope');
+const { generateHoroscope, buildHoroscopeDoc, buildQuantumDoc, regenerateHoroscopeSection, SECTIONS, SECTION_GUIDES, parseSinhalaDate } = require('../services/horoscope');
 const { analyzeAura, generateQuantumReading, generateQuantumSections } = require('../services/quantumCode');
 const { DEFAULT_TAROT_PROMPT } = require('../services/tarot');
 const resolveClientId = require('../middleware/resolveClientId');
@@ -585,7 +585,14 @@ async function downloadQuantumPdf(req, res) {
 
     const phone    = (r.rows[0].phone_number || orderId).replace(/\D/g, '');
     const last4    = phone.slice(-4) || '0000';
-    const filename = `quantum-${last4}-${hd.quantum_data.quantum_id || orderId}.pdf`;
+    const parsed   = parseSinhalaDate(cf.birth_date || '');
+    const birthday = parsed
+      ? `${parsed.year}${String(parsed.month).padStart(2,'0')}${String(parsed.day).padStart(2,'0')}`
+      : (cf.birth_date || 'unknown').replace(/[^0-9]/g, '').slice(0, 8);
+    const auraScore = hd.aura_analysis?.af_score != null
+      ? String(hd.aura_analysis.af_score.toFixed(2)).replace('.', '')
+      : 'aura';
+    const filename = `quantum-${last4}-${birthday}-${auraScore}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buffer);
@@ -662,11 +669,122 @@ async function regenerateQuantumSections(req, res) {
   }
 }
 
+async function regenerateHoroscopeSectionHandler(req, res) {
+  const { orderId } = req.params;
+  const { label } = req.body;
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  if (!label?.trim()) return res.status(400).json({ error: 'label required' });
+
+  try {
+    const r = await db.pgQuery(
+      'SELECT horoscope_data FROM orders WHERE order_id=$1', [orderId]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Order not found' });
+    const hd = (typeof r.rows[0].horoscope_data === 'string')
+      ? JSON.parse(r.rows[0].horoscope_data || '{}')
+      : (r.rows[0].horoscope_data || {});
+
+    if (!hd.chart_data) return res.status(400).json({ error: 'No chart data found.' });
+
+    const config = await db.getPluginConfig(clientId, 'horoscope_reading');
+    const systemPrompt = config.system_prompt || '';
+
+    // Find guide for this section from config
+    const sectionDef = Array.isArray(config.horoscope_sections)
+      ? config.horoscope_sections.find(s => s.label === label.trim())
+      : null;
+    const sectionGuide = sectionDef?.guide || config.section_guides?.[label.trim()] || '';
+
+    console.log(`[REGEN-HORO-SECTION] order=${orderId} label="${label}"`);
+
+    const newContent = await regenerateHoroscopeSection({
+      chartData:    hd.chart_data,
+      systemPrompt,
+      sectionKey:   label.trim(),
+      sectionGuide,
+    });
+
+    await db.pgQuery(
+      `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), '{sections,${label.trim()}}', $1::jsonb) WHERE order_id=$2`,
+      [JSON.stringify(newContent), orderId]
+    );
+
+    console.log(`[REGEN-HORO-SECTION] Done order=${orderId} label="${label}"`);
+    res.json({ ok: true, label: label.trim(), content: newContent });
+  } catch (e) {
+    console.error('[REGEN-HORO-SECTION] Error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+}
+
+async function regenerateQuantumSection(req, res) {
+  const { orderId } = req.params;
+  const { label } = req.body;
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  if (!label?.trim()) return res.status(400).json({ error: 'label required' });
+
+  try {
+    const r = await db.pgQuery(
+      'SELECT horoscope_data FROM orders WHERE order_id=$1', [orderId]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Order not found' });
+    const hd = (typeof r.rows[0].horoscope_data === 'string')
+      ? JSON.parse(r.rows[0].horoscope_data || '{}')
+      : (r.rows[0].horoscope_data || {});
+
+    if (!hd.quantum_data)  return res.status(400).json({ error: 'No quantum data found.' });
+    if (!hd.aura_analysis) return res.status(400).json({ error: 'No aura analysis found.' });
+
+    const config = await db.getPluginConfig(clientId, 'horoscope_reading');
+    const sectionDef = Array.isArray(config.quantum_sections)
+      ? config.quantum_sections.find(s => s.label === label.trim())
+      : null;
+
+    if (!sectionDef) return res.status(404).json({ error: `Section "${label}" not found in config.` });
+
+    console.log(`[REGEN-SECTION] order=${orderId} label="${label}"`);
+
+    const results = await generateQuantumSections(
+      hd.quantum_data,
+      hd.aura_analysis,
+      [sectionDef],
+      undefined,
+      config.quantum_system_prompt || '',
+      hd.chart_data?.vimshottari_dasha || null
+    );
+
+    const newContent = results[0]?.content || '';
+
+    // Update only this section in quantum_sections_data
+    const existing = Array.isArray(hd.quantum_sections_data) ? hd.quantum_sections_data : [];
+    const idx = existing.findIndex(s => s.label === label.trim());
+    let updated;
+    if (idx >= 0) {
+      updated = existing.map((s, i) => i === idx ? { ...s, content: newContent } : s);
+    } else {
+      updated = [...existing, { label: label.trim(), content: newContent }];
+    }
+
+    await db.pgQuery(
+      `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), '{quantum_sections_data}', $1::jsonb) WHERE order_id=$2`,
+      [JSON.stringify(updated), orderId]
+    );
+
+    console.log(`[REGEN-SECTION] Done order=${orderId} label="${label}"`);
+    res.json({ ok: true, label: label.trim(), content: newContent });
+  } catch (e) {
+    console.error('[REGEN-SECTION] Error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+}
+
 module.exports = {
   getPluginConfig, updatePluginConfig, getPluginCustomerData, generateAstroChart,
   analyzeAuraImage,
   generateHoroscopeReading, updateHoroscopeSections, updateQuantumSections,
-  regenerateQuantumSections,
+  regenerateQuantumSections, regenerateQuantumSection, regenerateHoroscopeSectionHandler,
   downloadQuantumDocx,
   downloadHoroscope, downloadHoroscopePdf, downloadQuantumPdf,
 };

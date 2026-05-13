@@ -51,6 +51,8 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
   const [sections, setSections]     = useState({ ...savedSections });
   const [specialAnswers, setSpecialAnswers] = useState(savedSpecial.map(qa => ({ ...qa })));
   const [saving, setSaving]                   = useState(false);
+  const [regeneratingAll, setRegeneratingAll] = useState(false);
+  const [overrideAstro, setOverrideAstro]     = useState(false);
   const [regeneratingSection, setRegeneratingSection] = useState(null);
   const [downloading, setDownloading]         = useState(false);
   const [downloadingPdf, setDownloadingPdf]   = useState(false);
@@ -76,6 +78,31 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
     setActiveTab(null);
     setOuterTab('edit');
   }, [order?.order_id]);
+
+  // Clear regeneratingAll once the backend finishes (generating flag removed)
+  useEffect(() => {
+    if (regeneratingAll && !hd.generating) setRegeneratingAll(false);
+  }, [hd.generating]);
+
+  const handleRegenerateAll = async () => {
+    if (!hd.lat || !hd.lng) return;
+    setRegeneratingAll(true);
+    try {
+      const params = clientId ? `?client_id=${clientId}` : '';
+      await api.post(`/plugins/horoscope/generate${params}`, {
+        order_id: order.order_id,
+        lat: hd.lat,
+        lng: hd.lng,
+        birth_place_name: hd.birth_place_name || '',
+        override_astro: overrideAstro,
+      });
+      toast.success('Regeneration started — sections will update automatically');
+      qc.invalidateQueries({ queryKey: ['orders'] });
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Failed to start regeneration');
+      setRegeneratingAll(false);
+    }
+  };
 
   // Derive ordered section keys from config
   const rawKeys = Object.keys(savedSections);
@@ -387,7 +414,27 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
         )}
 
         {/* Footer */}
-        <div style={{ flexShrink: 0, padding: '12px 16px', borderTop: '1px solid #e2e8f0', display: 'flex', gap: 8, justifyContent: 'flex-end', background: '#f8fafc' }}>
+        <div style={{ flexShrink: 0, padding: '12px 16px', borderTop: '1px solid #e2e8f0', display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center', background: '#f8fafc', flexWrap: 'wrap' }}>
+          {hd.lat && hd.lng && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginRight: 'auto' }}>
+              <button
+                onClick={handleRegenerateAll}
+                disabled={regeneratingAll || !!hd.generating}
+                style={{ padding: '8px 14px', fontSize: 13, fontWeight: 600, background: regeneratingAll || hd.generating ? '#e2e8f0' : '#0f766e', color: regeneratingAll || hd.generating ? '#94a3b8' : '#fff', border: 0, borderRadius: 8, cursor: regeneratingAll || hd.generating ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}
+              >
+                {regeneratingAll || hd.generating ? '⏳ Generating…' : '↺ Regenerate Horoscope'}
+              </button>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>
+                <input
+                  type="checkbox"
+                  checked={overrideAstro}
+                  onChange={e => setOverrideAstro(e.target.checked)}
+                  style={{ cursor: 'pointer' }}
+                />
+                Re-fetch chart
+              </label>
+            </div>
+          )}
           <button
             onClick={handleDownload}
             disabled={downloading}

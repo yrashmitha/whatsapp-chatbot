@@ -115,27 +115,60 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
 
   // ── Special questions ──────────────────────────────────────────────────────
   const [specialQuestions, setSpecialQuestions] = useState(
-    (existingHd.special_answers || []).map(qa => qa.question).filter(Boolean)
+    (existingHd.special_answers || []).map(qa => ({
+      question: qa.question,
+      sections: Array.isArray(qa.sections) ? qa.sections : [],
+    })).filter(qa => qa.question)
   );
   const [newQuestion, setNewQuestion]           = useState('');
+  const [newQuestionSections, setNewQuestionSections] = useState([]);
   const [editingQIdx, setEditingQIdx]           = useState(null);
   const [editingQText, setEditingQText]         = useState('');
+  const [configSections, setConfigSections]     = useState([]);
   const newQuestionRef  = useRef(null);
   const editingInputRef = useRef(null);
+
+  useEffect(() => {
+    const params = clientId ? `?client_id=${clientId}` : '';
+    fetch(`/api/plugins/horoscope_reading/config${params}`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('crm_token')}` },
+    })
+      .then(r => r.json())
+      .then(data => {
+        const secs = Array.isArray(data?.horoscope_sections) && data.horoscope_sections.length > 0
+          ? data.horoscope_sections.map(s => s.label || s).filter(Boolean)
+          : ['Personality','Education','Career & Finance','Love & Marriage','Property, Land & Vehicles','Health & Accidents','Children','Life Summary','Current Dasha Period','Remedies','VIP Section'];
+        setConfigSections(secs);
+      })
+      .catch(() => {
+        setConfigSections(['Personality','Education','Career & Finance','Love & Marriage','Property, Land & Vehicles','Health & Accidents','Children','Life Summary','Current Dasha Period','Remedies','VIP Section']);
+      });
+  }, [clientId]);
+
+  const toggleNewSection = (sec) => setNewQuestionSections(prev =>
+    prev.includes(sec) ? prev.filter(s => s !== sec) : [...prev, sec]
+  );
 
   const addQuestion = () => {
     const q = (newQuestionRef.current?.value ?? newQuestion).trim();
     if (!q) return;
-    setSpecialQuestions(prev => [...prev, q]);
+    setSpecialQuestions(prev => [...prev, { question: q, sections: newQuestionSections }]);
     setNewQuestion('');
+    setNewQuestionSections([]);
     if (newQuestionRef.current) { newQuestionRef.current.value = ''; newQuestionRef.current.style.height = 'auto'; }
   };
   const removeQuestion = (i) => { setSpecialQuestions(prev => prev.filter((_, idx) => idx !== i)); if (editingQIdx === i) setEditingQIdx(null); };
-  const startEdit = (i) => { setEditingQIdx(i); setEditingQText(specialQuestions[i]); };
+  const startEdit = (i) => { setEditingQIdx(i); setEditingQText(specialQuestions[i].question); };
   const saveEdit  = (i) => {
     const t = (editingInputRef.current?.value ?? editingQText).trim();
-    if (t) setSpecialQuestions(prev => prev.map((q, idx) => idx === i ? t : q));
+    if (t) setSpecialQuestions(prev => prev.map((q, idx) => idx === i ? { ...q, question: t } : q));
     setEditingQIdx(null);
+  };
+  const toggleQuestionSection = (qi, sec) => {
+    setSpecialQuestions(prev => prev.map((q, idx) => idx === qi
+      ? { ...q, sections: q.sections.includes(sec) ? q.sections.filter(s => s !== sec) : [...q.sections, sec] }
+      : q
+    ));
   };
 
   // ── Aura & Quantum state ───────────────────────────────────────────────────
@@ -190,7 +223,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
     lng:               selectedPlace?.lng,
     birth_place_name:  selectedPlace?.name || '',
     override_astro:    overrideAstro,
-    special_questions: specialQuestions,
+    special_questions: specialQuestions,  // [{question, sections}]
     package_type:      packageType,
     birth_overrides:   { customer_name: customerName, birth_date: birthDate, birth_time: `${birthHour}:${birthMinute}` },
     active_name:       activeName.trim(),
@@ -529,7 +562,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
 
           {/* Special questions */}
           <div>
-            <label className={labelCls}>Special Questions <span className="text-slate-400 font-normal">(optional)</span></label>
+            <label className={labelCls}>Special Questions <span className="text-slate-400 font-normal">(optional — select sections to use as context)</span></label>
             <div className="flex gap-2 mb-2">
               <textarea
                 ref={newQuestionRef}
@@ -543,7 +576,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
                   e.target.style.height = e.target.scrollHeight + 'px';
                 }}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addQuestion(); } }}
-                placeholder="Type a question and press Enter or Add…"
+                placeholder="Describe the customer's problem or question…"
               />
               <button
                 type="button"
@@ -551,24 +584,63 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
                 className="px-3 py-2 text-xs font-medium bg-violet-100 text-violet-700 rounded-xl border-0 cursor-pointer hover:bg-violet-200 shrink-0"
               >Add</button>
             </div>
+            {/* Section tags for the new question being typed */}
+            {configSections.length > 0 && (
+              <div className="mb-3">
+                <p className="text-xs text-slate-400 mb-1.5">Apply to sections (optional):</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {configSections.map(sec => (
+                    <button
+                      key={sec}
+                      type="button"
+                      onClick={() => toggleNewSection(sec)}
+                      className={`px-2 py-0.5 text-xs rounded-full border cursor-pointer transition-colors ${
+                        newQuestionSections.includes(sec)
+                          ? 'bg-violet-600 text-white border-violet-600'
+                          : 'bg-slate-50 text-slate-500 border-slate-200 hover:border-violet-300 hover:text-violet-600'
+                      }`}
+                    >{sec}</button>
+                  ))}
+                </div>
+              </div>
+            )}
             {specialQuestions.length > 0 && (
-              <ul className="flex flex-col gap-1">
-                {specialQuestions.map((q, i) => (
-                  <li key={i} className="flex items-start gap-2 bg-slate-50 rounded-lg px-3 py-1.5 text-xs text-slate-700">
-                    {editingQIdx === i ? (
-                      <input
-                        ref={editingInputRef}
-                        autoFocus
-                        className="flex-1 text-xs border border-violet-300 rounded px-1 py-0.5 outline-none bg-white"
-                        value={editingQText}
-                        onChange={e => setEditingQText(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') saveEdit(i); if (e.key === 'Escape') setEditingQIdx(null); }}
-                        onBlur={() => saveEdit(i)}
-                      />
-                    ) : (
-                      <span className="flex-1 cursor-pointer hover:text-violet-700" onClick={() => startEdit(i)} title="Click to edit">{i + 1}. {q}</span>
+              <ul className="flex flex-col gap-2">
+                {specialQuestions.map((qObj, i) => (
+                  <li key={i} className="bg-slate-50 rounded-lg px-3 py-2 text-xs text-slate-700">
+                    <div className="flex items-start gap-2 mb-1.5">
+                      {editingQIdx === i ? (
+                        <input
+                          ref={editingInputRef}
+                          autoFocus
+                          className="flex-1 text-xs border border-violet-300 rounded px-1 py-0.5 outline-none bg-white"
+                          value={editingQText}
+                          onChange={e => setEditingQText(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') saveEdit(i); if (e.key === 'Escape') setEditingQIdx(null); }}
+                          onBlur={() => saveEdit(i)}
+                        />
+                      ) : (
+                        <span className="flex-1 cursor-pointer hover:text-violet-700" onClick={() => startEdit(i)} title="Click to edit">{i + 1}. {qObj.question}</span>
+                      )}
+                      <button type="button" onClick={() => removeQuestion(i)} className="text-slate-400 hover:text-red-500 bg-transparent border-0 cursor-pointer leading-none shrink-0">×</button>
+                    </div>
+                    {/* Per-question section tags */}
+                    {configSections.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {configSections.map(sec => (
+                          <button
+                            key={sec}
+                            type="button"
+                            onClick={() => toggleQuestionSection(i, sec)}
+                            className={`px-1.5 py-0.5 text-xs rounded-full border cursor-pointer transition-colors ${
+                              qObj.sections.includes(sec)
+                                ? 'bg-indigo-500 text-white border-indigo-500'
+                                : 'bg-white text-slate-400 border-slate-200 hover:border-indigo-300 hover:text-indigo-500'
+                            }`}
+                          >{sec}</button>
+                        ))}
+                      </div>
                     )}
-                    <button type="button" onClick={() => removeQuestion(i)} className="text-slate-400 hover:text-red-500 bg-transparent border-0 cursor-pointer leading-none shrink-0">×</button>
                   </li>
                 ))}
               </ul>

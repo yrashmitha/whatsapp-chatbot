@@ -748,24 +748,27 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
   // 5. Only send chart data to Gemini — no order/customer details
   const chartDataJson = JSON.stringify(chartData, null, 2);
 
-  // 6. Create Gemini chat session
-  const specialQuestionsRef = specialQuestions.length > 0
-    ? '\n\nවිශේෂ සටහන: මෙම ගනුදෙනුකරු පහත ගැටළු හෝ ප්‍රශ්න ඉදිරිපත් කර ඇත. සියලු කොටස් ලිවීමේදී මෙය සේ සලකා, ඔවුන්ගේ ජීවිතයට වඩාත් ගැලපෙන ලෙස ඉදිරිපත් කරන්න:\n'
-        + specialQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')
-    : '';
-  const sectionSystemInstruction = systemPrompt + '\n\nමෙම කේන්ද්‍ර දත්ත සම්පූර්ණ වාර්තාව සඳහා පදනම වේ:\n\n' + chartDataJson + specialQuestionsRef;
+  // Normalise specialQuestions: accept both legacy string[] and new {question, sections}[] format
+  const normalisedQuestions = specialQuestions.map(q =>
+    typeof q === 'string' ? { question: q, sections: [] } : q
+  );
+
+  // Helper: build a context note for questions tagged to a specific section
+  const buildSectionQuestionRef = (sectionLabel) => {
+    const tagged = normalisedQuestions.filter(
+      q => Array.isArray(q.sections) && q.sections.includes(sectionLabel)
+    );
+    if (!tagged.length) return '';
+    return '\n\nවිශේෂ සටහන: මෙම ගනුදෙනුකරු මෙම කොටස සම්බන්ධව පහත ගැටළු හෝ ප්‍රශ්න ඉදිරිපත් කර ඇත. මෙය ලිවීමේදී සේ සලකා, ඔවුන්ගේ ජීවිතයට වඩාත් ගැලපෙන ලෙස ඉදිරිපත් කරන්න:\n'
+      + tagged.map((q, i) => `${i + 1}. ${q.question}`).join('\n');
+  };
+
+  // 6. Create Gemini chat session (base system instruction without per-section question refs)
+  const baseSystemInstruction = systemPrompt + '\n\nමෙම කේන්ද්‍ර දත්ත සම්පූර්ණ වාර්තාව සඳහා පදනම වේ:\n\n' + chartDataJson;
   console.log('[HORO-CHAT] ══ SESSION START ══════════════════════════════════════');
   console.log('[HORO-CHAT] model: gemini-2.5-flash  temperature=0.4  topP=0.8  topK=40');
-  console.log(`[HORO-CHAT] systemInstruction (${sectionSystemInstruction.length} chars total, chart data omitted):\n` + systemPrompt);
+  console.log(`[HORO-CHAT] systemInstruction (${baseSystemInstruction.length} chars total, chart data omitted):\n` + systemPrompt);
   console.log('[HORO-CHAT] ══════════════════════════════════════════════════════');
-
-  const geminiModel = genAI.getGenerativeModel({
-    model: 'gemini-2.5-flash',
-    generationConfig: { temperature: 0.4, topP: 0.8, topK: 40 },
-    systemInstruction: sectionSystemInstruction,
-  });
-
-  const chat = geminiModel.startChat({});
 
   // 7. Horoscope sections
   // If horoscope_sections config is set, use that order + guides; otherwise fall back to defaults.
@@ -783,8 +786,19 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
 
   const sectionsMap = {};
   for (const sec of activeSections) {
+    // Build a fresh model per section so we can inject per-section question context
+    const sectionRef = buildSectionQuestionRef(sec);
+    const sectionSystemInstruction = baseSystemInstruction + sectionRef;
+    const geminiModel = genAI.getGenerativeModel({
+      model: 'gemini-2.5-flash',
+      generationConfig: { temperature: 0.4, topP: 0.8, topK: 40 },
+      systemInstruction: sectionSystemInstruction,
+    });
+    const chat = geminiModel.startChat({});
+
     const sectionPrompt = buildSectionPrompt(sec, sectionGuidesOverride);
     console.log(`\n[HORO-CHAT] ── REQUEST: "${sec}" ${'─'.repeat(Math.max(0, 50 - sec.length))}`);
+    if (sectionRef) console.log('[HORO-CHAT] section question ref injected:', sectionRef.trim().slice(0, 120));
     console.log('[HORO-CHAT] userPrompt:\n' + sectionPrompt);
     console.log('[HORO-CHAT] ──────────────────────────────────────────────────────');
     const result = await chat.sendMessage(sectionPrompt);
@@ -797,9 +811,9 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
     sectionsMap[sec] = sectionText;
   }
 
-  // 8. Special questions
+  // 8. Special questions — answer every question as standalone Q&A
   const specialAnswers = [];
-  if (specialQuestions.length > 0) {
+  if (normalisedQuestions.length > 0) {
     const specialSystemInstruction = systemPrompt + '\n\n' + chartDataJson;
     console.log('\n[HORO-SPECIAL] ══ SESSION START ═════════════════════════════════');
     console.log('[HORO-SPECIAL] model: gemini-2.5-flash  temperature=0.4  topP=0.8  topK=40');
@@ -812,7 +826,8 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
       systemInstruction: specialSystemInstruction,
     });
     const specialChat = specialModel.startChat({});
-    for (const question of specialQuestions) {
+    for (const qObj of normalisedQuestions) {
+      const question = qObj.question;
       const qPrompt = buildSpecialQuestionPrompt(question, systemPrompt, chartDataJson);
       console.log(`\n[HORO-SPECIAL] ── REQUEST: "${question}"`);
       console.log('[HORO-SPECIAL] userPrompt:\n' + qPrompt);
@@ -824,7 +839,7 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
       console.log(qText);
       console.log(`[HORO-SPECIAL] tokens in=${qUsage?.promptTokenCount ?? '?'}  out=${qUsage?.candidatesTokenCount ?? '?'}  chars=${qText.length}`);
       console.log('[HORO-SPECIAL] ─────────────────────────────────────────────────');
-      specialAnswers.push({ question, answer: qText });
+      specialAnswers.push({ question, sections: qObj.sections || [], answer: qText });
     }
   }
 
@@ -877,11 +892,15 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
  * Regenerate a single horoscope section using saved chart data.
  * Returns the new section text.
  */
-async function regenerateHoroscopeSection({ chartData, systemPrompt, sectionKey, sectionGuide, specialQuestions = [] }) {
+async function regenerateHoroscopeSection({ chartData, systemPrompt, sectionKey, sectionGuide, specialAnswers = [] }) {
   const chartDataJson = JSON.stringify(chartData, null, 2);
-  const specialQuestionsRef = specialQuestions.length > 0
-    ? '\n\nවිශේෂ සටහන: මෙම ගනුදෙනුකරු පහත ගැටළු හෝ ප්‍රශ්න ඉදිරිපත් කර ඇත. මෙම කොටස ලිවීමේදී මෙය සේ සලකා, ඔවුන්ගේ ජීවිතයට වඩාත් ගැලපෙන ලෙස ඉදිරිපත් කරන්න:\n'
-        + specialQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')
+  // Only inject questions explicitly tagged to this section
+  const tagged = specialAnswers.filter(
+    qa => Array.isArray(qa.sections) && qa.sections.includes(sectionKey)
+  );
+  const specialQuestionsRef = tagged.length > 0
+    ? '\n\nවිශේෂ සටහන: මෙම ගනුදෙනුකරු මෙම කොටස සම්බන්ධව පහත ගැටළු හෝ ප්‍රශ්න ඉදිරිපත් කර ඇත. මෙය ලිවීමේදී සේ සලකා, ඔවුන්ගේ ජීවිතයට වඩාත් ගැලපෙන ලෙස ඉදිරිපත් කරන්න:\n'
+        + tagged.map((qa, i) => `${i + 1}. ${qa.question}`).join('\n')
     : '';
   const sysInstruction = systemPrompt + '\n\nමෙම කේන්ද්‍ර දත්ත සම්පූර්ණ වාර්තාව සඳහා පදනම වේ:\n\n' + chartDataJson + specialQuestionsRef;
 

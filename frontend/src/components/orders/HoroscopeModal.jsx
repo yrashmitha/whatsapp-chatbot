@@ -241,7 +241,9 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
     }
     setGenerating(true);
     try {
-      await api.post('/plugins/horoscope/generate', buildPayload({ include_quantum: false }));
+      await api.post('/plugins/horoscope/generate', buildPayload({
+        include_quantum: hasSections ? false : includeQuantum,
+      }));
       toast.success('Generation started. Takes about 2 min. You can navigate away.');
       onGenerated?.();
       onClose();

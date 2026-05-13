@@ -759,7 +759,7 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
       q => Array.isArray(q.sections) && q.sections.includes(sectionLabel)
     );
     if (!tagged.length) return '';
-    return '\n\nවිශේෂ සටහන: මෙම ගනුදෙනුකරු මෙම කොටස සම්බන්ධව පහත ගැටළු හෝ ප්‍රශ්න ඉදිරිපත් කර ඇත. මෙය ලිවීමේදී සේ සලකා, ඔවුන්ගේ ජීවිතයට වඩාත් ගැලපෙන ලෙස ඉදිරිපත් කරන්න:\n'
+    return '\n\nවිශේෂ සටහන: මෙම හදහනේ අයිතිකරු පහත ගැටළු හෝ ප්‍රශ්න ඉදිරිපත් කර ඇත. මෙම කොටස ලිවීමේදී මෙම ගැටළුද ඔබගේ මෙම වාර්තාවේ ගුණාත්මකභාවය වැඩි දියුණු කිරීමට උපයෝගී කරගන්න. මෙම ගැටළු වලට කල යුතු දේ වෙනම අපි ලබා දෙනු ඇත. ඔබ කල යුත්තේ මෙම section එකට අවශ්‍ය නම් පමණක් මෙම ගැටළු වල context එක භාවිතා කිරීමයි.\n\n'
       + tagged.map((q, i) => `${i + 1}. ${q.question}`).join('\n');
   };
 
@@ -899,7 +899,7 @@ async function regenerateHoroscopeSection({ chartData, systemPrompt, sectionKey,
     qa => Array.isArray(qa.sections) && qa.sections.includes(sectionKey)
   );
   const specialQuestionsRef = tagged.length > 0
-    ? '\n\nවිශේෂ සටහන: මෙම ගනුදෙනුකරු මෙම කොටස සම්බන්ධව පහත ගැටළු හෝ ප්‍රශ්න ඉදිරිපත් කර ඇත. මෙය ලිවීමේදී සේ සලකා, ඔවුන්ගේ ජීවිතයට වඩාත් ගැලපෙන ලෙස ඉදිරිපත් කරන්න:\n'
+    ? '\n\nවිශේෂ සටහන: මෙම හදහනේ අයිතිකරු පහත ගැටළු හෝ ප්‍රශ්න ඉදිරිපත් කර ඇත. මෙම කොටස ලිවීමේදී මෙම ගැටළුද ඔබගේ මෙම වාර්තාවේ ගුණාත්මකභාවය වැඩි දියුණු කිරීමට උපයෝගී කරගන්න. මෙම ගැටළු වලට කල යුතු දේ වෙනම අපි ලබා දෙනු ඇත. ඔබ කල යුත්තේ මෙම section එකට අවශ්‍ය නම් පමණක් මෙම ගැටළු වල context එක භාවිතා කිරීමයි.\n\n'
         + tagged.map((qa, i) => `${i + 1}. ${qa.question}`).join('\n')
     : '';
   const sysInstruction = systemPrompt + '\n\nමෙම කේන්ද්‍ර දත්ත සම්පූර්ණ වාර්තාව සඳහා පදනම වේ:\n\n' + chartDataJson + specialQuestionsRef;

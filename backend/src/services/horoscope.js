@@ -704,6 +704,7 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
       dasha_levels: 2,
     };
     console.log('[HOROSCOPE] Calling freeastroapi for', orderId);
+    console.log('[HOROSCOPE] freeastroapi request:', JSON.stringify(astroPayload));
     const astroResp = await require('axios').post(
       'https://api.freeastroapi.com/api/v1/vedic/calculate',
       astroPayload,
@@ -748,10 +749,14 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
   const chartDataJson = JSON.stringify(chartData, null, 2);
 
   // 6. Create Gemini chat session
-  const sectionSystemInstruction = systemPrompt + '\n\nමෙම කේන්ද්‍ර දත්ත සම්පූර්ණ වාර්තාව සඳහා පදනම වේ:\n\n' + chartDataJson;
+  const specialQuestionsRef = specialQuestions.length > 0
+    ? '\n\nවිශේෂ සටහන: මෙම ගනුදෙනුකරු පහත ගැටළු හෝ ප්‍රශ්න ඉදිරිපත් කර ඇත. සියලු කොටස් ලිවීමේදී මෙය සේ සලකා, ඔවුන්ගේ ජීවිතයට වඩාත් ගැලපෙන ලෙස ඉදිරිපත් කරන්න:\n'
+        + specialQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')
+    : '';
+  const sectionSystemInstruction = systemPrompt + '\n\nමෙම කේන්ද්‍ර දත්ත සම්පූර්ණ වාර්තාව සඳහා පදනම වේ:\n\n' + chartDataJson + specialQuestionsRef;
   console.log('[HORO-CHAT] ══ SESSION START ══════════════════════════════════════');
   console.log('[HORO-CHAT] model: gemini-2.5-flash  temperature=0.4  topP=0.8  topK=40');
-  console.log(`[HORO-CHAT] systemInstruction (${sectionSystemInstruction.length} chars):\n` + sectionSystemInstruction);
+  console.log(`[HORO-CHAT] systemInstruction (${sectionSystemInstruction.length} chars total, chart data omitted):\n` + systemPrompt);
   console.log('[HORO-CHAT] ══════════════════════════════════════════════════════');
 
   const geminiModel = genAI.getGenerativeModel({
@@ -780,7 +785,6 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
   for (const sec of activeSections) {
     const sectionPrompt = buildSectionPrompt(sec, sectionGuidesOverride);
     console.log(`\n[HORO-CHAT] ── REQUEST: "${sec}" ${'─'.repeat(Math.max(0, 50 - sec.length))}`);
-    console.log('[HORO-CHAT] systemInstruction:\n' + sectionSystemInstruction);
     console.log('[HORO-CHAT] userPrompt:\n' + sectionPrompt);
     console.log('[HORO-CHAT] ──────────────────────────────────────────────────────');
     const result = await chat.sendMessage(sectionPrompt);
@@ -799,7 +803,7 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
     const specialSystemInstruction = systemPrompt + '\n\n' + chartDataJson;
     console.log('\n[HORO-SPECIAL] ══ SESSION START ═════════════════════════════════');
     console.log('[HORO-SPECIAL] model: gemini-2.5-flash  temperature=0.4  topP=0.8  topK=40');
-    console.log(`[HORO-SPECIAL] systemInstruction (${specialSystemInstruction.length} chars):\n` + specialSystemInstruction);
+    console.log(`[HORO-SPECIAL] systemInstruction (${specialSystemInstruction.length} chars total, chart data omitted):\n` + systemPrompt);
     console.log('[HORO-SPECIAL] ══════════════════════════════════════════════════');
 
     const specialModel = genAI.getGenerativeModel({
@@ -811,7 +815,6 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
     for (const question of specialQuestions) {
       const qPrompt = buildSpecialQuestionPrompt(question, systemPrompt, chartDataJson);
       console.log(`\n[HORO-SPECIAL] ── REQUEST: "${question}"`);
-      console.log('[HORO-SPECIAL] systemInstruction:\n' + specialSystemInstruction);
       console.log('[HORO-SPECIAL] userPrompt:\n' + qPrompt);
       console.log('[HORO-SPECIAL] ─────────────────────────────────────────────────');
       const qResult = await specialChat.sendMessage(qPrompt);
@@ -874,15 +877,19 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
  * Regenerate a single horoscope section using saved chart data.
  * Returns the new section text.
  */
-async function regenerateHoroscopeSection({ chartData, systemPrompt, sectionKey, sectionGuide }) {
+async function regenerateHoroscopeSection({ chartData, systemPrompt, sectionKey, sectionGuide, specialQuestions = [] }) {
   const chartDataJson = JSON.stringify(chartData, null, 2);
-  const sysInstruction = systemPrompt + '\n\nමෙම කේන්ද්‍ර දත්ත සම්පූර්ණ වාර්තාව සඳහා පදනම වේ:\n\n' + chartDataJson;
+  const specialQuestionsRef = specialQuestions.length > 0
+    ? '\n\nවිශේෂ සටහන: මෙම ගනුදෙනුකරු පහත ගැටළු හෝ ප්‍රශ්න ඉදිරිපත් කර ඇත. මෙම කොටස ලිවීමේදී මෙය සේ සලකා, ඔවුන්ගේ ජීවිතයට වඩාත් ගැලපෙන ලෙස ඉදිරිපත් කරන්න:\n'
+        + specialQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')
+    : '';
+  const sysInstruction = systemPrompt + '\n\nමෙම කේන්ද්‍ර දත්ත සම්පූර්ණ වාර්තාව සඳහා පදනම වේ:\n\n' + chartDataJson + specialQuestionsRef;
 
   const guidesOverride = sectionGuide ? { [sectionKey]: sectionGuide } : null;
   const prompt = buildSectionPrompt(sectionKey, guidesOverride);
 
   console.log(`[REGEN-SECTION] key="${sectionKey}"`);
-  console.log('[REGEN-SECTION] systemInstruction:\n' + sysInstruction);
+  console.log(`[REGEN-SECTION] systemInstruction (${sysInstruction.length} chars total, chart data omitted):\n` + systemPrompt);
   console.log('[REGEN-SECTION] userPrompt:\n' + prompt);
 
   const model = genAI.getGenerativeModel({

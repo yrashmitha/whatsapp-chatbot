@@ -694,11 +694,14 @@ async function regenerateHoroscopeSectionHandler(req, res) {
 
     console.log(`[REGEN-HORO-SECTION] order=${orderId} label="${label}"`);
 
+    const specialQuestions = (hd.special_answers || []).map(qa => qa.question).filter(Boolean);
+
     const newContent = await regenerateHoroscopeSection({
       chartData:    hd.chart_data,
       systemPrompt,
       sectionKey:   label.trim(),
       sectionGuide,
+      specialQuestions,
     });
 
     await db.pgQuery(

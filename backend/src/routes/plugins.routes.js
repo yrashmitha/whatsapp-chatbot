@@ -20,6 +20,7 @@ const {
   regenerateQuantumSections,
   regenerateQuantumSection,
   regenerateHoroscopeSectionHandler,
+  saveWaMessageHandler,
   generateWaMessageHandler,
   downloadQuantumDocx,
   downloadHoroscope,
@@ -49,6 +50,7 @@ router.get('/horoscope/download/:orderId',        jwtAuth, downloadHoroscope);
 router.get('/horoscope/download-pdf/:orderId',    jwtAuth, downloadHoroscopePdf);
 router.get('/horoscope/download-quantum-docx/:orderId', jwtAuth, downloadQuantumDocx);
 router.get('/horoscope/download-quantum-pdf/:orderId',  jwtAuth, downloadQuantumPdf);
+router.patch('/horoscope/wa-message/:orderId',           jwtAuth, saveWaMessageHandler);
 router.post('/horoscope/generate-wa-message/:orderId',  jwtAuth, generateWaMessageHandler);
 
 module.exports = router;

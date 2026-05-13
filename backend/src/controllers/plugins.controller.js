@@ -778,6 +778,25 @@ async function regenerateQuantumSection(req, res) {
   }
 }
 
+async function saveWaMessageHandler(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  const { orderId } = req.params;
+  const { wa_message } = req.body;
+  if (typeof wa_message !== 'string') return res.status(400).json({ error: 'wa_message required' });
+
+  try {
+    await db.pgQuery(
+      `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), '{wa_message}', $1::jsonb) WHERE order_id=$2`,
+      [JSON.stringify(wa_message), orderId]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[WA-MESSAGE-SAVE] Error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+}
+
 async function generateWaMessageHandler(req, res) {
   const clientId = resolveClientId(req);
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
@@ -807,6 +826,7 @@ module.exports = {
   analyzeAuraImage,
   generateHoroscopeReading, updateHoroscopeSections, updateQuantumSections,
   regenerateQuantumSections, regenerateQuantumSection, regenerateHoroscopeSectionHandler,
+  saveWaMessageHandler,
   generateWaMessageHandler,
   downloadQuantumDocx,
   downloadHoroscope, downloadHoroscopePdf, downloadQuantumPdf,

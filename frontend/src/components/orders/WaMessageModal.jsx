@@ -14,14 +14,34 @@ export default function WaMessageModal({ order, clientId, onClose }) {
   })();
 
   const [message, setMessage]       = useState(hd.wa_message || '');
+  const [saved, setSaved]           = useState(hd.wa_message || '');
   const [generating, setGenerating] = useState(false);
+  const [saving, setSaving]         = useState(false);
+
+  const isDirty = message !== saved;
+  const params  = clientId ? `?client_id=${clientId}` : '';
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.patch(`/plugins/horoscope/wa-message/${order.order_id}${params}`, { wa_message: message });
+      setSaved(message);
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      toast.success('Message saved');
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleRegenerate = async () => {
     setGenerating(true);
     try {
-      const params = clientId ? `?client_id=${clientId}` : '';
       const res = await api.post(`/plugins/horoscope/generate-wa-message/${order.order_id}${params}`);
-      setMessage(res.data.wa_message || '');
+      const newMsg = res.data.wa_message || '';
+      setMessage(newMsg);
+      setSaved(newMsg);
       qc.invalidateQueries({ queryKey: ['orders'] });
       toast.success('WhatsApp message generated');
     } catch (e) {
@@ -63,7 +83,7 @@ export default function WaMessageModal({ order, clientId, onClose }) {
               value={message}
               onChange={e => setMessage(e.target.value)}
               rows={14}
-              style={{ width: '100%', padding: '10px 12px', fontSize: 13, border: '1px solid #cbd5e1', borderRadius: 8, outline: 'none', resize: 'vertical', lineHeight: 1.6, fontFamily: 'sans-serif', color: '#1e293b', boxSizing: 'border-box' }}
+              style={{ width: '100%', padding: '10px 12px', fontSize: 13, border: `1px solid ${isDirty ? '#f59e0b' : '#cbd5e1'}`, borderRadius: 8, outline: 'none', resize: 'vertical', lineHeight: 1.6, fontFamily: 'sans-serif', color: '#1e293b', boxSizing: 'border-box' }}
             />
           ) : (
             <div style={{ textAlign: 'center', padding: '40px 0', color: '#94a3b8', fontSize: 13 }}>
@@ -80,6 +100,15 @@ export default function WaMessageModal({ order, clientId, onClose }) {
               style={{ padding: '8px 18px', fontSize: 13, background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: 8, cursor: 'pointer' }}
             >
               📋 Copy
+            </button>
+          )}
+          {isDirty && (
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, background: '#f59e0b', color: '#fff', border: 0, borderRadius: 8, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}
+            >
+              {saving ? 'Saving…' : '💾 Save'}
             </button>
           )}
           <button

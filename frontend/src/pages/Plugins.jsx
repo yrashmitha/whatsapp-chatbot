@@ -47,6 +47,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
   const [systemPrompt, setSystemPrompt]               = useState('');
   const [quantumSystemPrompt, setQuantumSystemPrompt] = useState('');
   const [auraSystemPrompt, setAuraSystemPrompt]       = useState('');
+  const [waMessagePrompt, setWaMessagePrompt]         = useState('');
   const [horoscopeSections, setHoroscopeSections]     = useState([]);
   const [quantumSections, setQuantumSections]         = useState([]);
   const [sectionGuides, setSectionGuides]             = useState({});
@@ -72,6 +73,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         setSystemPrompt(r.data.system_prompt || '');
         setQuantumSystemPrompt(r.data.quantum_system_prompt || '');
         setAuraSystemPrompt(r.data.aura_system_prompt || '');
+        setWaMessagePrompt(r.data.wa_message_prompt || '');
         setHoroscopeSections(Array.isArray(r.data.horoscope_sections) ? r.data.horoscope_sections : []);
         setQuantumSections(Array.isArray(r.data.quantum_sections) ? r.data.quantum_sections : []);
         setSectionGuides(r.data.section_guides && typeof r.data.section_guides === 'object' ? r.data.section_guides : {});
@@ -94,6 +96,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         setSystemPrompt('');
         setQuantumSystemPrompt('');
         setAuraSystemPrompt('');
+        setWaMessagePrompt('');
         setHoroscopeSections([]);
         setQuantumSections([]);
         setSectionGuides({});
@@ -121,6 +124,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         body.quantum_sections      = quantumSections;
         body.section_guides        = sectionGuides;
         body.special_note          = specialNote;
+        body.wa_message_prompt     = waMessagePrompt;
       } else if (isCallAnswering) {
         body.system_prompt = systemPrompt;
         body.greeting      = greeting;
@@ -373,6 +377,19 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
               rows={10}
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
               placeholder="Leave blank to use built-in default…"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">WhatsApp Message Prompt</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              After the horoscope (and quantum, if applicable) is generated, Gemini will be called with this as the system prompt and the full report as context to produce a WhatsApp message. Leave blank to disable auto-generation.
+            </p>
+            <textarea
+              value={waMessagePrompt}
+              onChange={e => setWaMessagePrompt(e.target.value)}
+              rows={8}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
+              placeholder="e.g. ඔබ දක්ෂ ජ්‍යෝතිෂ විශේෂඥයෙකි. ලබාදෙන හදහන් වාර්තාව පදනම් කරගෙන කෙටි WhatsApp message එකක් ලියන්න…"
             />
           </div>
           <div>

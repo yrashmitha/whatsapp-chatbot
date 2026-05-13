@@ -12,6 +12,7 @@ import ChatThread from '../components/chat/ChatThread';
 import CreateOrderDrawer from '../components/chat/CreateOrderDrawer';
 import HoroscopeModal from '../components/orders/HoroscopeModal';
 import HoroscopeEditorDrawer from '../components/orders/HoroscopeEditorDrawer';
+import WaMessageModal from '../components/orders/WaMessageModal';
 import TarotGenerateModal from '../components/orders/TarotGenerateModal';
 import TarotEditorDrawer from '../components/orders/TarotEditorDrawer';
 
@@ -40,6 +41,7 @@ export default function Orders() {
   const [showCreate, setShowCreate] = useState(false);
   const [horoscopeOrder, setHoroscopeOrder]   = useState(null);  // horoscope generate modal
   const [editorOrder, setEditorOrder]         = useState(null);  // horoscope editor drawer
+  const [waMessageOrder, setWaMessageOrder]   = useState(null);  // WA message popup
   const [tarotOrder, setTarotOrder]           = useState(null);  // tarot generate modal
   const [tarotEditorOrder, setTarotEditorOrder] = useState(null); // tarot editor drawer
   const toast = useToast();
@@ -279,6 +281,13 @@ export default function Orders() {
                                     title="View/edit horoscope"
                                     className="text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
                                   >✏</button>
+                                )}
+                                {horoscopeDone && (
+                                  <button
+                                    onClick={() => setWaMessageOrder(o)}
+                                    title={hd?.wa_message ? 'View/regenerate WhatsApp message' : 'Generate WhatsApp message'}
+                                    className="text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 bg-green-100 text-green-700 hover:bg-green-200"
+                                  >💬</button>
                                 )}
                               </>
                             )}
@@ -524,6 +533,13 @@ export default function Orders() {
         open={!!editorOrder}
         onClose={() => setEditorOrder(null)}
       />
+      {waMessageOrder && (
+        <WaMessageModal
+          order={waMessageOrder}
+          clientId={clientId}
+          onClose={() => setWaMessageOrder(null)}
+        />
+      )}
       <Drawer
         open={!!drawerCustomer}
         onClose={() => setDrawerCustomer(null)}

@@ -885,7 +885,75 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
   );
   console.log('[HOROSCOPE] All sections saved for', orderId);
 
+  // 10. Auto-generate WA message if prompt is configured
+  if (config.wa_message_prompt && config.wa_message_prompt.trim()) {
+    try {
+      await generateWaMessage(orderId, horoscopeData, config.wa_message_prompt);
+      console.log('[HOROSCOPE] WA message generated for', orderId);
+    } catch (e) {
+      console.error('[HOROSCOPE] WA message generation failed (non-fatal):', e.message);
+    }
+  }
+
   return horoscopeData;
+}
+
+/**
+ * Generate (or regenerate) a WhatsApp message summarising the full report.
+ * Saves the result to horoscope_data.wa_message for the given order.
+ */
+async function generateWaMessage(orderId, horoscopeData, waMessagePrompt) {
+  const sections         = horoscopeData.sections || {};
+  const specialAnswers   = horoscopeData.special_answers || [];
+  const quantumData      = horoscopeData.quantum_data || null;
+  const quantumSections  = horoscopeData.quantum_sections_data || null;
+
+  const contextParts = [];
+
+  const sectionKeys = Object.keys(sections);
+  if (sectionKeys.length > 0) {
+    contextParts.push('=== හොරොස්කෝප් වාර්තාව ===');
+    for (const key of sectionKeys) {
+      contextParts.push(`\n--- ${key} ---\n${sections[key]}`);
+    }
+  }
+
+  if (specialAnswers.length > 0) {
+    contextParts.push('\n=== විශේෂ ප්‍රශ්නෝත්තර ===');
+    specialAnswers.forEach((qa, i) => {
+      contextParts.push(`\nප්‍රශ්නය ${i + 1}: ${qa.question}\nපිළිතුර: ${qa.answer}`);
+    });
+  }
+
+  if (quantumSections && quantumSections.length > 0) {
+    contextParts.push('\n=== ක්වොන්ටම් ශක්ති කේතය ===');
+    quantumSections.forEach(sec => {
+      contextParts.push(`\n--- ${sec.label} ---\n${sec.content}`);
+    });
+  } else if (quantumData?._reading) {
+    contextParts.push('\n=== ක්වොන්ටම් ශක්ති කේතය ===\n' + quantumData._reading);
+  }
+
+  const contextText = contextParts.join('\n');
+
+  const model = genAI.getGenerativeModel({
+    model: 'gemini-2.5-flash',
+    generationConfig: { temperature: 0.7, topP: 0.9, topK: 40 },
+    systemInstruction: waMessagePrompt,
+  });
+
+  const chat = model.startChat({});
+  const result = await chat.sendMessage(contextText);
+  const waMessage = result.response.text();
+  const usage = result.response.usageMetadata;
+  console.log(`[WA-MESSAGE] order=${orderId} tokens in=${usage?.promptTokenCount ?? '?'} out=${usage?.candidatesTokenCount ?? '?'} chars=${waMessage.length}`);
+
+  await db.pgQuery(
+    `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), '{wa_message}', $1::jsonb) WHERE order_id=$2`,
+    [JSON.stringify(waMessage), orderId]
+  );
+
+  return waMessage;
 }
 
 /**
@@ -930,6 +998,7 @@ module.exports = {
   buildHoroscopeDoc,
   buildQuantumDoc,
   regenerateHoroscopeSection,
+  generateWaMessage,
   parseSinhalaDate,
   parseSinhalaTime,
   SECTIONS,

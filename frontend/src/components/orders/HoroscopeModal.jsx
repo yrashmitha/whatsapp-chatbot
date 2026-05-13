@@ -114,7 +114,9 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
   const [packageType, setPackageType] = useState('2990');
 
   // ── Special questions ──────────────────────────────────────────────────────
-  const [specialQuestions, setSpecialQuestions] = useState([]);
+  const [specialQuestions, setSpecialQuestions] = useState(
+    (existingHd.special_answers || []).map(qa => qa.question).filter(Boolean)
+  );
   const [newQuestion, setNewQuestion]           = useState('');
   const [editingQIdx, setEditingQIdx]           = useState(null);
   const [editingQText, setEditingQText]         = useState('');

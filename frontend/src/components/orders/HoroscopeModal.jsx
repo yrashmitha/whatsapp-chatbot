@@ -182,39 +182,55 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
+  const [generatingQuantum, setGeneratingQuantum] = useState(false);
+
+  const buildPayload = (overrides = {}) => ({
+    order_id:          order.order_id,
+    lat:               selectedPlace?.lat,
+    lng:               selectedPlace?.lng,
+    birth_place_name:  selectedPlace?.name || '',
+    override_astro:    overrideAstro,
+    special_questions: specialQuestions,
+    package_type:      packageType,
+    birth_overrides:   { customer_name: customerName, birth_date: birthDate, birth_time: `${birthHour}:${birthMinute}` },
+    active_name:       activeName.trim(),
+    ...(clientId && { client_id: clientId }),
+    ...overrides,
+  });
+
   const handleGenerate = async () => {
     if (!selectedPlace)    return toast.error('Please select a birth place');
     if (!birthDate.trim()) return toast.error('Birth date is required');
-    if (includeQuantum) {
-      if (!activeName.trim())              return toast.error('Active name required for Quantum Code');
-      if (!/[A-Za-z]/.test(activeName))   return toast.error('Active name must contain English letters (e.g. "Malith") for numerology');
-      if (!auraAnalysis)                   return toast.error('Please upload a photo for Aura analysis first');
+    if (includeQuantum && !hasSections) {
+      if (!activeName.trim())            return toast.error('Active name required for Quantum Code');
+      if (!/[A-Za-z]/.test(activeName)) return toast.error('Active name must contain English letters (e.g. "Malith") for numerology');
+      if (!auraAnalysis)                 return toast.error('Please upload a photo for Aura analysis first');
     }
     setGenerating(true);
     try {
-      await api.post('/plugins/horoscope/generate', {
-        order_id:         order.order_id,
-        lat:              selectedPlace.lat,
-        lng:              selectedPlace.lng,
-        birth_place_name: selectedPlace.name,
-        override_astro:   overrideAstro,
-        special_questions: specialQuestions,
-        package_type:     packageType,
-        birth_overrides:  { customer_name: customerName, birth_date: birthDate, birth_time: `${birthHour}:${birthMinute}` },
-        include_quantum: includeQuantum,
-        active_name:     activeName.trim(),
-        ...(clientId && { client_id: clientId }),
-      });
-      toast.success(
-        hasSections && includeQuantum && !overrideAstro
-          ? 'Quantum Code added. Download the updated PDF.'
-          : 'Generation started. Takes about 2 min. You can navigate away.'
-      );
+      await api.post('/plugins/horoscope/generate', buildPayload({ include_quantum: false }));
+      toast.success('Generation started. Takes about 2 min. You can navigate away.');
       onGenerated?.();
       onClose();
     } catch (e) {
       toast.error(e?.response?.data?.error || 'Failed to start generation');
       setGenerating(false);
+    }
+  };
+
+  const handleRegenerateQuantum = async () => {
+    if (!activeName.trim())            return toast.error('Active name required for Quantum Code');
+    if (!/[A-Za-z]/.test(activeName)) return toast.error('Active name must contain English letters');
+    if (!auraAnalysis)                 return toast.error('Please upload a photo for Aura analysis first');
+    setGeneratingQuantum(true);
+    try {
+      await api.post('/plugins/horoscope/generate', buildPayload({ include_quantum: true, override_astro: false }));
+      toast.success('Quantum regeneration started. Download the updated PDF when done.');
+      onGenerated?.();
+      onClose();
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Failed to start quantum regeneration');
+      setGeneratingQuantum(false);
     }
   };
 
@@ -576,30 +592,41 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t border-slate-100 flex gap-3">
+        <div className="px-5 py-4 border-t border-slate-100 flex gap-3 flex-wrap">
           <button
             onClick={onClose}
-            className="flex-1 py-2.5 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl border-0 cursor-pointer"
+            className="py-2.5 px-5 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl border-0 cursor-pointer"
           >
             Cancel
           </button>
-          <button
-            onClick={handleGenerate}
-            disabled={generating || !selectedPlace || !birthDate.trim() || auraUploading || (includeQuantum && (!auraAnalysis || !activeName.trim()))}
-            className="flex-1 py-2.5 text-sm font-medium text-white rounded-xl border-0 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
-            style={{ background: generating ? '#7c3aed' : 'linear-gradient(135deg,#7c3aed,#a855f7)' }}
-          >
-            {generating ? (
-              <>
-                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin block" />
-                Starting…
-              </>
-            ) : (
-              hasSections && includeQuantum && !overrideAstro
-                ? '✦ Add Quantum Code'
-                : '🔮 Generate Reading'
+          <div className="flex gap-3 flex-1 flex-wrap justify-end">
+            <button
+              onClick={handleGenerate}
+              disabled={generating || generatingQuantum || !selectedPlace || !birthDate.trim() || auraUploading}
+              className="flex-1 min-w-[160px] py-2.5 text-sm font-medium text-white rounded-xl border-0 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+              style={{ background: generating ? '#4f46e5' : 'linear-gradient(135deg,#4f46e5,#6366f1)' }}
+            >
+              {generating ? (
+                <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin block" />Starting…</>
+              ) : (
+                hasSections ? '🔮 Generate Reading Again' : '🔮 Generate Reading'
+              )}
+            </button>
+            {(hasSections || includeQuantum) && (
+              <button
+                onClick={handleRegenerateQuantum}
+                disabled={generating || generatingQuantum || !auraAnalysis || !activeName.trim() || auraUploading}
+                className="flex-1 min-w-[160px] py-2.5 text-sm font-medium text-white rounded-xl border-0 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                style={{ background: generatingQuantum ? '#7c3aed' : 'linear-gradient(135deg,#7c3aed,#a855f7)' }}
+              >
+                {generatingQuantum ? (
+                  <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin block" />Starting…</>
+                ) : (
+                  '✦ Regenerate Quantum'
+                )}
+              </button>
             )}
-          </button>
+          </div>
         </div>
       </div>
     </div>

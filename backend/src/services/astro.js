@@ -78,7 +78,7 @@ async function generateAstroMessage(clientId, phone, birthData, apiKey) {
 
   const promptTemplate = config.prompt || DEFAULT_ASTRO_PROMPT;
   const prompt = promptTemplate.replace('{chart_json}', JSON.stringify(chartData, null, 2));
-  console.log('[ASTRO] Gemini prompt:\n', prompt);
+  console.log('[ASTRO] Gemini prompt template:\n', promptTemplate);
 
   const pluginModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
   const geminiResult = await pluginModel.generateContent(prompt);

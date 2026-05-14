@@ -31,7 +31,7 @@ const model = genAI.getGenerativeModel({
     topP: 0.95,
     topK: 64,
     maxOutputTokens: 4096,
-    thinkingConfig: { thinkingBudget: 1024 },
+    thinkingConfig: { thinkingBudget: 8192 },
   }
 });
 
@@ -182,7 +182,7 @@ async function buildChatSession(phoneNumber, client) {
         topP: 0.95,
         topK: 64,
         maxOutputTokens: 3000,
-        thinkingConfig: { thinkingBudget: 1024 },
+        thinkingConfig: { thinkingBudget: 8192 },
       },
     });
     console.log(`[SESSION] Built client model for ${client.id} | mode=${client.system_prompt_mode} | orderFields=${client.order_fields?.length || 0} | contactNumber=${client.contact_number || 'none'} | instructionLen=${fullInstruction.length}`);
@@ -499,43 +499,47 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
 
   // Filter out thought parts so they never reach the customer.
   // Use candidates[0].content.parts and skip any part with thought:true.
-  // Only fall back to candidate.text() if rawParts is completely empty (SDK version mismatch),
-  // and in that case strip any <think>…</think> blocks before using it.
+  // Fall back to candidate.text() (with think-block stripping) when no non-thought text
+  // is found — covers both empty rawParts (SDK version mismatch) and all-thought-parts cases.
   const rawParts = candidate.candidates?.[0]?.content?.parts || [];
+  const finishReason = candidate.candidates?.[0]?.finishReason;
   const nonThoughtText = rawParts
     .filter(p => !p.thought && typeof p.text === 'string')
     .map(p => p.text)
     .join('');
   let rawReply = nonThoughtText;
-  if (!rawReply && rawParts.length === 0) {
-    // rawParts empty → SDK didn't expose parts; use text() but strip think blocks
+  if (!rawReply) {
+    // All parts were thought-only, or rawParts was empty (SDK mismatch) — strip think blocks and use text()
     const sdkText = candidate.text?.() || '';
     rawReply = sdkText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-    if (rawReply) log.warn('[GEMINI] rawParts empty — used candidate.text() with think-block strip as fallback');
+    if (rawReply) log.warn(`[GEMINI] Non-thought text empty (finishReason=${finishReason}, parts=${rawParts.length}) — used stripped candidate.text() fallback`);
   }
-  log.info(`[GEMINI] Raw response JSON: ${JSON.stringify({ parts: rawParts.map(p => ({ thought: !!p.thought, text: p.text?.slice(0, 300) })), rawReply: rawReply.slice(0, 500) })}`);
+  log.info(`[GEMINI] Raw response JSON: ${JSON.stringify({ finishReason, parts: rawParts.map(p => ({ thought: !!p.thought, text: p.text?.slice(0, 300) })), rawReply: rawReply.slice(0, 500) })}`);
 
   let botReply  = rawReply
     .replace(/\*\*([^*\n]+)\*\*/g, '*$1*') // convert markdown **bold** → WhatsApp *bold*
     .replace(/\[ORDER STATUS[^\]]*\]\s*/gi, '') // strip any echoed ORDER STATUS note wherever it appears
     .trim();
 
-  // If Gemini returned only thought parts or exited the function loop without text,
-  // send one extra nudge to get a plain-text answer before falling back to the error message.
-  // Always nudge when text is empty — even if media is queued, we still need a text reply
+  // If still empty after all extraction attempts, send one nudge asking for a direct reply.
+  // Use an explicit instruction rather than a vague prompt to avoid triggering another thinking round.
   if (!botReply) {
-    log.warn('[GEMINI] Empty reply — nudging Gemini for plain text response');
+    log.warn(`[GEMINI] Empty reply after all fallbacks (finishReason=${finishReason}) — nudging`);
     try {
-      const nudge = await chatSession.sendMessage('Please provide your text reply now.');
+      const nudge = await chatSession.sendMessage('Reply to the customer now with a short direct text message. Do not think — just reply.');
       const nudgeParts = nudge.response.candidates?.[0]?.content?.parts || [];
       botReply = nudgeParts
         .filter(p => !p.thought && typeof p.text === 'string')
         .map(p => p.text)
         .join('')
         .trim();
-      // Do NOT fall back to nudge.response.text() — includes thinking tokens
-      if (!botReply) log.warn('[GEMINI] Nudge also returned only thought parts or empty');
-      log.info(`[GEMINI] Nudge reply: "${botReply.substring(0, 80)}"`);
+      if (!botReply) {
+        // Last resort: strip think blocks from nudge text()
+        const nudgeSdk = nudge.response.text?.() || '';
+        botReply = nudgeSdk.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+      }
+      if (!botReply) log.warn('[GEMINI] Nudge also returned empty');
+      else log.info(`[GEMINI] Nudge reply: "${botReply.substring(0, 80)}"`);
     } catch (e) {
       log.error('[GEMINI] Nudge failed:', e.message);
     }

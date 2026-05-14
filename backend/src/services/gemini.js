@@ -521,12 +521,18 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     .replace(/\[ORDER STATUS[^\]]*\]\s*/gi, '') // strip any echoed ORDER STATUS note wherever it appears
     .trim();
 
-  // If still empty after all extraction attempts, send one nudge asking for a direct reply.
-  // Use an explicit instruction rather than a vague prompt to avoid triggering another thinking round.
+  // If still empty, recover based on the finish reason.
   if (!botReply) {
-    log.warn(`[GEMINI] Empty reply after all fallbacks (finishReason=${finishReason}) — nudging`);
+    log.warn(`[GEMINI] Empty reply after all fallbacks (finishReason=${finishReason}) — attempting recovery`);
     try {
-      const nudge = await chatSession.sendMessage('Reply to the customer now with a short direct text message. Do not think — just reply.');
+      // MALFORMED_FUNCTION_CALL: model tried to call a tool but generated broken JSON.
+      // A plain nudge won't help — the session is stuck waiting for a tool response.
+      // Send an explicit instruction to abandon the tool call and answer in text instead.
+      const recoveryMsg = finishReason === 'MALFORMED_FUNCTION_CALL'
+        ? 'Your last tool call had a formatting error and could not be executed. Ignore it and answer the customer\'s question directly in plain text now, without calling any tools.'
+        : 'Reply to the customer now with a short direct text message. Do not think — just reply.';
+
+      const nudge = await chatSession.sendMessage(recoveryMsg);
       const nudgeParts = nudge.response.candidates?.[0]?.content?.parts || [];
       botReply = nudgeParts
         .filter(p => !p.thought && typeof p.text === 'string')
@@ -534,14 +540,13 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
         .join('')
         .trim();
       if (!botReply) {
-        // Last resort: strip think blocks from nudge text()
         const nudgeSdk = nudge.response.text?.() || '';
         botReply = nudgeSdk.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
       }
-      if (!botReply) log.warn('[GEMINI] Nudge also returned empty');
-      else log.info(`[GEMINI] Nudge reply: "${botReply.substring(0, 80)}"`);
+      if (!botReply) log.warn('[GEMINI] Recovery nudge also returned empty');
+      else log.info(`[GEMINI] Recovery nudge reply: "${botReply.substring(0, 80)}"`);
     } catch (e) {
-      log.error('[GEMINI] Nudge failed:', e.message);
+      log.error('[GEMINI] Recovery nudge failed:', e.message);
     }
   }
 

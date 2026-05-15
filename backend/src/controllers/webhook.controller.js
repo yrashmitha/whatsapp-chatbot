@@ -198,10 +198,14 @@ function receiveWebhook(req, res) {
         }
 
         const { botReply, imagesToSend, productImagesToSend: imgProductImages, isFallback: imgFallback } = await handleMessage(from, imageNote, imgSession.chat, { skipUserInsert: true, client, traceId });
-        if (botReply.trim()) await sendBotReply(from, botReply, client);
-        if (imgFallback && client.owner_phone) {
-          const notif = `⚠️ Bot fallback triggered\nCustomer: ${from}\nMessage: [Image]${msg.image?.caption ? ` "${msg.image.caption}"` : ''}`;
-          sendWhatsAppMessage(client.owner_phone, notif, client).catch(e => log.warn('[FALLBACK-NOTIF] Failed:', e.message));
+        if (imgFallback) {
+          log.warn(`[WEBHOOK] Fallback triggered on image — suppressing reply to customer`);
+          if (client.owner_phone) {
+            const notif = `⚠️ Bot fallback triggered\nCustomer: ${from}\nMessage: [Image]${msg.image?.caption ? ` "${msg.image.caption}"` : ''}`;
+            sendWhatsAppMessage(client.owner_phone, notif, client).catch(e => log.warn('[FALLBACK-NOTIF] Failed:', e.message));
+          }
+        } else if (botReply.trim()) {
+          await sendBotReply(from, botReply, client);
         }
 
         for (const filename of imagesToSend) {
@@ -291,10 +295,14 @@ function receiveWebhook(req, res) {
 
               const docNote = buildAnalysisNote(analysis, '', pendingOrders, cfg.verification_prompt || '');
               const { botReply: docReply, imagesToSend: docImages, productImagesToSend: docProductImages, isFallback: docFallback } = await handleMessage(from, docNote, docSession.chat, { skipUserInsert: true, client, traceId });
-              if (docReply.trim()) await sendBotReply(from, docReply, client);
-              if (docFallback && client.owner_phone) {
-                const notif = `⚠️ Bot fallback triggered\nCustomer: ${from}\nMessage: [Document: ${docFileName}]`;
-                sendWhatsAppMessage(client.owner_phone, notif, client).catch(e => log.warn('[FALLBACK-NOTIF] Failed:', e.message));
+              if (docFallback) {
+                log.warn(`[WEBHOOK] Fallback triggered on document — suppressing reply to customer`);
+                if (client.owner_phone) {
+                  const notif = `⚠️ Bot fallback triggered\nCustomer: ${from}\nMessage: [Document: ${docFileName}]`;
+                  sendWhatsAppMessage(client.owner_phone, notif, client).catch(e => log.warn('[FALLBACK-NOTIF] Failed:', e.message));
+                }
+              } else if (docReply.trim()) {
+                await sendBotReply(from, docReply, client);
               }
               for (const filename of docImages) {
                 await sendWhatsAppImage(from, filename, '', client);
@@ -409,14 +417,16 @@ function receiveWebhook(req, res) {
       session.lastUsed = Date.now();
 
       const { botReply, imagesToSend, productImagesToSend, isFallback } = await handleMessage(from, userMessage, session.chat, { client, traceId });
-      if (!botReply.trim()) {
+      if (isFallback) {
+        log.warn(`[WEBHOOK] Fallback triggered — suppressing reply to customer`);
+        if (client.owner_phone) {
+          const notif = `⚠️ Bot fallback triggered\nCustomer: ${from}\nMessage: ${userMessage.substring(0, 200)}`;
+          sendWhatsAppMessage(client.owner_phone, notif, client).catch(e => log.warn('[FALLBACK-NOTIF] Failed:', e.message));
+        }
+      } else if (!botReply.trim()) {
         log.warn(`[WEBHOOK] Empty botReply from Gemini — skipping send`);
       } else {
         await sendBotReply(from, botReply, client);
-      }
-      if (isFallback && client.owner_phone) {
-        const notif = `⚠️ Bot fallback triggered\nCustomer: ${from}\nMessage: ${userMessage.substring(0, 200)}`;
-        sendWhatsAppMessage(client.owner_phone, notif, client).catch(e => log.warn('[FALLBACK-NOTIF] Failed:', e.message));
       }
 
       for (const filename of imagesToSend) {

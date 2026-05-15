@@ -50,6 +50,7 @@ export default function Settings() {
   const [prompt, setPrompt]                           = useState('');
   const [errorMsg, setErrorMsg]                       = useState('');
   const [contactNumber, setContactNumber]             = useState('');
+  const [ownerPhone, setOwnerPhone]                   = useState('');
   const [knowledgeBaseEnabled, setKnowledgeBaseEnabled] = useState(false);
   const [productCatalogEnabled, setProductCatalogEnabled] = useState(false);
   const [pluginEnabled, setPluginEnabled]             = useState(false);
@@ -127,6 +128,7 @@ export default function Settings() {
       setPrompt(settingsData.custom_prompt || '');
       setErrorMsg(settingsData.error_message || '');
       setContactNumber(settingsData.contact_number || '');
+      setOwnerPhone(settingsData.owner_phone || '');
       setKnowledgeBaseEnabled(!!settingsData.knowledge_base_enabled);
       setProductCatalogEnabled(!!settingsData.product_catalog_enabled);
       setPluginEnabled(!!settingsData.plugin_enabled);
@@ -180,7 +182,7 @@ export default function Settings() {
     if (!clientId) { toast.error('Select a client first'); return; }
     setPromptLoading(true);
     try {
-      await api.put('/settings/prompt', { prompt, error_message: errorMsg, contact_number: contactNumber, knowledge_base_enabled: knowledgeBaseEnabled, product_catalog_enabled: productCatalogEnabled, order_fields: orderFields, plugin_enabled: pluginEnabled }, { params });
+      await api.put('/settings/prompt', { prompt, error_message: errorMsg, contact_number: contactNumber, owner_phone: ownerPhone, knowledge_base_enabled: knowledgeBaseEnabled, product_catalog_enabled: productCatalogEnabled, order_fields: orderFields, plugin_enabled: pluginEnabled }, { params });
       qc.invalidateQueries({ queryKey: ['settings', clientId] });
       toast.success('Settings saved');
     } catch { toast.error('Failed to save settings'); }
@@ -306,6 +308,13 @@ export default function Settings() {
                     <input type="text" value={contactNumber} onChange={e => setContactNumber(e.target.value)}
                       placeholder="e.g. +94771234567" className={inpCls} />
                     <p className="text-xs text-slate-400 mt-1">When the AI cannot answer, it will share this number. Leave blank to disable.</p>
+                  </div>
+
+                  <div className="border-t border-slate-100 pt-3 mt-1">
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Owner Notification Number</label>
+                    <input type="text" value={ownerPhone} onChange={e => setOwnerPhone(e.target.value)}
+                      placeholder="e.g. +94771234567" className={inpCls} />
+                    <p className="text-xs text-slate-400 mt-1">When the bot falls back to the generic error reply, you will get a WhatsApp alert at this number. Leave blank to disable.</p>
                   </div>
 
                   <div className="border-t border-slate-100 pt-3 mt-1 flex flex-col gap-3">

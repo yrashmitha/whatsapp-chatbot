@@ -22,6 +22,7 @@ const CLIENT_SELECT = `
     cc.order_id_prefix, cc.product_catalog_enabled, cc.knowledge_base_enabled, cc.max_products_in_context,
     cc.catalog_search_mode, cc.order_flow_enabled, cc.admin_password_env, cc.order_fields, cc.contact_number,
     cc.plugin_enabled, cc.ai_enabled, cc.gemini_api_key, cc.use_system_gemini_key,
+    cc.owner_phone,
     cc.package_id, cc.bonus_messages, cc.overage_limit, cc.per_message_cost AS client_per_message_cost,
     p.message_limit AS package_message_limit, p.name AS package_name, p.per_message_cost AS package_per_message_cost
   FROM clients c
@@ -161,6 +162,7 @@ function buildClient(row) {
     order_flow_enabled: row.order_flow_enabled !== false,
     order_fields: orderFields,
     contact_number: row.contact_number || null,
+    owner_phone: row.owner_phone || null,
   };
 }
 

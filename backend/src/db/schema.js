@@ -438,6 +438,9 @@ async function init() {
       );
       CREATE INDEX IF NOT EXISTS idx_consult_messages_session ON consult_messages (session_id, created_at);
     `);
+
+    // ── Owner/admin notification phone ────────────────────────────────────────
+    await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS owner_phone TEXT`);
   } else {
     db.exec(`PRAGMA foreign_keys = ON;`);
     db.exec(`

@@ -550,9 +550,11 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     }
   }
 
+  let isFallback = false;
   if (!botReply) {
     log.warn('[GEMINI] Still empty after nudge — using fallback message');
     botReply = client?.error_message || "Sorry, I didn't get that. Could you please try again? 🙏";
+    isFallback = true;
   }
 
   // Extract [[SEND_IMAGE:filename]] markers
@@ -703,7 +705,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     }
   }
 
-  return { botReply, orderId, paymentReceived, callCostUSD, inputTokens, outputTokens, imagesToSend, productImagesToSend };
+  return { botReply, orderId, paymentReceived, callCostUSD, inputTokens, outputTokens, imagesToSend, productImagesToSend, isFallback };
 }
 
 module.exports = {

@@ -689,6 +689,10 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   await db.insertMessage(phoneNumber, botReplyForDb, 'bot', callCostUSD, client?.id ?? null);
   log.info(`[DB] Saved bot reply cost=$${callCostUSD.toFixed(6)}`);
 
+  // After saving to DB, clear botReply so the webhook controller's empty-check
+  // also blocks the send — belt-and-suspenders on top of isFallback flag.
+  if (isFallback) botReply = '';
+
   // Sliding window: keep only last 40 entries in memory, drop oldest from front
   const MAX_HISTORY = 40;
   if (chatSession._history?.length > MAX_HISTORY) {

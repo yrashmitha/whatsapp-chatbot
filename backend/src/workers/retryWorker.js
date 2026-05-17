@@ -74,12 +74,16 @@ function startRetryWorker() {
 
           const retryNote = `[SYSTEM: This is a retry. The customer's previous message could not be processed ${item.attempts} time(s) due to a temporary service issue. Please start your reply with a brief, natural apology for the short delay (e.g. "Sorry for the short wait! 🙏"), then respond normally to their message.]`;
 
-          const { botReply } = await handleMessage(
+          const { botReply, isFallback } = await handleMessage(
             item.phone_number, item.message_text, session.chat,
             { skipUserInsert: true, client, retryNote }
           );
 
-          await sendBotReply(item.phone_number, botReply, client);
+          if (isFallback) {
+            console.warn(`[RETRY-WORKER] Fallback triggered for ${item.phone_number} — suppressing reply`);
+          } else {
+            await sendBotReply(item.phone_number, botReply, client);
+          }
           await db.pgQuery(`UPDATE message_retry_queue SET resolved_at=NOW() WHERE id=$1`, [item.id]);
           console.log(`[RETRY-WORKER] Success for ${item.phone_number}`);
 

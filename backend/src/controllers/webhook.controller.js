@@ -200,6 +200,10 @@ function receiveWebhook(req, res) {
         const { botReply, imagesToSend, productImagesToSend: imgProductImages, isFallback: imgFallback } = await handleMessage(from, imageNote, imgSession.chat, { skipUserInsert: true, client, traceId });
         if (imgFallback) {
           log.warn(`[WEBHOOK] Fallback triggered on image — suppressing reply to customer`);
+          db.pgQuery(
+            `UPDATE customers SET needs_attention=TRUE WHERE phone_number=$1 AND client_id=$2`,
+            [from, client.id]
+          ).catch(e => log.warn('[FALLBACK] Failed to set needs_attention:', e.message));
           if (client.owner_phone) {
             const notif = `⚠️ Bot fallback triggered\nCustomer: ${from}\nMessage: [Image]${msg.image?.caption ? ` "${msg.image.caption}"` : ''}`;
             sendWhatsAppMessage(client.owner_phone, notif, client).catch(e => log.warn('[FALLBACK-NOTIF] Failed:', e.message));
@@ -297,6 +301,10 @@ function receiveWebhook(req, res) {
               const { botReply: docReply, imagesToSend: docImages, productImagesToSend: docProductImages, isFallback: docFallback } = await handleMessage(from, docNote, docSession.chat, { skipUserInsert: true, client, traceId });
               if (docFallback) {
                 log.warn(`[WEBHOOK] Fallback triggered on document — suppressing reply to customer`);
+                db.pgQuery(
+                  `UPDATE customers SET needs_attention=TRUE WHERE phone_number=$1 AND client_id=$2`,
+                  [from, client.id]
+                ).catch(e => log.warn('[FALLBACK] Failed to set needs_attention:', e.message));
                 if (client.owner_phone) {
                   const notif = `⚠️ Bot fallback triggered\nCustomer: ${from}\nMessage: [Document: ${docFileName}]`;
                   sendWhatsAppMessage(client.owner_phone, notif, client).catch(e => log.warn('[FALLBACK-NOTIF] Failed:', e.message));
@@ -419,6 +427,10 @@ function receiveWebhook(req, res) {
       const { botReply, imagesToSend, productImagesToSend, isFallback } = await handleMessage(from, userMessage, session.chat, { client, traceId });
       if (isFallback) {
         log.warn(`[WEBHOOK] Fallback triggered — suppressing reply to customer`);
+        db.pgQuery(
+          `UPDATE customers SET needs_attention=TRUE WHERE phone_number=$1 AND client_id=$2`,
+          [from, client.id]
+        ).catch(e => log.warn('[FALLBACK] Failed to set needs_attention:', e.message));
         if (client.owner_phone) {
           const notif = `⚠️ Bot fallback triggered\nCustomer: ${from}\nMessage: ${userMessage.substring(0, 200)}`;
           sendWhatsAppMessage(client.owner_phone, notif, client).catch(e => log.warn('[FALLBACK-NOTIF] Failed:', e.message));

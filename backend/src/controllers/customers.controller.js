@@ -38,6 +38,7 @@ async function listCustomers(req, res) {
              COUNT(DISTINCT m.id) AS message_count,
              COUNT(DISTINCT o.id) AS order_count,
              cu.last_customer_message_at AS last_message_at,
+             cu.needs_attention,
              BOOL_OR(m.media_type = 'image') AS has_image,
              BOOL_OR(m.media_type IN ('pdf', 'document', 'audio', 'voice')) AS has_document,
              (SELECT status FROM orders o2 WHERE o2.phone_number=cu.phone_number AND o2.client_id=cu.client_id ORDER BY o2.created_at DESC LIMIT 1) AS latest_order_status,
@@ -51,7 +52,7 @@ async function listCustomers(req, res) {
       LEFT JOIN messages m ON m.phone_number=cu.phone_number AND m.client_id=cu.client_id
       LEFT JOIN orders   o ON o.phone_number=cu.phone_number AND o.client_id=cu.client_id
       ${where}
-      GROUP BY cu.phone_number, cu.name, cu.client_id, cu.updated_at, cu.last_read_at, cu.last_customer_message_at
+      GROUP BY cu.phone_number, cu.name, cu.client_id, cu.updated_at, cu.last_read_at, cu.last_customer_message_at, cu.needs_attention
       ORDER BY cu.last_customer_message_at DESC NULLS LAST
       LIMIT ${clientId ? '$2' : '$1'} OFFSET ${clientId ? '$3' : '$2'}`;
     const countQ = clientId
@@ -113,6 +114,12 @@ async function sendMessage(req, res) {
     );
     const lastMsg = custRow.rows[0]?.last_customer_message_at;
     const windowOpen = !lastMsg || (Date.now() - new Date(lastMsg).getTime()) < 23 * 36e5;
+
+    // Clear attention flag whenever the owner manually replies
+    await db.pgQuery(
+      `UPDATE customers SET needs_attention=FALSE WHERE phone_number=$1 AND client_id=$2`,
+      [phone, clientId]
+    ).catch(() => {});
 
     if (type === 'text') {
       const wamid = await sendWhatsAppMessage(phone, message, client);

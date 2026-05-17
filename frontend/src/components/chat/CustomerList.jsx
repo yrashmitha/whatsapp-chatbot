@@ -102,6 +102,7 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
           customers.map(c => {
             const isSelected = selectedPhone === c.phone;
             const badge = windowBadge(c.last_message_at);
+            const needsAttention = !!c.needs_attention;
             return (
               <button
                 key={c.phone}
@@ -109,20 +110,31 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
                 className="w-full text-left px-3 py-2.5 transition-colors cursor-pointer bg-transparent border-0"
                 style={{
                   borderBottom: '1px solid var(--border-sub)',
-                  borderLeft: isSelected ? '2px solid var(--accent)' : '2px solid transparent',
+                  borderLeft: isSelected
+                    ? '2px solid var(--accent)'
+                    : needsAttention
+                      ? '2px solid #ef4444'
+                      : '2px solid transparent',
                   background: isSelected
                     ? 'rgba(99,102,241,0.10)'
-                    : 'transparent',
+                    : needsAttention
+                      ? 'rgba(239,68,68,0.05)'
+                      : 'transparent',
                 }}
-                onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(99,102,241,0.05)'; }}
-                onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
+                onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = needsAttention ? 'rgba(239,68,68,0.10)' : 'rgba(99,102,241,0.05)'; }}
+                onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = needsAttention ? 'rgba(239,68,68,0.05)' : 'transparent'; }}
               >
                 <div className="flex items-start gap-2.5">
                   <Avatar name={c.name} phone={c.phone} />
                   <div className="flex-1 min-w-0 flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium truncate" style={{ color: 'var(--text-1)' }}>
-                        {c.name || c.phone}
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm font-medium truncate" style={{ color: needsAttention ? '#ef4444' : 'var(--text-1)' }}>
+                          {c.name || c.phone}
+                        </span>
+                        {needsAttention && (
+                          <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: '#ef4444', color: '#fff' }}>!</span>
+                        )}
                       </div>
                       {c.name && (
                         <div className="text-xs truncate" style={{ color: 'var(--text-3)' }}>{c.phone}</div>

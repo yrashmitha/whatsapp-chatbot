@@ -441,6 +441,9 @@ async function init() {
 
     // ── Owner/admin notification phone ────────────────────────────────────────
     await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS owner_phone TEXT`);
+
+    // ── Fallback attention flag ───────────────────────────────────────────────
+    await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS needs_attention BOOLEAN NOT NULL DEFAULT FALSE`);
   } else {
     db.exec(`PRAGMA foreign_keys = ON;`);
     db.exec(`

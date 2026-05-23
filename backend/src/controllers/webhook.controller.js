@@ -13,7 +13,7 @@ const path   = require('path');
 const db     = require('../db');
 const clientRouter = require('../services/clientRouter');
 const { buildChatSession, handleMessage } = require('../services/gemini');
-const { sendWhatsAppMessage, sendWhatsAppImage, sendBotReply, waToken, waPhoneId, markMessageRead } = require('../services/whatsapp');
+const { sendWhatsAppMessage, sendWhatsAppImage, sendWhatsAppAudio, sendBotReply, waToken, waPhoneId, markMessageRead } = require('../services/whatsapp');
 const { chatSessions } = require('../workers/sessionManager');
 const { UPLOADS_DIR } = require('../config/env');
 const { analyzePaymentDocument, buildAnalysisNote } = require('../services/imageAnalysis');
@@ -424,7 +424,20 @@ function receiveWebhook(req, res) {
       const session = chatSessions.get(sessionKey);
       session.lastUsed = Date.now();
 
-      const { botReply, imagesToSend, productImagesToSend, isFallback } = await handleMessage(from, userMessage, session.chat, { client, traceId });
+      const { botReply: rawBotReply, imagesToSend, productImagesToSend, isFallback } = await handleMessage(from, userMessage, session.chat, { client, traceId });
+
+      // Extract [[VOICE:keyword]] tokens before sending text
+      const voiceTokenRegex = /\[\[VOICE:([a-z0-9_]+)\]\]/gi;
+      const voiceKeywords = [];
+      let botReply = rawBotReply;
+      let vMatch;
+      while ((vMatch = voiceTokenRegex.exec(rawBotReply)) !== null) {
+        voiceKeywords.push(vMatch[1].toLowerCase());
+      }
+      if (voiceKeywords.length > 0) {
+        botReply = rawBotReply.replace(/\[\[VOICE:[a-z0-9_]+\]\]/gi, '').replace(/\s{2,}/g, ' ').trim();
+      }
+
       if (isFallback) {
         log.warn(`[WEBHOOK] Fallback triggered — suppressing reply to customer`);
         db.pgQuery(
@@ -439,6 +452,22 @@ function receiveWebhook(req, res) {
         log.warn(`[WEBHOOK] Empty botReply from Gemini — skipping send`);
       } else {
         await sendBotReply(from, botReply, client);
+      }
+
+      // Send voice clips referenced by the AI
+      for (const keyword of voiceKeywords) {
+        try {
+          const clip = await db.getVoiceClipByKeyword(client.id, keyword);
+          if (clip) {
+            const wamid = await sendWhatsAppAudio(from, clip.audio_url, client);
+            await db.insertMessage(from, `[Voice: ${clip.name}]`, 'bot', null, client?.id ?? null, 'audio', clip.audio_url, wamid);
+            log.info(`[VOICE-CLIP] Sent "${clip.name}" (${keyword}) to ${from}`);
+          } else {
+            log.warn(`[VOICE-CLIP] No clip found for keyword "${keyword}" in client ${client.id}`);
+          }
+        } catch (e) {
+          log.warn(`[VOICE-CLIP] Failed to send keyword "${keyword}":`, e.message);
+        }
       }
 
       for (const filename of imagesToSend) {

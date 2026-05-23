@@ -15,6 +15,7 @@ import Addons from './pages/Addons';
 import Plugins from './pages/Plugins';
 import Summary from './pages/Summary';
 import Calls from './pages/Calls';
+import VoiceClips from './pages/VoiceClips';
 import Landing from './pages/Landing';
 import Pricing from './pages/Pricing';
 import Privacy from './pages/Privacy';
@@ -39,7 +40,8 @@ const router = createBrowserRouter([
   { path: '/packages', element: <ProtectedRoute><Packages /></ProtectedRoute> },
   { path: '/addons', element: <ProtectedRoute><Addons /></ProtectedRoute> },
   { path: '/plugins', element: <ProtectedRoute><Plugins /></ProtectedRoute> },
-  { path: '/calls',   element: <ProtectedRoute><Calls /></ProtectedRoute> },
+  { path: '/calls',        element: <ProtectedRoute><Calls /></ProtectedRoute> },
+  { path: '/voice-clips',  element: <ProtectedRoute><VoiceClips /></ProtectedRoute> },
   { path: '/', element: <Landing /> },
   { path: '/pricing', element: <Pricing /> },
   { path: '/privacy', element: <Privacy /> },

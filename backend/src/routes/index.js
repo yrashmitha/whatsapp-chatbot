@@ -26,6 +26,7 @@ const summaryRoutes      = require('./summary.routes');
 const adminRoutes        = require('./admin.routes');
 const quickRepliesRoutes = require('./quickReplies.routes');
 const callsRoutes        = require('./calls.routes');
+const voiceClipsRoutes   = require('./voice_clips.routes');
 const { publicRouter: consultPublic, adminRouter: consultAdmin } = require('./consult.routes');
 
 const jwtAuth = require('../middleware/jwtAuth');
@@ -98,6 +99,7 @@ function mountRoutes(app) {
   app.use('/api/summary',        summaryRoutes);
   app.use('/api/quick-replies',  quickRepliesRoutes);
   app.use('/api/calls',          callsRoutes);
+  app.use('/api/voice-clips',    voiceClipsRoutes);
 
   // Standalone endpoint: POST /api/upload-image (Cloudinary product image upload)
   app.post('/api/upload-image', jwtAuth, upload.single('image'), uploadImage);

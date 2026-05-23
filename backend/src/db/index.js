@@ -32,6 +32,8 @@ const { getPluginConfig, upsertPluginConfig,
 const { insertCall, appendTranscriptTurn,
         updateCallStatus, updateCallSummary,
         listCalls, getCall }                        = require('./calls.db');
+const { getVoiceClips, getVoiceClipByKeyword,
+        insertVoiceClip, deleteVoiceClip }          = require('./voice_clips.db');
 
 module.exports = {
   // Schema
@@ -89,4 +91,9 @@ module.exports = {
   updateCallSummary,
   listCalls,
   getCall,
+  // Voice clips
+  getVoiceClips,
+  getVoiceClipByKeyword,
+  insertVoiceClip,
+  deleteVoiceClip,
 };

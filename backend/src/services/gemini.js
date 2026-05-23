@@ -138,6 +138,17 @@ async function buildChatSession(phoneNumber, client) {
         + 'Use the send_image tool to deliver images or PDF documents to the customer. Send them at the right moment based on these descriptions:\n'
         + mediaItems.map(m => `- "${m.title}" [${/\.pdf(\?|$)/i.test(m.image_url) ? 'PDF document' : 'image'}]: ${m.description}\n  URL: ${m.image_url}`).join('\n');
     }
+
+    const voiceClips = await db.getVoiceClips(client.id);
+    let voiceBlock = '';
+    if (voiceClips.length > 0) {
+      voiceBlock = '\n\n━━━ Voice Clips You Can Send ━━━\n'
+        + 'You can send a pre-recorded voice message to the customer by including a [[VOICE:keyword]] token anywhere in your reply. '
+        + 'The token will be stripped from the visible text and the audio will be delivered separately. '
+        + 'Use voice clips at the right moment — for greetings, confirmations, or emotional moments.\n'
+        + 'Available voice clips:\n'
+        + voiceClips.map(v => `- [[VOICE:${v.trigger_keyword}]] — "${v.name}"`).join('\n');
+    }
     const hasProductCatalog = client?.product_catalog_enabled && db.IS_PG;
     const kbBlock = (client?.knowledge_base_enabled && db.IS_PG)
       ? '\n\n━━━ KNOWLEDGE BASE — MANDATORY ━━━\n'
@@ -159,7 +170,7 @@ async function buildChatSession(phoneNumber, client) {
       + 'You can also update this summary at any point during the conversation by outputting (invisible to customer):\n'
       + '[[UPDATE_SUMMARY: updated detailed note here ]]\n'
       + 'Use this when you learn new important details about the customer or their situation.';
-    let fullInstruction = baseInstruction + orderFieldsBlock + contactBlock + mediaBlock + kbBlock + summaryBlock;
+    let fullInstruction = baseInstruction + orderFieldsBlock + contactBlock + mediaBlock + voiceBlock + kbBlock + summaryBlock;
     // Plugin hook: append extra instruction
     const _pluginForInstr = pluginLoader.loadPlugin(client?.id, client?.plugin_enabled);
     if (_pluginForInstr?.appendInstruction) {

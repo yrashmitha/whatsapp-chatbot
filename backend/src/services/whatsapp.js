@@ -211,6 +211,30 @@ async function sendTypingIndicator(to, client) {
   }
 }
 
+/**
+ * Send an audio file to a WhatsApp recipient.
+ *
+ * @param {string}      to       - Recipient E.164 phone number
+ * @param {string}      audioUrl - Publicly accessible audio file URL
+ * @param {Object|null} client   - Client config object
+ * @returns {Promise<string|null>} WhatsApp message ID or null
+ */
+async function sendWhatsAppAudio(to, audioUrl, client) {
+  console.log(`[WA-AUDIO] Sending audio to ${to}: ${audioUrl}`);
+  try {
+    const resp = await axios.post(
+      `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
+      { messaging_product: 'whatsapp', to, type: 'audio', audio: { link: audioUrl } },
+      { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
+    );
+    console.log(`[WA-AUDIO] Sent successfully to ${to}`);
+    return resp.data?.messages?.[0]?.id || null;
+  } catch (err) {
+    console.error(`[WA-AUDIO] Send failed to ${to}:`, err?.response?.data ?? err.message);
+    return null;
+  }
+}
+
 module.exports = {
   waToken,
   waPhoneId,
@@ -218,6 +242,7 @@ module.exports = {
   templateMediaIds,
   sendWhatsAppImage,
   sendWhatsAppMessage,
+  sendWhatsAppAudio,
   sendBotReply,
   markMessageRead,
   sendTypingIndicator,

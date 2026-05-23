@@ -444,6 +444,20 @@ async function init() {
 
     // ── Fallback attention flag ───────────────────────────────────────────────
     await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS needs_attention BOOLEAN NOT NULL DEFAULT FALSE`);
+
+    // ── Voice clips library ───────────────────────────────────────────────────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS voice_clips (
+        id               SERIAL PRIMARY KEY,
+        client_id        TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+        name             TEXT NOT NULL,
+        trigger_keyword  TEXT NOT NULL,
+        audio_url        TEXT NOT NULL,
+        created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(client_id, trigger_keyword)
+      );
+      CREATE INDEX IF NOT EXISTS idx_voice_clips_client ON voice_clips (client_id);
+    `);
   } else {
     db.exec(`PRAGMA foreign_keys = ON;`);
     db.exec(`
@@ -590,6 +604,19 @@ async function init() {
     try { db.exec(`ALTER TABLE orders ADD COLUMN horoscope_data TEXT`); } catch (_) {}
     // ── Tarot reading data (SQLite) ───────────────────────────────────────────
     try { db.exec(`ALTER TABLE orders ADD COLUMN tarot_data TEXT`); } catch (_) {}
+
+    // ── Voice clips library (SQLite) ─────────────────────────────────────────
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS voice_clips (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        client_id       TEXT NOT NULL,
+        name            TEXT NOT NULL,
+        trigger_keyword TEXT NOT NULL,
+        audio_url       TEXT NOT NULL,
+        created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(client_id, trigger_keyword)
+      );
+    `);
 
     // ── Quick replies (SQLite) ────────────────────────────────────────────────
     db.exec(`

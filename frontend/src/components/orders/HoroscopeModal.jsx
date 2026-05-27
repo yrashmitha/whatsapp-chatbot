@@ -125,6 +125,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
   const [editingQIdx, setEditingQIdx]           = useState(null);
   const [editingQText, setEditingQText]         = useState('');
   const [configSections, setConfigSections]     = useState([]);
+  const [selectedSections, setSelectedSections] = useState([]);
   const newQuestionRef  = useRef(null);
   const editingInputRef = useRef(null);
 
@@ -139,11 +140,18 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
           ? data.horoscope_sections.map(s => s.label || s).filter(Boolean)
           : ['Personality','Education','Career & Finance','Love & Marriage','Property, Land & Vehicles','Health & Accidents','Children','Life Summary','Current Dasha Period','Remedies','VIP Section'];
         setConfigSections(secs);
+        setSelectedSections(secs); // all selected by default
       })
       .catch(() => {
-        setConfigSections(['Personality','Education','Career & Finance','Love & Marriage','Property, Land & Vehicles','Health & Accidents','Children','Life Summary','Current Dasha Period','Remedies','VIP Section']);
+        const defaults = ['Personality','Education','Career & Finance','Love & Marriage','Property, Land & Vehicles','Health & Accidents','Children','Life Summary','Current Dasha Period','Remedies','VIP Section'];
+        setConfigSections(defaults);
+        setSelectedSections(defaults);
       });
   }, [clientId]);
+
+  const toggleSection = (sec) => setSelectedSections(prev =>
+    prev.includes(sec) ? prev.filter(s => s !== sec) : [...prev, sec]
+  );
 
   const toggleNewSection = (sec) => setNewQuestionSections(prev =>
     prev.includes(sec) ? prev.filter(s => s !== sec) : [...prev, sec]
@@ -224,6 +232,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
     birth_place_name:  selectedPlace?.name || '',
     override_astro:    overrideAstro,
     special_questions: specialQuestions,  // [{question, sections}]
+    selected_sections: selectedSections,
     package_type:      packageType,
     birth_overrides:   { customer_name: customerName, birth_date: birthDate, birth_time: `${birthHour}:${birthMinute}` },
     active_name:       activeName.trim(),
@@ -562,6 +571,53 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
             </div>
           )}
 
+          {/* Sections to generate */}
+          {configSections.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className={labelCls} style={{ marginBottom: 0 }}>
+                  Sections to Generate
+                  <span className="ml-1 text-slate-400 font-normal">({selectedSections.length}/{configSections.length} selected)</span>
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSections([...configSections])}
+                    className="text-xs text-violet-600 hover:text-violet-800 bg-transparent border-0 cursor-pointer underline"
+                  >All</button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSections([])}
+                    className="text-xs text-slate-400 hover:text-slate-600 bg-transparent border-0 cursor-pointer underline"
+                  >None</button>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {configSections.map((sec, i) => {
+                  const active = selectedSections.includes(sec);
+                  return (
+                    <button
+                      key={sec}
+                      type="button"
+                      onClick={() => toggleSection(sec)}
+                      className={`flex items-center gap-1 px-2.5 py-1 text-xs rounded-full border cursor-pointer transition-colors font-medium ${
+                        active
+                          ? 'bg-violet-600 text-white border-violet-600'
+                          : 'bg-slate-50 text-slate-400 border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <span className="opacity-60 text-[10px]">{i + 1}</span>
+                      {sec}
+                    </button>
+                  );
+                })}
+              </div>
+              {selectedSections.length === 0 && (
+                <p className="text-xs text-amber-600 mt-1.5">No sections selected — generation will be skipped.</p>
+              )}
+            </div>
+          )}
+
           {/* Special questions */}
           <div>
             <label className={labelCls}>Special Questions <span className="text-slate-400 font-normal">(optional — select sections to use as context)</span></label>
@@ -676,7 +732,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
           <div className="flex gap-3 flex-1 flex-wrap justify-end">
             <button
               onClick={handleGenerate}
-              disabled={generating || generatingQuantum || !selectedPlace || !birthDate.trim() || auraUploading}
+              disabled={generating || generatingQuantum || !selectedPlace || !birthDate.trim() || auraUploading || selectedSections.length === 0}
               className="flex-1 min-w-[160px] py-2.5 text-sm font-medium text-white rounded-xl border-0 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
               style={{ background: generating ? '#4f46e5' : 'linear-gradient(135deg,#4f46e5,#6366f1)' }}
             >

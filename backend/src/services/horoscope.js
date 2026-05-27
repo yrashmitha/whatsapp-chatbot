@@ -592,7 +592,7 @@ async function buildQuantumDoc({ customerName, quantumData, auraAnalysis, quantu
 
 // ─── Main generation function ─────────────────────────────────────────────────
 
-async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, birth_place_name, overrideAstro, specialQuestions = [], isVip = false, includeQuantum = false, activeName = '') {
+async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, birth_place_name, overrideAstro, specialQuestions = [], isVip = false, includeQuantum = false, activeName = '', selectedSections = null) {
   // 1. Fetch order
   const orderRes = await db.pgQuery(
     'SELECT custom_fields, horoscope_data FROM orders WHERE order_id=$1',
@@ -782,6 +782,13 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
   } else {
     activeSections = isVip ? [...SECTIONS, VIP_SECTION] : [...SECTIONS];
     sectionGuidesOverride = config.section_guides || null;
+  }
+
+  // Filter to only the sections the user selected (if a selection was provided)
+  if (Array.isArray(selectedSections) && selectedSections.length > 0) {
+    const selSet = new Set(selectedSections);
+    activeSections = activeSections.filter(s => selSet.has(s));
+    console.log('[HOROSCOPE] Generating selected sections only:', activeSections);
   }
 
   const sectionsMap = {};

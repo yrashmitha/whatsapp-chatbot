@@ -91,3 +91,7 @@ button, input, textarea, select { font-family: inherit; }
 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 [data-theme="dark"] ::-webkit-scrollbar-thumb { background: #2a3f6a; }
 [data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: #3d5a8a; }
+
+/* ── Utility ────────────────────────────────────────────────── */
+.scrollbar-none { scrollbar-width: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }

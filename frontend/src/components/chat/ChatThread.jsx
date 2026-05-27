@@ -11,7 +11,7 @@ import Button from '../ui/Button';
 import { useToast } from '../ui/Toast';
 import { STATUS_OPTIONS, STATUS_COLORS } from '../../lib/utils';
 
-export default function ChatThread({ customer, clientId, onCustomerDeleted }) {
+export default function ChatThread({ customer, clientId, onBack, onCustomerDeleted }) {
   const { phone, name } = customer;
   const [ordersOpen, setOrdersOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -202,18 +202,82 @@ export default function ChatThread({ customer, clientId, onCustomerDeleted }) {
         </div>
       )}
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-white shrink-0">
-        <div>
-          <div className="text-sm font-semibold text-slate-800">{name || phone}</div>
-          {name && <div className="text-xs text-slate-400">{phone}</div>}
-          {totalCost > 0 && <div className="text-xs text-slate-400">${totalCost.toFixed(6)}</div>}
+      <div className="border-b border-slate-200 bg-white shrink-0">
+        {/* Top row: back + name + AI toggle */}
+        <div className="flex items-center gap-2 px-3 py-2.5">
+          {/* Back button — mobile only */}
+          <button
+            onClick={onBack}
+            className="md:hidden shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 border-0 bg-transparent cursor-pointer"
+            aria-label="Back to contacts"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          {/* Customer info */}
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-semibold text-slate-800 truncate">{name || phone}</div>
+            {name && <div className="text-xs text-slate-400">{phone}</div>}
+            {totalCost > 0 && <div className="text-xs text-slate-400">${totalCost.toFixed(6)}</div>}
+          </div>
+          {/* Action buttons: inline on desktop, only AI toggle visible on mobile */}
+          <div className="hidden md:flex gap-2 items-center shrink-0">
+            {addonsData?.addons?.includes('astro_vedic_chart') && customerOrders.some(o => o.status === 'pending') && (
+              <button
+                onClick={() => setAstroModalOpen(true)}
+                className="text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-amber-100 text-amber-700 hover:bg-amber-200"
+                title="Generate astrology message for this customer"
+              >
+                ✨ Astro
+              </button>
+            )}
+            {addonsData?.addons?.includes('tarot_reading') && (
+              <button
+                onClick={() => setTarotModalOpen(true)}
+                className="text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-purple-100 text-purple-700 hover:bg-purple-200"
+                title="Generate tarot card reading for this customer"
+              >
+                🔮 Tarot
+              </button>
+            )}
+            <button
+              onClick={() => setCreateOrderOpen(true)}
+              className="text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
+            >
+              + Order
+            </button>
+            <button
+              onClick={() => toggleAiMutation.mutate(!aiEnabled)}
+              disabled={toggleAiMutation.isPending}
+              className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${
+                aiEnabled ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-slate-200 text-slate-500 hover:bg-slate-300'
+              }`}
+            >
+              AI {aiEnabled ? 'ON' : 'OFF'}
+            </button>
+            <Button variant="ghost" size="sm" onClick={handleDeleteHistory}>Clear history</Button>
+            <Button variant="danger" size="sm" onClick={handleDeleteCustomer}>Delete</Button>
+          </div>
+          {/* Mobile: just AI toggle in top row */}
+          <div className="flex md:hidden items-center gap-1.5 shrink-0">
+            <button
+              onClick={() => toggleAiMutation.mutate(!aiEnabled)}
+              disabled={toggleAiMutation.isPending}
+              className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${
+                aiEnabled ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-slate-200 text-slate-500 hover:bg-slate-300'
+              }`}
+            >
+              AI {aiEnabled ? 'ON' : 'OFF'}
+            </button>
+          </div>
         </div>
-        <div className="flex gap-2 items-center">
+        {/* Mobile action row — scrollable */}
+        <div className="md:hidden flex gap-1.5 items-center overflow-x-auto px-3 pb-2 scrollbar-none">
           {addonsData?.addons?.includes('astro_vedic_chart') && customerOrders.some(o => o.status === 'pending') && (
             <button
               onClick={() => setAstroModalOpen(true)}
-              className="text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-amber-100 text-amber-700 hover:bg-amber-200"
-              title="Generate astrology message for this customer"
+              className="shrink-0 text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-amber-100 text-amber-700 hover:bg-amber-200"
             >
               ✨ Astro
             </button>
@@ -221,32 +285,18 @@ export default function ChatThread({ customer, clientId, onCustomerDeleted }) {
           {addonsData?.addons?.includes('tarot_reading') && (
             <button
               onClick={() => setTarotModalOpen(true)}
-              className="text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-purple-100 text-purple-700 hover:bg-purple-200"
-              title="Generate tarot card reading for this customer"
+              className="shrink-0 text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-purple-100 text-purple-700 hover:bg-purple-200"
             >
               🔮 Tarot
             </button>
           )}
           <button
             onClick={() => setCreateOrderOpen(true)}
-            className="text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
-            title="Create order for this customer"
+            className="shrink-0 text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
           >
             + Order
           </button>
-          <button
-            onClick={() => toggleAiMutation.mutate(!aiEnabled)}
-            disabled={toggleAiMutation.isPending}
-            className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${
-              aiEnabled
-                ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
-                : 'bg-slate-200 text-slate-500 hover:bg-slate-300'
-            }`}
-            title={aiEnabled ? 'AI is ON. Click to disable.' : 'AI is OFF. Click to enable.'}
-          >
-            AI {aiEnabled ? 'ON' : 'OFF'}
-          </button>
-          <Button variant="ghost" size="sm" onClick={handleDeleteHistory}>Clear history</Button>
+          <Button variant="ghost" size="sm" onClick={handleDeleteHistory}>Clear</Button>
           <Button variant="danger" size="sm" onClick={handleDeleteCustomer}>Delete</Button>
         </div>
       </div>

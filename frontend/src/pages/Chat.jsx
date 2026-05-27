@@ -10,6 +10,7 @@ export default function Chat() {
   const { user, selectedClientId } = useAuthStore();
   const superAdmin = isSuperAdmin(user);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [showThread, setShowThread] = useState(false);
   const qc = useQueryClient();
 
   const clientId = superAdmin ? (selectedClientId || null) : user?.clientId;
@@ -22,25 +23,40 @@ export default function Chat() {
       .catch(() => {});
   }, [selectedCustomer?.phone]);
 
+  const handleSelect = (customer) => {
+    setSelectedCustomer(customer);
+    setShowThread(true);
+  };
+
+  const handleBack = () => {
+    setShowThread(false);
+  };
+
   return (
     <Layout>
-      <div className="flex h-full">
-        {/* Left panel */}
-        <div className="w-80 bg-white border-r border-slate-200 flex flex-col shrink-0 overflow-hidden">
+      <div className="flex h-full overflow-hidden">
+        {/* Left panel — full screen on mobile when thread not open */}
+        <div className={`bg-white border-r border-slate-200 flex flex-col shrink-0 overflow-hidden
+          w-full md:w-80
+          ${showThread ? 'hidden md:flex' : 'flex'}
+        `}>
           <CustomerList
             clientId={clientId}
             selectedPhone={selectedCustomer?.phone}
-            onSelect={setSelectedCustomer}
+            onSelect={handleSelect}
           />
         </div>
 
-        {/* Right panel */}
-        <div className="flex-1 overflow-hidden">
+        {/* Right panel — full screen on mobile when thread open */}
+        <div className={`flex-1 overflow-hidden flex flex-col
+          ${showThread ? 'flex' : 'hidden md:flex'}
+        `}>
           {selectedCustomer ? (
             <ChatThread
               customer={selectedCustomer}
               clientId={clientId}
-              onCustomerDeleted={() => setSelectedCustomer(null)}
+              onBack={handleBack}
+              onCustomerDeleted={() => { setSelectedCustomer(null); setShowThread(false); }}
             />
           ) : (
             <div className="flex items-center justify-center h-full text-slate-400 text-sm">

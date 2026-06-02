@@ -126,6 +126,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
   const [editingQText, setEditingQText]         = useState('');
   const [configSections, setConfigSections]     = useState([]);
   const [selectedSections, setSelectedSections] = useState([]);
+  const [quantumFeatureEnabled, setQuantumFeatureEnabled] = useState(true);
   const newQuestionRef  = useRef(null);
   const editingInputRef = useRef(null);
 
@@ -141,6 +142,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
           : ['Personality','Education','Career & Finance','Love & Marriage','Property, Land & Vehicles','Health & Accidents','Children','Life Summary','Current Dasha Period','Remedies','VIP Section'];
         setConfigSections(secs);
         setSelectedSections(secs); // all selected by default
+        setQuantumFeatureEnabled(data?.quantum_enabled !== false);
       })
       .catch(() => {
         const defaults = ['Personality','Education','Career & Finance','Love & Marriage','Property, Land & Vehicles','Health & Accidents','Children','Life Summary','Current Dasha Period','Remedies','VIP Section'];
@@ -180,8 +182,8 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
   };
 
   // ── Aura & Quantum state ───────────────────────────────────────────────────
-  // includeQuantum is derived — selecting the 3490 full package enables it
-  const includeQuantum = packageType === '3490';
+  // includeQuantum is derived — selecting the 3490 full package enables it, but only when quantum feature is on
+  const includeQuantum = quantumFeatureEnabled && packageType === '3490';
   const [activeName, setActiveName]         = useState(existingHd.quantum_data?.active_name || '');
   const [auraAnalysis, setAuraAnalysis]     = useState(existingHd.aura_analysis || null);
   const [auraUploading, setAuraUploading]   = useState(false);
@@ -419,7 +421,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
             <div className="flex flex-wrap gap-3">
               {[
                 { value: '2990', label: 'Rs. 2990', badge: 'Basic' },
-                { value: '3490', label: 'Rs. 3490', badge: '+ Aura & Quantum' },
+                { value: '3490', label: 'Rs. 3490', badge: quantumFeatureEnabled ? '+ Aura & Quantum' : null },
               ].map(({ value, label, badge }) => (
                 <label key={value} className="flex items-center gap-2 cursor-pointer">
                   <input

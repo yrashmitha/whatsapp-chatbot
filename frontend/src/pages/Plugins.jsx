@@ -50,6 +50,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
   const [waMessagePrompt, setWaMessagePrompt]         = useState('');
   const [horoscopeSections, setHoroscopeSections]     = useState([]);
   const [quantumSections, setQuantumSections]         = useState([]);
+  const [quantumEnabled, setQuantumEnabled]           = useState(true);
   const [sectionGuides, setSectionGuides]             = useState({});
   const [specialNote, setSpecialNote]                 = useState('');
   const [greeting, setGreeting]         = useState('');
@@ -76,6 +77,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         setWaMessagePrompt(r.data.wa_message_prompt || '');
         setHoroscopeSections(Array.isArray(r.data.horoscope_sections) ? r.data.horoscope_sections : []);
         setQuantumSections(Array.isArray(r.data.quantum_sections) ? r.data.quantum_sections : []);
+        setQuantumEnabled(r.data.quantum_enabled !== false);
         setSectionGuides(r.data.section_guides && typeof r.data.section_guides === 'object' ? r.data.section_guides : {});
         setSpecialNote(r.data.special_note || '');
         setGreeting(r.data.greeting || '');
@@ -99,6 +101,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         setWaMessagePrompt('');
         setHoroscopeSections([]);
         setQuantumSections([]);
+        setQuantumEnabled(true);
         setSectionGuides({});
         setSpecialNote('');
         setGreeting('');
@@ -122,6 +125,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         body.aura_system_prompt    = auraSystemPrompt;
         body.horoscope_sections    = horoscopeSections;
         body.quantum_sections      = quantumSections;
+        body.quantum_enabled       = quantumEnabled;
         body.section_guides        = sectionGuides;
         body.special_note          = specialNote;
         body.wa_message_prompt     = waMessagePrompt;
@@ -340,6 +344,19 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
 
       {isHoroscope && (
         <>
+          <div className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-slate-50">
+            <div>
+              <p className="text-sm font-medium text-slate-700">Aura &amp; Quantum Feature</p>
+              <p className="text-xs text-slate-400 mt-0.5">When off, the Rs. 3490 package option is hidden and no Aura/Quantum AI calls are made.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setQuantumEnabled(v => !v)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer border-0 ${quantumEnabled ? 'bg-violet-600' : 'bg-slate-300'}`}
+            >
+              <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${quantumEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+            </button>
+          </div>
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">System Prompt</label>
             <p className="text-xs text-slate-400 mb-1.5">

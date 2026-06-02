@@ -80,7 +80,7 @@ async function getPluginConfig(req, res) {
     if (pluginId === 'astro_vedic_chart') {
       defaults = { name: 'Vedic Astro Chart', prompt: DEFAULT_ASTRO_PROMPT };
     } else if (pluginId === 'horoscope_reading') {
-      defaults = { name: 'Horoscope Reading', system_prompt: '', quantum_system_prompt: '', aura_system_prompt: '', horoscope_sections: [], quantum_sections: [], section_guides: SECTION_GUIDES, special_note: '', api_key: '', wa_message_prompt: '' };
+      defaults = { name: 'Horoscope Reading', system_prompt: '', quantum_system_prompt: '', aura_system_prompt: '', horoscope_sections: [], quantum_sections: [], section_guides: SECTION_GUIDES, special_note: '', api_key: '', wa_message_prompt: '', quantum_enabled: true };
     } else if (pluginId === 'ai_call_answering') {
       defaults = { name: 'AI Call Answering', system_prompt: '', greeting: 'Hello, how can I help you today?', tts_voice: 'Kore', stt_language: 'en-US' };
     } else if (pluginId === 'image_analyzer') {
@@ -112,7 +112,7 @@ async function updatePluginConfig(req, res) {
     return res.status(403).json({ error: 'Forbidden' });
   }
   const { pluginId } = req.params;
-  const { name, prompt, api_key, system_prompt, quantum_system_prompt, aura_system_prompt, horoscope_sections, quantum_sections, section_guides, special_note, wa_message_prompt, greeting, tts_voice, stt_language, verification_prompt, page1_body, page2_body, page4_body } = req.body;
+  const { name, prompt, api_key, system_prompt, quantum_system_prompt, aura_system_prompt, horoscope_sections, quantum_sections, section_guides, special_note, wa_message_prompt, greeting, tts_voice, stt_language, verification_prompt, page1_body, page2_body, page4_body, quantum_enabled } = req.body;
   try {
     const existing = await db.getPluginConfig(clientId, pluginId);
     const update = { ...existing };
@@ -127,6 +127,7 @@ async function updatePluginConfig(req, res) {
     if (section_guides !== undefined)        update.section_guides        = section_guides;
     if (special_note !== undefined)          update.special_note          = special_note;
     if (wa_message_prompt !== undefined)     update.wa_message_prompt     = wa_message_prompt;
+    if (quantum_enabled !== undefined)       update.quantum_enabled       = quantum_enabled;
     if (greeting !== undefined)      update.greeting      = greeting;
     if (tts_voice !== undefined)     update.tts_voice     = tts_voice;
     if (stt_language !== undefined)         update.stt_language         = stt_language;
@@ -275,15 +276,19 @@ async function generateHoroscopeReading(req, res) {
   if (!order_id || lat == null || lng == null) {
     return res.status(400).json({ error: 'order_id, lat, lng required' });
   }
-  if (include_quantum && !active_name?.trim()) {
-    return res.status(400).json({ error: 'active_name required when include_quantum is true' });
-  }
-
   const addonCheck = await db.pgQuery(
     `SELECT enabled FROM client_addons WHERE client_id=$1 AND addon_id='horoscope_reading' AND enabled=TRUE`,
     [clientId]
   );
   if (!addonCheck.rows.length) return res.status(403).json({ error: 'horoscope_reading addon not enabled' });
+
+  // Enforce server-side: ignore include_quantum if the feature is disabled in config
+  const pluginCfg = await db.getPluginConfig(clientId, 'horoscope_reading');
+  const effectiveIncludeQuantum = pluginCfg.quantum_enabled !== false ? !!include_quantum : false;
+
+  if (effectiveIncludeQuantum && !active_name?.trim()) {
+    return res.status(400).json({ error: 'active_name required when include_quantum is true' });
+  }
 
   // Mark as generating immediately so the frontend can show progress
   if (db.IS_PG) {
@@ -304,7 +309,7 @@ async function generateHoroscopeReading(req, res) {
     !!override_astro,
     Array.isArray(special_questions) ? special_questions : [],
     true,
-    !!include_quantum,
+    effectiveIncludeQuantum,
     (active_name || '').trim(),
     Array.isArray(selected_sections) && selected_sections.length > 0 ? selected_sections : null
   ).catch(async (e) => {

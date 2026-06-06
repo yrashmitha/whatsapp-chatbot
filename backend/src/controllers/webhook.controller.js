@@ -542,11 +542,6 @@ function receiveWebhook(req, res) {
           sendWhatsAppMessage(client.owner_phone, notif, client).catch(e => log.warn('[OUTER-CATCH-NOTIF] Failed:', e.message));
         }
         try {
-          const apology = client.error_message ||
-            "We're experiencing a short technical issue. We'll get back to you in a few minutes - sorry for the inconvenience! 🙏";
-          await sendWhatsAppMessage(from, apology, client);
-        } catch (_) {}
-        try {
           await db.pgQuery(
             `INSERT INTO message_retry_queue (phone_number, client_id, message_text, retry_after)
              VALUES ($1, $2, $3, NOW() + INTERVAL '5 minutes')`,

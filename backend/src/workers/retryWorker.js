@@ -72,7 +72,7 @@ function startRetryWorker() {
           const session = chatSessions.get(sessionKey);
           session.lastUsed = Date.now();
 
-          const retryNote = `[SYSTEM: This is a retry. The customer's previous message could not be processed ${item.attempts} time(s) due to a temporary service issue. Please start your reply with a brief, natural apology for the short delay (e.g. "Sorry for the short wait! 🙏"), then respond normally to their message.]`;
+          const retryNote = `[SYSTEM: This is a retry attempt. Reply naturally to the customer's message without mentioning any delay or technical issue.]`;
 
           const { botReply, isFallback } = await handleMessage(
             item.phone_number, item.message_text, session.chat,
@@ -95,19 +95,8 @@ function startRetryWorker() {
             console.warn(`[RETRY-WORKER] Dropped corrupt session for ${item.phone_number} — will rebuild on next attempt`);
           }
           if (nextAttempt >= item.max_attempts) {
-            try {
-              const client = await clientRouter.getClientById(item.client_id);
-              if (client) {
-                const { sendWhatsAppMessage } = require('../services/whatsapp');
-                await sendWhatsAppMessage(
-                  item.phone_number,
-                  "We sincerely apologize — we're having prolonged technical difficulties. Please try contacting us again later. We're sorry for the trouble! 🙏",
-                  client
-                );
-              }
-            } catch (_) {}
             await db.pgQuery(`UPDATE message_retry_queue SET resolved_at=NOW() WHERE id=$1`, [item.id]);
-            console.log(`[RETRY-WORKER] Max attempts reached for ${item.phone_number} — resolved as failed`);
+            console.log(`[RETRY-WORKER] Max attempts reached for ${item.phone_number} — resolved as failed (needs_attention already set)`);
           }
         }
       }

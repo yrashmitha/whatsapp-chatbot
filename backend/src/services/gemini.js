@@ -520,8 +520,15 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     .join('');
   let rawReply = nonThoughtText;
   if (!rawReply) {
-    // All parts were thought-only, or rawParts was empty (SDK mismatch) — strip think blocks and use text()
-    const sdkText = candidate.text?.() || '';
+    // All parts were thought-only, or rawParts was empty (SDK mismatch) — strip think blocks and use text().
+    // candidate.text() throws when finishReason is SAFETY/RECITATION; catch so we stay in the fallback path
+    // instead of propagating the exception and bypassing isFallback / needs_attention logic.
+    let sdkText = '';
+    try {
+      sdkText = candidate.text?.() || '';
+    } catch (e) {
+      log.warn(`[GEMINI] candidate.text() threw (finishReason=${finishReason}): ${e.message}`);
+    }
     rawReply = sdkText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
     if (rawReply) log.warn(`[GEMINI] Non-thought text empty (finishReason=${finishReason}, parts=${rawParts.length}) — used stripped candidate.text() fallback`);
   }
@@ -535,29 +542,35 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   // If still empty, recover based on the finish reason.
   if (!botReply) {
     log.warn(`[GEMINI] Empty reply after all fallbacks (finishReason=${finishReason}) — attempting recovery`);
-    try {
-      // MALFORMED_FUNCTION_CALL: model tried to call a tool but generated broken JSON.
-      // A plain nudge won't help — the session is stuck waiting for a tool response.
-      // Send an explicit instruction to abandon the tool call and answer in text instead.
-      const recoveryMsg = finishReason === 'MALFORMED_FUNCTION_CALL'
-        ? 'Your last tool call had a formatting error and could not be executed. Ignore it and answer the customer\'s question directly in plain text now, without calling any tools.'
-        : 'Reply to the customer now with a short direct text message. Do not think — just reply.';
+    // SAFETY/RECITATION: nudge will also be blocked — skip it entirely.
+    if (finishReason === 'SAFETY' || finishReason === 'RECITATION') {
+      log.warn(`[GEMINI] Skipping recovery nudge — finishReason=${finishReason} means nudge will also be blocked`);
+    } else {
+      try {
+        // MALFORMED_FUNCTION_CALL: model tried to call a tool but generated broken JSON.
+        // A plain nudge won't help — the session is stuck waiting for a tool response.
+        // Send an explicit instruction to abandon the tool call and answer in text instead.
+        const recoveryMsg = finishReason === 'MALFORMED_FUNCTION_CALL'
+          ? 'Your last tool call had a formatting error and could not be executed. Ignore it and answer the customer\'s question directly in plain text now, without calling any tools.'
+          : 'Reply to the customer now with a short direct text message. Do not think — just reply.';
 
-      const nudge = await chatSession.sendMessage(recoveryMsg);
-      const nudgeParts = nudge.response.candidates?.[0]?.content?.parts || [];
-      botReply = nudgeParts
-        .filter(p => !p.thought && typeof p.text === 'string')
-        .map(p => p.text)
-        .join('')
-        .trim();
-      if (!botReply) {
-        const nudgeSdk = nudge.response.text?.() || '';
-        botReply = nudgeSdk.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+        const nudge = await chatSession.sendMessage(recoveryMsg);
+        const nudgeParts = nudge.response.candidates?.[0]?.content?.parts || [];
+        botReply = nudgeParts
+          .filter(p => !p.thought && typeof p.text === 'string')
+          .map(p => p.text)
+          .join('')
+          .trim();
+        if (!botReply) {
+          let nudgeSdk = '';
+          try { nudgeSdk = nudge.response.text?.() || ''; } catch (_) {}
+          botReply = nudgeSdk.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+        }
+        if (!botReply) log.warn('[GEMINI] Recovery nudge also returned empty');
+        else log.info(`[GEMINI] Recovery nudge reply: "${botReply.substring(0, 80)}"`);
+      } catch (e) {
+        log.error('[GEMINI] Recovery nudge failed:', e.message);
       }
-      if (!botReply) log.warn('[GEMINI] Recovery nudge also returned empty');
-      else log.info(`[GEMINI] Recovery nudge reply: "${botReply.substring(0, 80)}"`);
-    } catch (e) {
-      log.error('[GEMINI] Recovery nudge failed:', e.message);
     }
   }
 

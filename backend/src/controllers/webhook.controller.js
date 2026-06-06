@@ -448,6 +448,39 @@ function receiveWebhook(req, res) {
           const notif = `⚠️ Bot fallback triggered\nCustomer: ${from}\nMessage: ${userMessage.substring(0, 200)}`;
           sendWhatsAppMessage(client.owner_phone, notif, client).catch(e => log.warn('[FALLBACK-NOTIF] Failed:', e.message));
         }
+        // Gemini usually recovers within seconds — retry once automatically before giving up
+        ;(async () => {
+          await new Promise(r => setTimeout(r, 8000));
+          try {
+            log.info(`[INSTANT-RETRY] Retrying for ${from}`);
+            const retryNote = '[SYSTEM: Automatic retry after a brief delay. Reply naturally to the customer message without mentioning any delay or technical issue.]';
+            const { botReply: retryReply, isFallback: retryFailed } = await handleMessage(
+              from, userMessage, session.chat, { skipUserInsert: true, client, retryNote }
+            );
+            if (!retryFailed && retryReply.trim()) {
+              await sendBotReply(from, retryReply, client);
+              db.pgQuery(
+                `UPDATE customers SET needs_attention=FALSE WHERE phone_number=$1 AND client_id=$2`,
+                [from, client.id]
+              ).catch(() => {});
+              log.info(`[INSTANT-RETRY] Success for ${from}`);
+            } else {
+              log.warn(`[INSTANT-RETRY] Also failed for ${from} — queueing for later retry`);
+              db.pgQuery(
+                `INSERT INTO message_retry_queue (phone_number, client_id, message_text, retry_after)
+                 VALUES ($1, $2, $3, NOW() + INTERVAL '5 minutes')`,
+                [from, client.id, userMessage]
+              ).catch(() => {});
+            }
+          } catch (e) {
+            log.error(`[INSTANT-RETRY] Error for ${from}:`, e.message);
+            db.pgQuery(
+              `INSERT INTO message_retry_queue (phone_number, client_id, message_text, retry_after)
+               VALUES ($1, $2, $3, NOW() + INTERVAL '5 minutes')`,
+              [from, client.id, userMessage]
+            ).catch(() => {});
+          }
+        })();
       } else if (!botReply.trim()) {
         log.warn(`[WEBHOOK] Empty botReply from Gemini — skipping send`);
       } else {
@@ -500,6 +533,14 @@ function receiveWebhook(req, res) {
     } catch (err) {
       log.error(`[WEBHOOK] ERROR:`, err?.response?.data ?? err.message);
       if (from && client && userMessage) {
+        db.pgQuery(
+          `UPDATE customers SET needs_attention=TRUE WHERE phone_number=$1 AND client_id=$2`,
+          [from, client.id]
+        ).catch(e => log.warn('[OUTER-CATCH] Failed to set needs_attention:', e.message));
+        if (client.owner_phone) {
+          const notif = `⚠️ Bot error\nCustomer: ${from}\nMessage: ${userMessage.substring(0, 200)}`;
+          sendWhatsAppMessage(client.owner_phone, notif, client).catch(e => log.warn('[OUTER-CATCH-NOTIF] Failed:', e.message));
+        }
         try {
           const apology = client.error_message ||
             "We're experiencing a short technical issue. We'll get back to you in a few minutes - sorry for the inconvenience! 🙏";

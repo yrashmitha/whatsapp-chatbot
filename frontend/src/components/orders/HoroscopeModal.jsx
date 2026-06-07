@@ -55,7 +55,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
   const [showChartData, setShowChartData] = useState(false);
 
   // ── Birth fields ───────────────────────────────────────────────────────────
-  const [customerName, setCustomerName] = useState(cf.customer_name || '');
+  const [customerName, setCustomerName] = useState(cf.customer_name || cf.name || '');
   const [birthDate, setBirthDate]       = useState(toISODate(cf.birth_date || ''));
   const [birthHour, setBirthHour]       = useState('07');
   const [birthMinute, setBirthMinute]   = useState('00');

@@ -160,11 +160,11 @@ async function countOrdersByYear(pattern, clientId) {
   if (IS_PG) {
     const res = clientId
       ? await pool.query(
-          "SELECT COALESCE(MAX(CAST(SPLIT_PART(order_id, '-', 2) AS INTEGER)), 0) AS mx FROM orders WHERE order_id LIKE $1 AND client_id = $2",
+          "SELECT COALESCE(MAX(CAST(SPLIT_PART(order_id, '-', 2) AS INTEGER)), 0) AS mx FROM orders WHERE order_id LIKE $1 AND client_id = $2 AND SPLIT_PART(order_id, '-', 2) ~ '^[0-9]+$'",
           [pattern, clientId]
         )
       : await pool.query(
-          "SELECT COALESCE(MAX(CAST(SPLIT_PART(order_id, '-', 2) AS INTEGER)), 0) AS mx FROM orders WHERE order_id LIKE $1",
+          "SELECT COALESCE(MAX(CAST(SPLIT_PART(order_id, '-', 2) AS INTEGER)), 0) AS mx FROM orders WHERE order_id LIKE $1 AND SPLIT_PART(order_id, '-', 2) ~ '^[0-9]+$'",
           [pattern]
         );
     return parseInt(res.rows[0].mx, 10);

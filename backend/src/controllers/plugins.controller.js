@@ -841,7 +841,7 @@ async function fetchChartData(req, res) {
   const clientId = resolveClientId(req);
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
 
-  const { order_id, lat, lng, birth_overrides } = req.body;
+  const { order_id, lat, lng, birth_place_name, birth_overrides } = req.body;
   if (!order_id || lat == null || lng == null) {
     return res.status(400).json({ error: 'order_id, lat, lng required' });
   }
@@ -879,8 +879,15 @@ async function fetchChartData(req, res) {
     const chartData = astroResp.data;
 
     await db.pgQuery(
-      `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), '{chart_data}', $1::jsonb) WHERE order_id=$2`,
-      [JSON.stringify(chartData), order_id]
+      `UPDATE orders SET horoscope_data = COALESCE(horoscope_data,'{}') ||
+        jsonb_build_object(
+          'chart_data', $1::jsonb,
+          'lat', $2::float,
+          'lng', $3::float,
+          'birth_place_name', $4::text
+        )
+       WHERE order_id=$5`,
+      [JSON.stringify(chartData), parseFloat(lat), parseFloat(lng), birth_place_name || '', order_id]
     );
 
     const sign = chartData.ascendant?.sign || null;

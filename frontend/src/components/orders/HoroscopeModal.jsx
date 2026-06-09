@@ -440,6 +440,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
                     order_id: order?.order_id,
                     lat: selectedPlace.lat,
                     lng: selectedPlace.lng,
+                    birth_place_name: selectedPlace.name || '',
                     birth_overrides: {
                       birth_date: birthDate,
                       birth_time: `${birthHour}:${birthMinute}`,

@@ -316,7 +316,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
         <div className="flex flex-1 overflow-hidden min-h-0">
 
           {/* Left: Chat */}
-          <div className="w-[420px] shrink-0 border-r border-slate-100 flex flex-col overflow-hidden">
+          <div className="w-1/2 shrink-0 border-r border-slate-100 flex flex-col overflow-hidden">
             <ChatThread
               customer={{ phone: order?.phone || order?.phone_number, name: order?.customer_name || order?.phone || order?.phone_number }}
               clientId={clientId}

@@ -831,6 +831,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
               </button>
             )}
           </div>
+        </div>{/* end footer */}
 
           </div>{/* end right column */}
         </div>{/* end two-column body */}

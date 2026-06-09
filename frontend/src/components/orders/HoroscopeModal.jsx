@@ -5,6 +5,17 @@ import { useToast } from '../ui/Toast';
 const HOURS   = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
 const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
 
+const LAGNA_SI = {
+  Aries: 'මේෂ', Taurus: 'වෘෂභ', Gemini: 'මිථුන', Cancer: 'කටක',
+  Leo: 'සිංහ', Virgo: 'කන්නියා', Libra: 'තුලා', Scorpio: 'වෘශ්චික',
+  Sagittarius: 'ධනු', Capricorn: 'මකර', Aquarius: 'කුම්භ', Pisces: 'මීන',
+};
+const ZODIAC_SYMBOL = {
+  Aries: '♈', Taurus: '♉', Gemini: '♊', Cancer: '♋',
+  Leo: '♌', Virgo: '♍', Libra: '♎', Scorpio: '♏',
+  Sagittarius: '♐', Capricorn: '♑', Aquarius: '♒', Pisces: '♓',
+};
+
 const SINHALA_MONTHS = {
   'ජනවාරි':1,'පෙබරවාරි':2,'මාර්තු':3,'අප්‍රේල්':4,
   'මැයි':5,'ජූනි':6,'ජූලි':7,'අගෝස්තු':8,
@@ -56,6 +67,8 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
 
   // ── Birth fields ───────────────────────────────────────────────────────────
   const [customerName, setCustomerName] = useState(cf.customer_name || cf.name || '');
+  const [checkingSign, setCheckingSign] = useState(false);
+  const [detectedLagna, setDetectedLagna] = useState(existingHd.chart_data?.ascendant?.sign || null);
   const [birthDate, setBirthDate]       = useState(toISODate(cf.birth_date || ''));
   const [birthHour, setBirthHour]       = useState('07');
   const [birthMinute, setBirthMinute]   = useState('00');
@@ -412,6 +425,50 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
             )}
             {selectedPlace && (
               <p className="text-xs text-emerald-600 mt-1">✓ {selectedPlace.lat.toFixed(4)}, {selectedPlace.lng.toFixed(4)}</p>
+            )}
+          </div>
+
+          {/* Check Sign */}
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              disabled={checkingSign || !selectedPlace || !birthDate}
+              onClick={async () => {
+                setCheckingSign(true);
+                try {
+                  const r = await api.post('/plugins/horoscope/fetch-chart', {
+                    order_id: order?.order_id,
+                    lat: selectedPlace.lat,
+                    lng: selectedPlace.lng,
+                    birth_overrides: {
+                      birth_date: birthDate,
+                      birth_time: `${birthHour}:${birthMinute}`,
+                    },
+                    ...(clientId && { client_id: clientId }),
+                  });
+                  setDetectedLagna(r.data.sign);
+                  toast.success('Chart data saved');
+                } catch (e) {
+                  toast.error(e?.response?.data?.error || 'Failed to fetch chart');
+                } finally {
+                  setCheckingSign(false);
+                }
+              }}
+              className="px-4 py-2 text-sm font-medium rounded-xl border-0 cursor-pointer disabled:opacity-50 transition-colors"
+              style={{ background: '#f3f0ff', color: '#7c3aed' }}
+            >
+              {checkingSign ? 'Checking…' : '🔍 Check Sign'}
+            </button>
+            {detectedLagna && (
+              <div className="flex items-center gap-2">
+                <span className="text-2xl leading-none" title={detectedLagna}>
+                  {ZODIAC_SYMBOL[detectedLagna] || ''}
+                </span>
+                <div className="flex flex-col leading-tight">
+                  <span className="text-sm font-semibold text-slate-800">{LAGNA_SI[detectedLagna] || detectedLagna}</span>
+                  <span className="text-xs text-slate-400">{detectedLagna}</span>
+                </div>
+              </div>
             )}
           </div>
 

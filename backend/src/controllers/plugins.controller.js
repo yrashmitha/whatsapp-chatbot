@@ -8,7 +8,7 @@
 
 const db   = require('../db');
 const { generateAstroMessage, DEFAULT_ASTRO_PROMPT } = require('../services/astro');
-const { generateHoroscope, buildHoroscopeDoc, buildQuantumDoc, regenerateHoroscopeSection, generateWaMessage, SECTIONS, SECTION_GUIDES, parseSinhalaDate } = require('../services/horoscope');
+const { generateHoroscope, buildHoroscopeDoc, buildQuantumDoc, regenerateHoroscopeSection, generateWaMessage, SECTIONS, SECTION_GUIDES, parseSinhalaDate, parseSinhalaTime } = require('../services/horoscope');
 const { analyzeAura, generateQuantumReading, generateQuantumSections } = require('../services/quantumCode');
 const { DEFAULT_TAROT_PROMPT } = require('../services/tarot');
 const resolveClientId = require('../middleware/resolveClientId');
@@ -827,9 +827,74 @@ async function generateWaMessageHandler(req, res) {
   }
 }
 
+const LAGNA_SINHALA = {
+  Aries: 'මේෂ', Taurus: 'වෘෂභ', Gemini: 'මිථුන', Cancer: 'කටක',
+  Leo: 'සිංහ', Virgo: 'කන්නියා', Libra: 'තුලා', Scorpio: 'වෘශ්චික',
+  Sagittarius: 'ධනු', Capricorn: 'මකර', Aquarius: 'කුම්භ', Pisces: 'මීන',
+};
+
+/**
+ * POST /api/plugins/horoscope/fetch-chart — call freeastroapi and save chart_data for an order.
+ * Returns ascendant sign so the admin can verify lagnaya before generating the full reading.
+ */
+async function fetchChartData(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+
+  const { order_id, lat, lng, birth_overrides } = req.body;
+  if (!order_id || lat == null || lng == null) {
+    return res.status(400).json({ error: 'order_id, lat, lng required' });
+  }
+
+  const overrides = birth_overrides || {};
+  const dateInfo  = parseSinhalaDate(overrides.birth_date || '');
+  const timeInfo  = parseSinhalaTime(overrides.birth_time || '');
+  if (!dateInfo) return res.status(400).json({ error: `Cannot parse birth_date: "${overrides.birth_date}"` });
+  if (!timeInfo) return res.status(400).json({ error: `Cannot parse birth_time: "${overrides.birth_time}"` });
+
+  const { year, month, day } = dateInfo;
+  const { hour, minute }     = timeInfo;
+
+  try {
+    const config = await db.getPluginConfig(clientId, 'horoscope_reading');
+    const apiKey = config.api_key || process.env.FREEASTRO_API_KEY;
+
+    const astroPayload = {
+      year, month, day, hour, minute,
+      lat: parseFloat(lat), lng: parseFloat(lng),
+      tz_str: 'Asia/Colombo',
+      ayanamsha: 'lahiri',
+      house_system: 'whole_sign',
+      node_type: 'mean',
+      vargas: [1, 9, 7],
+      dasha_levels: 2,
+    };
+
+    const axios = require('axios');
+    const astroResp = await axios.post(
+      'https://api.freeastroapi.com/api/v1/vedic/calculate',
+      astroPayload,
+      { headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' } }
+    );
+    const chartData = astroResp.data;
+
+    await db.pgQuery(
+      `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), '{chart_data}', $1::jsonb) WHERE order_id=$2`,
+      [JSON.stringify(chartData), order_id]
+    );
+
+    const sign = chartData.ascendant?.sign || null;
+    res.json({ ok: true, sign, sign_si: LAGNA_SINHALA[sign] || sign });
+  } catch (e) {
+    console.error('[FETCH-CHART]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+}
+
 module.exports = {
   getPluginConfig, updatePluginConfig, getPluginCustomerData, generateAstroChart,
   analyzeAuraImage,
+  fetchChartData,
   generateHoroscopeReading, updateHoroscopeSections, updateQuantumSections,
   regenerateQuantumSections, regenerateQuantumSection, regenerateHoroscopeSectionHandler,
   saveWaMessageHandler,

@@ -263,14 +263,14 @@ export default function Orders() {
                                   <>
                                     <span title={horoscopeError} className="text-xs px-1.5 py-0.5 rounded border-0 bg-red-100 text-red-600 cursor-default">⚠ Error</span>
                                     <button
-                                      onClick={() => { setHoroscopeOrder(o); setDrawerCustomer({ phone: o.phone || o.phone_number, name: o.customer_name || o.phone || o.phone_number }); }}
+                                      onClick={() => setHoroscopeOrder(o)}
                                       title="Retry generation"
                                       className="text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 bg-violet-100 text-violet-700 hover:bg-violet-200"
                                     >🔮</button>
                                   </>
                                 ) : (
                                   <button
-                                    onClick={() => { setHoroscopeOrder(o); setDrawerCustomer({ phone: o.phone || o.phone_number, name: o.customer_name || o.phone || o.phone_number }); }}
+                                    onClick={() => setHoroscopeOrder(o)}
                                     title="Generate horoscope reading"
                                     className="text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 bg-violet-100 text-violet-700 hover:bg-violet-200"
                                   >🔮</button>

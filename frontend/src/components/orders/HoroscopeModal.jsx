@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import api from '../../lib/api';
 import { useToast } from '../ui/Toast';
+import ChatThread from '../chat/ChatThread';
 
 const HOURS   = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
 const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
@@ -297,20 +298,33 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
   const labelCls = 'text-xs font-medium text-slate-500 block mb-1';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div className="fixed inset-0 z-50 flex bg-black/50">
       <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl mx-4 overflow-hidden flex flex-col"
-        style={{ maxHeight: '95vh', minHeight: '70vh' }}
+        className="bg-white shadow-2xl w-full overflow-hidden flex flex-col"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 shrink-0">
           <div>
             <h2 className="text-base font-semibold text-slate-800">🔮 Generate Horoscope Reading</h2>
             <p className="text-xs text-slate-400 mt-0.5">#{order?.order_id}</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 bg-transparent border-0 cursor-pointer text-xl leading-none">×</button>
         </div>
+
+        {/* Two-column body */}
+        <div className="flex flex-1 overflow-hidden min-h-0">
+
+          {/* Left: Chat */}
+          <div className="w-[420px] shrink-0 border-r border-slate-100 flex flex-col overflow-hidden">
+            <ChatThread
+              customer={{ phone: order?.phone || order?.phone_number, name: order?.customer_name || order?.phone || order?.phone_number }}
+              clientId={clientId}
+            />
+          </div>
+
+          {/* Right: Form */}
+          <div className="flex flex-1 flex-col overflow-hidden min-w-0">
 
         {/* Customer details */}
         {Object.keys(cf).length > 0 && (
@@ -817,7 +831,9 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
               </button>
             )}
           </div>
-        </div>
+
+          </div>{/* end right column */}
+        </div>{/* end two-column body */}
       </div>
     </div>
   );

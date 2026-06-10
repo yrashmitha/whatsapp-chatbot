@@ -882,18 +882,20 @@ Sinhala month names: ජනවාරි=01 පෙබරවාරි=02 මාර
 Return null if genuinely unknown.
 
 ### birth_time_24h
-Normalize the raw birth time to exactly "HH:MM" 24-hour format (e.g. "21:00" for 9 PM, "06:30" for 6:30 AM).
-Sinhala markers: "ප.ව" or "සවස" or "රාත්‍රී" or "රාත්රී" or "දහවල්" = PM. "පෙ.ව" or "උදෑසන" or "උදේ" = AM.
+Normalize the raw birth time to exactly "HH:MM" 24-hour format.
+CRITICAL: "ප.ව" means afternoon/PM. Add 12 to hours 1–11 for PM. Examples: "ප.ව 3.30" → "15:30", "ප.ව 9.00" → "21:00", "ප.ව 12.00" → "12:00".
+"පෙ.ව" or "උදෑසන" or "උදේ" = AM (do NOT add 12). Examples: "පෙ.ව 6.30" → "06:30", "උදේ 3.30" → "03:30".
+"සවස" or "රාත්‍රී" or "රාත්රී" or "දහවල්" = PM.
 Midnight = "00:00". Noon = "12:00". Return null if genuinely unknown.
 
 ### birth_place_en
 The English name of the birth place (translated from Sinhala if needed). Just the place name, no country suffix needed.
 
 ### lat
-The latitude (decimal degrees) of the birth place. Use your geographic knowledge to return precise coordinates (minimum 4 decimal places) for this specific town/city in Sri Lanka (or abroad if applicable). Return a number, not a string.
+The latitude (decimal degrees) of the birth place. Use your geographic knowledge to return precise coordinates with minimum 4 decimal places for this specific town/city in Sri Lanka (or abroad if applicable). Return a number, not a string. Example: 8.4983 not 8.5
 
 ### lng
-The longitude (decimal degrees) of the birth place. Same requirement — 4+ decimal places of precision.
+The longitude (decimal degrees) of the birth place. SAME requirement — minimum 4 decimal places of precision. Return a number, not a string. Example: 80.6015 not 80.6
 
 ### special_questions
 Read the customer's chat conversation carefully. Identify every specific concern, problem, fear, or question the customer raised.

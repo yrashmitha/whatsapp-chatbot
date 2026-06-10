@@ -827,6 +827,113 @@ async function generateWaMessageHandler(req, res) {
   }
 }
 
+const { genAI } = require('../services/gemini');
+
+/**
+ * POST /api/plugins/horoscope/ai-prepare/:orderId
+ * Uses Gemini to read the customer's chat + order details and return:
+ *  - birth_time_24h  : normalized "HH:MM"
+ *  - birth_place_query : best Nominatim search string
+ *  - geocoded place   : { lat, lng, name } from Nominatim
+ *  - special_questions : [{question, sections}] crafted to maximise horoscope section quality
+ */
+async function aiPrepareHoroscope(req, res) {
+  const clientId = resolveClientId(req);
+  const { orderId } = req.params;
+
+  try {
+    // 1. Fetch order
+    const orderRes = await db.pgQuery(
+      'SELECT * FROM orders WHERE order_id=$1',
+      [orderId]
+    );
+    if (!orderRes.rows.length) return res.status(404).json({ error: 'Order not found' });
+    const order = orderRes.rows[0];
+    const cf = (typeof order.custom_fields === 'string')
+      ? JSON.parse(order.custom_fields || '{}')
+      : (order.custom_fields || {});
+
+    // 2. Fetch chat messages
+    const messages = await db.getMessagesByPhone(order.phone_number, clientId);
+    const chatLog = messages.map(m =>
+      `[${m.sender_type === 'user' ? 'Customer' : 'Agent'}]: ${m.message_text || ''}`
+    ).filter(l => l.length > 12).join('\n');
+
+    // 3. Call Gemini
+    const prompt = `You are an expert Vedic astrology assistant and Sinhala language expert helping prepare a horoscope reading request.
+
+## Order Details
+- Customer name: ${cf.customer_name || cf.name || ''}
+- Birth date: ${cf.birth_date || ''}
+- Birth time (raw): ${cf.birth_time || ''}
+- Birth place (raw): ${cf.birth_place || ''}
+- Lagna (if known): ${cf.lagnaya || cf.lagna || ''}
+- Package/problem: ${cf.problems || cf.summary || ''}
+- Items ordered: ${JSON.stringify(cf.items || [])}
+
+## Full Customer Chat Conversation
+${chatLog || '(no messages found)'}
+
+## Your Task
+Analyze everything above and return a JSON object with exactly these fields:
+
+1. **birth_time_24h** (string "HH:MM"): Convert the raw birth time to 24-hour format. Handle Sinhala: "ප.ව" = PM, "පෙ.ව" = AM, "රාත්‍රී"/"රාත්රී" = night (PM), "දහවල්" = noon (PM), "සවස" = evening (PM), "උදෑසන"/"උදේ" = morning (AM). If midnight use "00:00". If genuinely unknown return null.
+
+2. **birth_place_query** (string): The best English search query for OpenStreetMap Nominatim to find this birth place. Translate Sinhala place names to English. If it's a hospital, include the town name too (e.g. "Polgahawela, Sri Lanka"). Be specific.
+
+3. **special_questions** (array of objects {question: string, sections: string[]}): Read the customer's chat carefully. Identify what specific life problems, concerns, or questions the customer raised. Generate 2–5 special questions that will be passed to Gemini again when generating each horoscope section.
+
+IMPORTANT for special_questions: Each question must be:
+- Written as a detailed astrological analysis prompt, not a simple label
+- Specific to what the customer actually said (quote their concern, their life situation)
+- Phrased to guide the AI to give concrete, actionable, descriptive astrological insight
+- Include which planetary houses/grahas are relevant to investigate
+- The "sections" array should list which horoscope sections this question is most relevant to (use section keys like: "marriage_life", "financial_life", "career_job", "health", "foreign_life", "children_education", "enemies_obstacles", "general_future")
+
+Example of a GOOD question: "Customer has been working in Dubai for 3 years but money does not accumulate — earnings flow out as fast as they come in. Analyze the 2nd house (dhana), 11th house (labha), and any malefic aspects on the Moon and Jupiter. Identify the astrological cause of financial leakage and provide specific Dasha periods when wealth retention will improve."
+
+Example of a BAD question: "money problems"
+
+Return ONLY valid JSON, no markdown, no explanation:
+{"birth_time_24h": "...", "birth_place_query": "...", "special_questions": [...]}`;
+
+    const geminiModel = genAI.getGenerativeModel({
+      model: 'gemini-2.5-flash',
+      generationConfig: { temperature: 0.3, topP: 0.9, responseMimeType: 'application/json' },
+    });
+    const result = await geminiModel.generateContent(prompt);
+    const raw = result.response.text().trim();
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch { return res.status(500).json({ error: 'Gemini returned invalid JSON', raw }); }
+
+    // 4. Geocode via Nominatim
+    let geocoded = null;
+    if (parsed.birth_place_query) {
+      try {
+        const axios = require('axios');
+        const geoRes = await axios.get(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(parsed.birth_place_query)}&format=json&limit=1`,
+          { headers: { 'User-Agent': 'pj-crm/1.0' } }
+        );
+        if (geoRes.data?.[0]) {
+          const g = geoRes.data[0];
+          geocoded = { lat: parseFloat(g.lat), lng: parseFloat(g.lon), name: g.display_name };
+        }
+      } catch { /* geocode failure is non-fatal */ }
+    }
+
+    res.json({
+      birth_time_24h:    parsed.birth_time_24h || null,
+      birth_place_query: parsed.birth_place_query || null,
+      geocoded,
+      special_questions: Array.isArray(parsed.special_questions) ? parsed.special_questions : [],
+    });
+  } catch (e) {
+    console.error('[AI-PREPARE]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+}
+
 const LAGNA_SINHALA = {
   Aries: 'මේෂ', Taurus: 'වෘෂභ', Gemini: 'මිථුන', Cancer: 'කටක',
   Leo: 'සිංහ', Virgo: 'කන්නියා', Libra: 'තුලා', Scorpio: 'වෘශ්චික',
@@ -901,6 +1008,7 @@ async function fetchChartData(req, res) {
 module.exports = {
   getPluginConfig, updatePluginConfig, getPluginCustomerData, generateAstroChart,
   analyzeAuraImage,
+  aiPrepareHoroscope,
   fetchChartData,
   generateHoroscopeReading, updateHoroscopeSections, updateQuantumSections,
   regenerateQuantumSections, regenerateQuantumSection, regenerateHoroscopeSectionHandler,

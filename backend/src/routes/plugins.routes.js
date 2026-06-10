@@ -14,6 +14,7 @@ const {
   getPluginCustomerData,
   generateAstroChart,
   analyzeAuraImage,
+  aiPrepareHoroscope,
   fetchChartData,
   generateHoroscopeReading,
   updateHoroscopeSections,
@@ -41,6 +42,7 @@ router.put('/:pluginId/config',                   jwtAuth, updatePluginConfig);
 router.get('/:pluginId/customer-data/:phone',     jwtAuth, getPluginCustomerData);
 router.post('/astro-chart',                       jwtAuth, generateAstroChart);
 router.post('/horoscope/analyze-aura',            jwtAuth, auraUpload.single('image'), analyzeAuraImage);
+router.post('/horoscope/ai-prepare/:orderId',     jwtAuth, aiPrepareHoroscope);
 router.post('/horoscope/fetch-chart',             jwtAuth, fetchChartData);
 router.post('/horoscope/generate',                jwtAuth, generateHoroscopeReading);
 router.patch('/horoscope/sections/:orderId',         jwtAuth, updateHoroscopeSections);

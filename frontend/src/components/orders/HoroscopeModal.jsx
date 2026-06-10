@@ -70,6 +70,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
   const [customerName, setCustomerName] = useState(cf.customer_name || cf.name || '');
   const [checkingSign, setCheckingSign] = useState(false);
   const [detectedLagna, setDetectedLagna] = useState(existingHd.chart_data?.ascendant?.sign || null);
+  const [aiPreparing, setAiPreparing]   = useState(false);
   const [birthDate, setBirthDate]       = useState(toISODate(cf.birth_date || ''));
   const [birthHour, setBirthHour]       = useState('07');
   const [birthMinute, setBirthMinute]   = useState('00');
@@ -382,6 +383,45 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
 
         {/* Body */}
         <div className="overflow-y-auto flex-1 px-5 py-4 flex flex-col gap-3">
+
+          {/* AI Fill */}
+          <button
+            type="button"
+            disabled={aiPreparing}
+            onClick={async () => {
+              setAiPreparing(true);
+              try {
+                const r = await api.post(`/plugins/horoscope/ai-prepare/${order?.order_id}`, {
+                  ...(clientId && { client_id: clientId }),
+                });
+                const { birth_time_24h, geocoded, special_questions } = r.data;
+
+                if (birth_time_24h) {
+                  const [h, m] = birth_time_24h.split(':');
+                  setBirthHour(h.padStart(2, '0'));
+                  setBirthMinute(m.padStart(2, '0'));
+                }
+                if (geocoded) {
+                  setSelectedPlace(geocoded);
+                  setGeoQuery(geocoded.name);
+                }
+                if (Array.isArray(special_questions) && special_questions.length) {
+                  setSpecialQuestions(special_questions);
+                }
+                toast.success('AI filled birth time, location and special questions');
+              } catch (e) {
+                toast.error(e?.response?.data?.error || 'AI prepare failed');
+              } finally {
+                setAiPreparing(false);
+              }
+            }}
+            className="w-full py-2.5 text-sm font-semibold rounded-xl border-0 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2 transition-all"
+            style={{ background: aiPreparing ? '#f3f0ff' : 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: aiPreparing ? '#7c3aed' : '#fff' }}
+          >
+            {aiPreparing
+              ? <><span className="w-4 h-4 border-2 border-violet-300 border-t-violet-600 rounded-full animate-spin block" />Gemini is thinking…</>
+              : '✨ AI Fill — Read Chat & Prepare'}
+          </button>
 
           {/* Customer name */}
           <div>

@@ -394,7 +394,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
                 const r = await api.post(`/plugins/horoscope/ai-prepare/${order?.order_id}`, {
                   ...(clientId && { client_id: clientId }),
                 });
-                const { birth_date_iso, birth_time_24h, geocoded, special_questions } = r.data;
+                const { birth_date_iso, birth_time_24h, birth_place_query, geo_suggestions, special_questions } = r.data;
 
                 if (birth_date_iso) setBirthDate(birth_date_iso);
                 if (birth_time_24h) {
@@ -402,14 +402,17 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
                   setBirthHour(h.padStart(2, '0'));
                   setBirthMinute(m.padStart(2, '0'));
                 }
-                if (geocoded) {
-                  setSelectedPlace(geocoded);
-                  setGeoQuery(geocoded.name);
+                if (birth_place_query) {
+                  setGeoQuery(birth_place_query);
+                  setSelectedPlace(null);
+                }
+                if (Array.isArray(geo_suggestions) && geo_suggestions.length) {
+                  setGeoSuggestions(geo_suggestions);
                 }
                 if (Array.isArray(special_questions) && special_questions.length) {
                   setSpecialQuestions(special_questions);
                 }
-                toast.success('AI filled birth time, location and special questions');
+                toast.success('AI ready — pick the birth place from the dropdown, then generate');
               } catch (e) {
                 toast.error(e?.response?.data?.error || 'AI prepare failed');
               } finally {

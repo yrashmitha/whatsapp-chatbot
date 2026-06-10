@@ -940,18 +940,21 @@ The "sections" array for each question must list the most relevant section keys 
     let parsed;
     try { parsed = JSON.parse(raw); } catch { return res.status(500).json({ error: 'Gemini returned invalid JSON', raw }); }
 
-    // 4. Geocode via Nominatim
-    let geocoded = null;
+    // 4. Geocode via Nominatim — return top results so admin picks from dropdown
+    let geo_suggestions = [];
     if (parsed.birth_place_query) {
       try {
         const axios = require('axios');
         const geoRes = await axios.get(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(parsed.birth_place_query)}&format=json&limit=1`,
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(parsed.birth_place_query)}&format=json&limit=5`,
           { headers: { 'User-Agent': 'pj-crm/1.0' } }
         );
-        if (geoRes.data?.[0]) {
-          const g = geoRes.data[0];
-          geocoded = { lat: parseFloat(g.lat), lng: parseFloat(g.lon), name: g.display_name };
+        if (Array.isArray(geoRes.data)) {
+          geo_suggestions = geoRes.data.map(g => ({
+            lat:  parseFloat(g.lat),
+            lng:  parseFloat(g.lon),
+            name: g.display_name,
+          }));
         }
       } catch { /* geocode failure is non-fatal */ }
     }
@@ -960,7 +963,7 @@ The "sections" array for each question must list the most relevant section keys 
       birth_date_iso:    parsed.birth_date_iso || null,
       birth_time_24h:    parsed.birth_time_24h || null,
       birth_place_query: parsed.birth_place_query || null,
-      geocoded,
+      geo_suggestions,
       special_questions: Array.isArray(parsed.special_questions) ? parsed.special_questions : [],
     });
   } catch (e) {

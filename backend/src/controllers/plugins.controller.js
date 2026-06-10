@@ -864,42 +864,76 @@ async function aiPrepareHoroscope(req, res) {
 
 ## Order Details
 - Customer name: ${cf.customer_name || cf.name || ''}
-- Birth date: ${cf.birth_date || ''}
+- Birth date (raw): ${cf.birth_date || ''}
 - Birth time (raw): ${cf.birth_time || ''}
 - Birth place (raw): ${cf.birth_place || ''}
 - Lagna (if known): ${cf.lagnaya || cf.lagna || ''}
-- Package/problem: ${cf.problems || cf.summary || ''}
+- Problem / concern: ${cf.problems || cf.summary || ''}
 - Items ordered: ${JSON.stringify(cf.items || [])}
 
 ## Full Customer Chat Conversation
 ${chatLog || '(no messages found)'}
 
-## Your Task
-Analyze everything above and return a JSON object with exactly these fields:
+## Your Task — return the exact JSON schema below, nothing else.
 
-1. **birth_time_24h** (string "HH:MM"): Convert the raw birth time to 24-hour format. Handle Sinhala: "ප.ව" = PM, "පෙ.ව" = AM, "රාත්‍රී"/"රාත්රී" = night (PM), "දහවල්" = noon (PM), "සවස" = evening (PM), "උදෑසන"/"උදේ" = morning (AM). If midnight use "00:00". If genuinely unknown return null.
+### birth_date_iso
+Normalize the raw birth date to exactly "YYYY-MM-DD" format (e.g. "1990-03-15").
+Sinhala month names: ජනවාරි=01 පෙබරවාරි=02 මාර්තු=03 අප්‍රේල්=04 මැයි=05 ජූනි=06 ජූලි=07 අගෝස්තු=08 සැප්තැම්බර්=09 ඔක්තෝබර්=10 නොවැම්බර්=11 දෙසැම්බර්=12
+Return null if genuinely unknown.
 
-2. **birth_place_query** (string): The best English search query for OpenStreetMap Nominatim to find this birth place. Translate Sinhala place names to English. If it's a hospital, include the town name too (e.g. "Polgahawela, Sri Lanka"). Be specific.
+### birth_time_24h
+Normalize the raw birth time to exactly "HH:MM" 24-hour format (e.g. "21:00" for 9 PM, "06:30" for 6:30 AM).
+Sinhala markers: "ප.ව" or "සවස" or "රාත්‍රී" or "රාත්රී" or "දහවල්" = PM. "පෙ.ව" or "උදෑසන" or "උදේ" = AM.
+Midnight = "00:00". Noon = "12:00". Return null if genuinely unknown.
 
-3. **special_questions** (array of objects {question: string, sections: string[]}): Read the customer's chat carefully. Identify what specific life problems, concerns, or questions the customer raised. Generate 2–5 special questions that will be passed to Gemini again when generating each horoscope section.
+### birth_place_query
+The best English search string for OpenStreetMap Nominatim to pinpoint this exact location.
+Translate Sinhala place names to English. Always append ", Sri Lanka" unless clearly a foreign country.
+If it is a hospital or institution, use the nearest town (e.g. "Polgahawela, Sri Lanka" not "Polgahawela Hospital, Sri Lanka" — Nominatim finds towns better).
 
-IMPORTANT for special_questions: Each question must be:
-- Written as a detailed astrological analysis prompt, not a simple label
-- Specific to what the customer actually said (quote their concern, their life situation)
-- Phrased to guide the AI to give concrete, actionable, descriptive astrological insight
-- Include which planetary houses/grahas are relevant to investigate
-- The "sections" array should list which horoscope sections this question is most relevant to (use section keys like: "marriage_life", "financial_life", "career_job", "health", "foreign_life", "children_education", "enemies_obstacles", "general_future")
+### special_questions
+Read the customer's chat conversation carefully. Identify every specific concern, problem, fear, or question the customer raised — not just the headline topic.
+Generate 2–5 questions that will be injected as context into Gemini when it writes each horoscope section.
+Each question MUST:
+- Be written as a detailed astrological analysis instruction, not a simple topic label
+- Reference the customer's exact words or situation
+- Name the relevant houses (1st–12th), grahas (Sun/Moon/Mars/Mercury/Jupiter/Venus/Saturn/Rahu/Ketu), and yogas to investigate
+- End with a request for specific Dasha/Antardasha timing predictions
+- Use English (the horoscope AI reads English prompts)
 
-Example of a GOOD question: "Customer has been working in Dubai for 3 years but money does not accumulate — earnings flow out as fast as they come in. Analyze the 2nd house (dhana), 11th house (labha), and any malefic aspects on the Moon and Jupiter. Identify the astrological cause of financial leakage and provide specific Dasha periods when wealth retention will improve."
+GOOD example: "Customer has been working in Dubai for 3 years but money does not stay — income arrives but disappears immediately. Examine the 2nd house lord (dhana sthana), 11th house lord (labha sthana), any malefic aspects on Jupiter and the Moon, and presence of Kemadruma yoga or Daridra yoga. Identify the specific Dasha–Antardasha period when financial accumulation and stability will begin."
 
-Example of a BAD question: "money problems"
+BAD example: "money problems"
 
-Return ONLY valid JSON, no markdown, no explanation:
-{"birth_time_24h": "...", "birth_place_query": "...", "special_questions": [...]}`;
+The "sections" array for each question must list the most relevant section keys from: marriage_life, financial_life, career_job, health, foreign_life, children_education, enemies_obstacles, general_future`;
 
     const geminiModel = genAI.getGenerativeModel({
       model: 'gemini-2.5-flash',
-      generationConfig: { temperature: 0.3, topP: 0.9, responseMimeType: 'application/json' },
+      generationConfig: {
+        temperature: 0.2,
+        topP: 0.9,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: 'object',
+          properties: {
+            birth_date_iso:    { type: 'string', nullable: true },
+            birth_time_24h:    { type: 'string', nullable: true },
+            birth_place_query: { type: 'string' },
+            special_questions: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  question: { type: 'string' },
+                  sections: { type: 'array', items: { type: 'string' } },
+                },
+                required: ['question', 'sections'],
+              },
+            },
+          },
+          required: ['birth_date_iso', 'birth_time_24h', 'birth_place_query', 'special_questions'],
+        },
+      },
     });
     const result = await geminiModel.generateContent(prompt);
     const raw = result.response.text().trim();
@@ -923,6 +957,7 @@ Return ONLY valid JSON, no markdown, no explanation:
     }
 
     res.json({
+      birth_date_iso:    parsed.birth_date_iso || null,
       birth_time_24h:    parsed.birth_time_24h || null,
       birth_place_query: parsed.birth_place_query || null,
       geocoded,

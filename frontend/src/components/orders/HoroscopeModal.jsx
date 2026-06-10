@@ -394,8 +394,9 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
                 const r = await api.post(`/plugins/horoscope/ai-prepare/${order?.order_id}`, {
                   ...(clientId && { client_id: clientId }),
                 });
-                const { birth_time_24h, geocoded, special_questions } = r.data;
+                const { birth_date_iso, birth_time_24h, geocoded, special_questions } = r.data;
 
+                if (birth_date_iso) setBirthDate(birth_date_iso);
                 if (birth_time_24h) {
                   const [h, m] = birth_time_24h.split(':');
                   setBirthHour(h.padStart(2, '0'));

@@ -886,26 +886,42 @@ Normalize the raw birth time to exactly "HH:MM" 24-hour format (e.g. "21:00" for
 Sinhala markers: "ප.ව" or "සවස" or "රාත්‍රී" or "රාත්රී" or "දහවල්" = PM. "පෙ.ව" or "උදෑසන" or "උදේ" = AM.
 Midnight = "00:00". Noon = "12:00". Return null if genuinely unknown.
 
-### birth_place_query
-The best English search string for OpenStreetMap Nominatim to pinpoint this exact location.
-Translate Sinhala place names to English. Always append ", Sri Lanka" unless clearly a foreign country.
-If it is a hospital or institution, use the nearest town (e.g. "Polgahawela, Sri Lanka" not "Polgahawela Hospital, Sri Lanka" — Nominatim finds towns better).
+### birth_place_en
+The English name of the birth place (translated from Sinhala if needed). Just the place name, no country suffix needed.
+
+### lat
+The latitude (decimal degrees) of the birth place. Use your geographic knowledge to return precise coordinates (minimum 4 decimal places) for this specific town/city in Sri Lanka (or abroad if applicable). Return a number, not a string.
+
+### lng
+The longitude (decimal degrees) of the birth place. Same requirement — 4+ decimal places of precision.
 
 ### special_questions
-Read the customer's chat conversation carefully. Identify every specific concern, problem, fear, or question the customer raised — not just the headline topic.
-Generate 2–5 questions that will be injected as context into Gemini when it writes each horoscope section.
+Read the customer's chat conversation carefully. Identify every specific concern, problem, fear, or question the customer raised.
+Generate 2–5 special questions written in SINHALA that will be passed as context to Gemini when generating each horoscope section.
+
 Each question MUST:
-- Be written as a detailed astrological analysis instruction, not a simple topic label
-- Reference the customer's exact words or situation
-- Name the relevant houses (1st–12th), grahas (Sun/Moon/Mars/Mercury/Jupiter/Venus/Saturn/Rahu/Ketu), and yogas to investigate
-- End with a request for specific Dasha/Antardasha timing predictions
-- Use English (the horoscope AI reads English prompts)
+- Be written in Sinhala
+- Be descriptive and specific to this customer's actual situation (include what they told us in the chat)
+- Be phrased as a question or topic that guides detailed horoscope analysis
+- Include the customer's specific life details, concerns and intentions so the AI can give a more relevant and personalised reading
 
-GOOD example: "Customer has been working in Dubai for 3 years but money does not stay — income arrives but disappears immediately. Examine the 2nd house lord (dhana sthana), 11th house lord (labha sthana), any malefic aspects on Jupiter and the Moon, and presence of Kemadruma yoga or Daridra yoga. Identify the specific Dasha–Antardasha period when financial accumulation and stability will begin."
+Examples of the style and format to follow:
+- "ඉදිරි අවුරුදු 5 තුල විශේෂයෙන් සැලකිලිමත් විය යුතු කරුණු සහ කල යුතු, නොකල යුතු දේවල්"
+- "විවාහය ජිවිතයේ ඇති විය හැකි ගැටළු සහ ඒවාට විසදුම් මෙන්ම විවාහ ජිවිතයේ දියුණුවට කල හැකි දේවල්"
 
-BAD example: "money problems"
+Make each question MORE specific than these examples by weaving in what this particular customer asked or is worried about. For instance if the customer mentioned job problems abroad, frame the question around that exact situation.
 
-The "sections" array for each question must list the most relevant section keys from: marriage_life, financial_life, career_job, health, foreign_life, children_education, enemies_obstacles, general_future`;
+The "sections" array must use the exact Sinhala section keys from this list:
+- "පෞරුෂය"
+- "අධ්‍යාපනය"
+- "වෘත්තීය ජීවිතය සහ ආර්ථික ශක්තිය"
+- "ප්‍රේමය සහ විවාහ ජීවිතය"
+- "දේපළ, භූමිය, නිවාස සහ වාහන භාග්‍යය"
+- "ශාරීරික සෞඛ්‍යය, මාරක අපල, හදිසි අනතුරු"
+- "දරු පල"
+- "මෙතෙක් දැක්වූ කරුණු අනුව ජීවන ගමනේ සමස්ත සාරාංශය"
+- "වර්තමාන දශාව අනුව පලාපල"
+- "ජීවිතයේ අභියෝග ජයගැනීම සඳහා වූ පොදු ශාස්ත්‍රීය සහ බෞද්ධ පිළියම්"`;
 
     const geminiModel = genAI.getGenerativeModel({
       model: 'gemini-2.5-flash',
@@ -916,9 +932,11 @@ The "sections" array for each question must list the most relevant section keys 
         responseSchema: {
           type: 'object',
           properties: {
-            birth_date_iso:    { type: 'string', nullable: true },
-            birth_time_24h:    { type: 'string', nullable: true },
-            birth_place_query: { type: 'string' },
+            birth_date_iso:  { type: 'string', nullable: true },
+            birth_time_24h:  { type: 'string', nullable: true },
+            birth_place_en:  { type: 'string' },
+            lat:             { type: 'number' },
+            lng:             { type: 'number' },
             special_questions: {
               type: 'array',
               items: {
@@ -931,7 +949,7 @@ The "sections" array for each question must list the most relevant section keys 
               },
             },
           },
-          required: ['birth_date_iso', 'birth_time_24h', 'birth_place_query', 'special_questions'],
+          required: ['birth_date_iso', 'birth_time_24h', 'birth_place_en', 'lat', 'lng', 'special_questions'],
         },
       },
     });
@@ -940,30 +958,12 @@ The "sections" array for each question must list the most relevant section keys 
     let parsed;
     try { parsed = JSON.parse(raw); } catch { return res.status(500).json({ error: 'Gemini returned invalid JSON', raw }); }
 
-    // 4. Geocode via Nominatim — return top results so admin picks from dropdown
-    let geo_suggestions = [];
-    if (parsed.birth_place_query) {
-      try {
-        const axios = require('axios');
-        const geoRes = await axios.get(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(parsed.birth_place_query)}&format=json&limit=5`,
-          { headers: { 'User-Agent': 'pj-crm/1.0' } }
-        );
-        if (Array.isArray(geoRes.data)) {
-          geo_suggestions = geoRes.data.map(g => ({
-            lat:  parseFloat(g.lat),
-            lng:  parseFloat(g.lon),
-            name: g.display_name,
-          }));
-        }
-      } catch { /* geocode failure is non-fatal */ }
-    }
-
     res.json({
       birth_date_iso:    parsed.birth_date_iso || null,
       birth_time_24h:    parsed.birth_time_24h || null,
-      birth_place_query: parsed.birth_place_query || null,
-      geo_suggestions,
+      birth_place_en:    parsed.birth_place_en || null,
+      lat:               parsed.lat || null,
+      lng:               parsed.lng || null,
       special_questions: Array.isArray(parsed.special_questions) ? parsed.special_questions : [],
     });
   } catch (e) {

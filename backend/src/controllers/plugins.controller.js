@@ -898,20 +898,42 @@ The latitude (decimal degrees) of the birth place. Use your geographic knowledge
 The longitude (decimal degrees) of the birth place. SAME requirement — minimum 4 decimal places of precision. Return a number, not a string. Example: 80.6015 not 80.6
 
 ### special_questions
-Read the customer's chat conversation carefully. Identify every specific concern, problem, fear, or question the customer raised.
-Generate 2–5 special questions written in SINHALA that will be passed as context to Gemini when generating each horoscope section.
+Read the customer's chat conversation carefully and identify SPECIFIC personal situations, fears, or concerns the customer mentioned — things beyond generic topics.
+
+The following sections are ALREADY generated for every customer automatically. Do NOT create questions that duplicate what these sections already cover:
+- පෞරුෂය — general personality analysis
+- අධ්‍යාපනය — general education analysis
+- වෘත්තීය ජීවිතය සහ ආර්ථික ශක්තිය — general career and financial analysis
+- ප්‍රේමය සහ විවාහ ජීවිතය — general love and marriage analysis
+- දේපළ, භූමිය, නිවාස සහ වාහන භාග්‍යය — general property analysis
+- ශාරීරික සෞඛ්‍යය, මාරක අපල, හදිසි අනතුරු — general health analysis
+- දරු පල — general children analysis
+- මෙතෙක් දැක්වූ කරුණු අනුව ජීවන ගමනේ සමස්ත සාරාංශය — overall life summary
+- වර්තමාන දශාව අනුව පලාපල — current dasha period analysis
+- ජීවිතයේ අභියෝග ජයගැනීම සඳහා වූ පොදු ශාස්ත්‍රීය සහ බෞද්ධ පිළියම් — remedies
+
+So a question like "දරුඵල ගැන බලන්න" or "විවාහය ගැන කියන්න" is USELESS — those sections already do that for everyone.
+
+A special question is ONLY valid if it targets something SPECIFIC this customer personally mentioned in the chat — a specific struggle, fear, decision, or life situation that the generic sections won't address.
+
+Before writing each question ask yourself: "What is the best angle to frame this so Gemini gives the most honest, direct, and valuable answer — something that gives THIS customer real clarity on their specific situation and makes them feel understood?"
+
+IMPORTANT: If the customer's chat has NO specific personal concerns beyond the generic topics — return only the mandatory question below. Do not invent extra questions. Quality over quantity.
+
+MANDATORY: Always include these two questions for every customer (add them LAST in the array, after any specific questions):
+1. question: "ඉදිරි අවුරුදු 5 තුල විශේෂයෙන් සැලකිලිමත් විය යුතු කරුණු සහ කල යුතු, නොකල යුතු දේවල්"
+   sections: ["මෙතෙක් දැක්වූ කරුණු අනුව ජීවන ගමනේ සමස්ත සාරාංශය", "වර්තමාන දශාව අනුව පලාපල"]
+2. question: "හදහනට අනුව ගැලපෙන ව්‍යාපාර සහ ඒවා ආරම්බ කිරීමට ගැලපෙන සුබ කාලය? දැනට ව්‍යාපාරයක් කරගෙන යන්නේ නම් එහි ඇතිවිය හැකි ගැටළු, බාදා සහ සාර්ථකත්වය වෙනුවෙන් කල යුතු දේවල්"
+   sections: ["වෘත්තීය ජීවිතය සහ ආර්ථික ශක්තිය", "වර්තමාන දශාව අනුව පලාපල"]
 
 Each question MUST:
 - Be written in Sinhala
-- Be descriptive and specific to this customer's actual situation (include what they told us in the chat)
-- Be phrased as a question or topic that guides detailed horoscope analysis
-- Include the customer's specific life details, concerns and intentions so the AI can give a more relevant and personalised reading
+- Be about something SPECIFIC the customer mentioned — not a topic the generic sections already cover
+- Be framed to get a direct, honest answer that gives real clarity to this specific person
+- NOT be about remedies, pirith, or Buddhist practices
 
-Examples of the style and format to follow:
-- "ඉදිරි අවුරුදු 5 තුල විශේෂයෙන් සැලකිලිමත් විය යුතු කරුණු සහ කල යුතු, නොකල යුතු දේවල්"
-- "විවාහය ජිවිතයේ ඇති විය හැකි ගැටළු සහ ඒවාට විසදුම් මෙන්ම විවාහ ජිවිතයේ දියුණුවට කල හැකි දේවල්"
-
-Make each question MORE specific than these examples by weaving in what this particular customer asked or is worried about. For instance if the customer mentioned job problems abroad, frame the question around that exact situation.
+Example of BAD: "දරුඵල සම්බන්ධයෙන් හදහනේ දැක්වෙන්නේ කුමක්ද" — this is what the දරු පල section already does
+Example of GOOD: "මෙම පුද්ගලයා දැනටමත් විවාහ වී ඇති නමුත් දරුවෙකු ලැබීම වසර 3ක් තිස්සේ ප්‍රමාද වෙමින් පවතී — හදහන අනුව ඊට සත්‍ය හේතුව කුමක්ද සහ ඒ තත්ත්වය වෙනස් වන්නේ කවදාද?"
 
 The "sections" array must use the exact Sinhala section keys from this list:
 - "පෞරුෂය"

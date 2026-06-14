@@ -5,20 +5,6 @@ import { useToast } from '../ui/Toast';
 import api from '../../lib/api';
 import QuantumEditorDrawer from './QuantumEditorDrawer';
 
-const SECTION_LABELS = [
-  'Personality',
-  'Education',
-  'Career & Finance',
-  'Love & Marriage',
-  'Property, Land & Vehicles',
-  'Health & Accidents',
-  'Children',
-  'Life Summary',
-  'Current Dasha Period',
-  'Remedies',
-  'VIP Section',
-];
-
 function applyHoroscopeOrder(keys, configOrder) {
   if (!Array.isArray(configOrder) || configOrder.length === 0) return keys;
   const configLabels = configOrder.map(s => s.label || s);
@@ -111,7 +97,7 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
   const sectionTabs = sectionKeys.map((key, i) => ({
     id: `s-${i}`,
     label: `S${i + 1}`,
-    title: SECTION_LABELS[i] ? `Section ${i + 1}: ${SECTION_LABELS[i]}` : `Section ${i + 1}`,
+    title: `Section ${i + 1}: ${key}`,
     key,
     type: 'section',
   }));

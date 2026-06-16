@@ -761,14 +761,16 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
   });
 
   // Helper: build a context note for questions tagged to a specific section.
-  // Uses the detailed Gemini-facing `prompt` (never the short customer-facing question).
+  // Uses the SHORT customer-facing `question` only — just enough context to nudge the
+  // section. The detailed Gemini-only `prompt` is reserved for the standalone special-
+  // question answers (step 8) and must NOT leak its answering-model directives here.
   const buildSectionQuestionRef = (sectionLabel) => {
     const tagged = normalisedQuestions.filter(
       q => Array.isArray(q.sections) && q.sections.includes(sectionLabel)
     );
     if (!tagged.length) return '';
     return '\n\nවිශේෂ සටහන: මෙම හදහනේ අයිතිකරු පහත ගැටළු හෝ ප්‍රශ්න ඉදිරිපත් කර ඇත. මෙම කොටස ලිවීමේදී මෙම ගැටළුද ඔබගේ මෙම වාර්තාවේ ගුණාත්මකභාවය වැඩි දියුණු කිරීමට උපයෝගී කරගන්න. මෙම ගැටළු වලට කල යුතු දේ වෙනම අපි ලබා දෙනු ඇත. ඔබ කල යුත්තේ මෙම section එකට අවශ්‍ය නම් පමණක් මෙම ගැටළු වල context එක භාවිතා කිරීමයි.\n\n'
-      + tagged.map((q, i) => `${i + 1}. ${q.prompt}`).join('\n');
+      + tagged.map((q, i) => `${i + 1}. ${q.question}`).join('\n');
   };
 
   // 6. Create Gemini chat session (base system instruction without per-section question refs)
@@ -984,7 +986,7 @@ async function regenerateHoroscopeSection({ chartData, systemPrompt, sectionKey,
   );
   const specialQuestionsRef = tagged.length > 0
     ? '\n\nවිශේෂ සටහන: මෙම හදහනේ අයිතිකරු පහත ගැටළු හෝ ප්‍රශ්න ඉදිරිපත් කර ඇත. මෙම කොටස ලිවීමේදී මෙම ගැටළුද ඔබගේ මෙම වාර්තාවේ ගුණාත්මකභාවය වැඩි දියුණු කිරීමට උපයෝගී කරගන්න. මෙම ගැටළු වලට කල යුතු දේ වෙනම අපි ලබා දෙනු ඇත. ඔබ කල යුත්තේ මෙම section එකට අවශ්‍ය නම් පමණක් මෙම ගැටළු වල context එක භාවිතා කිරීමයි.\n\n'
-        + tagged.map((qa, i) => `${i + 1}. ${qa.prompt || qa.question}`).join('\n')
+        + tagged.map((qa, i) => `${i + 1}. ${qa.question}`).join('\n')
     : '';
   const sysInstruction = systemPrompt + '\n\nමෙම කේන්ද්‍ර දත්ත සම්පූර්ණ වාර්තාව සඳහා පදනම වේ:\n\n' + chartDataJson + specialQuestionsRef;
 

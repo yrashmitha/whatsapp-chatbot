@@ -13,6 +13,100 @@ const { analyzeAura, generateQuantumReading, generateQuantumSections } = require
 const { DEFAULT_TAROT_PROMPT } = require('../services/tarot');
 const resolveClientId = require('../middleware/resolveClientId');
 
+/**
+ * Default prompt template for the AI Fill (ai-prepare) feature.
+ * Editable per-client via plugin config key `ai_fill_prompt`.
+ * Placeholders interpolated at request time:
+ *   {{customer_name}} {{birth_date}} {{birth_time}} {{birth_place}}
+ *   {{lagna}} {{problems}} {{items}} {{chat_log}}
+ */
+const DEFAULT_AI_FILL_PROMPT = `You are an expert Vedic astrology assistant and Sinhala language expert helping prepare a horoscope reading request.
+
+## Order Details
+- Customer name: {{customer_name}}
+- Birth date (raw): {{birth_date}}
+- Birth time (raw): {{birth_time}}
+- Birth place (raw): {{birth_place}}
+- Lagna (if known): {{lagna}}
+- Problem / concern: {{problems}}
+- Items ordered: {{items}}
+
+## Full Customer Chat Conversation
+{{chat_log}}
+
+## Your Task — return the exact JSON schema below, nothing else.
+
+### birth_date_iso
+Normalize the raw birth date to exactly "YYYY-MM-DD" format (e.g. "1990-03-15").
+Sinhala month names: ජනවාරි=01 පෙබරවාරි=02 මාර්තු=03 අප්‍රේල්=04 මැයි=05 ජූනි=06 ජූලි=07 අගෝස්තු=08 සැප්තැම්බර්=09 ඔක්තෝබර්=10 නොවැම්බර්=11 දෙසැම්බර්=12
+Return null if genuinely unknown.
+
+### birth_time_24h
+Normalize the raw birth time to exactly "HH:MM" 24-hour format.
+CRITICAL: "ප.ව" means afternoon/PM. Add 12 to hours 1–11 for PM. Examples: "ප.ව 3.30" → "15:30", "ප.ව 9.00" → "21:00", "ප.ව 12.00" → "12:00".
+"පෙ.ව" or "උදෑසන" or "උදේ" = AM (do NOT add 12). Examples: "පෙ.ව 6.30" → "06:30", "උදේ 3.30" → "03:30".
+"සවස" or "රාත්‍රී" or "රාත්රී" or "දහවල්" = PM.
+Midnight = "00:00". Noon = "12:00". Return null if genuinely unknown.
+
+### birth_place_en
+The English name of the birth place (translated from Sinhala if needed). Just the place name, no country suffix needed.
+
+### lat
+The latitude (decimal degrees) of the birth place. Use your geographic knowledge to return precise coordinates with minimum 4 decimal places for this specific town/city in Sri Lanka (or abroad if applicable). Return a number, not a string. Example: 8.4983 not 8.5
+
+### lng
+The longitude (decimal degrees) of the birth place. SAME requirement — minimum 4 decimal places of precision. Return a number, not a string. Example: 80.6015 not 80.6
+
+### special_questions
+Read the customer's chat conversation carefully and identify SPECIFIC personal situations, fears, or concerns the customer mentioned — things beyond generic topics.
+
+The following sections are ALREADY generated for every customer automatically. Do NOT create questions that duplicate what these sections already cover:
+- පෞරුෂය — general personality analysis
+- අධ්‍යාපනය — general education analysis
+- වෘත්තීය ජීවිතය සහ ආර්ථික ශක්තිය — general career and financial analysis
+- ප්‍රේමය සහ විවාහ ජීවිතය — general love and marriage analysis
+- දේපළ, භූමිය, නිවාස සහ වාහන භාග්‍යය — general property analysis
+- ශාරීරික සෞඛ්‍යය, මාරක අපල, හදිසි අනතුරු — general health analysis
+- දරු පල — general children analysis
+- මෙතෙක් දැක්වූ කරුණු අනුව ජීවන ගමනේ සමස්ත සාරාංශය — overall life summary
+- වර්තමාන දශාව අනුව පලාපල — current dasha period analysis
+- ජීවිතයේ අභියෝග ජයගැනීම සඳහා වූ පොදු ශාස්ත්‍රීය සහ බෞද්ධ පිළියම් — remedies
+
+So a question like "දරුඵල ගැන බලන්න" or "විවාහය ගැන කියන්න" is USELESS — those sections already do that for everyone.
+
+A special question is ONLY valid if it targets something SPECIFIC this customer personally mentioned in the chat — a specific struggle, fear, decision, or life situation that the generic sections won't address.
+
+Before writing each question ask yourself: "What is the best angle to frame this so Gemini gives the most honest, direct, and valuable answer — something that gives THIS customer real clarity on their specific situation and makes them feel understood?"
+
+IMPORTANT: If the customer's chat has NO specific personal concerns beyond the generic topics — return only the mandatory question below. Do not invent extra questions. Quality over quantity.
+
+MANDATORY: Always include these two questions for every customer (add them LAST in the array, after any specific questions):
+1. question: "ඉදිරි අවුරුදු 5 තුල විශේෂයෙන් සැලකිලිමත් විය යුතු කරුණු සහ කල යුතු, නොකල යුතු දේවල්"
+   sections: ["මෙතෙක් දැක්වූ කරුණු අනුව ජීවන ගමනේ සමස්ත සාරාංශය", "වර්තමාන දශාව අනුව පලාපල"]
+2. question: "හදහනට අනුව ගැලපෙන ව්‍යාපාර සහ ඒවා ආරම්බ කිරීමට ගැලපෙන සුබ කාලය? දැනට ව්‍යාපාරයක් කරගෙන යන්නේ නම් එහි ඇතිවිය හැකි ගැටළු, බාදා සහ සාර්ථකත්වය වෙනුවෙන් කල යුතු දේවල්"
+   sections: ["වෘත්තීය ජීවිතය සහ ආර්ථික ශක්තිය", "වර්තමාන දශාව අනුව පලාපල"]
+
+Each question MUST:
+- Be written in Sinhala
+- Be about something SPECIFIC the customer mentioned — not a topic the generic sections already cover
+- Be framed to get a direct, honest answer that gives real clarity to this specific person
+- NOT be about remedies, pirith, or Buddhist practices
+
+Example of BAD: "දරුඵල සම්බන්ධයෙන් හදහනේ දැක්වෙන්නේ කුමක්ද" — this is what the දරු පල section already does
+Example of GOOD: "මෙම පුද්ගලයා දැනටමත් විවාහ වී ඇති නමුත් දරුවෙකු ලැබීම වසර 3ක් තිස්සේ ප්‍රමාද වෙමින් පවතී — හදහන අනුව ඊට සත්‍ය හේතුව කුමක්ද සහ ඒ තත්ත්වය වෙනස් වන්නේ කවදාද?"
+
+The "sections" array must use the exact Sinhala section keys from this list:
+- "පෞරුෂය"
+- "අධ්‍යාපනය"
+- "වෘත්තීය ජීවිතය සහ ආර්ථික ශක්තිය"
+- "ප්‍රේමය සහ විවාහ ජීවිතය"
+- "දේපළ, භූමිය, නිවාස සහ වාහන භාග්‍යය"
+- "ශාරීරික සෞඛ්‍යය, මාරක අපල, හදිසි අනතුරු"
+- "දරු පල"
+- "මෙතෙක් දැක්වූ කරුණු අනුව ජීවන ගමනේ සමස්ත සාරාංශය"
+- "වර්තමාන දශාව අනුව පලාපල"
+- "ජීවිතයේ අභියෝග ජයගැනීම සඳහා වූ පොදු ශාස්ත්‍රීය සහ බෞද්ධ පිළියම්"`;
+
 const { exec } = require('child_process');
 const fs   = require('fs');
 const os   = require('os');
@@ -80,7 +174,7 @@ async function getPluginConfig(req, res) {
     if (pluginId === 'astro_vedic_chart') {
       defaults = { name: 'Vedic Astro Chart', prompt: DEFAULT_ASTRO_PROMPT };
     } else if (pluginId === 'horoscope_reading') {
-      defaults = { name: 'Horoscope Reading', system_prompt: '', quantum_system_prompt: '', aura_system_prompt: '', horoscope_sections: [], quantum_sections: [], section_guides: SECTION_GUIDES, special_note: '', api_key: '', wa_message_prompt: '', quantum_enabled: true };
+      defaults = { name: 'Horoscope Reading', system_prompt: '', quantum_system_prompt: '', aura_system_prompt: '', horoscope_sections: [], quantum_sections: [], section_guides: SECTION_GUIDES, special_note: '', api_key: '', wa_message_prompt: '', ai_fill_prompt: DEFAULT_AI_FILL_PROMPT, quantum_enabled: true };
     } else if (pluginId === 'ai_call_answering') {
       defaults = { name: 'AI Call Answering', system_prompt: '', greeting: 'Hello, how can I help you today?', tts_voice: 'Kore', stt_language: 'en-US' };
     } else if (pluginId === 'image_analyzer') {
@@ -112,7 +206,7 @@ async function updatePluginConfig(req, res) {
     return res.status(403).json({ error: 'Forbidden' });
   }
   const { pluginId } = req.params;
-  const { name, prompt, api_key, system_prompt, quantum_system_prompt, aura_system_prompt, horoscope_sections, quantum_sections, section_guides, special_note, wa_message_prompt, greeting, tts_voice, stt_language, verification_prompt, page1_body, page2_body, page4_body, quantum_enabled } = req.body;
+  const { name, prompt, api_key, system_prompt, quantum_system_prompt, aura_system_prompt, horoscope_sections, quantum_sections, section_guides, special_note, wa_message_prompt, ai_fill_prompt, greeting, tts_voice, stt_language, verification_prompt, page1_body, page2_body, page4_body, quantum_enabled } = req.body;
   try {
     const existing = await db.getPluginConfig(clientId, pluginId);
     const update = { ...existing };
@@ -127,6 +221,7 @@ async function updatePluginConfig(req, res) {
     if (section_guides !== undefined)        update.section_guides        = section_guides;
     if (special_note !== undefined)          update.special_note          = special_note;
     if (wa_message_prompt !== undefined)     update.wa_message_prompt     = wa_message_prompt;
+    if (ai_fill_prompt !== undefined)        update.ai_fill_prompt        = ai_fill_prompt;
     if (quantum_enabled !== undefined)       update.quantum_enabled       = quantum_enabled;
     if (greeting !== undefined)      update.greeting      = greeting;
     if (tts_voice !== undefined)     update.tts_voice     = tts_voice;
@@ -859,93 +954,21 @@ async function aiPrepareHoroscope(req, res) {
       `[${m.sender_type === 'user' ? 'Customer' : 'Agent'}]: ${m.message_text || ''}`
     ).filter(l => l.length > 12).join('\n');
 
-    // 3. Call Gemini
-    const prompt = `You are an expert Vedic astrology assistant and Sinhala language expert helping prepare a horoscope reading request.
+    // 3. Build the prompt — use the per-client editable template, or the built-in default.
+    const config = await db.getPluginConfig(clientId, 'horoscope_reading');
+    const template = (config.ai_fill_prompt && config.ai_fill_prompt.trim())
+      ? config.ai_fill_prompt
+      : DEFAULT_AI_FILL_PROMPT;
 
-## Order Details
-- Customer name: ${cf.customer_name || cf.name || ''}
-- Birth date (raw): ${cf.birth_date || ''}
-- Birth time (raw): ${cf.birth_time || ''}
-- Birth place (raw): ${cf.birth_place || ''}
-- Lagna (if known): ${cf.lagnaya || cf.lagna || ''}
-- Problem / concern: ${cf.problems || cf.summary || ''}
-- Items ordered: ${JSON.stringify(cf.items || [])}
-
-## Full Customer Chat Conversation
-${chatLog || '(no messages found)'}
-
-## Your Task — return the exact JSON schema below, nothing else.
-
-### birth_date_iso
-Normalize the raw birth date to exactly "YYYY-MM-DD" format (e.g. "1990-03-15").
-Sinhala month names: ජනවාරි=01 පෙබරවාරි=02 මාර්තු=03 අප්‍රේල්=04 මැයි=05 ජූනි=06 ජූලි=07 අගෝස්තු=08 සැප්තැම්බර්=09 ඔක්තෝබර්=10 නොවැම්බර්=11 දෙසැම්බර්=12
-Return null if genuinely unknown.
-
-### birth_time_24h
-Normalize the raw birth time to exactly "HH:MM" 24-hour format.
-CRITICAL: "ප.ව" means afternoon/PM. Add 12 to hours 1–11 for PM. Examples: "ප.ව 3.30" → "15:30", "ප.ව 9.00" → "21:00", "ප.ව 12.00" → "12:00".
-"පෙ.ව" or "උදෑසන" or "උදේ" = AM (do NOT add 12). Examples: "පෙ.ව 6.30" → "06:30", "උදේ 3.30" → "03:30".
-"සවස" or "රාත්‍රී" or "රාත්රී" or "දහවල්" = PM.
-Midnight = "00:00". Noon = "12:00". Return null if genuinely unknown.
-
-### birth_place_en
-The English name of the birth place (translated from Sinhala if needed). Just the place name, no country suffix needed.
-
-### lat
-The latitude (decimal degrees) of the birth place. Use your geographic knowledge to return precise coordinates with minimum 4 decimal places for this specific town/city in Sri Lanka (or abroad if applicable). Return a number, not a string. Example: 8.4983 not 8.5
-
-### lng
-The longitude (decimal degrees) of the birth place. SAME requirement — minimum 4 decimal places of precision. Return a number, not a string. Example: 80.6015 not 80.6
-
-### special_questions
-Read the customer's chat conversation carefully and identify SPECIFIC personal situations, fears, or concerns the customer mentioned — things beyond generic topics.
-
-The following sections are ALREADY generated for every customer automatically. Do NOT create questions that duplicate what these sections already cover:
-- පෞරුෂය — general personality analysis
-- අධ්‍යාපනය — general education analysis
-- වෘත්තීය ජීවිතය සහ ආර්ථික ශක්තිය — general career and financial analysis
-- ප්‍රේමය සහ විවාහ ජීවිතය — general love and marriage analysis
-- දේපළ, භූමිය, නිවාස සහ වාහන භාග්‍යය — general property analysis
-- ශාරීරික සෞඛ්‍යය, මාරක අපල, හදිසි අනතුරු — general health analysis
-- දරු පල — general children analysis
-- මෙතෙක් දැක්වූ කරුණු අනුව ජීවන ගමනේ සමස්ත සාරාංශය — overall life summary
-- වර්තමාන දශාව අනුව පලාපල — current dasha period analysis
-- ජීවිතයේ අභියෝග ජයගැනීම සඳහා වූ පොදු ශාස්ත්‍රීය සහ බෞද්ධ පිළියම් — remedies
-
-So a question like "දරුඵල ගැන බලන්න" or "විවාහය ගැන කියන්න" is USELESS — those sections already do that for everyone.
-
-A special question is ONLY valid if it targets something SPECIFIC this customer personally mentioned in the chat — a specific struggle, fear, decision, or life situation that the generic sections won't address.
-
-Before writing each question ask yourself: "What is the best angle to frame this so Gemini gives the most honest, direct, and valuable answer — something that gives THIS customer real clarity on their specific situation and makes them feel understood?"
-
-IMPORTANT: If the customer's chat has NO specific personal concerns beyond the generic topics — return only the mandatory question below. Do not invent extra questions. Quality over quantity.
-
-MANDATORY: Always include these two questions for every customer (add them LAST in the array, after any specific questions):
-1. question: "ඉදිරි අවුරුදු 5 තුල විශේෂයෙන් සැලකිලිමත් විය යුතු කරුණු සහ කල යුතු, නොකල යුතු දේවල්"
-   sections: ["මෙතෙක් දැක්වූ කරුණු අනුව ජීවන ගමනේ සමස්ත සාරාංශය", "වර්තමාන දශාව අනුව පලාපල"]
-2. question: "හදහනට අනුව ගැලපෙන ව්‍යාපාර සහ ඒවා ආරම්බ කිරීමට ගැලපෙන සුබ කාලය? දැනට ව්‍යාපාරයක් කරගෙන යන්නේ නම් එහි ඇතිවිය හැකි ගැටළු, බාදා සහ සාර්ථකත්වය වෙනුවෙන් කල යුතු දේවල්"
-   sections: ["වෘත්තීය ජීවිතය සහ ආර්ථික ශක්තිය", "වර්තමාන දශාව අනුව පලාපල"]
-
-Each question MUST:
-- Be written in Sinhala
-- Be about something SPECIFIC the customer mentioned — not a topic the generic sections already cover
-- Be framed to get a direct, honest answer that gives real clarity to this specific person
-- NOT be about remedies, pirith, or Buddhist practices
-
-Example of BAD: "දරුඵල සම්බන්ධයෙන් හදහනේ දැක්වෙන්නේ කුමක්ද" — this is what the දරු පල section already does
-Example of GOOD: "මෙම පුද්ගලයා දැනටමත් විවාහ වී ඇති නමුත් දරුවෙකු ලැබීම වසර 3ක් තිස්සේ ප්‍රමාද වෙමින් පවතී — හදහන අනුව ඊට සත්‍ය හේතුව කුමක්ද සහ ඒ තත්ත්වය වෙනස් වන්නේ කවදාද?"
-
-The "sections" array must use the exact Sinhala section keys from this list:
-- "පෞරුෂය"
-- "අධ්‍යාපනය"
-- "වෘත්තීය ජීවිතය සහ ආර්ථික ශක්තිය"
-- "ප්‍රේමය සහ විවාහ ජීවිතය"
-- "දේපළ, භූමිය, නිවාස සහ වාහන භාග්‍යය"
-- "ශාරීරික සෞඛ්‍යය, මාරක අපල, හදිසි අනතුරු"
-- "දරු පල"
-- "මෙතෙක් දැක්වූ කරුණු අනුව ජීවන ගමනේ සමස්ත සාරාංශය"
-- "වර්තමාන දශාව අනුව පලාපල"
-- "ජීවිතයේ අභියෝග ජයගැනීම සඳහා වූ පොදු ශාස්ත්‍රීය සහ බෞද්ධ පිළියම්"`;
+    const prompt = template
+      .replace(/\{\{customer_name\}\}/g, cf.customer_name || cf.name || '')
+      .replace(/\{\{birth_date\}\}/g,    cf.birth_date || '')
+      .replace(/\{\{birth_time\}\}/g,    cf.birth_time || '')
+      .replace(/\{\{birth_place\}\}/g,   cf.birth_place || '')
+      .replace(/\{\{lagna\}\}/g,         cf.lagnaya || cf.lagna || '')
+      .replace(/\{\{problems\}\}/g,      cf.problems || cf.summary || '')
+      .replace(/\{\{items\}\}/g,         JSON.stringify(cf.items || []))
+      .replace(/\{\{chat_log\}\}/g,      chatLog || '(no messages found)');
 
     const geminiModel = genAI.getGenerativeModel({
       model: 'gemini-2.5-flash',
@@ -1078,4 +1101,5 @@ module.exports = {
   generateWaMessageHandler,
   downloadQuantumDocx,
   downloadHoroscope, downloadHoroscopePdf, downloadQuantumPdf,
+  DEFAULT_AI_FILL_PROMPT,
 };

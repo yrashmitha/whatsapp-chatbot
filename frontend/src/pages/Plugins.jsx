@@ -48,6 +48,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
   const [quantumSystemPrompt, setQuantumSystemPrompt] = useState('');
   const [auraSystemPrompt, setAuraSystemPrompt]       = useState('');
   const [waMessagePrompt, setWaMessagePrompt]         = useState('');
+  const [aiFillPrompt, setAiFillPrompt]               = useState('');
   const [horoscopeSections, setHoroscopeSections]     = useState([]);
   const [quantumSections, setQuantumSections]         = useState([]);
   const [quantumEnabled, setQuantumEnabled]           = useState(true);
@@ -75,6 +76,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         setQuantumSystemPrompt(r.data.quantum_system_prompt || '');
         setAuraSystemPrompt(r.data.aura_system_prompt || '');
         setWaMessagePrompt(r.data.wa_message_prompt || '');
+        setAiFillPrompt(r.data.ai_fill_prompt || '');
         setHoroscopeSections(Array.isArray(r.data.horoscope_sections) ? r.data.horoscope_sections : []);
         setQuantumSections(Array.isArray(r.data.quantum_sections) ? r.data.quantum_sections : []);
         setQuantumEnabled(r.data.quantum_enabled !== false);
@@ -99,6 +101,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         setQuantumSystemPrompt('');
         setAuraSystemPrompt('');
         setWaMessagePrompt('');
+        setAiFillPrompt('');
         setHoroscopeSections([]);
         setQuantumSections([]);
         setQuantumEnabled(true);
@@ -129,6 +132,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         body.section_guides        = sectionGuides;
         body.special_note          = specialNote;
         body.wa_message_prompt     = waMessagePrompt;
+        body.ai_fill_prompt        = aiFillPrompt;
       } else if (isCallAnswering) {
         body.system_prompt = systemPrompt;
         body.greeting      = greeting;
@@ -407,6 +411,20 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
               rows={8}
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
               placeholder="e.g. ඔබ දක්ෂ ජ්‍යෝතිෂ විශේෂඥයෙකි. ලබාදෙන හදහන් වාර්තාව පදනම් කරගෙන කෙටි WhatsApp message එකක් ලියන්න…"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">AI Fill Prompt</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              Sent to Gemini when the admin clicks <strong>AI Fill</strong> on an order — it reads the customer's chat and order details to extract birth date/time/place, coordinates, and special questions. Available placeholders, substituted at runtime:{' '}
+              <code className="font-mono">{'{{customer_name}}'}</code>, <code className="font-mono">{'{{birth_date}}'}</code>, <code className="font-mono">{'{{birth_time}}'}</code>, <code className="font-mono">{'{{birth_place}}'}</code>, <code className="font-mono">{'{{lagna}}'}</code>, <code className="font-mono">{'{{problems}}'}</code>, <code className="font-mono">{'{{items}}'}</code>, <code className="font-mono">{'{{chat_log}}'}</code>. Clear the box to restore the built-in default.
+            </p>
+            <textarea
+              value={aiFillPrompt}
+              onChange={e => setAiFillPrompt(e.target.value)}
+              rows={16}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
+              placeholder="Leave blank to use built-in default…"
             />
           </div>
           <div>

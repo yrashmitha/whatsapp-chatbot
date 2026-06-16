@@ -58,6 +58,10 @@ The latitude (decimal degrees) of the birth place. Use your geographic knowledge
 The longitude (decimal degrees) of the birth place. SAME requirement — minimum 4 decimal places of precision. Return a number, not a string. Example: 80.6015 not 80.6
 
 ### special_questions
+Each special question has TWO separate fields:
+- "question": the SHORT, polished Sinhala question shown to the CUSTOMER on the final PDF. Keep it clean and human — one clear sentence the customer reads and recognises as their concern. The customer sees ONLY this.
+- "prompt": a DETAILED, descriptive instruction written FOR GEMINI ONLY (the customer NEVER sees this). Spell out the customer's exact situation from the chat, the specific angle to analyse, what the answer must cover, and what would give this person real clarity. Be explicit and information-rich — this is the real input that drives the quality of the generated answer. Include relevant context the customer mentioned (their fear, the decision, the timeline, the relationship, etc.). Written in Sinhala (English technical terms are fine where natural).
+
 Read the customer's chat conversation carefully and identify SPECIFIC personal situations, fears, or concerns the customer mentioned — things beyond generic topics.
 
 The following sections are ALREADY generated for every customer automatically. Do NOT create questions that duplicate what these sections already cover:
@@ -80,20 +84,25 @@ Before writing each question ask yourself: "What is the best angle to frame this
 
 IMPORTANT: If the customer's chat has NO specific personal concerns beyond the generic topics — return only the mandatory question below. Do not invent extra questions. Quality over quantity.
 
-MANDATORY: Always include these two questions for every customer (add them LAST in the array, after any specific questions):
+MANDATORY: Always include these two questions for every customer (add them LAST in the array, after any specific questions). For each, "question" is the short customer-facing text and "prompt" is the detailed Gemini instruction:
 1. question: "ඉදිරි අවුරුදු 5 තුල විශේෂයෙන් සැලකිලිමත් විය යුතු කරුණු සහ කල යුතු, නොකල යුතු දේවල්"
+   prompt: "මෙම පුද්ගලයාගේ ලග්නය, දශා සහ ගෝචර අනුව 2026 සිට ඉදිරි අවුරුදු 5 තුළ විශේෂයෙන් සැලකිලිමත් විය යුතු කරුණු, එළැඹෙන අවස්ථා සහ අවදානම් පැහැදිලිව දක්වන්න. එක් එක් කාල පරිච්ඡේදය සඳහා කල යුතු සහ නොකල යුතු දේවල් සෘජුව ලැයිස්තුගත කරන්න."
    sections: ["මෙතෙක් දැක්වූ කරුණු අනුව ජීවන ගමනේ සමස්ත සාරාංශය", "වර්තමාන දශාව අනුව පලාපල"]
 2. question: "හදහනට අනුව ගැලපෙන ව්‍යාපාර සහ ඒවා ආරම්බ කිරීමට ගැලපෙන සුබ කාලය? දැනට ව්‍යාපාරයක් කරගෙන යන්නේ නම් එහි ඇතිවිය හැකි ගැටළු, බාදා සහ සාර්ථකත්වය වෙනුවෙන් කල යුතු දේවල්"
+   prompt: "මෙම හදහනට ගැලපෙන ව්‍යාපාර වර්ග මොනවාද සහ ඒවා ආරම්භ කිරීමට සුදුසු සුබ දශා/කාල පරිච්ඡේද කවරේද යන්න විස්තර කරන්න. පුද්ගලයා දැනටමත් ව්‍යාපාරයක් කරගෙන යයි නම්, එහි ඇතිවිය හැකි ගැටළු සහ බාධා මොනවාද, සහ සාර්ථකත්වය සඳහා කල යුතු දේවල් මොනවාද යන්න ග්‍රහ පිහිටීම් මත පදනම්ව සෘජුව පවසන්න."
    sections: ["වෘත්තීය ජීවිතය සහ ආර්ථික ශක්තිය", "වර්තමාන දශාව අනුව පලාපල"]
 
 Each question MUST:
-- Be written in Sinhala
+- Both "question" and "prompt" written in Sinhala
+- "question" short and customer-facing; "prompt" detailed and Gemini-facing
 - Be about something SPECIFIC the customer mentioned — not a topic the generic sections already cover
 - Be framed to get a direct, honest answer that gives real clarity to this specific person
 - NOT be about remedies, pirith, or Buddhist practices
 
-Example of BAD: "දරුඵල සම්බන්ධයෙන් හදහනේ දැක්වෙන්නේ කුමක්ද" — this is what the දරු පල section already does
-Example of GOOD: "මෙම පුද්ගලයා දැනටමත් විවාහ වී ඇති නමුත් දරුවෙකු ලැබීම වසර 3ක් තිස්සේ ප්‍රමාද වෙමින් පවතී — හදහන අනුව ඊට සත්‍ය හේතුව කුමක්ද සහ ඒ තත්ත්වය වෙනස් වන්නේ කවදාද?"
+Example of BAD question: "දරුඵල සම්බන්ධයෙන් හදහනේ දැක්වෙන්නේ කුමක්ද" — this is what the දරු පල section already does
+Example of GOOD pair:
+  question: "වසර 3ක් තිස්සේ ප්‍රමාද වන දරු සුවය ලැබෙන්නේ කවදාද?"
+  prompt: "මෙම පුද්ගලයා විවාහ වී ඇති නමුත් දරුවෙකු ලැබීම වසර 3ක් තිස්සේ ප්‍රමාද වෙමින් පවතී. 5 වැනි භාවය, එහි අධිපතියා, ගුරු සහ අදාළ ග්‍රහ පිහිටීම් විශ්ලේෂණය කර මෙම ප්‍රමාදයට සත්‍ය හේතුව කුමක්ද සහ දරු සුවය ලැබීමට වඩාත් සුදුසු දශා/කාල පරිච්ඡේදය කවදාද යන්න සෘජුව පවසන්න."
 
 The "sections" array must use the exact Sinhala section keys from this list:
 - "පෞරුෂය"
@@ -930,7 +939,8 @@ const { genAI } = require('../services/gemini');
  *  - birth_time_24h  : normalized "HH:MM"
  *  - birth_place_query : best Nominatim search string
  *  - geocoded place   : { lat, lng, name } from Nominatim
- *  - special_questions : [{question, sections}] crafted to maximise horoscope section quality
+ *  - special_questions : [{question, prompt, sections}] — `question` is the short customer-facing
+ *    text shown on the PDF; `prompt` is the detailed Gemini-only input that drives the answer
  */
 async function aiPrepareHoroscope(req, res) {
   const clientId = resolveClientId(req);
@@ -990,9 +1000,10 @@ async function aiPrepareHoroscope(req, res) {
                 type: 'object',
                 properties: {
                   question: { type: 'string' },
+                  prompt:   { type: 'string' },
                   sections: { type: 'array', items: { type: 'string' } },
                 },
-                required: ['question', 'sections'],
+                required: ['question', 'prompt', 'sections'],
               },
             },
           },

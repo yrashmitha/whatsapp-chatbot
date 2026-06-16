@@ -748,19 +748,27 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
   // 5. Only send chart data to Gemini — no order/customer details
   const chartDataJson = JSON.stringify(chartData, null, 2);
 
-  // Normalise specialQuestions: accept both legacy string[] and new {question, sections}[] format
-  const normalisedQuestions = specialQuestions.map(q =>
-    typeof q === 'string' ? { question: q, sections: [] } : q
-  );
+  // Normalise specialQuestions: accept legacy string[], legacy {question, sections}[],
+  // and new {question, prompt, sections}[] format.
+  // `question` = short customer-facing text (PDF); `prompt` = detailed Gemini-only input.
+  const normalisedQuestions = specialQuestions.map(q => {
+    if (typeof q === 'string') return { question: q, prompt: q, sections: [] };
+    return {
+      question: q.question || '',
+      prompt:   (q.prompt && q.prompt.trim()) ? q.prompt : (q.question || ''),
+      sections: Array.isArray(q.sections) ? q.sections : [],
+    };
+  });
 
-  // Helper: build a context note for questions tagged to a specific section
+  // Helper: build a context note for questions tagged to a specific section.
+  // Uses the detailed Gemini-facing `prompt` (never the short customer-facing question).
   const buildSectionQuestionRef = (sectionLabel) => {
     const tagged = normalisedQuestions.filter(
       q => Array.isArray(q.sections) && q.sections.includes(sectionLabel)
     );
     if (!tagged.length) return '';
     return '\n\nවිශේෂ සටහන: මෙම හදහනේ අයිතිකරු පහත ගැටළු හෝ ප්‍රශ්න ඉදිරිපත් කර ඇත. මෙම කොටස ලිවීමේදී මෙම ගැටළුද ඔබගේ මෙම වාර්තාවේ ගුණාත්මකභාවය වැඩි දියුණු කිරීමට උපයෝගී කරගන්න. මෙම ගැටළු වලට කල යුතු දේ වෙනම අපි ලබා දෙනු ඇත. ඔබ කල යුත්තේ මෙම section එකට අවශ්‍ය නම් පමණක් මෙම ගැටළු වල context එක භාවිතා කිරීමයි.\n\n'
-      + tagged.map((q, i) => `${i + 1}. ${q.question}`).join('\n');
+      + tagged.map((q, i) => `${i + 1}. ${q.prompt}`).join('\n');
   };
 
   // 6. Create Gemini chat session (base system instruction without per-section question refs)
@@ -834,10 +842,11 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
     });
     const specialChat = specialModel.startChat({});
     for (const qObj of normalisedQuestions) {
-      const question = qObj.question;
-      const qPrompt = buildSpecialQuestionPrompt(question, systemPrompt, chartDataJson);
-      console.log(`\n[HORO-SPECIAL] ── REQUEST: "${question}"`);
-      console.log('[HORO-SPECIAL] userPrompt:\n' + qPrompt);
+      const question = qObj.question;             // short, customer-facing (PDF)
+      const aiPrompt = qObj.prompt || question;   // detailed, Gemini-only input
+      const qPrompt = buildSpecialQuestionPrompt(aiPrompt, systemPrompt, chartDataJson);
+      console.log(`\n[HORO-SPECIAL] ── REQUEST (display): "${question}"`);
+      console.log('[HORO-SPECIAL] userPrompt (AI):\n' + qPrompt);
       console.log('[HORO-SPECIAL] ─────────────────────────────────────────────────');
       const qResult = await specialChat.sendMessage(qPrompt);
       const qText = qResult.response.text();
@@ -846,7 +855,7 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
       console.log(qText);
       console.log(`[HORO-SPECIAL] tokens in=${qUsage?.promptTokenCount ?? '?'}  out=${qUsage?.candidatesTokenCount ?? '?'}  chars=${qText.length}`);
       console.log('[HORO-SPECIAL] ─────────────────────────────────────────────────');
-      specialAnswers.push({ question, sections: qObj.sections || [], answer: qText });
+      specialAnswers.push({ question, prompt: aiPrompt, sections: qObj.sections || [], answer: qText });
     }
   }
 
@@ -975,7 +984,7 @@ async function regenerateHoroscopeSection({ chartData, systemPrompt, sectionKey,
   );
   const specialQuestionsRef = tagged.length > 0
     ? '\n\nවිශේෂ සටහන: මෙම හදහනේ අයිතිකරු පහත ගැටළු හෝ ප්‍රශ්න ඉදිරිපත් කර ඇත. මෙම කොටස ලිවීමේදී මෙම ගැටළුද ඔබගේ මෙම වාර්තාවේ ගුණාත්මකභාවය වැඩි දියුණු කිරීමට උපයෝගී කරගන්න. මෙම ගැටළු වලට කල යුතු දේ වෙනම අපි ලබා දෙනු ඇත. ඔබ කල යුත්තේ මෙම section එකට අවශ්‍ය නම් පමණක් මෙම ගැටළු වල context එක භාවිතා කිරීමයි.\n\n'
-        + tagged.map((qa, i) => `${i + 1}. ${qa.question}`).join('\n')
+        + tagged.map((qa, i) => `${i + 1}. ${qa.prompt || qa.question}`).join('\n')
     : '';
   const sysInstruction = systemPrompt + '\n\nමෙම කේන්ද්‍ර දත්ත සම්පූර්ණ වාර්තාව සඳහා පදනම වේ:\n\n' + chartDataJson + specialQuestionsRef;
 

@@ -132,6 +132,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
   const [specialQuestions, setSpecialQuestions] = useState(
     (existingHd.special_answers || []).map(qa => ({
       question: qa.question,
+      prompt:   qa.prompt || qa.question,   // detailed Gemini-only input
       sections: Array.isArray(qa.sections) ? qa.sections : [],
     })).filter(qa => qa.question)
   );
@@ -139,6 +140,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
   const [newQuestionSections, setNewQuestionSections] = useState([]);
   const [editingQIdx, setEditingQIdx]           = useState(null);
   const [editingQText, setEditingQText]         = useState('');
+  const [expandedQIdx, setExpandedQIdx]         = useState(null);  // which AI prompt editor is open
   const [configSections, setConfigSections]     = useState([]);
   const [selectedSections, setSelectedSections] = useState([]);
   const [quantumFeatureEnabled, setQuantumFeatureEnabled] = useState(true);
@@ -177,18 +179,21 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
   const addQuestion = () => {
     const q = (newQuestionRef.current?.value ?? newQuestion).trim();
     if (!q) return;
-    setSpecialQuestions(prev => [...prev, { question: q, sections: newQuestionSections }]);
+    // Manual add: seed the Gemini prompt with the display text — admin can refine it via the AI-prompt editor.
+    setSpecialQuestions(prev => [...prev, { question: q, prompt: q, sections: newQuestionSections }]);
     setNewQuestion('');
     setNewQuestionSections([]);
     if (newQuestionRef.current) { newQuestionRef.current.value = ''; newQuestionRef.current.style.height = 'auto'; }
   };
-  const removeQuestion = (i) => { setSpecialQuestions(prev => prev.filter((_, idx) => idx !== i)); if (editingQIdx === i) setEditingQIdx(null); };
+  const removeQuestion = (i) => { setSpecialQuestions(prev => prev.filter((_, idx) => idx !== i)); if (editingQIdx === i) setEditingQIdx(null); if (expandedQIdx === i) setExpandedQIdx(null); };
   const startEdit = (i) => { setEditingQIdx(i); setEditingQText(specialQuestions[i].question); };
   const saveEdit  = (i) => {
     const t = (editingInputRef.current?.value ?? editingQText).trim();
     if (t) setSpecialQuestions(prev => prev.map((q, idx) => idx === i ? { ...q, question: t } : q));
     setEditingQIdx(null);
   };
+  const updateQuestionPrompt = (i, text) =>
+    setSpecialQuestions(prev => prev.map((q, idx) => idx === i ? { ...q, prompt: text } : q));
   const toggleQuestionSection = (qi, sec) => {
     setSpecialQuestions(prev => prev.map((q, idx) => idx === qi
       ? { ...q, sections: q.sections.includes(sec) ? q.sections.filter(s => s !== sec) : [...q.sections, sec] }
@@ -248,7 +253,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
     lng:               selectedPlace?.lng,
     birth_place_name:  selectedPlace?.name || '',
     override_astro:    overrideAstro,
-    special_questions: specialQuestions,  // [{question, sections}]
+    special_questions: specialQuestions,  // [{question, prompt, sections}]
     selected_sections: selectedSections,
     package_type:      packageType,
     birth_overrides:   { customer_name: customerName, birth_date: birthDate, birth_time: `${birthHour}:${birthMinute}` },
@@ -795,10 +800,39 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
                           onBlur={() => saveEdit(i)}
                         />
                       ) : (
-                        <span className="flex-1 cursor-pointer hover:text-violet-700" onClick={() => startEdit(i)} title="Click to edit">{i + 1}. {qObj.question}</span>
+                        /* Display question — hover reveals the detailed Gemini-only prompt in a popover */
+                        <span className="relative flex-1 group">
+                          <span className="cursor-pointer hover:text-violet-700" onClick={() => startEdit(i)} title="Click to edit the customer-facing question">{i + 1}. {qObj.question}</span>
+                          <span className="pointer-events-none absolute left-0 top-full z-30 mt-1 hidden w-full group-hover:block">
+                            <span className="block rounded-lg bg-slate-800 text-slate-50 text-sm leading-relaxed px-3 py-2.5 shadow-xl whitespace-pre-wrap break-words">
+                              <span className="block text-[11px] uppercase tracking-wide text-violet-300 mb-1">AI prompt — Gemini only</span>
+                              {qObj.prompt || qObj.question}
+                            </span>
+                          </span>
+                        </span>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => setExpandedQIdx(expandedQIdx === i ? null : i)}
+                        className={`shrink-0 bg-transparent border-0 cursor-pointer leading-none px-1 ${expandedQIdx === i ? 'text-violet-600' : 'text-slate-400 hover:text-violet-600'}`}
+                        title="Edit the detailed AI prompt (Gemini only)"
+                      >{expandedQIdx === i ? '⌃' : '⌄'} AI</button>
                       <button type="button" onClick={() => removeQuestion(i)} className="text-slate-400 hover:text-red-500 bg-transparent border-0 cursor-pointer leading-none shrink-0">×</button>
                     </div>
+                    {/* Expanded AI-prompt editor (Gemini-only, never shown to the customer) */}
+                    {expandedQIdx === i && (
+                      <div className="mb-2">
+                        <p className="text-[11px] text-slate-400 mb-1">Detailed prompt sent to Gemini (the customer never sees this):</p>
+                        <textarea
+                          autoFocus
+                          value={qObj.prompt || ''}
+                          onChange={e => updateQuestionPrompt(i, e.target.value)}
+                          rows={5}
+                          className="w-full text-sm leading-relaxed border border-violet-300 rounded-lg px-2 py-1.5 outline-none bg-white resize-y focus:ring-2 focus:ring-violet-100"
+                          placeholder="Describe in detail what Gemini should analyse and answer…"
+                        />
+                      </div>
+                    )}
                     {/* Per-question section tags */}
                     {configSections.length > 0 && (
                       <div className="flex flex-wrap gap-1">

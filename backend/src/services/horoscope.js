@@ -760,19 +760,6 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
     };
   });
 
-  // Helper: build a context note for questions tagged to a specific section.
-  // Uses the SHORT customer-facing `question` only — just enough context to nudge the
-  // section. The detailed Gemini-only `prompt` is reserved for the standalone special-
-  // question answers (step 8) and must NOT leak its answering-model directives here.
-  const buildSectionQuestionRef = (sectionLabel) => {
-    const tagged = normalisedQuestions.filter(
-      q => Array.isArray(q.sections) && q.sections.includes(sectionLabel)
-    );
-    if (!tagged.length) return '';
-    return '\n\nවිශේෂ සටහන: මෙම හදහනේ අයිතිකරු පහත ගැටළු හෝ ප්‍රශ්න ඉදිරිපත් කර ඇත. මෙම කොටස ලිවීමේදී මෙම ගැටළුද ඔබගේ මෙම වාර්තාවේ ගුණාත්මකභාවය වැඩි දියුණු කිරීමට උපයෝගී කරගන්න. මෙම ගැටළු වලට කල යුතු දේ වෙනම අපි ලබා දෙනු ඇත. ඔබ කල යුත්තේ මෙම section එකට අවශ්‍ය නම් පමණක් මෙම ගැටළු වල context එක භාවිතා කිරීමයි.\n\n'
-      + tagged.map((q, i) => `${i + 1}. ${q.question}`).join('\n');
-  };
-
   // 6. Create Gemini chat session (base system instruction without per-section question refs)
   const baseSystemInstruction = systemPrompt + '\n\nමෙම කේන්ද්‍ර දත්ත සම්පූර්ණ වාර්තාව සඳහා පදනම වේ:\n\n' + chartDataJson;
   console.log('[HORO-CHAT] ══ SESSION START ══════════════════════════════════════');
@@ -803,19 +790,17 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
 
   const sectionsMap = {};
   for (const sec of activeSections) {
-    // Build a fresh model per section so we can inject per-section question context
-    const sectionRef = buildSectionQuestionRef(sec);
-    const sectionSystemInstruction = baseSystemInstruction + sectionRef;
+    // Sections are generated purely from the system prompt + chart data.
+    // Special questions are NOT injected here — they are answered separately (step 8).
     const geminiModel = genAI.getGenerativeModel({
       model: 'gemini-2.5-flash',
       generationConfig: { temperature: 0.4, topP: 0.8, topK: 40 },
-      systemInstruction: sectionSystemInstruction,
+      systemInstruction: baseSystemInstruction,
     });
     const chat = geminiModel.startChat({});
 
     const sectionPrompt = buildSectionPrompt(sec, sectionGuidesOverride);
     console.log(`\n[HORO-CHAT] ── REQUEST: "${sec}" ${'─'.repeat(Math.max(0, 50 - sec.length))}`);
-    if (sectionRef) console.log('[HORO-CHAT] section question ref injected:', sectionRef.trim().slice(0, 120));
     console.log('[HORO-CHAT] userPrompt:\n' + sectionPrompt);
     console.log('[HORO-CHAT] ──────────────────────────────────────────────────────');
     const result = await chat.sendMessage(sectionPrompt);
@@ -980,15 +965,9 @@ async function generateWaMessage(orderId, horoscopeData, waMessagePrompt) {
  */
 async function regenerateHoroscopeSection({ chartData, systemPrompt, sectionKey, sectionGuide, specialAnswers = [] }) {
   const chartDataJson = JSON.stringify(chartData, null, 2);
-  // Only inject questions explicitly tagged to this section
-  const tagged = specialAnswers.filter(
-    qa => Array.isArray(qa.sections) && qa.sections.includes(sectionKey)
-  );
-  const specialQuestionsRef = tagged.length > 0
-    ? '\n\nවිශේෂ සටහන: මෙම හදහනේ අයිතිකරු පහත ගැටළු හෝ ප්‍රශ්න ඉදිරිපත් කර ඇත. මෙම කොටස ලිවීමේදී මෙම ගැටළුද ඔබගේ මෙම වාර්තාවේ ගුණාත්මකභාවය වැඩි දියුණු කිරීමට උපයෝගී කරගන්න. මෙම ගැටළු වලට කල යුතු දේ වෙනම අපි ලබා දෙනු ඇත. ඔබ කල යුත්තේ මෙම section එකට අවශ්‍ය නම් පමණක් මෙම ගැටළු වල context එක භාවිතා කිරීමයි.\n\n'
-        + tagged.map((qa, i) => `${i + 1}. ${qa.question}`).join('\n')
-    : '';
-  const sysInstruction = systemPrompt + '\n\nමෙම කේන්ද්‍ර දත්ත සම්පූර්ණ වාර්තාව සඳහා පදනම වේ:\n\n' + chartDataJson + specialQuestionsRef;
+  // Section regeneration uses only the system prompt + chart data — special questions
+  // are never injected into sections (they are answered separately).
+  const sysInstruction = systemPrompt + '\n\nමෙම කේන්ද්‍ර දත්ත සම්පූර්ණ වාර්තාව සඳහා පදනම වේ:\n\n' + chartDataJson;
 
   const guidesOverride = sectionGuide ? { [sectionKey]: sectionGuide } : null;
   const prompt = buildSectionPrompt(sectionKey, guidesOverride);

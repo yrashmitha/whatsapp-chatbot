@@ -30,12 +30,19 @@ const {
   downloadHoroscopePdf,
   downloadQuantumPdf,
 } = require('../controllers/plugins.controller');
+const { handleWebMessage, getWebMessages, resetWebSession, handleWebMedia } = require('../controllers/webchat.controller');
 
 // Memory-storage upload for aura selfie (max 10 MB, images only)
 const auraUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => cb(null, /^image\//.test(file.mimetype)),
+});
+
+// Memory-storage upload for test-chat media (max 16 MB, images/PDF/audio/docs)
+const mediaUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 16 * 1024 * 1024 },
 });
 
 router.get('/:pluginId/config',                   jwtAuth, getPluginConfig);
@@ -58,5 +65,11 @@ router.get('/horoscope/download-quantum-docx/:orderId', jwtAuth, downloadQuantum
 router.get('/horoscope/download-quantum-pdf/:orderId',  jwtAuth, downloadQuantumPdf);
 router.patch('/horoscope/wa-message/:orderId',           jwtAuth, saveWaMessageHandler);
 router.post('/horoscope/generate-wa-message/:orderId',  jwtAuth, generateWaMessageHandler);
+
+// ── CRM test chat ──────────────────────────────────────────────────────────────
+router.post('/webchat/:sessionId/message',  jwtAuth, handleWebMessage);
+router.get('/webchat/:sessionId/messages',   jwtAuth, getWebMessages);
+router.post('/webchat/:sessionId/reset',     jwtAuth, resetWebSession);
+router.post('/webchat/:sessionId/media',     jwtAuth, mediaUpload.single('file'), handleWebMedia);
 
 module.exports = router;

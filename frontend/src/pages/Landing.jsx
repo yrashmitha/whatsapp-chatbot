@@ -1174,38 +1174,6 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ── Nova Consult ── */}
-      <section className="section alt">
-        <div className="container">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 48, alignItems: 'center' }}>
-            <div>
-              <div className="section-label">Free for a limited time</div>
-              <h2 style={{ fontFamily: "'Space Grotesk',sans-serif", fontWeight: 800, fontSize: 'clamp(26px,4vw,40px)', letterSpacing: '-0.03em', lineHeight: 1.15, marginBottom: 16 }}>
-                Talk to <em style={{ fontStyle: 'normal', color: '#00d4ff' }}>Nova</em>,<br />your free business advisor
-              </h2>
-              <p style={{ fontSize: 16, color: 'rgba(255,255,255,0.68)', lineHeight: 1.75, maxWidth: 440, marginBottom: 32 }}>
-                Not sure where to start? Nova is an AI business consultant trained on the CENTS framework, built for Sri Lankan entrepreneurs. Get a free strategy session, no sign-up needed.
-              </p>
-              <Link to="/consult" className="btn-cta lg">
-                Start Free Consultation →
-              </Link>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {[
-                { title: 'Business strategy advice', desc: 'Diagnose bottlenecks, find gaps, and get an actionable plan for your specific business.' },
-                { title: 'Live market research', desc: 'Nova searches the web in real time to give you current, Sri Lanka-relevant insights.' },
-                { title: 'Chat in Sinhala, Tamil, or English', desc: 'Speak naturally in your preferred language. Nova understands and responds accordingly.' },
-              ].map((f, i) => (
-                <div key={i} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: '18px 20px' }}>
-                  <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontWeight: 600, fontSize: 14, color: '#fff', marginBottom: 4 }}>{f.title}</div>
-                  <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.58)', lineHeight: 1.6 }}>{f.desc}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* ── Final CTA ── */}
       <div className="cta-strip">
         <NovaCharacter />
@@ -1242,7 +1210,6 @@ export default function Landing() {
             <a href={NOVA_WA_DEMO} target="_blank" rel="noreferrer">Try Nova</a>
             <a href={NOVA_WA} target="_blank" rel="noreferrer">Get a Demo</a>
             <Link to="/pricing">Pricing</Link>
-            <Link to="/consult">Free Business Consultation</Link>
             <a href={NOVA_WA} target="_blank" rel="noreferrer">Custom Features</a>
           </div>
           <div className="footer-col">

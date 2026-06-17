@@ -112,7 +112,7 @@ const EMPTY = {
   id: '', name: '', type: 'general',
   phone_number_id: '', wa_token_env: '', wa_token: '', use_system_wa_token: false,
   webhook_verify_token: '',
-  ai_model: 'gemini-2.5-flash', temperature: 0.70,
+  ai_model: 'gemini-2.5-flash', temperature: 0.70, thinking_budget: '', typing_delay_ms: 0,
   system_prompt_mode: 'builtin', custom_prompt: '', error_message: '',
   gemini_api_key: '', use_system_gemini_key: false,
   brand_name: '', brand_color: '#075e54', logo_url: '', contact_number: '',
@@ -242,6 +242,8 @@ export default function Clients() {
       webhook_verify_token: c.webhook_verify_token || '',
       ai_model: c.ai_model || 'gemini-2.5-flash',
       temperature: c.temperature ?? 0.70,
+      thinking_budget: c.thinking_budget ?? '',
+      typing_delay_ms: c.typing_delay_ms ?? 0,
       system_prompt_mode: c.system_prompt_mode || 'builtin',
       custom_prompt: c.custom_prompt || '',
       error_message: c.error_message || '',
@@ -374,6 +376,23 @@ export default function Clients() {
               value={form.temperature}
               onChange={e => set('temperature')(parseFloat(e.target.value))}
               className="w-full accent-indigo-500"
+            />
+          </Field>
+          <Field label="Thinking Budget" hint="Gemini reasoning tokens. Blank = model default (8192). 0 disables thinking.">
+            <input
+              type="number" min="0" step="256"
+              value={form.thinking_budget}
+              onChange={e => set('thinking_budget')(e.target.value)}
+              placeholder="default"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+            />
+          </Field>
+          <Field label="Typing Delay (ms)" hint="Show typing for this long before replying. 0 = instant.">
+            <input
+              type="number" min="0" step="500"
+              value={form.typing_delay_ms}
+              onChange={e => set('typing_delay_ms')(Number(e.target.value))}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
             />
           </Field>
           <Field label="System Prompt Mode">

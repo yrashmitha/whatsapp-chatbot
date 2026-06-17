@@ -13,7 +13,7 @@ const path   = require('path');
 const db     = require('../db');
 const clientRouter = require('../services/clientRouter');
 const { buildChatSession, handleMessage } = require('../services/gemini');
-const { sendWhatsAppMessage, sendWhatsAppImage, sendWhatsAppAudio, sendBotReply, waToken, waPhoneId, markMessageRead } = require('../services/whatsapp');
+const { sendWhatsAppMessage, sendWhatsAppImage, sendWhatsAppAudio, sendBotReply, waToken, waPhoneId, markMessageRead, sendTypingIndicator } = require('../services/whatsapp');
 const { chatSessions } = require('../workers/sessionManager');
 const { UPLOADS_DIR } = require('../config/env');
 const { analyzePaymentDocument, buildAnalysisNote } = require('../services/imageAnalysis');
@@ -424,6 +424,9 @@ function receiveWebhook(req, res) {
       const session = chatSessions.get(sessionKey);
       session.lastUsed = Date.now();
 
+      // Show the typing indicator while Gemini composes the reply.
+      sendTypingIndicator(from, client).catch(() => {});
+
       const { botReply: rawBotReply, imagesToSend, productImagesToSend, isFallback } = await handleMessage(from, userMessage, session.chat, { client, traceId });
 
       // Extract [[VOICE:keyword]] tokens before sending text
@@ -484,6 +487,11 @@ function receiveWebhook(req, res) {
       } else if (!botReply.trim()) {
         log.warn(`[WEBHOOK] Empty botReply from Gemini — skipping send`);
       } else {
+        // Optional human-like delay: keep the typing indicator alive, then send.
+        if (client.typing_delay_ms > 0) {
+          sendTypingIndicator(from, client).catch(() => {});
+          await new Promise(r => setTimeout(r, Math.min(client.typing_delay_ms, 20000)));
+        }
         await sendBotReply(from, botReply, client);
       }
 

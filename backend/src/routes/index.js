@@ -27,7 +27,6 @@ const adminRoutes        = require('./admin.routes');
 const quickRepliesRoutes = require('./quickReplies.routes');
 const callsRoutes        = require('./calls.routes');
 const voiceClipsRoutes   = require('./voice_clips.routes');
-const { publicRouter: consultPublic, adminRouter: consultAdmin } = require('./consult.routes');
 
 const jwtAuth = require('../middleware/jwtAuth');
 const { upload } = require('../config/multer');
@@ -79,8 +78,6 @@ function mountRoutes(app) {
   app.use('/chat',             chatRoutes);
   app.use('/webhook',          webhookLimiter, webhookRoutes);
   app.use('/api/catalog',      catalogRoutes);
-  app.use('/consult',          consultPublic);
-  app.use('/api/consult',      jwtAuth, consultAdmin);
 
   // Customer, message, client routes (all sub-paths defined inside the router)
   app.use('/api',              customerRoutes);

@@ -46,8 +46,8 @@ const ALL_NAV = [
   { to: '/calls',        label: 'Calls',        icon: icons.calls,       addonKey: 'ai_call_answering' },
   { to: '/voice-clips',  label: 'Voice Clips',  icon: icons.voiceclips },
   { to: '/plugins',       label: 'Plugins',  icon: icons.plugins              },
+  { to: '/test-chat',     label: 'Test Chat', icon: icons.consult            },
   { to: '/settings',      label: 'Settings', icon: icons.settings             },
-  { to: '/consult-admin', label: 'Consult',  icon: icons.consult, adminOnly: true },
 ];
 
 export default function Layout({ children }) {

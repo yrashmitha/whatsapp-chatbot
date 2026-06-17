@@ -48,6 +48,58 @@ const PRICE_OUTPUT = 0.30  / 1_000_000;
  */
 function calcCost(i, o) { return i * PRICE_INPUT + o * PRICE_OUTPUT; }
 
+// ─── Reasoning-leak hardening (ported from wwjs-service) ────────────────────────
+/**
+ * Strip thought parts from EVERY model turn in a ChatSession history.
+ * Gemini must never receive plain thought text back in later turns — it causes the
+ * model to re-emit reasoning as visible text (the "thought leak"). The SDK appends a
+ * model turn to _history on every sendMessage (including each function-calling round),
+ * so stripping only the last turn is not enough. Parts carrying a thoughtSignature are
+ * kept — signatures are the supported way to return reasoning context for tool calls.
+ *
+ * @param {Array<{role: string, parts: Array}>} history - chatSession._history (mutated)
+ */
+function stripThoughtsFromHistory(history) {
+  if (!Array.isArray(history)) return;
+  let stripped = 0;
+  for (const turn of history) {
+    if (turn?.role !== 'model' || !Array.isArray(turn.parts)) continue;
+    const before = turn.parts.length;
+    turn.parts = turn.parts.filter(p => !p.thought || p.thoughtSignature);
+    stripped += before - turn.parts.length;
+    if (turn.parts.length === 0) turn.parts = [{ text: ' ' }];
+  }
+  if (stripped > 0) console.log(`[THOUGHT_STRIP] Removed ${stripped} thought part(s) across ${history.length} turns`);
+}
+
+/**
+ * Detect a chain-of-thought leak in a customer-facing reply — the hard case where the
+ * model emits reasoning as a NORMAL text part (p.thought unset, no THOUGHT: prefix),
+ * which part-level filters cannot catch. Conservative by design to avoid false positives.
+ *
+ * @param {string} text - final customer-facing reply
+ * @returns {boolean}
+ */
+function looksLikeReasoningLeak(text) {
+  if (!text || typeof text !== 'string') return false;
+  const t = text.trim();
+  if (t.length < 40) return false;
+  const STRONG = [
+    /\bfirst (response|message) rule\b/i,
+    /\bknowledge base (clearly )?(states|says|mentions)\b/i,
+    /\bthe system prompt\b/i,
+    /\bHARD RULES\b/,
+    /default_api|tool_code|functionCall|print\(/,
+    /```/,
+  ];
+  if (STRONG.some(re => re.test(t))) return true;
+  const thirdPerson = /\b(the user|the customer)('?s)?\b/i.test(t);
+  const planning    = /\bI (should|need to|have to|must|will|am going to)\b/i.test(t);
+  if (thirdPerson && planning) return true;
+  if (/\b(since|because|as) this (is|appears to be) (the|their) first (message|response)\b/i.test(t)) return true;
+  return false;
+}
+
 // ─── Order marker definitions ─────────────────────────────────────────────────
 /** @type {RegExp} Matches [[ORDER_COMPLETE:{...}]] markers */
 const ORDER_MARKER_REGEX   = /\[\[ORDER_COMPLETE:([\s\S]*?)\]\]/;
@@ -193,10 +245,10 @@ async function buildChatSession(phoneNumber, client) {
         topP: 0.95,
         topK: 64,
         maxOutputTokens: 3000,
-        thinkingConfig: { thinkingBudget: 8192 },
+        thinkingConfig: { thinkingBudget: client.thinking_budget ?? 8192 },
       },
     });
-    console.log(`[SESSION] Built client model for ${client.id} | mode=${client.system_prompt_mode} | orderFields=${client.order_fields?.length || 0} | contactNumber=${client.contact_number || 'none'} | instructionLen=${fullInstruction.length}`);
+    console.log(`[SESSION] Built client model for ${client.id} | mode=${client.system_prompt_mode} | thinkingBudget=${client.thinking_budget ?? 8192} | orderFields=${client.order_fields?.length || 0} | contactNumber=${client.contact_number || 'none'} | instructionLen=${fullInstruction.length}`);
     console.log(`[SESSION] Full system instruction: ${fullInstruction.replace(/\n/g, '\\n')}`);
   }
 
@@ -308,7 +360,9 @@ async function buildChatSession(phoneNumber, client) {
   const registeredTools = tools.flatMap(t => t.functionDeclarations?.map(d => d.name) || []);
   console.log(`[SESSION] Tools registered for this session: [${registeredTools.join(', ')}]`);
 
-  return chatModel.startChat({ history: fullHistory, tools });
+  const session = chatModel.startChat({ history: fullHistory, tools });
+  session._chatModel = chatModel; // exposed for leak-guard regeneration (no history pollution)
+  return session;
 }
 
 /**
@@ -383,7 +437,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
       result = await chatSession.sendMessage(messageToSend);
       break;
     } catch (aiErr) {
-      const retryable = /503|unavailable|overloaded/i.test(aiErr.message || '');
+      const retryable = /503|500|429|unavailable|overloaded|internal error|resource.?exhausted|quota|rate.?limit/i.test(aiErr.message || '');
       const funcTurnErr = /function response turn/i.test(aiErr.message || '');
       log.error(`[GEMINI] Attempt ${attempt}/3 failed:`, aiErr.message);
       if (attempt < 3 && retryable) {
@@ -508,16 +562,26 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     candidate = result.response;
   }
 
+  // Strip thought parts the SDK appended to _history across the FC loop, so leaked
+  // reasoning never re-enters context on the next turn.
+  stripThoughtsFromHistory(chatSession._history);
+
   // Filter out thought parts so they never reach the customer.
   // Use candidates[0].content.parts and skip any part with thought:true.
   // Fall back to candidate.text() (with think-block stripping) when no non-thought text
   // is found — covers both empty rawParts (SDK version mismatch) and all-thought-parts cases.
   const rawParts = candidate.candidates?.[0]?.content?.parts || [];
   const finishReason = candidate.candidates?.[0]?.finishReason;
-  const nonThoughtText = rawParts
+  let nonThoughtText = rawParts
     .filter(p => !p.thought && typeof p.text === 'string')
     .map(p => p.text)
     .join('');
+  // Secondary guard: model sometimes emits thought content as plain text with a
+  // "THOUGHT:" prefix but p.thought is unset. Strip any such block.
+  if (/^THOUGHT:/m.test(nonThoughtText)) {
+    nonThoughtText = nonThoughtText.replace(/^THOUGHT:[\s\S]*?(\n\n|(?=\n[A-Z؀-ۿ])|$)/gm, '').trim();
+    log.warn('[THOUGHT_CHECK] Stripped THOUGHT: prefix block from response text');
+  }
   let rawReply = nonThoughtText;
   if (!rawReply) {
     // All parts were thought-only, or rawParts was empty (SDK mismatch) — strip think blocks and use text().
@@ -579,6 +643,48 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     log.warn('[GEMINI] Still empty after nudge — using fallback message');
     botReply = client?.error_message || "Sorry, I didn't get that. Could you please try again? 🙏";
     isFallback = true;
+  }
+
+  // ── Reasoning-leak backstop (defense in depth) ───────────────────────────────
+  // If a genuine reply structurally looks like leaked chain-of-thought — the class
+  // part-level filters cannot catch — regenerate once via generateContent (no history
+  // pollution). If it still leaks, suppress and let the empty reply flag the chat red.
+  if (botReply && !isFallback && looksLikeReasoningLeak(botReply)) {
+    log.warn(`[LEAK_GUARD] Reasoning leak detected — regenerating. Head: "${botReply.slice(0, 120)}"`);
+    let regen = '';
+    try {
+      const cleanHistory = (chatSession._history || [])
+        .filter(turn => !turn.parts?.some(p => p.functionCall || p.functionResponse));
+      while (cleanHistory.length > 0 && cleanHistory[0].role !== 'user') cleanHistory.shift();
+      const r = await chatSession._chatModel?.generateContent({
+        contents: cleanHistory,
+        generationConfig: { maxOutputTokens: 2048 },
+      });
+      const rParts = r?.response?.candidates?.[0]?.content?.parts || [];
+      regen = rParts.filter(p => !p.thought && typeof p.text === 'string').map(p => p.text).join('').trim();
+    } catch (e) {
+      log.error('[LEAK_GUARD] Regenerate failed:', e.message);
+    }
+
+    if (regen && !looksLikeReasoningLeak(regen)) {
+      log.info(`[LEAK_GUARD] Regeneration clean — using it. Head: "${regen.slice(0, 80)}"`);
+      botReply = regen.replace(/\*\*([^*\n]+)\*\*/g, '*$1*').trim();
+      // Patch the last model turn so the leaked text never re-enters context next turn.
+      if (chatSession._history?.length > 0) {
+        for (let hi = chatSession._history.length - 1; hi >= 0; hi--) {
+          if (chatSession._history[hi].role === 'model') {
+            const mParts = chatSession._history[hi].parts;
+            const tIdx = mParts.findIndex(p => typeof p.text === 'string' && !p.thought);
+            if (tIdx >= 0) mParts[tIdx].text = botReply;
+            break;
+          }
+        }
+      }
+    } else {
+      log.warn('[LEAK_GUARD] Regeneration still leaked or empty — suppressing reply, flagging chat red');
+      botReply = '';
+      isFallback = true; // empty reply → webhook sets needs_attention
+    }
   }
 
   // Extract [[SEND_IMAGE:filename]] markers

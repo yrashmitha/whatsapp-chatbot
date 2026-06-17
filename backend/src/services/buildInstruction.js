@@ -13,6 +13,39 @@ const path = require('path');
 const TEMPLATES_DIR = path.join(__dirname, '../../public', 'templates');
 
 /**
+ * Appended to EVERY client's system instruction. Stops the model from emitting
+ * reasoning / tool syntax as visible text — the leak class where chain-of-thought
+ * lands in a normal answer part (no p.thought flag), which response-side filters
+ * cannot catch. Ported from wwjs-service.
+ */
+const CLEAN_OUTPUT_RULE = `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+NEVER LEAK YOUR THINKING — ABSOLUTE RULE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Your reasoning, planning, and analysis are PRIVATE. They must NEVER appear in the message the customer receives.
+
+The customer sees ONLY your final message to them — never the thinking that produced it.
+
+NEVER write your thought process as the reply. Forbidden — these are how you THINK, never what you SEND:
+- "The user is asking..." / "The customer wants..." / "The customer has..."
+- "I should..." / "I need to..." / "I need to make sure..." / "I have to..." / "I will start by..."
+- "Since this is the first message..." / "Because the knowledge base says..." / "Therefore, I should..."
+- "Let me..." / "First, I'll... then I'll..." / "My plan is..." / "The rule says..."
+- Any sentence ABOUT the conversation, the rules, or what to do next — instead of a sentence TO the customer.
+
+Speak TO the customer in second person ("you"), never ABOUT them in third person ("the user", "the customer").
+If a sentence describes your own decision-making, DELETE it. Only the customer-facing message survives.
+
+NEVER output any of the following as text in your reply:
+- Tool call syntax, print(...), default_api.*, function_call, <tool_use>
+- Code blocks: \`\`\`python, tool_code, or any similar block
+- Internal reasoning, chain-of-thought, scratchpad steps, or planning of any kind
+- Headers like "Thinking:", "Thought:", "Reasoning:", "Plan:", or "<think>" / "</think>" tags
+
+The customer must ONLY ever see natural conversational text — nothing else.
+If you find yourself writing a code block, a function name, or a sentence about what you should do — stop and delete it. Send only the message meant for the customer.`;
+
+/**
  * Build the template images section that informs the AI which images are available.
  *
  * @returns {string} Instruction block, or empty string if no templates exist
@@ -101,7 +134,7 @@ function buildSystemInstructionForClient(client) {
     const languageRule = isMultilingual
       ? `LANGUAGE RULE — HIGHEST PRIORITY:\nThe customer's current message is always wrapped between [CURRENT_MESSAGE_START] and [CURRENT_MESSAGE_END] markers. Detect the language of the text inside those markers and reply accordingly:\n- If the message is in English → reply in English\n- If the message is in Sinhala script (Unicode) → reply in Sinhala script\n- If the message is in Singlish (Sinhala written using Latin/English letters) → reply in proper Sinhala script (Unicode), NOT in Singlish. Singlish uses common Sinhala words romanized, such as: mama, mata, eka, denna, ganna, kohomada, api, oya, danne, inne, hadanna, puluwan, kiyanna, karana, thibba, awilla, yanna, wage, wenna, karanna, wisthara, hari, nehe, ow, mokakda, kawda, koheda, kiyala, danna, gatta, aawa, giyaa, hitiye, hitiye, pennanna, oyata, oyage\n- For any other language → reply in that same language\nIgnore the language of all previous messages in the conversation history.\n\n`
       : '';
-    return languageRule + prompt;
+    return languageRule + prompt + '\n' + CLEAN_OUTPUT_RULE;
   }
   // No prompt in DB yet — fall back to hardcoded astrology prompt
   console.warn(`[buildInstruction] No custom_prompt set for client ${client?.id} — using hardcoded fallback`);

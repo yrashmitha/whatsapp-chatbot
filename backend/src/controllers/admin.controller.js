@@ -428,7 +428,8 @@ async function updateClient(req, res) {
           brand_name, brand_color, logo_url, order_id_prefix, product_catalog_enabled,
           order_flow_enabled, admin_password_env, contact_number, knowledge_base_enabled,
           plugin_enabled, ai_enabled, gemini_api_key, use_system_gemini_key,
-          package_id, bonus_messages, overage_limit, per_message_cost } = req.body;
+          package_id, bonus_messages, overage_limit, per_message_cost,
+          thinking_budget, typing_delay_ms } = req.body;
   try {
     if (name !== undefined || type !== undefined || active !== undefined) {
       await db.pgQuery(
@@ -466,6 +467,8 @@ async function updateClient(req, res) {
           bonus_messages=COALESCE($24,bonus_messages),
           overage_limit=COALESCE($25,overage_limit),
           per_message_cost=COALESCE($26,per_message_cost),
+          thinking_budget=COALESCE($28,thinking_budget),
+          typing_delay_ms=COALESCE($29,typing_delay_ms),
           updated_at=NOW()
         WHERE client_id=$27`,
         [
@@ -496,6 +499,8 @@ async function updateClient(req, res) {
           overage_limit !== undefined ? Number(overage_limit) : null,
           per_message_cost !== undefined ? Number(per_message_cost) : null,
           clientId,
+          thinking_budget !== undefined ? (thinking_budget === null || thinking_budget === '' ? null : Number(thinking_budget)) : null,
+          typing_delay_ms !== undefined ? Number(typing_delay_ms) : null,
         ]);
     }
     clientRouter.invalidateCache(clientId);

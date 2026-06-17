@@ -407,40 +407,15 @@ async function init() {
       ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS per_message_cost  NUMERIC(10,6) NOT NULL DEFAULT 0;
     `);
 
-    // ── Nova Consult (public web chat) ────────────────────────────────────────
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS consult_config (
-        id            INT PRIMARY KEY DEFAULT 1 CHECK(id = 1),
-        system_prompt TEXT,
-        max_sessions  INT NOT NULL DEFAULT 10,
-        max_messages  INT NOT NULL DEFAULT 50,
-        access_code   TEXT,
-        updated_at    TIMESTAMPTZ DEFAULT NOW()
-      );
-      INSERT INTO consult_config (id) VALUES (1) ON CONFLICT DO NOTHING;
-      ALTER TABLE consult_config ADD COLUMN IF NOT EXISTS max_messages INT NOT NULL DEFAULT 50;
-
-      CREATE TABLE IF NOT EXISTS consult_sessions (
-        id            SERIAL PRIMARY KEY,
-        session_token TEXT UNIQUE NOT NULL,
-        name          TEXT,
-        business_name TEXT,
-        business_type TEXT,
-        phone         TEXT,
-        created_at    TIMESTAMPTZ DEFAULT NOW()
-      );
-      CREATE TABLE IF NOT EXISTS consult_messages (
-        id         SERIAL PRIMARY KEY,
-        session_id INTEGER REFERENCES consult_sessions(id) ON DELETE CASCADE,
-        role       TEXT NOT NULL CHECK(role IN ('user','model')),
-        text       TEXT NOT NULL,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_consult_messages_session ON consult_messages (session_id, created_at);
-    `);
+    // Nova Consult removed — existing consult_* tables (if any) are left orphaned in
+    // prod (no destructive DROP); they are simply no longer created or referenced.
 
     // ── Owner/admin notification phone ────────────────────────────────────────
     await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS owner_phone TEXT`);
+
+    // ── Per-client Gemini thinking budget (NULL = model default) + typing delay ──
+    await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS thinking_budget INT`);
+    await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS typing_delay_ms INT NOT NULL DEFAULT 0`);
 
     // ── Fallback attention flag ───────────────────────────────────────────────
     await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS needs_attention BOOLEAN NOT NULL DEFAULT FALSE`);
@@ -576,6 +551,8 @@ async function init() {
     try { db.exec(`ALTER TABLE client_configs ADD COLUMN gemini_api_key TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE client_configs ADD COLUMN use_system_wa_token INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
     try { db.exec(`ALTER TABLE client_configs ADD COLUMN use_system_gemini_key INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
+    try { db.exec(`ALTER TABLE client_configs ADD COLUMN thinking_budget INTEGER`); } catch (_) {}
+    try { db.exec(`ALTER TABLE client_configs ADD COLUMN typing_delay_ms INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
     // SQLite cannot DROP columns — old columns (package, birth_date, etc.) remain but are ignored
 
     // ── Per-chat AI mode (SQLite) ────────────────────────────────────────────

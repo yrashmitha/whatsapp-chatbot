@@ -7,7 +7,7 @@ import { useToast } from '../components/ui/Toast';
 import api, { authApi } from '../lib/api';
 
 const TABS = ['AI Details', 'API Keys', 'Password', 'Quick Replies'];
-const ADMIN_TABS = ['AI Details', 'API Keys', 'Password', 'Quick Replies', 'Consultation'];
+const ADMIN_TABS = ['AI Details', 'API Keys', 'Password', 'Quick Replies'];
 
 function TokenInput({ value, onChange, placeholder }) {
   const [show, setShow] = useState(false);
@@ -67,41 +67,6 @@ export default function Settings() {
   const [waTokenSet, setWaTokenSet]     = useState(false);
   const [geminiKeySet, setGeminiKeySet] = useState(false);
 
-  // ── Consultation config (superadmin only) ─────────────────────────────────
-  const [consultPrompt, setConsultPrompt]     = useState('');
-  const [consultMax, setConsultMax]           = useState(10);
-  const [consultMsgLimit, setConsultMsgLimit] = useState(50);
-  const [consultCode, setConsultCode]         = useState('');
-  const [consultCodeSet, setConsultCodeSet]   = useState(false);
-  const [consultSaving, setConsultSaving]     = useState(false);
-
-  const { data: consultConfig, refetch: refetchConsultConfig } = useQuery({
-    queryKey: ['consult-config'],
-    queryFn: () => api.get('/consult/config').then(r => r.data),
-    enabled: superAdmin && activeTab === 'Consultation',
-  });
-  useEffect(() => {
-    if (consultConfig) {
-      setConsultPrompt(consultConfig.system_prompt || '');
-      setConsultMax(consultConfig.max_sessions ?? 10);
-      setConsultMsgLimit(consultConfig.max_messages ?? 50);
-      setConsultCodeSet(!!consultConfig.access_code_set);
-    }
-  }, [consultConfig]);
-
-  const handleSaveConsult = async (e) => {
-    e.preventDefault();
-    setConsultSaving(true);
-    try {
-      const body = { system_prompt: consultPrompt, max_sessions: consultMax, max_messages: consultMsgLimit };
-      if (consultCode.trim()) body.access_code = consultCode.trim();
-      await api.patch('/consult/config', body);
-      toast.success('Consultation settings saved');
-      setConsultCode('');
-      refetchConsultConfig();
-    } catch { toast.error('Failed to save'); }
-    finally { setConsultSaving(false); }
-  };
 
   // ── Quick Replies ─────────────────────────────────────────────────────────
   const [replies, setReplies]     = useState([]);
@@ -549,68 +514,6 @@ export default function Settings() {
             </div>
           )}
 
-          {/* ── Consultation tab (superadmin only) ── */}
-          {activeTab === 'Consultation' && superAdmin && (
-            <div className="bg-white border border-slate-200 rounded-xl p-6">
-              <h2 className="text-sm font-semibold text-slate-700 mb-1">Consultation Settings</h2>
-              <p className="text-xs text-slate-400 mb-4">Configure the public Nova Business Consultant chat at <code className="bg-slate-100 px-1 rounded">/consult</code>.</p>
-              <form onSubmit={handleSaveConsult} className="flex flex-col gap-4">
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1.5">Max Sessions</label>
-                  <input
-                    type="number" min={1} max={1000}
-                    value={consultMax}
-                    onChange={e => setConsultMax(parseInt(e.target.value) || 1)}
-                    className={inpCls}
-                    style={{ maxWidth: '120px' }}
-                  />
-                  <p className="text-xs text-slate-400 mt-1">Maximum number of people that can start a consultation. New sessions are blocked once this limit is reached.</p>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1.5">Max Messages per Session</label>
-                  <input
-                    type="number" min={1} max={500}
-                    value={consultMsgLimit}
-                    onChange={e => setConsultMsgLimit(parseInt(e.target.value) || 1)}
-                    className={inpCls}
-                    style={{ maxWidth: '120px' }}
-                  />
-                  <p className="text-xs text-slate-400 mt-1">Number of Nova replies allowed per session before the session ends.</p>
-                </div>
-
-                <div>
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <label className="block text-xs font-medium text-slate-600">Access Code</label>
-                    {consultCodeSet && <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">✓ Set</span>}
-                  </div>
-                  <input
-                    type="text"
-                    value={consultCode}
-                    onChange={e => setConsultCode(e.target.value)}
-                    placeholder={consultCodeSet ? '(leave blank to keep current)' : 'e.g. NOVA2025'}
-                    className={inpCls}
-                  />
-                  <p className="text-xs text-slate-400 mt-1">The invite code users must enter to access the consultation. Share it in your Facebook post.</p>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1.5">System Prompt</label>
-                  <textarea
-                    rows={14}
-                    value={consultPrompt}
-                    onChange={e => setConsultPrompt(e.target.value)}
-                    placeholder="Leave blank to use the default CENTS framework prompt…"
-                    className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
-                  />
-                  <p className="text-xs text-slate-400 mt-1">The AI persona and instructions for the business consultant. Leave blank to use the default built-in prompt.</p>
-                </div>
-
-                <div className="mt-1"><Button type="submit" disabled={consultSaving}>{consultSaving ? 'Saving…' : 'Save'}</Button></div>
-              </form>
-            </div>
-          )}
 
         </div>
       </div>

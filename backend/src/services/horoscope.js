@@ -592,7 +592,7 @@ async function buildQuantumDoc({ customerName, quantumData, auraAnalysis, quantu
 
 // ─── Main generation function ─────────────────────────────────────────────────
 
-async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, birth_place_name, overrideAstro, specialQuestions = [], isVip = false, includeQuantum = false, activeName = '', selectedSections = null) {
+async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, birth_place_name, overrideAstro, specialQuestions = [], isVip = false, includeQuantum = false, activeName = '', selectedSections = null, useAgent = false) {
   // 1. Fetch order
   const orderRes = await db.pgQuery(
     'SELECT custom_fields, horoscope_data FROM orders WHERE order_id=$1',
@@ -789,28 +789,54 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
   }
 
   const sectionsMap = {};
-  for (const sec of activeSections) {
-    // Sections are generated purely from the system prompt + chart data.
-    // Special questions are NOT injected here — they are answered separately (step 8).
-    const geminiModel = genAI.getGenerativeModel({
-      model: 'gemini-2.5-flash',
-      generationConfig: { temperature: 0.4, topP: 0.8, topK: 40 },
-      systemInstruction: baseSystemInstruction,
-    });
-    const chat = geminiModel.startChat({});
+  let agentAudit = null;
+  if (useAgent) {
+    // ── Agentic path: Generator⇄Critic reflection loop (opt-in via UI button) ──
+    const { runHoroscopeAgent, buildAudit } = require('./horoscopeAgent');
+    const sectionDefs = activeSections.map(key => ({
+      key,
+      guide: (sectionGuidesOverride && sectionGuidesOverride[key]) || '',
+    }));
+    console.log(`[HOROSCOPE] Agentic generation (reflection loop) for ${activeSections.length} sections`);
+    // Persist live progress into horoscope_data.agent_progress so the UI can poll it (PG only).
+    const onEvent = db.IS_PG
+      ? async (evt) => {
+          try {
+            await db.pgQuery(
+              `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), '{agent_progress}', $1::jsonb, true) WHERE order_id=$2`,
+              [JSON.stringify({ ...evt, updatedAt: new Date().toISOString() }), orderId]
+            );
+          } catch (e) { console.warn('[HOROSCOPE] progress write failed:', e.message); }
+        }
+      : undefined;
+    const agentResult = await runHoroscopeAgent({ systemPrompt, chartDataJson, sectionDefs, onEvent });
+    Object.assign(sectionsMap, agentResult.sections);
+    agentAudit = buildAudit(agentResult);
+    console.log(`[HOROSCOPE] Agent finished: status=${agentAudit.status} iterations=${agentAudit.iterations} issues=${agentAudit.totalIssues}`);
+  } else {
+    for (const sec of activeSections) {
+      // Sections are generated purely from the system prompt + chart data.
+      // Special questions are NOT injected here — they are answered separately (step 8).
+      const geminiModel = genAI.getGenerativeModel({
+        model: 'gemini-2.5-flash',
+        generationConfig: { temperature: 0.4, topP: 0.8, topK: 40 },
+        systemInstruction: baseSystemInstruction,
+      });
+      const chat = geminiModel.startChat({});
 
-    const sectionPrompt = buildSectionPrompt(sec, sectionGuidesOverride);
-    console.log(`\n[HORO-CHAT] ── REQUEST: "${sec}" ${'─'.repeat(Math.max(0, 50 - sec.length))}`);
-    console.log('[HORO-CHAT] userPrompt:\n' + sectionPrompt);
-    console.log('[HORO-CHAT] ──────────────────────────────────────────────────────');
-    const result = await chat.sendMessage(sectionPrompt);
-    const sectionText = result.response.text();
-    const usage = result.response.usageMetadata;
-    console.log(`[HORO-CHAT] ── RESPONSE: "${sec}" ${'─'.repeat(Math.max(0, 49 - sec.length))}`);
-    console.log(sectionText);
-    console.log(`[HORO-CHAT] tokens in=${usage?.promptTokenCount ?? '?'}  out=${usage?.candidatesTokenCount ?? '?'}  chars=${sectionText.length}`);
-    console.log('[HORO-CHAT] ──────────────────────────────────────────────────────');
-    sectionsMap[sec] = sectionText;
+      const sectionPrompt = buildSectionPrompt(sec, sectionGuidesOverride);
+      console.log(`\n[HORO-CHAT] ── REQUEST: "${sec}" ${'─'.repeat(Math.max(0, 50 - sec.length))}`);
+      console.log('[HORO-CHAT] userPrompt:\n' + sectionPrompt);
+      console.log('[HORO-CHAT] ──────────────────────────────────────────────────────');
+      const result = await chat.sendMessage(sectionPrompt);
+      const sectionText = result.response.text();
+      const usage = result.response.usageMetadata;
+      console.log(`[HORO-CHAT] ── RESPONSE: "${sec}" ${'─'.repeat(Math.max(0, 49 - sec.length))}`);
+      console.log(sectionText);
+      console.log(`[HORO-CHAT] tokens in=${usage?.promptTokenCount ?? '?'}  out=${usage?.candidatesTokenCount ?? '?'}  chars=${sectionText.length}`);
+      console.log('[HORO-CHAT] ──────────────────────────────────────────────────────');
+      sectionsMap[sec] = sectionText;
+    }
   }
 
   // 8. Special questions — answer every question as standalone Q&A
@@ -871,6 +897,7 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
     chart_data:       chartData,
     sections:         sectionsMap,
     special_answers:  specialAnswers,
+    ...(agentAudit && { agent_audit: agentAudit }),
     generated_at:     new Date().toISOString(),
     birth_place_name: birth_place_name || '',
     lat:              parseFloat(lat),

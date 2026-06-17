@@ -239,11 +239,19 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
   // ── Generating ─────────────────────────────────────────────────────────────
   const [generating, setGenerating] = useState(false);
 
+  // ── Agentic generation (Generator⇄Critic) live progress ─────────────────────
+  const [agentRunning, setAgentRunning]   = useState(false);
+  const [agentProgress, setAgentProgress] = useState(null);
+  const agentPollRef = useRef(null);
+
+  const stopAgentPoll = () => { if (agentPollRef.current) { clearInterval(agentPollRef.current); agentPollRef.current = null; } };
+  useEffect(() => () => stopAgentPoll(), []); // clear interval on unmount
+
   useEffect(() => {
-    const handleKeyDown = (e) => { if (e.key === 'Escape') onClose(); };
+    const handleKeyDown = (e) => { if (e.key === 'Escape' && !agentRunning) onClose(); };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [onClose, agentRunning]);
 
   const [generatingQuantum, setGeneratingQuantum] = useState(false);
 
@@ -281,6 +289,41 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
     } catch (e) {
       toast.error(e?.response?.data?.error || 'Failed to start generation');
       setGenerating(false);
+    }
+  };
+
+  const handleGenerateAgent = async () => {
+    if (!selectedPlace)    return toast.error('Please select a birth place');
+    if (!birthDate.trim()) return toast.error('Birth date is required');
+    try {
+      // Agent builds the section report only (quantum stays a separate step).
+      await api.post('/plugins/horoscope/generate', buildPayload({ include_quantum: false, use_agent: true }));
+      setAgentRunning(true);
+      setAgentProgress({ phase: 'starting' });
+      onGenerated?.(); // let the list start its own polling too
+      // Poll live progress; keep the modal open so the loop is visible.
+      stopAgentPoll();
+      agentPollRef.current = setInterval(async () => {
+        try {
+          const { data } = await api.get(`/plugins/horoscope/progress/${order.order_id}`);
+          if (data.error) {
+            stopAgentPoll();
+            setAgentRunning(false);
+            setAgentProgress(null);
+            toast.error('Agent generation failed: ' + data.error);
+            return;
+          }
+          if (data.agent_progress) setAgentProgress(data.agent_progress);
+          // Finished when the generating flag is cleared and sections exist.
+          if (!data.generating && data.has_sections) {
+            stopAgentPoll();
+            setAgentProgress({ phase: 'done', ...(data.agent_audit || {}) });
+            onGenerated?.();
+          }
+        } catch { /* transient — keep polling */ }
+      }, 3000);
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Failed to start agent generation');
     }
   };
 
@@ -388,6 +431,33 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
 
         {/* Body */}
         <div className="overflow-y-auto flex-1 px-5 py-4 flex flex-col gap-3">
+
+          {/* Agent live progress */}
+          {agentRunning && (() => {
+            const p = agentProgress || {};
+            const done = p.phase === 'done';
+            const line =
+              p.phase === 'starting' ? 'Starting agent…'
+              : p.phase === 'writing'   ? `✍️ Writing section ${p.index}/${p.total} — ${p.detail}`
+              : p.phase === 'reviewing' ? `🔍 Critic reviewing (pass ${p.iteration})…`
+              : p.phase === 'reviewed'  ? `🔍 Critic pass ${p.iteration}: ${p.issues} issue(s) found`
+              : p.phase === 'revising'  ? `♻️ Revising ${p.detail} flagged section(s)…`
+              : done                    ? `✅ Done — ${p.iterations ?? '?'} iteration(s), ${p.totalIssues ?? 0} issue(s) fixed${p.status && p.status !== 'passed' ? ` (${p.status})` : ''}`
+              : 'Working…';
+            return (
+              <div className={`rounded-xl border p-3 flex items-center gap-3 ${done ? 'bg-emerald-50 border-emerald-200' : 'bg-violet-50 border-violet-200'}`}>
+                {!done && <span className="w-4 h-4 border-2 border-violet-300 border-t-violet-600 rounded-full animate-spin block shrink-0" />}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-800">{line}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">{done ? 'Report ready — close to review or download.' : 'Generator ⇄ Critic reflection loop running. You can close and check back; it continues in the background.'}</p>
+                </div>
+                {done && (
+                  <button type="button" onClick={() => { setAgentRunning(false); onClose(); }}
+                    className="shrink-0 px-3 py-1.5 text-xs font-medium bg-emerald-600 text-white rounded-lg border-0 cursor-pointer hover:bg-emerald-700">Close</button>
+                )}
+              </div>
+            );
+          })()}
 
           {/* AI Fill */}
           <button
@@ -883,7 +953,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
           <div className="flex gap-3 flex-1 flex-wrap justify-end">
             <button
               onClick={handleGenerate}
-              disabled={generating || generatingQuantum || !selectedPlace || !birthDate.trim() || auraUploading || selectedSections.length === 0}
+              disabled={generating || generatingQuantum || agentRunning || !selectedPlace || !birthDate.trim() || auraUploading || selectedSections.length === 0}
               className="flex-1 min-w-[160px] py-2.5 text-sm font-medium text-white rounded-xl border-0 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
               style={{ background: generating ? '#4f46e5' : 'linear-gradient(135deg,#4f46e5,#6366f1)' }}
             >
@@ -893,10 +963,23 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
                 hasSections ? '🔮 Generate Reading Again' : '🔮 Generate Reading'
               )}
             </button>
+            <button
+              onClick={handleGenerateAgent}
+              disabled={generating || generatingQuantum || agentRunning || !selectedPlace || !birthDate.trim() || auraUploading || selectedSections.length === 0}
+              title="Generator ⇄ Critic reflection loop — higher quality, ~3–5 min"
+              className="flex-1 min-w-[160px] py-2.5 text-sm font-medium text-white rounded-xl border-0 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+              style={{ background: agentRunning ? '#6d28d9' : 'linear-gradient(135deg,#7c3aed,#9333ea)' }}
+            >
+              {agentRunning ? (
+                <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin block" />Agent running…</>
+              ) : (
+                '🤖 Generate with Agent'
+              )}
+            </button>
             {(hasSections || includeQuantum) && (
               <button
                 onClick={handleRegenerateQuantum}
-                disabled={generating || generatingQuantum || !auraAnalysis || !activeName.trim() || auraUploading}
+                disabled={generating || generatingQuantum || agentRunning || !auraAnalysis || !activeName.trim() || auraUploading}
                 className="flex-1 min-w-[160px] py-2.5 text-sm font-medium text-white rounded-xl border-0 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
                 style={{ background: generatingQuantum ? '#7c3aed' : 'linear-gradient(135deg,#7c3aed,#a855f7)' }}
               >

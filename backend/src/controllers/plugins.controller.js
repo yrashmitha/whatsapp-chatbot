@@ -375,7 +375,7 @@ async function generateHoroscopeReading(req, res) {
   const {
     order_id, lat, lng, birth_place_name, birth_overrides,
     override_astro, special_questions, package_type,
-    include_quantum, active_name, selected_sections,
+    include_quantum, active_name, selected_sections, use_agent,
   } = req.body;
   if (!order_id || lat == null || lng == null) {
     return res.status(400).json({ error: 'order_id, lat, lng required' });
@@ -415,7 +415,8 @@ async function generateHoroscopeReading(req, res) {
     true,
     effectiveIncludeQuantum,
     (active_name || '').trim(),
-    Array.isArray(selected_sections) && selected_sections.length > 0 ? selected_sections : null
+    Array.isArray(selected_sections) && selected_sections.length > 0 ? selected_sections : null,
+    !!use_agent
   ).catch(async (e) => {
     console.error('[HOROSCOPE] generate error:', e.message);
     const detail = e?.response?.data?.detail;
@@ -430,6 +431,29 @@ async function generateHoroscopeReading(req, res) {
       ).catch(() => {});
     }
   });
+}
+
+/**
+ * GET /api/plugins/horoscope/progress/:orderId — live generation status for polling.
+ * Returns the `generating` flag, the agent's live `agent_progress` event, and whether
+ * sections have been written yet (so the UI knows when the run finished).
+ */
+async function horoscopeProgress(req, res) {
+  const { orderId } = req.params;
+  try {
+    const r = await db.pgQuery('SELECT horoscope_data FROM orders WHERE order_id=$1', [orderId]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Order not found' });
+    const hd = (typeof r.rows[0].horoscope_data === 'string')
+      ? JSON.parse(r.rows[0].horoscope_data || '{}')
+      : (r.rows[0].horoscope_data || {});
+    res.json({
+      generating:     hd.generating === true,
+      agent_progress: hd.agent_progress || null,
+      agent_audit:    hd.agent_audit || null,
+      has_sections:   !!(hd.sections && Object.keys(hd.sections).length > 0),
+      error:          hd.error || null,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 }
 
 /**
@@ -1106,7 +1130,7 @@ module.exports = {
   analyzeAuraImage,
   aiPrepareHoroscope,
   fetchChartData,
-  generateHoroscopeReading, updateHoroscopeSections, updateQuantumSections,
+  generateHoroscopeReading, horoscopeProgress, updateHoroscopeSections, updateQuantumSections,
   regenerateQuantumSections, regenerateQuantumSection, regenerateHoroscopeSectionHandler,
   saveWaMessageHandler,
   generateWaMessageHandler,

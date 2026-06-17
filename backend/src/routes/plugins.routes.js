@@ -17,6 +17,7 @@ const {
   aiPrepareHoroscope,
   fetchChartData,
   generateHoroscopeReading,
+  horoscopeProgress,
   updateHoroscopeSections,
   updateQuantumSections,
   regenerateQuantumSections,
@@ -45,6 +46,7 @@ router.post('/horoscope/analyze-aura',            jwtAuth, auraUpload.single('im
 router.post('/horoscope/ai-prepare/:orderId',     jwtAuth, aiPrepareHoroscope);
 router.post('/horoscope/fetch-chart',             jwtAuth, fetchChartData);
 router.post('/horoscope/generate',                jwtAuth, generateHoroscopeReading);
+router.get('/horoscope/progress/:orderId',        jwtAuth, horoscopeProgress);
 router.patch('/horoscope/sections/:orderId',         jwtAuth, updateHoroscopeSections);
 router.patch('/horoscope/quantum-sections/:orderId',    jwtAuth, updateQuantumSections);
 router.post('/horoscope/regenerate-quantum/:orderId',         jwtAuth, regenerateQuantumSections);

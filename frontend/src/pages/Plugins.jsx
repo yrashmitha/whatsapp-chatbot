@@ -31,6 +31,16 @@ const ALL_PLUGINS = [
     defaultName: 'Tarot Reading',
     description: 'Generates a 3-card tarot spread (Past / Present / Future) from the 78-card deck for a customer, interpreted by Gemini.',
   },
+  {
+    id: 'media_extractor',
+    defaultName: 'Media Extraction',
+    description: 'Customize the Gemini prompt used to extract content from customer-sent images, PDFs, audio, and documents.',
+  },
+  {
+    id: 'follow_up_generator',
+    defaultName: 'Follow-up Generator',
+    description: 'Customize the prompt used to draft follow-up messages based on a customer\'s conversation history.',
+  },
 ];
 
 function PluginCard({ pluginMeta, clientId, superAdmin }) {
@@ -185,7 +195,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         </div>
       )}
 
-      {!isCallAnswering && !isImageAnalyzer && !isTarot && (
+      {pluginMeta.id === 'astro_vedic_chart' && (
       <div>
         <label className="text-xs font-medium text-slate-500 block mb-1">FreeAstro API Key</label>
         <input
@@ -275,9 +285,21 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
       {!isHoroscope && !isCallAnswering && !isImageAnalyzer && !isTarot && (
         <div>
           <label className="text-xs font-medium text-slate-500 block mb-1">Gemini Prompt</label>
-          <p className="text-xs text-slate-400 mb-1.5">
-            Use <code className="font-mono bg-slate-100 px-1 rounded">{'{chart_json}'}</code> where chart data will be inserted.
-          </p>
+          {pluginMeta.id === 'astro_vedic_chart' && (
+            <p className="text-xs text-slate-400 mb-1.5">
+              Use <code className="font-mono bg-slate-100 px-1 rounded">{'{chart_json}'}</code> where chart data will be inserted.
+            </p>
+          )}
+          {pluginMeta.id === 'media_extractor' && (
+            <p className="text-xs text-slate-400 mb-1.5">
+              Instructions for Gemini when reading customer-sent media. Leave blank to use the built-in default (extracts name, contact, skills, credentials, or transcribes audio).
+            </p>
+          )}
+          {pluginMeta.id === 'follow_up_generator' && (
+            <p className="text-xs text-slate-400 mb-1.5">
+              Instructions for drafting follow-up messages. The conversation transcript is appended automatically. Leave blank to use the built-in default.
+            </p>
+          )}
           <textarea
             value={prompt}
             onChange={e => setPrompt(e.target.value)}

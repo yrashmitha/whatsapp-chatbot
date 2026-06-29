@@ -17,6 +17,7 @@ const { sendWhatsAppMessage, sendWhatsAppImage, sendWhatsAppAudio, sendBotReply,
 const { chatSessions } = require('../workers/sessionManager');
 const { UPLOADS_DIR } = require('../config/env');
 const { analyzePaymentDocument, buildAnalysisNote } = require('../services/imageAnalysis');
+const { extractFromBuffer } = require('../services/mediaExtractor');
 const { genTraceId, makeLogger } = require('../utils/logger');
 
 /**
@@ -191,6 +192,18 @@ function receiveWebhook(req, res) {
             console.warn('[IMAGE-ANALYZER] Failed, using default note:', e.message);
           }
         }
+        if (!imageNote && imgBuffer) {
+          try {
+            log.info('[MEDIA-EXTRACTOR] Extracting image content via Gemini');
+            const { text: extracted } = await extractFromBuffer(imgBuffer, imgMimeType, 'photo', null);
+            if (extracted) {
+              imageNote = caption ? `${extracted}\n[Customer also included a caption: "${caption}"]` : extracted;
+              log.info('[MEDIA-EXTRACTOR] Image extraction succeeded');
+            }
+          } catch (e) {
+            console.warn('[MEDIA-EXTRACTOR] Image extraction failed:', e.message);
+          }
+        }
         if (!imageNote) {
           imageNote = caption
             ? `[Customer sent a photo with caption: "${caption}". You cannot see the image itself. Acknowledge what the customer has sent and respond appropriately. Add a short note that you cannot view images directly but the team will review it.]`
@@ -335,7 +348,33 @@ function receiveWebhook(req, res) {
           }
         }
         if (!docAnalyzed) {
-          await sendWhatsAppMessage(from, 'ලිපිය ලැබුණා, ස්තූතියි! 🙏', client);
+          if (docBuffer) {
+            try {
+              if (!chatSessions.has(sessionKey)) {
+                chatSessions.set(sessionKey, { chat: await buildChatSession(from, client), phoneNumber: from });
+              }
+              const docSession = chatSessions.get(sessionKey);
+              docSession.lastUsed = Date.now();
+
+              log.info('[MEDIA-EXTRACTOR] Extracting document content via Gemini');
+              const { text: extracted } = await extractFromBuffer(docBuffer, docMimeType, docFileName, null);
+              const docNote = extracted || `[Customer sent a document (${docFileName}). Acknowledge receipt and let them know the team will review it.]`;
+              log.info(`[MEDIA-EXTRACTOR] Document extraction ${extracted ? 'succeeded' : 'returned empty — using fallback note'}`);
+
+              const { botReply: docReply, isFallback: docFallback } = await handleMessage(from, docNote, docSession.chat, { skipUserInsert: true, client, traceId });
+              if (docFallback) {
+                log.warn('[WEBHOOK] Fallback on extracted document — suppressing reply');
+                await sendWhatsAppMessage(from, 'ලිපිය ලැබුණා, ස්තූතියි! 🙏', client);
+              } else if (docReply.trim()) {
+                await sendBotReply(from, docReply, client);
+              }
+            } catch (e) {
+              console.warn('[MEDIA-EXTRACTOR] Document extraction failed:', e.message);
+              await sendWhatsAppMessage(from, 'ලිපිය ලැබුණා, ස්තූතියි! 🙏', client);
+            }
+          } else {
+            await sendWhatsAppMessage(from, 'ලිපිය ලැබුණා, ස්තූතියි! 🙏', client);
+          }
         }
         return;
       }

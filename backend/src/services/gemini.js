@@ -539,6 +539,18 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     .replace(/\[ORDER STATUS[^\]]*\]\s*/gi, '') // strip any echoed ORDER STATUS note wherever it appears
     .trim();
 
+  // [[SILENT]] — system prompt instructed intentional silence (e.g. post-flow ack
+  // suppression when the customer just says "ok"/"👍"). Catch it BEFORE the recovery
+  // nudge / fallback so it is never sent and never flagged as a failed reply.
+  if (/^\[\[SILENT\]\]$/i.test(botReply)) {
+    log.info('[GEMINI] [[SILENT]] token received — suppressing reply');
+    const usage        = result.response.usageMetadata || {};
+    const inputTokens  = usage.promptTokenCount     || usage.inputTokenCount  || 0;
+    const outputTokens = usage.candidatesTokenCount || usage.outputTokenCount || 0;
+    const callCostUSD  = calcCost(inputTokens, outputTokens);
+    return { botReply: '', orderId: null, paymentReceived: false, callCostUSD, inputTokens, outputTokens, imagesToSend: [], productImagesToSend: [], isFallback: false };
+  }
+
   // If still empty, recover based on the finish reason.
   if (!botReply) {
     log.warn(`[GEMINI] Empty reply after all fallbacks (finishReason=${finishReason}) — attempting recovery`);

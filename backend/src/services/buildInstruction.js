@@ -13,6 +13,26 @@ const path = require('path');
 const TEMPLATES_DIR = path.join(__dirname, '../../public', 'templates');
 
 /**
+ * Appended to EVERY client's system instruction. Lets the model intentionally stay
+ * silent instead of being forced to reply to a content-free acknowledgement (e.g. the
+ * customer just says "ok" / "👍" after everything is already settled). The model emits
+ * the [[SILENT]] token on its own line; gemini.js detects it and suppresses the send.
+ * Ported from wwjs-service.
+ */
+const SILENCE_RULE = `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WHEN TO STAY SILENT — [[SILENT]]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Output exactly [[SILENT]] (and nothing else) ONLY when ALL of these are true:
+1. The conversation cycle is already complete — there is nothing left to ask, confirm, or deliver.
+2. The customer's latest message is a single bare acknowledgement with NO new question or intent — purely ok / thanks / tnx / k / හරි / ඔව් / ❤️ / 👍 / 🙏 or similar.
+3. The customer is NOT saying they are about to do something (pay, send a slip, share details, etc.).
+
+If the customer signals they will do something next (e.g. "I'll send the slip") → reply normally to acknowledge it. Only AFTER that, if they send just "ok" / "👍" with nothing else → THEN output [[SILENT]].
+
+When in doubt, reply normally. Never output [[SILENT]] together with any other text.`;
+
+/**
  * Build the template images section that informs the AI which images are available.
  *
  * @returns {string} Instruction block, or empty string if no templates exist
@@ -101,7 +121,7 @@ function buildSystemInstructionForClient(client) {
     const languageRule = isMultilingual
       ? `LANGUAGE RULE — HIGHEST PRIORITY:\nThe customer's current message is always wrapped between [CURRENT_MESSAGE_START] and [CURRENT_MESSAGE_END] markers. Detect the language of the text inside those markers and reply accordingly:\n- If the message is in English → reply in English\n- If the message is in Sinhala script (Unicode) → reply in Sinhala script\n- If the message is in Singlish (Sinhala written using Latin/English letters) → reply in proper Sinhala script (Unicode), NOT in Singlish. Singlish uses common Sinhala words romanized, such as: mama, mata, eka, denna, ganna, kohomada, api, oya, danne, inne, hadanna, puluwan, kiyanna, karana, thibba, awilla, yanna, wage, wenna, karanna, wisthara, hari, nehe, ow, mokakda, kawda, koheda, kiyala, danna, gatta, aawa, giyaa, hitiye, hitiye, pennanna, oyata, oyage\n- For any other language → reply in that same language\nIgnore the language of all previous messages in the conversation history.\n\n`
       : '';
-    return languageRule + prompt;
+    return languageRule + prompt + '\n' + SILENCE_RULE;
   }
   // No prompt in DB yet — fall back to hardcoded astrology prompt
   console.warn(`[buildInstruction] No custom_prompt set for client ${client?.id} — using hardcoded fallback`);

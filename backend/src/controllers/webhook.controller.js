@@ -192,13 +192,19 @@ function receiveWebhook(req, res) {
             console.warn('[IMAGE-ANALYZER] Failed, using default note:', e.message);
           }
         }
-        if (!imageNote && imgBuffer) {
+        if (!imageNote && imgBuffer && db.IS_PG) {
           try {
-            log.info('[MEDIA-EXTRACTOR] Extracting image content via Gemini');
-            const { text: extracted } = await extractFromBuffer(imgBuffer, imgMimeType, 'photo', null);
-            if (extracted) {
-              imageNote = caption ? `${extracted}\n[Customer also included a caption: "${caption}"]` : extracted;
-              log.info('[MEDIA-EXTRACTOR] Image extraction succeeded');
+            const extractorCheck = await db.pgQuery(
+              `SELECT enabled FROM client_addons WHERE client_id=$1 AND addon_id='media_extractor' AND enabled=TRUE`,
+              [client.id]
+            );
+            if (extractorCheck.rows.length) {
+              log.info('[MEDIA-EXTRACTOR] Extracting image content via Gemini');
+              const { text: extracted } = await extractFromBuffer(imgBuffer, imgMimeType, 'photo', null);
+              if (extracted) {
+                imageNote = caption ? `${extracted}\n[Customer also included a caption: "${caption}"]` : extracted;
+                log.info('[MEDIA-EXTRACTOR] Image extraction succeeded');
+              }
             }
           } catch (e) {
             console.warn('[MEDIA-EXTRACTOR] Image extraction failed:', e.message);
@@ -348,31 +354,39 @@ function receiveWebhook(req, res) {
           }
         }
         if (!docAnalyzed) {
-          if (docBuffer) {
+          let docExtracted = false;
+          if (docBuffer && db.IS_PG) {
             try {
-              if (!chatSessions.has(sessionKey)) {
-                chatSessions.set(sessionKey, { chat: await buildChatSession(from, client), phoneNumber: from });
-              }
-              const docSession = chatSessions.get(sessionKey);
-              docSession.lastUsed = Date.now();
+              const extractorCheck = await db.pgQuery(
+                `SELECT enabled FROM client_addons WHERE client_id=$1 AND addon_id='media_extractor' AND enabled=TRUE`,
+                [client.id]
+              );
+              if (extractorCheck.rows.length) {
+                if (!chatSessions.has(sessionKey)) {
+                  chatSessions.set(sessionKey, { chat: await buildChatSession(from, client), phoneNumber: from });
+                }
+                const docSession = chatSessions.get(sessionKey);
+                docSession.lastUsed = Date.now();
 
-              log.info('[MEDIA-EXTRACTOR] Extracting document content via Gemini');
-              const { text: extracted } = await extractFromBuffer(docBuffer, docMimeType, docFileName, null);
-              const docNote = extracted || `[Customer sent a document (${docFileName}). Acknowledge receipt and let them know the team will review it.]`;
-              log.info(`[MEDIA-EXTRACTOR] Document extraction ${extracted ? 'succeeded' : 'returned empty — using fallback note'}`);
+                log.info('[MEDIA-EXTRACTOR] Extracting document content via Gemini');
+                const { text: extracted } = await extractFromBuffer(docBuffer, docMimeType, docFileName, null);
+                const docNote = extracted || `[Customer sent a document (${docFileName}). Acknowledge receipt and let them know the team will review it.]`;
+                log.info(`[MEDIA-EXTRACTOR] Document extraction ${extracted ? 'succeeded' : 'returned empty — using fallback note'}`);
 
-              const { botReply: docReply, isFallback: docFallback } = await handleMessage(from, docNote, docSession.chat, { skipUserInsert: true, client, traceId });
-              if (docFallback) {
-                log.warn('[WEBHOOK] Fallback on extracted document — suppressing reply');
-                await sendWhatsAppMessage(from, 'ලිපිය ලැබුණා, ස්තූතියි! 🙏', client);
-              } else if (docReply.trim()) {
-                await sendBotReply(from, docReply, client);
+                const { botReply: docReply, isFallback: docFallback } = await handleMessage(from, docNote, docSession.chat, { skipUserInsert: true, client, traceId });
+                if (docFallback) {
+                  log.warn('[WEBHOOK] Fallback on extracted document — suppressing reply');
+                  await sendWhatsAppMessage(from, 'ලිපිය ලැබුණා, ස්තූතියි! 🙏', client);
+                } else if (docReply.trim()) {
+                  await sendBotReply(from, docReply, client);
+                }
+                docExtracted = true;
               }
             } catch (e) {
               console.warn('[MEDIA-EXTRACTOR] Document extraction failed:', e.message);
-              await sendWhatsAppMessage(from, 'ලිපිය ලැබුණා, ස්තූතියි! 🙏', client);
             }
-          } else {
+          }
+          if (!docExtracted) {
             await sendWhatsAppMessage(from, 'ලිපිය ලැබුණා, ස්තූතියි! 🙏', client);
           }
         }

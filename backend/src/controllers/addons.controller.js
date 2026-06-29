@@ -49,6 +49,16 @@ const ADDON_CATALOG = [
     name: 'Tarot Reading',
     description: 'Generates a personalised 3-card tarot reading (Past / Present / Future) for a customer based on their question, interpreted by Gemini.',
   },
+  {
+    id: 'media_extractor',
+    name: 'Media Extraction',
+    description: 'Uses Gemini Vision to read and summarise images, PDFs, audio, and documents sent by customers — extracts text, credentials, and key details so the AI can respond contextually.',
+  },
+  {
+    id: 'follow_up_generator',
+    name: 'Follow-up Generator',
+    description: 'Generates a short, personalised follow-up message for a customer based on their conversation history, ready for a CRM agent to review and send.',
+  },
 ];
 
 /**

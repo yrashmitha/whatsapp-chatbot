@@ -17,7 +17,6 @@ const {
   deleteMessages,
   updateOrderStatus,
   proxyMedia,
-  generateFollowup,
   getBuiltinPrompt,
   listClients,
   getClient,
@@ -57,7 +56,6 @@ router.patch('/order/:orderId/status',         adminAuth, updateOrderStatus);
 router.get('/media/:mediaId',                  adminAuth, proxyMedia);
 
 // AI tools
-router.post('/followup',                       adminAuth, generateFollowup);
 router.get('/builtin-prompt',                  adminAuth, getBuiltinPrompt);
 
 // Client management

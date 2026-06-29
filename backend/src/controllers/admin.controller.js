@@ -14,7 +14,6 @@ const db      = require('../db');
 const clientRouter = require('../services/clientRouter');
 const buildSystemInstruction = require('../services/buildInstruction');
 const { sendWhatsAppMessage } = require('../services/whatsapp');
-const { model, calcCost }    = require('../services/gemini');
 const { chatSessions }       = require('../workers/sessionManager');
 const { embedText, productToText } = require('../services/embedder');
 const { META_ACCESS_TOKEN, PHONE_NUMBER_ID, UPLOADS_DIR } = require('../config/env');
@@ -246,38 +245,6 @@ async function proxyMedia(req, res) {
     imgRes.data.pipe(res);
   } catch (err) {
     console.error(`[ADMIN] media proxy error for ${mediaId}:`, err.message);
-    res.status(500).json({ error: err.message });
-  }
-}
-
-/**
- * POST /admin/followup — generate an AI follow-up message for a lead.
- *
- * @param {import('express').Request}  req
- * @param {import('express').Response} res
- * @returns {Promise<void>}
- */
-async function generateFollowup(req, res) {
-  const { phone } = req.body;
-  console.log(`[ADMIN] POST /admin/followup → ${phone}`);
-  if (!phone) return res.status(400).json({ error: 'phone required' });
-  try {
-    const clientId = req.query.client_id || req.body?.client_id || req.user?.clientId || null;
-    const messages = await db.getMessagesByPhone(phone, clientId);
-    const historyText = messages
-      .map(m => `${m.sender_type === 'user' ? 'Customer' : 'Assistant'}: ${m.message_text}`)
-      .join('\n');
-
-    const result = await model.generateContent(
-      `You are a warm assistant for a professional astrology service. Below is a conversation with a potential customer who has NOT placed an order yet.\n\nConversation:\n${historyText}\n\nWrite a single short, warm, natural follow-up WhatsApp message to re-engage this customer. Be genuine — not pushy. Do not list packages or prices unless they previously asked. Just warmly re-open the conversation.`
-    );
-    const followupText = result.response.text().trim();
-    const usage = result.response.usageMetadata || {};
-    const cost  = calcCost(usage.promptTokenCount || 0, usage.candidatesTokenCount || 0);
-    console.log(`[ADMIN] Follow-up generated for ${phone}: "${followupText.substring(0, 80)}" cost=$${cost.toFixed(6)}`);
-    res.json({ ok: true, message: followupText, costUSD: +cost.toFixed(6) });
-  } catch (err) {
-    console.error(`[ADMIN] followup error:`, err.message);
     res.status(500).json({ error: err.message });
   }
 }
@@ -812,7 +779,7 @@ async function changeClientPackage(req, res) {
 module.exports = {
   listTemplates, listCustomers, getMessages, sendAdminMessage,
   deleteCustomer, deleteMessages, updateOrderStatus,
-  proxyMedia, generateFollowup, getBuiltinPrompt,
+  proxyMedia, getBuiltinPrompt,
   listClients, getClient, uploadImage, createClient, updateClient,
   listProducts, createProduct, updateProduct, deleteProduct,
   listAttributes, createAttribute, deleteAttribute, bulkAttributes, bulkProducts,

@@ -11,6 +11,7 @@ const { generateAstroMessage, DEFAULT_ASTRO_PROMPT } = require('../services/astr
 const { generateHoroscope, buildHoroscopeDoc, buildQuantumDoc, regenerateHoroscopeSection, generateWaMessage, SECTIONS, SECTION_GUIDES, parseSinhalaDate, parseSinhalaTime } = require('../services/horoscope');
 const { analyzeAura, generateQuantumReading, generateQuantumSections } = require('../services/quantumCode');
 const { DEFAULT_TAROT_PROMPT } = require('../services/tarot');
+const { generateFollowUp, DEFAULT_FOLLOWUP_PROMPT } = require('../services/followup');
 const resolveClientId = require('../middleware/resolveClientId');
 
 /**
@@ -191,6 +192,8 @@ async function getPluginConfig(req, res) {
         name: 'Image Analyzer',
         verification_prompt: 'When a customer sends a payment slip:\n1. The amount and date must match one of their pending orders. Do NOT check the payer name — payments may be made by someone else on behalf of the customer.\n2. If the amount and date look correct and no fraud flags are raised, tell the customer their payment is received and being verified by the team. Then output: [[PAYMENT_IDENTIFIED:{"order_id":"ORDER_ID_HERE","amount":"AMOUNT","date":"DATE","bank":"BANK","ref":"REF"}]]\n3. If there are FRAUD CHECK flags (suspicious date etc.), politely ask the customer to clarify — do not accuse them. Output: [[UPDATE_SUMMARY:⚠️ SUSPICIOUS PAYMENT — Team review needed. Describe what was suspicious.]]\n4. If the amount does not match any pending order, politely ask the customer to check and clarify.\n5. Always mention the extracted amount and date so the customer can confirm.',
       };
+    } else if (pluginId === 'follow_up_generator') {
+      defaults = { name: 'Follow-up Generator', prompt: DEFAULT_FOLLOWUP_PROMPT };
     } else if (pluginId === 'tarot_reading') {
       const { DEFAULT_PAGE1_BODY, DEFAULT_PAGE2_BODY, DEFAULT_PAGE4_BODY } = require('../services/tarot');
       defaults = { name: 'Tarot Reading', prompt: DEFAULT_TAROT_PROMPT, page1_body: DEFAULT_PAGE1_BODY, page2_body: DEFAULT_PAGE2_BODY, page4_body: DEFAULT_PAGE4_BODY };
@@ -1125,6 +1128,31 @@ async function fetchChartData(req, res) {
   }
 }
 
+/**
+ * POST /api/plugins/follow-up — generate a follow-up message for a customer (addon-gated).
+ */
+async function generateFollowUpMessage(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+
+  const { phone } = req.body;
+  if (!phone) return res.status(400).json({ error: 'phone required' });
+
+  const addonCheck = await db.pgQuery(
+    `SELECT enabled FROM client_addons WHERE client_id=$1 AND addon_id='follow_up_generator' AND enabled=TRUE`,
+    [clientId]
+  );
+  if (!addonCheck.rows.length) return res.status(403).json({ error: 'follow_up_generator addon not enabled' });
+
+  try {
+    const text = await generateFollowUp(clientId, phone);
+    res.json({ text });
+  } catch (e) {
+    console.error('[FOLLOWUP] error:', e.message);
+    res.status(500).json({ error: e.message || 'Failed to generate follow-up' });
+  }
+}
+
 module.exports = {
   getPluginConfig, updatePluginConfig, getPluginCustomerData, generateAstroChart,
   analyzeAuraImage,
@@ -1136,5 +1164,6 @@ module.exports = {
   generateWaMessageHandler,
   downloadQuantumDocx,
   downloadHoroscope, downloadHoroscopePdf, downloadQuantumPdf,
+  generateFollowUpMessage,
   DEFAULT_AI_FILL_PROMPT,
 };

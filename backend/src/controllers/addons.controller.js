@@ -59,6 +59,11 @@ const ADDON_CATALOG = [
     name: 'Follow-up Generator',
     description: 'Generates a short, personalised follow-up message for a customer based on their conversation history, ready for a CRM agent to review and send.',
   },
+  {
+    id: 'meta_conversions',
+    name: 'Meta Conversions',
+    description: 'Sends Lead events to Meta CAPI when orders are placed, and Purchase events when payments are confirmed. Also syncs paid customer phones to a Meta Custom Audience for lookalike targeting.',
+  },
 ];
 
 /**

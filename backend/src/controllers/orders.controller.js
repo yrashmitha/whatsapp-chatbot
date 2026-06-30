@@ -130,6 +130,16 @@ async function updateStatus(req, res) {
   try {
     await db.pgQuery(`UPDATE orders SET status=$1 WHERE order_id=$2`, [status, req.params.id]);
     res.json({ ok: true });
+    // Fire CAPI Purchase event when an admin manually marks an order as paid
+    if (status === 'payment_received' || status === 'paid') {
+      db.pgQuery('SELECT phone_number, client_id FROM orders WHERE order_id=$1', [req.params.id])
+        .then(({ rows }) => {
+          if (rows.length) {
+            const { fireCAPIEvent } = require('../services/metaConversions');
+            fireCAPIEvent(rows[0].client_id, 'Purchase', rows[0].phone_number, { order_id: req.params.id }).catch(() => {});
+          }
+        }).catch(() => {});
+    }
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 

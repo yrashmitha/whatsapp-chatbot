@@ -41,14 +41,20 @@ const ALL_PLUGINS = [
     defaultName: 'Follow-up Generator',
     description: 'Customize the prompt used to draft follow-up messages based on a customer\'s conversation history.',
   },
+  {
+    id: 'meta_conversions',
+    defaultName: 'Meta Conversions',
+    description: 'Sends Lead and Purchase events to Meta CAPI when orders and payments are processed. Syncs paid customers to a Meta Custom Audience for lookalike targeting.',
+  },
 ];
 
 function PluginCard({ pluginMeta, clientId, superAdmin }) {
   const toast = useToast();
-  const isHoroscope     = pluginMeta.id === 'horoscope_reading';
-  const isCallAnswering = pluginMeta.id === 'ai_call_answering';
-  const isImageAnalyzer = pluginMeta.id === 'image_analyzer';
-  const isTarot         = pluginMeta.id === 'tarot_reading';
+  const isHoroscope       = pluginMeta.id === 'horoscope_reading';
+  const isCallAnswering   = pluginMeta.id === 'ai_call_answering';
+  const isImageAnalyzer   = pluginMeta.id === 'image_analyzer';
+  const isTarot           = pluginMeta.id === 'tarot_reading';
+  const isMetaConversions = pluginMeta.id === 'meta_conversions';
 
   const [config, setConfig] = useState(null);
   const [name, setName] = useState('');
@@ -72,6 +78,12 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
   const [page2Body, setPage2Body] = useState('');
   const [page4Body, setPage4Body] = useState('');
   const [saving, setSaving] = useState(false);
+  const [pixelId, setPixelId]           = useState('');
+  const [adAccountId, setAdAccountId]   = useState('');
+  const [audienceId, setAudienceId]     = useState('');
+  const [syncing, setSyncing]           = useState(false);
+  const [creatingAudience, setCreatingAudience] = useState(false);
+  const [audienceName, setAudienceName] = useState('WhatsApp Bot Customers');
 
   useEffect(() => {
     if (!clientId) return;
@@ -101,6 +113,9 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         setPage1Body(r.data.page1_body || '');
         setPage2Body(r.data.page2_body || '');
         setPage4Body(r.data.page4_body || '');
+        setPixelId(r.data.pixel_id || '');
+        setAdAccountId(r.data.ad_account_id || '');
+        setAudienceId(r.data.audience_id || '');
       })
       .catch(() => {
         setConfig({});
@@ -124,6 +139,9 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         setPage1Body('');
         setPage2Body('');
         setPage4Body('');
+        setPixelId('');
+        setAdAccountId('');
+        setAudienceId('');
       });
   }, [pluginMeta.id, clientId]);
 
@@ -155,6 +173,10 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         body.page1_body = page1Body;
         body.page2_body = page2Body;
         body.page4_body = page4Body;
+      } else if (isMetaConversions) {
+        body.pixel_id      = pixelId;
+        body.ad_account_id = adAccountId;
+        body.audience_id   = audienceId;
       } else {
         body.prompt = prompt; // covers astro_vedic_chart and any generic plugin
       }
@@ -282,7 +304,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         </div>
       )}
 
-      {!isHoroscope && !isCallAnswering && !isImageAnalyzer && !isTarot && (
+      {!isHoroscope && !isCallAnswering && !isImageAnalyzer && !isTarot && !isMetaConversions && (
         <div>
           <label className="text-xs font-medium text-slate-500 block mb-1">Gemini Prompt</label>
           {pluginMeta.id === 'astro_vedic_chart' && (
@@ -364,6 +386,110 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
               placeholder="මෙම ටැරෝ කාඩ්පත් කියවීම…"
             />
+          </div>
+        </>
+      )}
+
+      {isMetaConversions && (
+        <>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Meta Pixel / Dataset ID</label>
+            <p className="text-xs text-slate-400 mb-1.5">Found in Events Manager → your Pixel → Settings. Used for Conversions API (CAPI) events.</p>
+            <input
+              type="text"
+              value={pixelId}
+              onChange={e => setPixelId(e.target.value)}
+              placeholder="123456789012345"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 font-mono"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Meta Ads Access Token</label>
+            <p className="text-xs text-slate-400 mb-1.5">A system user token with <code className="font-mono bg-slate-100 px-1 rounded">ads_management</code> and <code className="font-mono bg-slate-100 px-1 rounded">ads_read</code> permissions. Different from your WhatsApp token.</p>
+            <input
+              type="password"
+              value={apiKey}
+              onChange={e => setApiKey(e.target.value)}
+              placeholder="EAAxxxxxxxx…"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 font-mono"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Ad Account ID</label>
+            <p className="text-xs text-slate-400 mb-1.5">Your ad account ID (e.g. <code className="font-mono bg-slate-100 px-1 rounded">act_123456789</code> — the <code className="font-mono bg-slate-100 px-1 rounded">act_</code> prefix is optional).</p>
+            <input
+              type="text"
+              value={adAccountId}
+              onChange={e => setAdAccountId(e.target.value)}
+              placeholder="act_123456789"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 font-mono"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Custom Audience ID</label>
+            <p className="text-xs text-slate-400 mb-1.5">The audience to sync paid customers into. Create one below if you don't have one yet.</p>
+            <input
+              type="text"
+              value={audienceId}
+              onChange={e => setAudienceId(e.target.value)}
+              placeholder="Will be filled automatically after creating an audience"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 font-mono"
+            />
+          </div>
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-col gap-2">
+            <p className="text-xs font-medium text-slate-600">Create Audience</p>
+            <p className="text-xs text-slate-400">Creates a new Custom Audience in your ad account and saves its ID above. Only needed once.</p>
+            <input
+              type="text"
+              value={audienceName}
+              onChange={e => setAudienceName(e.target.value)}
+              placeholder="WhatsApp Bot Customers"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+            />
+            <button
+              type="button"
+              disabled={creatingAudience}
+              onClick={async () => {
+                setCreatingAudience(true);
+                try {
+                  const r = await api.post('/plugins/meta/create-audience', { client_id: clientId, audience_name: audienceName });
+                  setAudienceId(r.data.audience_id);
+                  toast.success(`Audience created: ${r.data.audience_id}`);
+                } catch (e) {
+                  toast.error(e?.response?.data?.error || 'Failed to create audience');
+                } finally {
+                  setCreatingAudience(false);
+                }
+              }}
+              className="px-4 py-2 text-sm font-medium text-white bg-violet-600 rounded-xl hover:bg-violet-700 disabled:opacity-50 self-start"
+            >
+              {creatingAudience ? 'Creating…' : 'Create Audience'}
+            </button>
+          </div>
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-col gap-2">
+            <p className="text-xs font-medium text-slate-600">Sync Audience Now</p>
+            <p className="text-xs text-slate-400">
+              Uploads hashed phone numbers of all paid and delivered customers to your Custom Audience.
+              Includes existing orders with status <code className="font-mono bg-slate-100 px-1 rounded">payment_received</code>, <code className="font-mono bg-slate-100 px-1 rounded">paid</code>, <code className="font-mono bg-slate-100 px-1 rounded">delivered</code>, <code className="font-mono bg-slate-100 px-1 rounded">done</code>, or <code className="font-mono bg-slate-100 px-1 rounded">complete</code> — including old orders.
+            </p>
+            <button
+              type="button"
+              disabled={syncing}
+              onClick={async () => {
+                setSyncing(true);
+                try {
+                  const r = await api.post('/plugins/meta/sync-audience', { client_id: clientId });
+                  toast.success(`Synced ${r.data.synced} of ${r.data.total} customers to Meta`);
+                } catch (e) {
+                  toast.error(e?.response?.data?.error || 'Sync failed');
+                } finally {
+                  setSyncing(false);
+                }
+              }}
+              className="px-4 py-2 text-sm font-medium text-white bg-violet-600 rounded-xl hover:bg-violet-700 disabled:opacity-50 self-start"
+            >
+              {syncing ? 'Syncing…' : 'Sync Audience Now'}
+            </button>
           </div>
         </>
       )}

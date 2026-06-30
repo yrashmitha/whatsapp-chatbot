@@ -629,6 +629,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
       orderId = await generateOrderId(client);
       await db.insertOrder(orderId, phoneNumber, client?.id ?? null, details);
       log.info(`[ORDER] Saved order ${orderId}`);
+      require('./metaConversions').fireCAPIEvent(client?.id, 'Lead', phoneNumber, { order_id: orderId }).catch(() => {});
       if (details.summary) {
         await db.updateOrderAISummary(orderId, details.summary);
         log.info(`[ORDER] AI summary saved for ${orderId}`);
@@ -704,6 +705,11 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
           },
         });
         log.info(`[ORDER] Payment identified flag set on ${order.order_id}`);
+        require('./metaConversions').fireCAPIEvent(client?.id, 'Purchase', phoneNumber, {
+          order_id: order.order_id,
+          currency: 'LKR',
+          value:    parseFloat(paymentData.amount) || 0,
+        }).catch(() => {});
       } else {
         log.warn(`[ORDER] PAYMENT_IDENTIFIED: no matching order`);
       }

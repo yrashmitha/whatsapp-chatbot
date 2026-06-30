@@ -12,6 +12,7 @@ const { generateHoroscope, buildHoroscopeDoc, buildQuantumDoc, regenerateHorosco
 const { analyzeAura, generateQuantumReading, generateQuantumSections } = require('../services/quantumCode');
 const { DEFAULT_TAROT_PROMPT } = require('../services/tarot');
 const { generateFollowUp, DEFAULT_FOLLOWUP_PROMPT } = require('../services/followup');
+const { syncAudienceForClient, createAudienceForClient } = require('../services/metaConversions');
 const resolveClientId = require('../middleware/resolveClientId');
 
 /**
@@ -194,6 +195,8 @@ async function getPluginConfig(req, res) {
       };
     } else if (pluginId === 'follow_up_generator') {
       defaults = { name: 'Follow-up Generator', prompt: DEFAULT_FOLLOWUP_PROMPT };
+    } else if (pluginId === 'meta_conversions') {
+      defaults = { name: 'Meta Conversions', pixel_id: '', api_key: '', ad_account_id: '', audience_id: '' };
     } else if (pluginId === 'tarot_reading') {
       const { DEFAULT_PAGE1_BODY, DEFAULT_PAGE2_BODY, DEFAULT_PAGE4_BODY } = require('../services/tarot');
       defaults = { name: 'Tarot Reading', prompt: DEFAULT_TAROT_PROMPT, page1_body: DEFAULT_PAGE1_BODY, page2_body: DEFAULT_PAGE2_BODY, page4_body: DEFAULT_PAGE4_BODY };
@@ -218,7 +221,7 @@ async function updatePluginConfig(req, res) {
     return res.status(403).json({ error: 'Forbidden' });
   }
   const { pluginId } = req.params;
-  const { name, prompt, api_key, system_prompt, quantum_system_prompt, aura_system_prompt, horoscope_sections, quantum_sections, section_guides, special_note, wa_message_prompt, ai_fill_prompt, greeting, tts_voice, stt_language, verification_prompt, page1_body, page2_body, page4_body, quantum_enabled } = req.body;
+  const { name, prompt, api_key, system_prompt, quantum_system_prompt, aura_system_prompt, horoscope_sections, quantum_sections, section_guides, special_note, wa_message_prompt, ai_fill_prompt, greeting, tts_voice, stt_language, verification_prompt, page1_body, page2_body, page4_body, quantum_enabled, pixel_id, ad_account_id, audience_id } = req.body;
   try {
     const existing = await db.getPluginConfig(clientId, pluginId);
     const update = { ...existing };
@@ -242,6 +245,9 @@ async function updatePluginConfig(req, res) {
     if (page1_body !== undefined)    update.page1_body    = page1_body;
     if (page2_body !== undefined)    update.page2_body    = page2_body;
     if (page4_body !== undefined)    update.page4_body    = page4_body;
+    if (pixel_id !== undefined)      update.pixel_id      = pixel_id;
+    if (ad_account_id !== undefined) update.ad_account_id = ad_account_id;
+    if (audience_id !== undefined)   update.audience_id   = audience_id;
     await db.upsertPluginConfig(clientId, pluginId, update);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1153,6 +1159,37 @@ async function generateFollowUpMessage(req, res) {
   }
 }
 
+/**
+ * POST /api/plugins/meta/sync-audience — upload all paid customer phones to the Meta Custom Audience.
+ */
+async function syncMetaAudience(req, res) {
+  const clientId = req.body.client_id || resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    const result = await syncAudienceForClient(clientId);
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    console.error('[META-SYNC]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+}
+
+/**
+ * POST /api/plugins/meta/create-audience — create a new Meta Custom Audience and save its ID.
+ */
+async function createMetaAudience(req, res) {
+  const clientId = req.body.client_id || resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  const { audience_name } = req.body;
+  try {
+    const audienceId = await createAudienceForClient(clientId, audience_name);
+    res.json({ ok: true, audience_id: audienceId });
+  } catch (e) {
+    console.error('[META-CREATE-AUDIENCE]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+}
+
 module.exports = {
   getPluginConfig, updatePluginConfig, getPluginCustomerData, generateAstroChart,
   analyzeAuraImage,
@@ -1165,5 +1202,7 @@ module.exports = {
   downloadQuantumDocx,
   downloadHoroscope, downloadHoroscopePdf, downloadQuantumPdf,
   generateFollowUpMessage,
+  syncMetaAudience,
+  createMetaAudience,
   DEFAULT_AI_FILL_PROMPT,
 };

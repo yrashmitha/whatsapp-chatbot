@@ -12,7 +12,7 @@ const { generateHoroscope, buildHoroscopeDoc, buildQuantumDoc, regenerateHorosco
 const { analyzeAura, generateQuantumReading, generateQuantumSections } = require('../services/quantumCode');
 const { DEFAULT_TAROT_PROMPT } = require('../services/tarot');
 const { generateFollowUp, DEFAULT_FOLLOWUP_PROMPT } = require('../services/followup');
-const { syncAudienceForClient, createAudienceForClient } = require('../services/metaConversions');
+const { syncAudienceForClient, createAudienceForClient, getRecentEvents } = require('../services/metaConversions');
 const resolveClientId = require('../middleware/resolveClientId');
 
 /**
@@ -1160,6 +1160,18 @@ async function generateFollowUpMessage(req, res) {
 }
 
 /**
+ * GET /api/plugins/meta/recent-events — last 30 CAPI log entries for a client.
+ */
+async function recentMetaEvents(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    const events = await getRecentEvents(clientId);
+    res.json({ events });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+/**
  * POST /api/plugins/meta/sync-audience — upload all paid customer phones to the Meta Custom Audience.
  */
 async function syncMetaAudience(req, res) {
@@ -1204,5 +1216,6 @@ module.exports = {
   generateFollowUpMessage,
   syncMetaAudience,
   createMetaAudience,
+  recentMetaEvents,
   DEFAULT_AI_FILL_PROMPT,
 };

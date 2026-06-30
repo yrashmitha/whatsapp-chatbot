@@ -458,6 +458,20 @@ async function init() {
       );
       CREATE INDEX IF NOT EXISTS idx_voice_clips_client ON voice_clips (client_id);
     `);
+
+    // ── Meta CAPI event log ───────────────────────────────────────────────────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS meta_capi_log (
+        id          SERIAL PRIMARY KEY,
+        client_id   TEXT NOT NULL,
+        event_name  TEXT NOT NULL,
+        phone_last4 TEXT,
+        status      TEXT NOT NULL CHECK(status IN ('ok','error')),
+        detail      TEXT,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_meta_capi_log_client ON meta_capi_log (client_id, created_at DESC);
+    `);
   } else {
     db.exec(`PRAGMA foreign_keys = ON;`);
     db.exec(`

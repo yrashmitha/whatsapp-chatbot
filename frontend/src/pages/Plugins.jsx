@@ -81,9 +81,11 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
   const [pixelId, setPixelId]           = useState('');
   const [adAccountId, setAdAccountId]   = useState('');
   const [audienceId, setAudienceId]     = useState('');
-  const [syncing, setSyncing]           = useState(false);
-  const [creatingAudience, setCreatingAudience] = useState(false);
-  const [audienceName, setAudienceName] = useState('WhatsApp Bot Customers');
+  const [syncing, setSyncing]                     = useState(false);
+  const [creatingAudience, setCreatingAudience]   = useState(false);
+  const [audienceName, setAudienceName]           = useState('WhatsApp Bot Customers');
+  const [capiEvents, setCapiEvents]               = useState(null);
+  const [loadingEvents, setLoadingEvents]         = useState(false);
 
   useEffect(() => {
     if (!clientId) return;
@@ -490,6 +492,43 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
             >
               {syncing ? 'Syncing…' : 'Sync Audience Now'}
             </button>
+          </div>
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-slate-600">Recent CAPI Events</p>
+              <button
+                type="button"
+                disabled={loadingEvents}
+                onClick={async () => {
+                  setLoadingEvents(true);
+                  try {
+                    const r = await api.get('/plugins/meta/recent-events', { params: { client_id: clientId } });
+                    setCapiEvents(r.data.events);
+                  } catch { setCapiEvents([]); }
+                  finally { setLoadingEvents(false); }
+                }}
+                className="text-xs text-violet-600 hover:underline disabled:opacity-50"
+              >
+                {loadingEvents ? 'Loading…' : 'Refresh'}
+              </button>
+            </div>
+            {capiEvents === null ? (
+              <p className="text-xs text-slate-400">Click Refresh to load recent events.</p>
+            ) : capiEvents.length === 0 ? (
+              <p className="text-xs text-slate-400">No events logged yet.</p>
+            ) : (
+              <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
+                {capiEvents.map((ev, i) => (
+                  <div key={i} className="flex items-start gap-2 text-xs py-1 border-b border-slate-100 last:border-0">
+                    <span className={`shrink-0 mt-0.5 w-1.5 h-1.5 rounded-full ${ev.status === 'ok' ? 'bg-green-500' : 'bg-red-500'}`} />
+                    <span className="font-medium text-slate-700 shrink-0">{ev.event_name}</span>
+                    <span className="text-slate-400 shrink-0">···{ev.phone_last4}</span>
+                    <span className={`truncate ${ev.status === 'ok' ? 'text-slate-500' : 'text-red-500'}`}>{ev.detail}</span>
+                    <span className="text-slate-300 shrink-0 ml-auto">{new Date(ev.created_at).toLocaleTimeString()}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </>
       )}

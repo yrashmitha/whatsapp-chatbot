@@ -411,6 +411,128 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
   return await Packer.toBuffer(doc);
 }
 
+// ─── Generic section-based document builder ───────────────────────────────────
+
+/**
+ * Build a Word document from an ordered list of {label, content} sections.
+ * Used by any reading that is "cover page + N titled sections" (e.g. marriage).
+ */
+async function buildSectionsDoc({ customerName, reportTitle, sections, specialNote, birthDate, birthTime }) {
+  ensureDocx();
+  const children = [];
+
+  for (let i = 0; i < 5; i++) children.push(new Paragraph({ children: [], spacing: { after: 400 } }));
+  children.push(new Paragraph({
+    children: [new TextRun({ text: '✦  ══════════════════════════════════════  ✦', size: 26, font: 'Abhaya Libre' })],
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 280 },
+  }));
+  children.push(new Paragraph({
+    children: [new TextRun({ text: 'නමෝ බුද්ධාය!', bold: true, size: 56, font: 'Abhaya Libre' })],
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 200 },
+  }));
+  if (reportTitle) {
+    children.push(new Paragraph({
+      children: [new TextRun({ text: reportTitle, bold: true, size: 40, font: 'Abhaya Libre' })],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 200 },
+    }));
+  }
+  children.push(new Paragraph({
+    children: [new TextRun({ text: '✦  ══════════════════════════════════════  ✦', size: 26, font: 'Abhaya Libre' })],
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 640 },
+  }));
+  children.push(new Paragraph({
+    children: [new TextRun({ text: customerName || '', bold: true, size: 72, font: 'Abhaya Libre' })],
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 200 },
+  }));
+  if (birthDate || birthTime) {
+    children.push(new Paragraph({
+      children: [new TextRun({ text: [birthDate, birthTime].filter(Boolean).join('  ·  '), size: 24, font: 'Abhaya Libre' })],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 120 },
+    }));
+  }
+  children.push(new Paragraph({ children: [new PageBreak()] }));
+
+  (sections || []).forEach((sec, idx) => {
+    if (!sec || !sec.content) return;
+    children.push(new Paragraph({
+      children: [
+        ...(idx > 0 ? [new PageBreak()] : []),
+        new TextRun({ text: sec.label || '', bold: true, size: 36, font: 'Abhaya Libre' }),
+      ],
+      alignment: AlignmentType.LEFT,
+      spacing: { after: 240 },
+    }));
+    children.push(...contentToParagraphs(sec.content));
+  });
+
+  if (specialNote && specialNote.trim()) {
+    let firstLine = true;
+    for (const rawLine of specialNote.split('\n')) {
+      const trimmed = rawLine.trim();
+      if (!trimmed) { children.push(new Paragraph({ children: [] })); continue; }
+      children.push(new Paragraph({
+        children: [
+          ...(firstLine ? [new PageBreak()] : []),
+          new TextRun({ text: trimmed, size: 24, font: 'Abhaya Libre' }),
+        ],
+        alignment: AlignmentType.JUSTIFIED,
+        spacing: { after: 160 },
+      }));
+      firstLine = false;
+    }
+  }
+
+  children.push(new Paragraph({
+    children: [new TextRun({ text: 'මෙයට,', bold: true, size: 24, font: 'Abhaya Libre' })],
+    alignment: AlignmentType.RIGHT,
+    spacing: { before: 600 },
+  }));
+  children.push(new Paragraph({
+    children: [new TextRun({ text: 'පුරාණ ජෝතිර්වේදය හදහන් සේවය', bold: true, size: 24, font: 'Abhaya Libre' })],
+    alignment: AlignmentType.RIGHT,
+  }));
+
+  const doc = new Document({
+    styles: {
+      default: {
+        document: {
+          run: { font: 'Abhaya Libre', size: 24 },
+          paragraph: { alignment: AlignmentType.JUSTIFIED, spacing: { after: 160, line: 360, lineRule: 'auto' } },
+        },
+      },
+    },
+    numbering: {
+      config: [{
+        reference: 'default-numbering',
+        levels: [{ level: 0, format: 'decimal', text: '%1.', alignment: AlignmentType.LEFT }],
+      }],
+    },
+    sections: [{
+      properties: { page: { pageNumbers: { start: 1, formatType: NumberFormat.DECIMAL } } },
+      footers: {
+        default: new Footer({
+          children: [new Paragraph({
+            children: [
+              new TextRun({ text: 'පුරාණ ජෝතිර්වේදය හදහන් සේවය | පිටුව: ', size: 20, font: 'Abhaya Libre' }),
+              new TextRun({ children: [PageNumber.CURRENT], size: 20, font: 'Abhaya Libre' }),
+            ],
+            alignment: AlignmentType.CENTER,
+          })],
+        }),
+      },
+      children,
+    }],
+  });
+
+  return await Packer.toBuffer(doc);
+}
+
 // ─── Standalone Quantum / Aura document builder ──────────────────────────────
 
 async function buildQuantumDoc({ customerName, quantumData, auraAnalysis, quantumReading, quantumSectionsData }) {
@@ -1021,6 +1143,7 @@ module.exports = {
   generateHoroscope,
   buildHoroscopeDoc,
   buildQuantumDoc,
+  buildSectionsDoc,
   regenerateHoroscopeSection,
   generateWaMessage,
   parseSinhalaDate,

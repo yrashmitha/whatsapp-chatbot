@@ -29,6 +29,13 @@ const {
   downloadHoroscope,
   downloadHoroscopePdf,
   downloadQuantumPdf,
+  generateMarriageHandler,
+  regenerateMarriageSectionHandler,
+  updateMarriageSections,
+  downloadMarriageDocx,
+  downloadMarriagePdf,
+  generateMarriageWaHandler,
+  saveMarriageWaHandler,
   generateFollowUpMessage,
   syncMetaAudience,
   createMetaAudience,
@@ -62,6 +69,13 @@ router.get('/horoscope/download-quantum-docx/:orderId', jwtAuth, downloadQuantum
 router.get('/horoscope/download-quantum-pdf/:orderId',  jwtAuth, downloadQuantumPdf);
 router.patch('/horoscope/wa-message/:orderId',           jwtAuth, saveWaMessageHandler);
 router.post('/horoscope/generate-wa-message/:orderId',  jwtAuth, generateWaMessageHandler);
+router.post('/horoscope/generate-marriage/:orderId',            jwtAuth, generateMarriageHandler);
+router.post('/horoscope/regenerate-marriage-section/:orderId',  jwtAuth, regenerateMarriageSectionHandler);
+router.patch('/horoscope/marriage-sections/:orderId',           jwtAuth, updateMarriageSections);
+router.get('/horoscope/download-marriage-docx/:orderId',        jwtAuth, downloadMarriageDocx);
+router.get('/horoscope/download-marriage-pdf/:orderId',         jwtAuth, downloadMarriagePdf);
+router.post('/horoscope/generate-marriage-wa/:orderId',         jwtAuth, generateMarriageWaHandler);
+router.patch('/horoscope/marriage-wa/:orderId',                 jwtAuth, saveMarriageWaHandler);
 router.post('/follow-up',                               jwtAuth, generateFollowUpMessage);
 router.get('/meta/recent-events',                       jwtAuth, recentMetaEvents);
 router.post('/meta/sync-audience',                      jwtAuth, syncMetaAudience);

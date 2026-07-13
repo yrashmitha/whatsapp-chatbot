@@ -10,6 +10,11 @@ const db   = require('../db');
 const { generateAstroMessage, DEFAULT_ASTRO_PROMPT } = require('../services/astro');
 const { generateHoroscope, buildHoroscopeDoc, buildQuantumDoc, regenerateHoroscopeSection, generateWaMessage, SECTIONS, SECTION_GUIDES, parseSinhalaDate, parseSinhalaTime } = require('../services/horoscope');
 const { analyzeAura, generateQuantumReading, generateQuantumSections } = require('../services/quantumCode');
+const {
+  generateMarriageReading, generateMarriageSectionText, generateMarriageWaMessage,
+  buildMarriageDoc, resolveMarriageConfig,
+  MARRIAGE_REPORT_TITLE, DEFAULT_MARRIAGE_SECTIONS, DEFAULT_MARRIAGE_SYSTEM_PROMPT,
+} = require('../services/marriage');
 const { DEFAULT_TAROT_PROMPT } = require('../services/tarot');
 const { generateFollowUp, DEFAULT_FOLLOWUP_PROMPT } = require('../services/followup');
 const { syncAudienceForClient, createAudienceForClient, getRecentEvents } = require('../services/metaConversions');
@@ -185,7 +190,14 @@ async function getPluginConfig(req, res) {
     if (pluginId === 'astro_vedic_chart') {
       defaults = { name: 'Vedic Astro Chart', prompt: DEFAULT_ASTRO_PROMPT };
     } else if (pluginId === 'horoscope_reading') {
-      defaults = { name: 'Horoscope Reading', system_prompt: '', quantum_system_prompt: '', aura_system_prompt: '', horoscope_sections: [], quantum_sections: [], section_guides: SECTION_GUIDES, special_note: '', api_key: '', wa_message_prompt: '', ai_fill_prompt: DEFAULT_AI_FILL_PROMPT, quantum_enabled: true };
+      defaults = {
+        name: 'Horoscope Reading', system_prompt: '', quantum_system_prompt: '', aura_system_prompt: '',
+        horoscope_sections: [], quantum_sections: [], section_guides: SECTION_GUIDES, special_note: '',
+        api_key: '', wa_message_prompt: '', ai_fill_prompt: DEFAULT_AI_FILL_PROMPT, quantum_enabled: true,
+        marriage_system_prompt: DEFAULT_MARRIAGE_SYSTEM_PROMPT,
+        marriage_sections: DEFAULT_MARRIAGE_SECTIONS,
+        marriage_special_note: '', marriage_wa_prompt: '',
+      };
     } else if (pluginId === 'ai_call_answering') {
       defaults = { name: 'AI Call Answering', system_prompt: '', greeting: 'Hello, how can I help you today?', tts_voice: 'Kore', stt_language: 'en-US' };
     } else if (pluginId === 'image_analyzer') {
@@ -221,7 +233,7 @@ async function updatePluginConfig(req, res) {
     return res.status(403).json({ error: 'Forbidden' });
   }
   const { pluginId } = req.params;
-  const { name, prompt, api_key, system_prompt, quantum_system_prompt, aura_system_prompt, horoscope_sections, quantum_sections, section_guides, special_note, wa_message_prompt, ai_fill_prompt, greeting, tts_voice, stt_language, verification_prompt, page1_body, page2_body, page4_body, quantum_enabled, pixel_id, ad_account_id, audience_id } = req.body;
+  const { name, prompt, api_key, system_prompt, quantum_system_prompt, aura_system_prompt, horoscope_sections, quantum_sections, section_guides, special_note, wa_message_prompt, ai_fill_prompt, greeting, tts_voice, stt_language, verification_prompt, page1_body, page2_body, page4_body, quantum_enabled, pixel_id, ad_account_id, audience_id, marriage_system_prompt, marriage_sections, marriage_special_note, marriage_wa_prompt } = req.body;
   try {
     const existing = await db.getPluginConfig(clientId, pluginId);
     const update = { ...existing };
@@ -235,6 +247,10 @@ async function updatePluginConfig(req, res) {
     if (quantum_sections !== undefined)      update.quantum_sections      = quantum_sections;
     if (section_guides !== undefined)        update.section_guides        = section_guides;
     if (special_note !== undefined)          update.special_note          = special_note;
+    if (marriage_system_prompt !== undefined) update.marriage_system_prompt = marriage_system_prompt;
+    if (marriage_sections !== undefined)      update.marriage_sections      = marriage_sections;
+    if (marriage_special_note !== undefined)  update.marriage_special_note  = marriage_special_note;
+    if (marriage_wa_prompt !== undefined)     update.marriage_wa_prompt     = marriage_wa_prompt;
     if (wa_message_prompt !== undefined)     update.wa_message_prompt     = wa_message_prompt;
     if (ai_fill_prompt !== undefined)        update.ai_fill_prompt        = ai_fill_prompt;
     if (quantum_enabled !== undefined)       update.quantum_enabled       = quantum_enabled;
@@ -1202,6 +1218,283 @@ async function createMetaAudience(req, res) {
   }
 }
 
+// ─── Marriage reading ─────────────────────────────────────────────────────────
+
+/**
+ * Convert a .docx buffer to a PDF buffer via LibreOffice, stamping document metadata.
+ */
+async function docxBufferToPdf(docxBuffer, uid, meta = {}) {
+  const tmpHome = path.join(os.tmpdir(), `lo-home-${uid}`);
+  const tmpDocx = path.join(os.tmpdir(), `${uid}.docx`);
+  const tmpPdf  = path.join(os.tmpdir(), `${uid}.pdf`);
+
+  const fontSrc  = path.join(__dirname, '../assets/fonts');
+  const fontDirs = [
+    path.join(tmpHome, '.fonts'),
+    path.join(tmpHome, '.local', 'share', 'fonts'),
+    path.join(tmpHome, '.config', 'libreoffice', '4', 'user', 'fonts'),
+  ];
+  for (const dir of fontDirs) {
+    fs.mkdirSync(dir, { recursive: true });
+    for (const f of fs.readdirSync(fontSrc)) {
+      if (f.endsWith('.ttf')) fs.copyFileSync(path.join(fontSrc, f), path.join(dir, f));
+    }
+  }
+
+  fs.writeFileSync(tmpDocx, docxBuffer);
+  await convertDocxToPdf(tmpDocx, os.tmpdir(), tmpHome, fontDirs[0]);
+
+  const { PDFDocument } = require('pdf-lib');
+  const pdfDoc = await PDFDocument.load(fs.readFileSync(tmpPdf));
+  pdfDoc.setTitle(meta.title || 'පුරාණ ජෝතිර්වේදය හදහන් සේවය');
+  pdfDoc.setAuthor('පුරාණ ජෝතිර්වේදය හදහන් සේවය');
+  pdfDoc.setCreator('පුරාණ ජෝතිර්වේදය');
+  pdfDoc.setProducer('පුරාණ ජෝතිර්වේදය');
+  pdfDoc.setSubject(meta.subject || 'ජෝතිෂ්‍ය පඨනය');
+  pdfDoc.setKeywords([]);
+  const buffer = Buffer.from(await pdfDoc.save());
+
+  fs.rm(tmpHome, { recursive: true, force: true }, () => {});
+  fs.unlink(tmpDocx, () => {});
+  fs.unlink(tmpPdf, () => {});
+  return buffer;
+}
+
+/** Load an order's horoscope_data + custom_fields, or null if the order doesn't exist. */
+async function loadOrderReport(orderId) {
+  const r = await db.pgQuery(
+    'SELECT phone_number, custom_fields, horoscope_data FROM orders WHERE order_id=$1', [orderId]
+  );
+  if (!r.rows.length) return null;
+  const parse = (v) => (typeof v === 'string' ? JSON.parse(v || '{}') : (v || {}));
+  return {
+    phone: r.rows[0].phone_number || '',
+    cf:    parse(r.rows[0].custom_fields),
+    hd:    parse(r.rows[0].horoscope_data),
+  };
+}
+
+/**
+ * POST /api/plugins/horoscope/generate-marriage/:orderId
+ * Generates all configured marriage sections from the chart data already saved on the order.
+ * Runs in the background; the UI polls `marriage_generating` on the order.
+ */
+async function generateMarriageHandler(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  const { orderId } = req.params;
+
+  const addonCheck = await db.pgQuery(
+    `SELECT enabled FROM client_addons WHERE client_id=$1 AND addon_id='horoscope_reading' AND enabled=TRUE`,
+    [clientId]
+  );
+  if (!addonCheck.rows.length) return res.status(403).json({ error: 'horoscope_reading addon not enabled' });
+
+  try {
+    const order = await loadOrderReport(orderId);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (!order.hd.chart_data) {
+      return res.status(400).json({
+        error: 'No birth chart for this order. Open the horoscope modal, fill the birth details and click "Check Lagna" to fetch the chart — you do not need to generate the horoscope itself.',
+      });
+    }
+
+    await db.pgQuery(
+      `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}') - 'marriage_error', '{marriage_generating}', 'true'::jsonb) WHERE order_id=$1`,
+      [orderId]
+    );
+
+    res.json({ ok: true, generating: true });
+
+    generateMarriageReading(clientId, orderId).catch(async (e) => {
+      console.error('[MARRIAGE] generate error:', e.message);
+      await db.pgQuery(
+        `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}') - 'marriage_generating', '{marriage_error}', $1::jsonb) WHERE order_id=$2`,
+        [JSON.stringify(e.message), orderId]
+      ).catch(() => {});
+    });
+  } catch (e) {
+    console.error('[MARRIAGE] Error:', e.message);
+    if (!res.headersSent) res.status(500).json({ error: e.message });
+  }
+}
+
+/**
+ * POST /api/plugins/horoscope/regenerate-marriage-section/:orderId — regenerate one section.
+ */
+async function regenerateMarriageSectionHandler(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  const { orderId } = req.params;
+  const { label } = req.body;
+  if (!label?.trim()) return res.status(400).json({ error: 'label required' });
+
+  try {
+    const order = await loadOrderReport(orderId);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (!order.hd.chart_data) return res.status(400).json({ error: 'No chart data found.' });
+
+    const config = await db.getPluginConfig(clientId, 'horoscope_reading');
+    const { sections, systemPrompt } = resolveMarriageConfig(config);
+    const sectionDef = sections.find(s => s.label === label.trim());
+    if (!sectionDef) return res.status(404).json({ error: `Section "${label}" not found in config.` });
+
+    const content = await generateMarriageSectionText({
+      chartData:    order.hd.chart_data,
+      systemPrompt,
+      label:        sectionDef.label,
+      guide:        sectionDef.guide || '',
+    });
+
+    const existing = Array.isArray(order.hd.marriage_sections_data) ? order.hd.marriage_sections_data : [];
+    const idx = existing.findIndex(s => s.label === label.trim());
+    const updated = idx >= 0
+      ? existing.map((s, i) => (i === idx ? { ...s, content } : s))
+      : [...existing, { label: label.trim(), content }];
+
+    await db.pgQuery(
+      `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), '{marriage_sections_data}', $1::jsonb) WHERE order_id=$2`,
+      [JSON.stringify(updated), orderId]
+    );
+
+    res.json({ ok: true, label: label.trim(), content });
+  } catch (e) {
+    console.error('[MARRIAGE-REGEN-SECTION] Error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+}
+
+/**
+ * PATCH /api/plugins/horoscope/marriage-sections/:orderId — save edited section text.
+ */
+async function updateMarriageSections(req, res) {
+  const { orderId } = req.params;
+  const { marriage_sections_data } = req.body;
+  if (!Array.isArray(marriage_sections_data)) {
+    return res.status(400).json({ error: 'marriage_sections_data array required' });
+  }
+  try {
+    const order = await loadOrderReport(orderId);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    await db.pgQuery(
+      `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), '{marriage_sections_data}', $1::jsonb) WHERE order_id=$2`,
+      [JSON.stringify(marriage_sections_data), orderId]
+    );
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+/** Build the marriage .docx buffer for an order, or throw a 404-ish error. */
+async function marriageDocxFor(orderId, clientId) {
+  const order = await loadOrderReport(orderId);
+  if (!order) { const e = new Error('Order not found'); e.status = 404; throw e; }
+  const data = order.hd.marriage_sections_data;
+  if (!Array.isArray(data) || data.length === 0) {
+    const e = new Error('No marriage reading generated yet'); e.status = 404; throw e;
+  }
+  const config = clientId ? await db.getPluginConfig(clientId, 'horoscope_reading') : {};
+  const { sections, specialNote } = resolveMarriageConfig(config);
+
+  const buffer = await buildMarriageDoc({
+    customerName: order.cf.customer_name || '',
+    sections:     data,
+    specialNote,
+    birthDate:    order.cf.birth_date || '',
+    birthTime:    order.cf.birth_time || '',
+    sectionOrder: sections,
+  });
+  return { buffer, order };
+}
+
+/** Filename stem: <phone>-<birthday>-marriage */
+function marriageFilenameStem(order, orderId) {
+  const phone  = (order.phone || orderId).replace(/\D/g, '');
+  const parsed = parseSinhalaDate(order.cf.birth_date || '');
+  const birthday = parsed
+    ? `${parsed.year}${String(parsed.month).padStart(2, '0')}${String(parsed.day).padStart(2, '0')}`
+    : (order.cf.birth_date || 'birthday').replace(/[^0-9]/g, '').slice(0, 8) || 'birthday';
+  return `${phone}-${birthday}-marriage`;
+}
+
+/**
+ * GET /api/plugins/horoscope/download-marriage-docx/:orderId — .docx (also used for preview).
+ */
+async function downloadMarriageDocx(req, res) {
+  const { orderId } = req.params;
+  try {
+    const { buffer, order } = await marriageDocxFor(orderId, resolveClientId(req));
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="${marriageFilenameStem(order, orderId)}.docx"`);
+    res.send(buffer);
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+}
+
+/**
+ * GET /api/plugins/horoscope/download-marriage-pdf/:orderId — PDF.
+ */
+async function downloadMarriagePdf(req, res) {
+  const { orderId } = req.params;
+  try {
+    const { buffer: docxBuffer, order } = await marriageDocxFor(orderId, resolveClientId(req));
+    const pdf = await docxBufferToPdf(docxBuffer, `marriage-${orderId}-${Date.now()}`, {
+      title:   MARRIAGE_REPORT_TITLE,
+      subject: MARRIAGE_REPORT_TITLE,
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${marriageFilenameStem(order, orderId)}.pdf"`);
+    res.send(pdf);
+  } catch (e) {
+    console.error('[MARRIAGE-PDF] Error:', e.message);
+    res.status(e.status || 500).json({ error: e.message });
+  }
+}
+
+/**
+ * POST /api/plugins/horoscope/generate-marriage-wa/:orderId — WhatsApp summary message.
+ */
+async function generateMarriageWaHandler(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  const { orderId } = req.params;
+
+  try {
+    const order = await loadOrderReport(orderId);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    const data = order.hd.marriage_sections_data;
+    if (!Array.isArray(data) || data.length === 0) {
+      return res.status(400).json({ error: 'Generate the marriage reading first.' });
+    }
+
+    const config = await db.getPluginConfig(clientId, 'horoscope_reading');
+    const waPrompt = config.marriage_wa_prompt || '';
+    if (!waPrompt.trim()) {
+      return res.status(400).json({ error: 'marriage_wa_prompt not configured in plugin settings' });
+    }
+
+    const message = await generateMarriageWaMessage(orderId, data, waPrompt);
+    res.json({ wa_message: message });
+  } catch (e) {
+    console.error('[MARRIAGE-WA] Error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+}
+
+/**
+ * PATCH /api/plugins/horoscope/marriage-wa/:orderId — save an edited WhatsApp message.
+ */
+async function saveMarriageWaHandler(req, res) {
+  const { orderId } = req.params;
+  const { wa_message } = req.body;
+  if (typeof wa_message !== 'string') return res.status(400).json({ error: 'wa_message required' });
+  try {
+    await db.pgQuery(
+      `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), '{marriage_wa_message}', $1::jsonb) WHERE order_id=$2`,
+      [JSON.stringify(wa_message), orderId]
+    );
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
 module.exports = {
   getPluginConfig, updatePluginConfig, getPluginCustomerData, generateAstroChart,
   analyzeAuraImage,
@@ -1213,6 +1506,9 @@ module.exports = {
   generateWaMessageHandler,
   downloadQuantumDocx,
   downloadHoroscope, downloadHoroscopePdf, downloadQuantumPdf,
+  generateMarriageHandler, regenerateMarriageSectionHandler, updateMarriageSections,
+  downloadMarriageDocx, downloadMarriagePdf,
+  generateMarriageWaHandler, saveMarriageWaHandler,
   generateFollowUpMessage,
   syncMetaAudience,
   createMetaAudience,

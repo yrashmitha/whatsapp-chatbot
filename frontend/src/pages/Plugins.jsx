@@ -70,6 +70,10 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
   const [quantumEnabled, setQuantumEnabled]           = useState(true);
   const [sectionGuides, setSectionGuides]             = useState({});
   const [specialNote, setSpecialNote]                 = useState('');
+  const [marriageSystemPrompt, setMarriageSystemPrompt] = useState('');
+  const [marriageSections, setMarriageSections]         = useState([]);
+  const [marriageSpecialNote, setMarriageSpecialNote]   = useState('');
+  const [marriageWaPrompt, setMarriageWaPrompt]         = useState('');
   const [greeting, setGreeting]         = useState('');
   const [ttsVoice, setTtsVoice]                   = useState('');
   const [sttLanguage, setSttLanguage]             = useState('');
@@ -106,6 +110,10 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         setQuantumEnabled(r.data.quantum_enabled !== false);
         setSectionGuides(r.data.section_guides && typeof r.data.section_guides === 'object' ? r.data.section_guides : {});
         setSpecialNote(r.data.special_note || '');
+        setMarriageSystemPrompt(r.data.marriage_system_prompt || '');
+        setMarriageSections(Array.isArray(r.data.marriage_sections) ? r.data.marriage_sections : []);
+        setMarriageSpecialNote(r.data.marriage_special_note || '');
+        setMarriageWaPrompt(r.data.marriage_wa_prompt || '');
         setGreeting(r.data.greeting || '');
         const GEMINI_VOICES = ['achernar','achird','algenib','algieba','alnilam','aoede','autonoe','callirrhoe','charon','despina','enceladus','erinome','fenrir','gacrux','iapetus','kore','laomedeia','leda','orus','puck','pulcherrima','rasalgethi','sadachbia','sadaltager','schedar','sulafat','umbriel','vindemiatrix','zephyr','zubenelgenubi'];
         const savedVoice = (r.data.tts_voice || '').toLowerCase();
@@ -134,6 +142,10 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         setQuantumEnabled(true);
         setSectionGuides({});
         setSpecialNote('');
+        setMarriageSystemPrompt('');
+        setMarriageSections([]);
+        setMarriageSpecialNote('');
+        setMarriageWaPrompt('');
         setGreeting('');
         setTtsVoice('Kore');
         setSttLanguage('en-US');
@@ -163,6 +175,10 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         body.special_note          = specialNote;
         body.wa_message_prompt     = waMessagePrompt;
         body.ai_fill_prompt        = aiFillPrompt;
+        body.marriage_system_prompt = marriageSystemPrompt;
+        body.marriage_sections      = marriageSections;
+        body.marriage_special_note  = marriageSpecialNote;
+        body.marriage_wa_prompt     = marriageWaPrompt;
       } else if (isCallAnswering) {
         body.system_prompt = systemPrompt;
         body.greeting      = greeting;
@@ -721,6 +737,97 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
               rows={6}
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
               placeholder="විශේෂ ශාස්ත්‍රීය සටහන…"
+            />
+          </div>
+
+          {/* ── Marriage Reading (💍) ─────────────────────────────────────── */}
+          <div className="mt-2 pt-4 border-t border-slate-200">
+            <p className="text-sm font-semibold text-slate-800">💍 Marriage Reading</p>
+            <p className="text-xs text-slate-400 mt-0.5">
+              A separate report generated from the same chart data as the horoscope. Admins run it from the 💍 button on an order (the horoscope chart must exist first). It has its own system prompt, sections, PDF and WhatsApp message.
+            </p>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Marriage System Prompt</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              Gemini system instruction for every marriage section (the chart data is appended automatically). Leave blank to use the built-in default.
+            </p>
+            <textarea
+              value={marriageSystemPrompt}
+              onChange={e => setMarriageSystemPrompt(e.target.value)}
+              rows={10}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-pink-400 focus:ring-2 focus:ring-pink-100 resize-y font-mono"
+              placeholder="Leave blank to use built-in default…"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Marriage Sections</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              Each section is one Gemini call and one heading in the marriage PDF, in this order. Leave empty to use the built-in 8 sections.
+            </p>
+            {marriageSections.map((sec, i) => (
+              <div key={i} className="flex gap-2 mb-2 items-start">
+                <div className="flex flex-col gap-1 shrink-0 mt-1">
+                  <button
+                    onClick={() => { if (i === 0) return; const u = [...marriageSections]; [u[i-1], u[i]] = [u[i], u[i-1]]; setMarriageSections(u); }}
+                    disabled={i === 0}
+                    className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 disabled:opacity-30 cursor-pointer bg-white text-xs"
+                  >▲</button>
+                  <button
+                    onClick={() => { if (i === marriageSections.length - 1) return; const u = [...marriageSections]; [u[i], u[i+1]] = [u[i+1], u[i]]; setMarriageSections(u); }}
+                    disabled={i === marriageSections.length - 1}
+                    className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 disabled:opacity-30 cursor-pointer bg-white text-xs"
+                  >▼</button>
+                </div>
+                <input
+                  type="text"
+                  value={sec.label}
+                  onChange={e => { const u = [...marriageSections]; u[i] = { ...u[i], label: e.target.value }; setMarriageSections(u); }}
+                  placeholder="Section label (heading)…"
+                  className="w-48 shrink-0 px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
+                />
+                <textarea
+                  value={sec.guide}
+                  onChange={e => { const u = [...marriageSections]; u[i] = { ...u[i], guide: e.target.value }; setMarriageSections(u); }}
+                  placeholder="Guide instructions for Gemini…"
+                  rows={3}
+                  className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-pink-400 focus:ring-2 focus:ring-pink-100 resize-y font-mono"
+                />
+                <button
+                  onClick={() => setMarriageSections(marriageSections.filter((_, j) => j !== i))}
+                  className="mt-1 w-7 h-7 shrink-0 flex items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-300 cursor-pointer bg-white text-xs font-bold"
+                >×</button>
+              </div>
+            ))}
+            <button
+              onClick={() => setMarriageSections([...marriageSections, { label: '', guide: '' }])}
+              className="mt-1 px-3 py-1.5 text-xs border border-dashed border-pink-300 text-pink-600 rounded-xl hover:bg-pink-50 cursor-pointer bg-white"
+            >+ Add Section</button>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Marriage WhatsApp Message Prompt</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              System prompt used to turn the finished marriage report into a WhatsApp message. Leave blank to disable the message.
+            </p>
+            <textarea
+              value={marriageWaPrompt}
+              onChange={e => setMarriageWaPrompt(e.target.value)}
+              rows={6}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-pink-400 focus:ring-2 focus:ring-pink-100 resize-y font-mono"
+              placeholder="e.g. ලබාදෙන විවාහ පලාපල වාර්තාව පදනම් කරගෙන කෙටි WhatsApp පණිවිඩයක් ලියන්න…"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Marriage Special Note (Final Page)</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              Static text added as the last page of every marriage document.
+            </p>
+            <textarea
+              value={marriageSpecialNote}
+              onChange={e => setMarriageSpecialNote(e.target.value)}
+              rows={5}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-pink-400 focus:ring-2 focus:ring-pink-100 resize-y font-mono"
+              placeholder="විශේෂ සටහන…"
             />
           </div>
         </>

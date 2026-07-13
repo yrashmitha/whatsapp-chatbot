@@ -15,6 +15,7 @@ import HoroscopeEditorDrawer from '../components/orders/HoroscopeEditorDrawer';
 import WaMessageModal from '../components/orders/WaMessageModal';
 import TarotGenerateModal from '../components/orders/TarotGenerateModal';
 import TarotEditorDrawer from '../components/orders/TarotEditorDrawer';
+import MarriageEditorDrawer from '../components/orders/MarriageEditorDrawer';
 
 function parseCustomFields(raw) {
   if (!raw) return null;
@@ -44,6 +45,7 @@ export default function Orders() {
   const [waMessageOrder, setWaMessageOrder]   = useState(null);  // WA message popup
   const [tarotOrder, setTarotOrder]           = useState(null);  // tarot generate modal
   const [tarotEditorOrder, setTarotEditorOrder] = useState(null); // tarot editor drawer
+  const [marriageOrder, setMarriageOrder]       = useState(null); // marriage editor drawer
   const toast = useToast();
   const qc = useQueryClient();
 
@@ -82,7 +84,7 @@ export default function Orders() {
       const hd = o.horoscope_data && typeof o.horoscope_data === 'string'
         ? (() => { try { return JSON.parse(o.horoscope_data); } catch { return {}; } })()
         : (o.horoscope_data || {});
-      if (hd.generating === true || hd.quantum_generating === true) return true;
+      if (hd.generating === true || hd.quantum_generating === true || hd.marriage_generating === true) return true;
       const td = o.tarot_data && typeof o.tarot_data === 'string'
         ? (() => { try { return JSON.parse(o.tarot_data); } catch { return {}; } })()
         : (o.tarot_data || {});
@@ -95,6 +97,18 @@ export default function Orders() {
     mutationFn: ({ orderId, status }) => api.patch(`/orders/${orderId}/status`, { status }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['orders'] }); toast.success('Status updated'); },
     onError: () => toast.error('Failed to update status'),
+  });
+
+  const startMarriage = useMutation({
+    mutationFn: (orderId) => api.post(
+      `/plugins/horoscope/generate-marriage/${orderId}`, {},
+      { params: clientId ? { client_id: clientId } : {} }
+    ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      toast.success('Marriage reading started — takes ~2 min.');
+    },
+    onError: (e) => toast.error(e?.response?.data?.error || 'Failed to start marriage reading'),
   });
 
   const updateFields = useMutation({
@@ -204,6 +218,10 @@ export default function Orders() {
                   const paymentIdentified = cf?.payment_identified || null;
                   const horoscopeError = hd?.error || null;
                   const horoscopeDone = hd?.sections && Object.keys(hd.sections).length > 0;
+                  const hasChart           = !!hd?.chart_data;
+                  const marriageGenerating = hd?.marriage_generating === true;
+                  const marriageError      = hd?.marriage_error || null;
+                  const marriageDone       = Array.isArray(hd?.marriage_sections_data) && hd.marriage_sections_data.length > 0;
                   const td = o.tarot_data && typeof o.tarot_data === 'string'
                     ? (() => { try { return JSON.parse(o.tarot_data); } catch { return null; } })()
                     : (o.tarot_data || null);
@@ -288,6 +306,40 @@ export default function Orders() {
                                     title={hd?.wa_message ? 'View/regenerate WhatsApp message' : 'Generate WhatsApp message'}
                                     className="text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 bg-green-100 text-green-700 hover:bg-green-200"
                                   >💬</button>
+                                )}
+                                {(
+                                  marriageGenerating ? (
+                                    <span className="flex items-center gap-1 text-xs text-pink-600 font-medium">
+                                      <span className="w-3 h-3 border-2 border-pink-300 border-t-pink-600 rounded-full animate-spin inline-block" />
+                                      💍 Generating…
+                                    </span>
+                                  ) : (
+                                    <>
+                                      {marriageError && !marriageDone && (
+                                        <span title={marriageError} className="text-xs px-1.5 py-0.5 rounded border-0 bg-red-100 text-red-600 cursor-default">⚠</span>
+                                      )}
+                                      <button
+                                        onClick={() => {
+                                          if (marriageDone) return setMarriageOrder(o);
+                                          if (!hasChart) {
+                                            return toast.error('No birth chart yet — open 🔮, fill the birth details, and click "Check Lagna" to fetch the chart. Then click 💍. (You do not need to generate the horoscope.)');
+                                          }
+                                          startMarriage.mutate(o.order_id);
+                                        }}
+                                        title={
+                                          marriageDone ? 'View/edit marriage reading'
+                                          : hasChart   ? 'Generate marriage reading'
+                                          : 'Needs the birth chart first — open 🔮 and click "Check Lagna"'
+                                        }
+                                        disabled={startMarriage.isPending}
+                                        className={`text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 ${
+                                          marriageDone ? 'bg-pink-200 text-pink-800 hover:bg-pink-300'
+                                          : hasChart   ? 'bg-pink-100 text-pink-700 hover:bg-pink-200'
+                                          : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                                        }`}
+                                      >{marriageDone ? '💍 ✏' : '💍'}</button>
+                                    </>
+                                  )
                                 )}
                               </>
                             )}
@@ -532,6 +584,12 @@ export default function Orders() {
         clientId={clientId}
         open={!!editorOrder}
         onClose={() => setEditorOrder(null)}
+      />
+      <MarriageEditorDrawer
+        order={orders.find(o => o.order_id === marriageOrder?.order_id) || marriageOrder}
+        clientId={clientId}
+        open={!!marriageOrder}
+        onClose={() => setMarriageOrder(null)}
       />
       {waMessageOrder && (
         <WaMessageModal

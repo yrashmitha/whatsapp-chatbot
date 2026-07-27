@@ -44,7 +44,10 @@ function parseBirth(body) {
 /**
  * POST /public/chart — return the vedic chart for a birth (cached).
  * Body: { year, month, day, hour, minute, lat, lng, [tz_str, ...] }
- * Response: { ok, cached, data } where `data` is the full freeastroapi response.
+ * Response: { ok, cached, data, teaser } where `data` is the full freeastroapi
+ * response and `teaser` is an array of up to 3 { topic, teaser } sections (or
+ * null) — only the topics Gemini chose are ever generated/sent; the rest are
+ * rendered client-side as static locked cards with no server-sent content.
  */
 async function publicChart(req, res) {
   let birth;
@@ -65,7 +68,7 @@ async function publicChart(req, res) {
     // Best-effort teaser: one Gemini call per unique chart (cached by the same
     // birth_hash), never blocks or fails the chart response.
     let teaser = null;
-    try { teaser = await generateTeaserReading(data, hash); } catch { /* non-fatal */ }
+    try { teaser = await generateTeaserReading(data, hash, WEB_CLIENT_ID); } catch { /* non-fatal */ }
 
     res.json({ ok: true, cached, data, teaser });
   } catch (e) {

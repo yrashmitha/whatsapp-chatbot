@@ -51,10 +51,20 @@ async function publicChart(req, res) {
   catch (e) { return res.status(400).json({ error: e.message }); }
 
   try {
-    const { data, cached } = await calculateVedicChart(birth);
+    // Use the same freeastroapi key as the working horoscope flow: prefer the
+    // plugin config key stored in the DB, fall back to the env var.
+    let apiKey = process.env.FREEASTRO_API_KEY;
+    try {
+      const config = await db.getPluginConfig(WEB_CLIENT_ID, 'horoscope_reading');
+      if (config && config.api_key) apiKey = config.api_key;
+    } catch { /* no plugin config — fall back to env */ }
+
+    const { data, cached } = await calculateVedicChart(birth, apiKey);
     res.json({ ok: true, cached, data });
   } catch (e) {
-    console.error('[PUBLIC-CHART]', e.message);
+    const status = e.response?.status;
+    const detail = e.response?.data ? JSON.stringify(e.response.data) : e.message;
+    console.error('[PUBLIC-CHART]', status || '', detail);
     res.status(502).json({ error: 'Chart calculation failed' });
   }
 }

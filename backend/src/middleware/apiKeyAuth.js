@@ -1,6 +1,6 @@
 /**
  * @module middleware/apiKeyAuth
- * @description Guards public channel endpoints (e.g. the pahantharu web FE)
+ * @description Guards public channel endpoints (e.g. the web FE)
  * with a shared secret. The FE never holds this key in the browser — its
  * Next.js server proxy attaches it. Checks the `x-api-key` header against
  * WEB_API_KEY using a timing-safe comparison.

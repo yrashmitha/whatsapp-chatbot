@@ -1,7 +1,7 @@
 /**
  * @module controllers/public.controller
  * @description Public (API-key guarded) endpoints for external frontends such
- * as the pahantharu web site. These are NOT behind JWT — they are the channel
+ * as the web frontend. These are NOT behind JWT — they are the channel
  * through which a website visitor previews their chart and places an order that
  * lands in the same CRM as WhatsApp orders.
  */

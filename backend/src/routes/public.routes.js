@@ -1,6 +1,6 @@
 /**
  * @module routes/public.routes
- * @description Public channel router for external frontends (pahantharu web).
+ * @description Public channel router for external frontends (the web FE).
  * Guarded by a shared API key + rate limiting. Mounted at /public (no JWT).
  */
 

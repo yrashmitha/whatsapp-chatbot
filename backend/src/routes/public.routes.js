@@ -9,7 +9,7 @@
 const router     = require('express').Router();
 const rateLimit  = require('express-rate-limit');
 const apiKeyAuth = require('../middleware/apiKeyAuth');
-const { publicChart, publicCreateOrder, publicMatch } = require('../controllers/public.controller');
+const { publicChart, publicCreateOrder, publicMatch, publicDeepMatch } = require('../controllers/public.controller');
 
 // 30 requests/minute per IP — the cache absorbs repeat chart lookups.
 const publicLimiter = rateLimit({
@@ -25,5 +25,6 @@ router.use(publicLimiter, apiKeyAuth);
 router.post('/chart',  publicChart);
 router.post('/orders', publicCreateOrder);
 router.post('/match',  publicMatch);
+router.post('/deep-match', publicDeepMatch);
 
 module.exports = router;

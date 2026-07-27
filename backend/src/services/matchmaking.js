@@ -94,4 +94,4 @@ async function calculateMatch(person1, person2, apiKey) {
   return { data: resp.data, cached: false };
 }
 
-module.exports = { calculateMatch };
+module.exports = { calculateMatch, matchHash, normalizePerson };

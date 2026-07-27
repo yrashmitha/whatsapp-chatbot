@@ -493,6 +493,15 @@ async function init() {
         created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
     `);
+
+    // ── Deep match analysis cache (Gemini classification + narrative) ────────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS match_deep_cache (
+        match_hash  TEXT PRIMARY KEY,
+        response    JSONB NOT NULL,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
   } else {
     db.exec(`PRAGMA foreign_keys = ON;`);
     db.exec(`
@@ -653,6 +662,15 @@ async function init() {
     // ── Match (Ashtakoota compatibility) cache (SQLite) ──────────────────────
     db.exec(`
       CREATE TABLE IF NOT EXISTS match_cache (
+        match_hash  TEXT PRIMARY KEY,
+        response    TEXT NOT NULL,
+        created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+
+    // ── Deep match analysis cache (SQLite) ───────────────────────────────────
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS match_deep_cache (
         match_hash  TEXT PRIMARY KEY,
         response    TEXT NOT NULL,
         created_at  TEXT NOT NULL DEFAULT (datetime('now'))

@@ -13,7 +13,8 @@ const clientRouter = require('../services/clientRouter');
 const { generateOrderId } = require('../services/gemini');
 const { calculateVedicChart } = require('../services/vedicChart');
 const { generateTeaserReading } = require('../services/teaserReading');
-const { calculateMatch } = require('../services/matchmaking');
+const { calculateMatch, matchHash, normalizePerson } = require('../services/matchmaking');
+const { generateDeepMatchAnalysis } = require('../services/deepMatchAnalysis');
 
 const WEB_CLIENT_ID = process.env.WEB_CLIENT_ID || 'astrology_001';
 
@@ -154,4 +155,34 @@ async function publicMatch(req, res) {
   }
 }
 
-module.exports = { publicChart, publicCreateOrder, publicMatch };
+/**
+ * POST /public/deep-match — AI-assisted narrative layer over deterministic
+ * compatibility facts computed client-side. Body: { person1, person2,
+ * porondam_factors, facts, final_recommendation }. Every number/boolean in
+ * `facts`/`final_recommendation` is computed by the frontend in code (house
+ * positions, aspect rules, dasha-lord friendships) — Gemini only classifies
+ * the 20 Porondam and writes explanations for the given facts, never invents
+ * them. Cached by the same match_hash as /public/match.
+ */
+async function publicDeepMatch(req, res) {
+  const { person1, person2, porondam_factors, facts, final_recommendation } = req.body || {};
+  if (!person1 || !person2 || !Array.isArray(porondam_factors) || !facts || !final_recommendation) {
+    return res.status(400).json({ error: 'person1, person2, porondam_factors, facts, and final_recommendation are required' });
+  }
+
+  try {
+    const hash = matchHash(normalizePerson(person1), normalizePerson(person2));
+
+    const analysis = await generateDeepMatchAnalysis(
+      porondam_factors, facts, final_recommendation, hash, WEB_CLIENT_ID,
+    );
+    if (!analysis) return res.status(502).json({ error: 'Deep match analysis unavailable' });
+
+    res.json({ ok: true, data: analysis });
+  } catch (e) {
+    console.error('[PUBLIC-DEEP-MATCH]', e.message);
+    res.status(502).json({ error: 'Deep match analysis failed' });
+  }
+}
+
+module.exports = { publicChart, publicCreateOrder, publicMatch, publicDeepMatch };

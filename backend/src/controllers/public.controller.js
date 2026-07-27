@@ -13,6 +13,7 @@ const clientRouter = require('../services/clientRouter');
 const { generateOrderId } = require('../services/gemini');
 const { calculateVedicChart } = require('../services/vedicChart');
 const { generateTeaserReading } = require('../services/teaserReading');
+const { calculateMatch } = require('../services/matchmaking');
 
 const WEB_CLIENT_ID = process.env.WEB_CLIENT_ID || 'astrology_001';
 
@@ -122,4 +123,35 @@ async function publicCreateOrder(req, res) {
   }
 }
 
-module.exports = { publicChart, publicCreateOrder };
+/**
+ * POST /public/match — Ashtakoota (8-koota) compatibility for two people,
+ * cached. Body: { person1: {year,month,day,hour,minute,lat,lng,...},
+ *                 person2: {...same shape} }
+ * Response: { ok, cached, data } where `data` is the full freeastroapi
+ * /vedic/match response (ashtakoota kootas, manglik/nadi/bhakoot doshas,
+ * summary). Shown alongside — not instead of — our primary 20-Porondam table.
+ */
+async function publicMatch(req, res) {
+  const { person1, person2 } = req.body || {};
+  if (!person1 || !person2) {
+    return res.status(400).json({ error: 'person1 and person2 required' });
+  }
+
+  try {
+    let apiKey = process.env.FREEASTRO_API_KEY;
+    try {
+      const config = await db.getPluginConfig(WEB_CLIENT_ID, 'horoscope_reading');
+      if (config && config.api_key) apiKey = config.api_key;
+    } catch { /* no plugin config — fall back to env */ }
+
+    const { data, cached } = await calculateMatch(person1, person2, apiKey);
+    res.json({ ok: true, cached, data });
+  } catch (e) {
+    const status = e.response?.status;
+    const detail = e.response?.data ? JSON.stringify(e.response.data) : e.message;
+    console.error('[PUBLIC-MATCH]', status || '', detail);
+    res.status(502).json({ error: 'Match calculation failed' });
+  }
+}
+
+module.exports = { publicChart, publicCreateOrder, publicMatch };

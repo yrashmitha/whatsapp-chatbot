@@ -484,6 +484,15 @@ async function init() {
     // teaser_si: cached AI-written teaser reading (one Gemini call per unique
     // birth chart, reused on every subsequent view of the same chart).
     await pool.query(`ALTER TABLE astro_cache ADD COLUMN IF NOT EXISTS teaser_si TEXT`);
+
+    // ── Match (Ashtakoota compatibility) cache — dedupe freeastroapi calls ────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS match_cache (
+        match_hash  TEXT PRIMARY KEY,
+        response    JSONB NOT NULL,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
   } else {
     db.exec(`PRAGMA foreign_keys = ON;`);
     db.exec(`
@@ -640,6 +649,15 @@ async function init() {
       );
     `);
     try { db.exec(`ALTER TABLE astro_cache ADD COLUMN teaser_si TEXT`); } catch (_) {}
+
+    // ── Match (Ashtakoota compatibility) cache (SQLite) ──────────────────────
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS match_cache (
+        match_hash  TEXT PRIMARY KEY,
+        response    TEXT NOT NULL,
+        created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
 
     // ── Voice clips library (SQLite) ─────────────────────────────────────────
     db.exec(`

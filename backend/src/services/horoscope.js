@@ -815,24 +815,14 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
     chartData = existingHd.chart_data;
     console.log('[HOROSCOPE] Reusing saved chart_data for', orderId);
   } else {
-    const astroPayload = {
-      year, month, day, hour, minute,
-      lat: parseFloat(lat), lng: parseFloat(lng),
-      tz_str: 'Asia/Colombo',
-      ayanamsha: 'lahiri',
-      house_system: 'whole_sign',
-      node_type: 'mean',
-      vargas: [1, 9, 7],
-      dasha_levels: 2,
-    };
-    console.log('[HOROSCOPE] Calling freeastroapi for', orderId);
-    console.log('[HOROSCOPE] freeastroapi request:', JSON.stringify(astroPayload));
-    const astroResp = await require('axios').post(
-      'https://api.freeastroapi.com/api/v1/vedic/calculate',
-      astroPayload,
-      { headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' } }
+    console.log('[HOROSCOPE] Fetching chart (cached) for', orderId);
+    const { calculateVedicChart } = require('./vedicChart');
+    const { data: fetched, cached } = await calculateVedicChart(
+      { year, month, day, hour, minute, lat: parseFloat(lat), lng: parseFloat(lng) },
+      apiKey
     );
-    chartData = astroResp.data;
+    chartData = fetched;
+    console.log(`[HOROSCOPE] Chart ${cached ? 'served from cache' : 'fetched from freeastroapi'} for`, orderId);
     // Save chart immediately so it's available even if Gemini fails
     await db.pgQuery(
       `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), '{chart_data}', $1::jsonb) WHERE order_id=$2`,

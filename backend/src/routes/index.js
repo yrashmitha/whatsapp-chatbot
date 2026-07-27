@@ -28,6 +28,7 @@ const quickRepliesRoutes = require('./quickReplies.routes');
 const callsRoutes        = require('./calls.routes');
 const voiceClipsRoutes   = require('./voice_clips.routes');
 const { publicRouter: consultPublic, adminRouter: consultAdmin } = require('./consult.routes');
+const publicRoutes     = require('./public.routes');   // external FE channel (API-key), mounted at /public
 
 const jwtAuth = require('../middleware/jwtAuth');
 const { upload } = require('../config/multer');
@@ -79,6 +80,7 @@ function mountRoutes(app) {
   app.use('/chat',             chatRoutes);
   app.use('/webhook',          webhookLimiter, webhookRoutes);
   app.use('/api/catalog',      catalogRoutes);
+  app.use('/public',           publicRoutes);
   app.use('/consult',          consultPublic);
   app.use('/api/consult',      jwtAuth, consultAdmin);
 
@@ -114,6 +116,8 @@ function mountRoutes(app) {
       req.path.startsWith('/admin') ||
       req.path.startsWith('/auth') ||
       req.path.startsWith('/webhook') ||
+      req.path.startsWith('/public') ||
+      req.path.startsWith('/consult') ||
       req.path.startsWith('/legacy');
     if (isBackendRoute) return res.status(404).json({ error: 'Not found' });
     // Don't serve HTML for asset requests — they must exist as static files

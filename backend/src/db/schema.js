@@ -472,6 +472,15 @@ async function init() {
       );
       CREATE INDEX IF NOT EXISTS idx_meta_capi_log_client ON meta_capi_log (client_id, created_at DESC);
     `);
+
+    // ── Astro chart cache (dedupe freeastroapi calls by birth params) ─────────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS astro_cache (
+        birth_hash  TEXT PRIMARY KEY,
+        response    JSONB NOT NULL,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
   } else {
     db.exec(`PRAGMA foreign_keys = ON;`);
     db.exec(`
@@ -618,6 +627,15 @@ async function init() {
     try { db.exec(`ALTER TABLE orders ADD COLUMN horoscope_data TEXT`); } catch (_) {}
     // ── Tarot reading data (SQLite) ───────────────────────────────────────────
     try { db.exec(`ALTER TABLE orders ADD COLUMN tarot_data TEXT`); } catch (_) {}
+
+    // ── Astro chart cache (dedupe freeastroapi calls by birth params) ─────────
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS astro_cache (
+        birth_hash  TEXT PRIMARY KEY,
+        response    TEXT NOT NULL,
+        created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
 
     // ── Voice clips library (SQLite) ─────────────────────────────────────────
     db.exec(`

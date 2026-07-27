@@ -9,6 +9,7 @@
 const db   = require('../db');
 const { generateAstroMessage, DEFAULT_ASTRO_PROMPT } = require('../services/astro');
 const { generateHoroscope, buildHoroscopeDoc, buildQuantumDoc, regenerateHoroscopeSection, generateWaMessage, SECTIONS, SECTION_GUIDES, parseSinhalaDate, parseSinhalaTime } = require('../services/horoscope');
+const { calculateVedicChart } = require('../services/vedicChart');
 const { analyzeAura, generateQuantumReading, generateQuantumSections } = require('../services/quantumCode');
 const {
   generateMarriageReading, generateMarriageSectionText, generateMarriageWaMessage,
@@ -1111,24 +1112,10 @@ async function fetchChartData(req, res) {
     const config = await db.getPluginConfig(clientId, 'horoscope_reading');
     const apiKey = config.api_key || process.env.FREEASTRO_API_KEY;
 
-    const astroPayload = {
-      year, month, day, hour, minute,
-      lat: parseFloat(lat), lng: parseFloat(lng),
-      tz_str: 'Asia/Colombo',
-      ayanamsha: 'lahiri',
-      house_system: 'whole_sign',
-      node_type: 'mean',
-      vargas: [1, 9, 7],
-      dasha_levels: 2,
-    };
-
-    const axios = require('axios');
-    const astroResp = await axios.post(
-      'https://api.freeastroapi.com/api/v1/vedic/calculate',
-      astroPayload,
-      { headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' } }
+    const { data: chartData } = await calculateVedicChart(
+      { year, month, day, hour, minute, lat: parseFloat(lat), lng: parseFloat(lng) },
+      apiKey
     );
-    const chartData = astroResp.data;
 
     await db.pgQuery(
       `UPDATE orders SET horoscope_data = COALESCE(horoscope_data,'{}') ||

@@ -1,16 +1,18 @@
 /**
  * @module services/teaserReading
- * @description Generates a short, persuasive Sinhala "teaser reading" for the
- * free web chart, structured as topic sections (career, marriage, wealth,
- * health, obstacles, timing). Gemini picks which topics are most "triggering"
- * for THIS chart and writes one grounded teaser sentence per chosen topic —
- * the other topics are simply never generated, so there is no hidden/locked
- * content for a curious user to find in the DOM or network response. The FE
- * renders the untouched topics as static locked cards with zero real content.
+ * @description Generates a short Sinhala "teaser reading" for the free web
+ * chart, structured as topic sections (career, marriage, wealth, health,
+ * obstacles, timing). Gemini picks which topics are most striking for THIS
+ * chart and writes one grounded passage per chosen topic — the other topics
+ * are simply never generated, so there is no hidden/locked content for a
+ * curious user to find in the DOM or network response. The FE renders the
+ * untouched topics as static locked cards with zero real content.
  *
- * Persona/tone: reuses the same system_prompt configured for the PJ client's
- * real paid horoscope reports (plugin_configs: horoscope_reading), so the
- * teaser sounds like the same astrologer, not a generic AI voice.
+ * Framing (deliberate, not our conversational persona): the customer's
+ * planetary placements have already been entered into the system; each
+ * teaser reads like a short passage matched from classical palm-leaf
+ * (puskola potha) astrological texts — an impersonal, book-quotation
+ * register — NOT a warm human/AI voice speaking directly to the customer.
  *
  * Cost control: exactly one Gemini call per unique birth chart. The result is
  * cached in astro_cache.teaser_si (same birth_hash as the chart itself), so
@@ -19,7 +21,6 @@
 
 'use strict';
 
-const db = require('../db');
 const { pool, db: sqliteDb, IS_PG } = require('../db/connection');
 const { genAI } = require('./gemini');
 
@@ -126,13 +127,21 @@ function buildFacts(chartData) {
   return facts;
 }
 
-const TASK_INSTRUCTION = `Above is our astrologer's persona/voice guide used for our real paid reports — adopt the SAME tone, warmth, and cultural voice. Ignore any tool-calling, stage, or conversational instructions in it; you are not having a conversation and have no tools. Your ONLY job right now: read the real chart facts given in the user message, pick the 3 topics (from: career, marriage, wealth, health, obstacles, timing) where these specific facts are most striking/relevant, and write ONE short (1-2 sentence) Sinhala teaser per chosen topic. Rules:
-- Reference only the given facts. Never invent a placement, dosha, or dasha not listed.
-- Sound personal and specific to this exact chart, not generic astrology.
-- Build genuine curiosity or concern — but do NOT explain the full meaning or give any remedy/solution. Stop right at the interesting part.
-- Never mention AI, computers, or that this was automatically generated.
-- Return ONLY the 3 chosen topics — do not include the other 3 at all.
-- Respond using the required JSON schema only.`;
+const SYSTEM_INSTRUCTION = `You are the internal reading-matcher module of a Sri Lankan Vedic astrology system.
+
+FRAMING (critical — follow exactly): The customer's exact planetary placements (graha positions) have ALREADY been entered into the system by our team. Your job is to retrieve/match short passages recorded in classical Sri Lankan palm-leaf manuscripts (puskola potha) and traditional astrological texts that correspond to those placements. You are NOT a human astrologer personally writing to the customer, and you are NOT a friendly AI assistant chatting with them. You are presenting a quick, impersonal system-matched excerpt, as if quoting an old text.
+
+Voice and register:
+- Write in a formal, matter-of-fact, slightly archaic Sinhala register — third-person / impersonal, the way a classical text states a finding. Examples of the right register: "...ස්ථානයේ ග්‍රහයාගේ පිහිටීම නිසා ... බව සඳහන් වේ", "... බව පුස්කොළ පොතේ දැක්වේ", "... බව සටහන් වී ඇත".
+- Do NOT use warm first-person chat phrasing like "ඔබ දැනගන්න ඕනේ", "මම ඔබට කියන්නම්", or any greeting. This is not a conversation.
+- Never mention AI, Gemini, computers, or that this was automatically generated. Never break the "matched from the texts" framing.
+
+Content rules:
+- Reference ONLY the real facts given in the user message. Never invent a placement, dosha, or dasha not listed.
+- Each teaser: 1-2 sentences, specific to the given facts, not generic astrology filler.
+- Build genuine curiosity or mild concern, but do NOT explain the full meaning or give any remedy/solution — stop right at the interesting/concerning point, as if the book excerpt was cut short.
+
+Task: from the six topics (career, marriage, wealth, health, obstacles, timing), choose the 3 where the given facts are most striking, and write one such passage for each. Return ONLY those 3 topics — never mention or hint at the other 3. Respond using the required JSON schema only.`;
 
 /**
  * Return a cached or freshly-generated teaser reading for this chart.
@@ -140,10 +149,9 @@ const TASK_INSTRUCTION = `Above is our astrologer's persona/voice guide used for
  *
  * @param {Object} chartData - Full freeastroapi response (as returned by calculateVedicChart)
  * @param {string} birthHash - Same hash used by vedicChart's astro_cache row
- * @param {string} clientId  - Client id whose horoscope_reading persona to reuse
  * @returns {Promise<Array<{topic:string, teaser:string}>|null>} Chosen sections, or null
  */
-async function generateTeaserReading(chartData, birthHash, clientId) {
+async function generateTeaserReading(chartData, birthHash) {
   const cached = await getCachedTeaser(birthHash);
   if (cached) {
     try { return JSON.parse(cached).sections || null; } catch { return null; }
@@ -154,15 +162,11 @@ async function generateTeaserReading(chartData, birthHash, clientId) {
   if (!process.env.GEMINI_API_KEY) return null;
 
   try {
-    const config = await db.getPluginConfig(clientId, 'horoscope_reading');
-    const persona = config?.system_prompt || '';
-    const systemInstruction = [persona, TASK_INSTRUCTION].filter(Boolean).join('\n\n');
-
     const prompt = `Real facts from this customer's chart:\n${facts.map(f => `- ${f}`).join('\n')}`;
 
     const model = genAI.getGenerativeModel({
       model: 'gemini-2.5-flash',
-      systemInstruction,
+      systemInstruction: SYSTEM_INSTRUCTION,
       generationConfig: {
         temperature: 0.7,
         responseMimeType: 'application/json',

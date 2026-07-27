@@ -68,7 +68,7 @@ async function publicChart(req, res) {
     // Best-effort teaser: one Gemini call per unique chart (cached by the same
     // birth_hash), never blocks or fails the chart response.
     let teaser = null;
-    try { teaser = await generateTeaserReading(data, hash, WEB_CLIENT_ID); } catch { /* non-fatal */ }
+    try { teaser = await generateTeaserReading(data, hash); } catch { /* non-fatal */ }
 
     res.json({ ok: true, cached, data, teaser });
   } catch (e) {

@@ -481,6 +481,9 @@ async function init() {
         created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
     `);
+    // teaser_si: cached AI-written teaser reading (one Gemini call per unique
+    // birth chart, reused on every subsequent view of the same chart).
+    await pool.query(`ALTER TABLE astro_cache ADD COLUMN IF NOT EXISTS teaser_si TEXT`);
   } else {
     db.exec(`PRAGMA foreign_keys = ON;`);
     db.exec(`
@@ -636,6 +639,7 @@ async function init() {
         created_at  TEXT NOT NULL DEFAULT (datetime('now'))
       );
     `);
+    try { db.exec(`ALTER TABLE astro_cache ADD COLUMN teaser_si TEXT`); } catch (_) {}
 
     // ── Voice clips library (SQLite) ─────────────────────────────────────────
     db.exec(`

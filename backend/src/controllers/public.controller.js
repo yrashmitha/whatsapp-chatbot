@@ -12,6 +12,7 @@ const db = require('../db');
 const clientRouter = require('../services/clientRouter');
 const { generateOrderId } = require('../services/gemini');
 const { calculateVedicChart } = require('../services/vedicChart');
+const { generateTeaserReading } = require('../services/teaserReading');
 
 const WEB_CLIENT_ID = process.env.WEB_CLIENT_ID || 'astrology_001';
 
@@ -59,8 +60,14 @@ async function publicChart(req, res) {
       if (config && config.api_key) apiKey = config.api_key;
     } catch { /* no plugin config — fall back to env */ }
 
-    const { data, cached } = await calculateVedicChart(birth, apiKey);
-    res.json({ ok: true, cached, data });
+    const { data, cached, hash } = await calculateVedicChart(birth, apiKey);
+
+    // Best-effort teaser: one Gemini call per unique chart (cached by the same
+    // birth_hash), never blocks or fails the chart response.
+    let teaser = null;
+    try { teaser = await generateTeaserReading(data, hash); } catch { /* non-fatal */ }
+
+    res.json({ ok: true, cached, data, teaser });
   } catch (e) {
     const status = e.response?.status;
     const detail = e.response?.data ? JSON.stringify(e.response.data) : e.message;

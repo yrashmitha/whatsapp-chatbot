@@ -81,14 +81,14 @@ async function cacheSet(hash, response) {
  *
  * @param {Object} birth  - { year, month, day, hour, minute, lat, lng, ... }
  * @param {string} [apiKey] - Override key (falls back to FREEASTRO_API_KEY)
- * @returns {Promise<{ data: Object, cached: boolean }>}
+ * @returns {Promise<{ data: Object, cached: boolean, hash: string }>}
  */
 async function calculateVedicChart(birth, apiKey) {
   const payload = normalizeBirth(birth);
   const hash    = birthHash(payload);
 
   const cached = await cacheGet(hash);
-  if (cached) return { data: cached, cached: true };
+  if (cached) return { data: cached, cached: true, hash };
 
   const key = apiKey || process.env.FREEASTRO_API_KEY;
   if (!key) throw new Error('FREEASTRO_API_KEY not configured');
@@ -99,7 +99,7 @@ async function calculateVedicChart(birth, apiKey) {
   });
 
   await cacheSet(hash, resp.data);
-  return { data: resp.data, cached: false };
+  return { data: resp.data, cached: false, hash };
 }
 
 module.exports = { calculateVedicChart, birthHash, normalizeBirth };

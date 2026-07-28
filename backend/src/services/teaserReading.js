@@ -124,8 +124,15 @@ function buildFacts(chartData) {
   const kujaDosha = mars ? checkKujaDosha(mars.house) : false;
   const moonNakshatra = typeof moon?.nakshatra === 'string' ? moon.nakshatra : moon?.nakshatra?.name;
 
+  // The ascendant doesn't always carry sign_id in the real API response —
+  // only `degree` is guaranteed present — so derive it the same defensive
+  // way mapFreeAstro.ts does on the frontend, instead of skipping the fact.
+  const ascSignId = asc.sign_id != null
+    ? Number(asc.sign_id)
+    : (asc.degree != null ? Math.floor((((Number(asc.degree) % 360) + 360) % 360) / 30) + 1 : null);
+
   const facts = [];
-  if (asc.sign_id != null) facts.push(`Lagna (ascendant) rashi: ${rashiSiFromSignId(asc.sign_id)}`);
+  if (ascSignId != null) facts.push(`Lagna (ascendant) rashi: ${rashiSiFromSignId(ascSignId)}`);
   if (moon?.sign_id != null) facts.push(`Moon rashi: ${rashiSiFromSignId(moon.sign_id)}`);
   if (moonNakshatra) facts.push(`Moon nakshatra: ${NAKSHATRA_SI[moonNakshatra] || moonNakshatra}`);
   if (dasha?.mahadasha) facts.push(`Current Mahadasha lord: ${PLANET_SI[dasha.mahadasha] || dasha.mahadasha}`);

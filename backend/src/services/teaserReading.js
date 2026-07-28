@@ -31,12 +31,14 @@ const { genAI } = require('./gemini');
 // at all (rendered client-side as static locked cards).
 const TOPICS = ['career', 'marriage', 'wealth', 'health', 'obstacles', 'timing'];
 
-// Western sign name (as returned by freeastroapi) → Sinhala rashi name.
-const RASHI_SI_BY_WESTERN = {
-  Aries: 'මේෂ', Taurus: 'වෘෂභ', Gemini: 'මිථුන', Cancer: 'කටක',
-  Leo: 'සිංහ', Virgo: 'කන්‍යා', Libra: 'තුලා', Scorpio: 'වෘශ්චික',
-  Sagittarius: 'ධනු', Capricorn: 'මකර', Aquarius: 'කුම්භ', Pisces: 'මීන',
-};
+// freeastroapi identifies signs by numeric sign_id (1=Aries...12=Pisces), never
+// a name string — index 0 here is sign_id 1. (Matches the frontend's
+// mapFreeAstro.ts mapping, verified against the live API response shape.)
+const RASHI_SI_BY_SIGN_ID = [
+  'මේෂ', 'වෘෂභ', 'මිථුන', 'කටක', 'සිංහ', 'කන්‍යා',
+  'තුලා', 'වෘශ්චික', 'ධනු', 'මකර', 'කුම්භ', 'මීන',
+];
+const rashiSiFromSignId = (signId) => RASHI_SI_BY_SIGN_ID[((Number(signId) - 1) % 12 + 12) % 12];
 
 const PLANET_SI = {
   Sun: 'සූර්ය', Moon: 'චන්ද්‍ර', Mars: 'කුජ', Mercury: 'බුධ', Jupiter: 'ගුරු',
@@ -109,18 +111,23 @@ function checkKujaDosha(marsHouse) {
  * to hand to Gemini — the model must not invent anything beyond these.
  */
 function buildFacts(chartData) {
+  // Live freeastroapi response is flat: chartData.ascendant/planets, no .chart
+  // nesting, and signs are given as numeric sign_id (never a `.sign` name
+  // string) — matches the frontend's mapFreeAstro.ts, verified against real
+  // API output. Planet names come through as `.name` (e.g. "Moon", "Mars").
   const root = chartData?.chart ?? chartData ?? {};
   const asc = root.ascendant ?? {};
   const planets = root.planets ?? [];
   const moon = planets.find(p => p.name === 'Moon');
   const mars = planets.find(p => p.name === 'Mars');
-  const dasha = findCurrentDasha(chartData?.vimshottari_dasha);
+  const dasha = findCurrentDasha(chartData?.vimshottari_dasha ?? root.vimshottari_dasha);
   const kujaDosha = mars ? checkKujaDosha(mars.house) : false;
+  const moonNakshatra = typeof moon?.nakshatra === 'string' ? moon.nakshatra : moon?.nakshatra?.name;
 
   const facts = [];
-  if (asc.sign) facts.push(`Lagna (ascendant) rashi: ${RASHI_SI_BY_WESTERN[asc.sign] || asc.sign}`);
-  if (moon?.sign) facts.push(`Moon rashi: ${RASHI_SI_BY_WESTERN[moon.sign] || moon.sign}`);
-  if (moon?.nakshatra) facts.push(`Moon nakshatra: ${NAKSHATRA_SI[moon.nakshatra] || moon.nakshatra}`);
+  if (asc.sign_id != null) facts.push(`Lagna (ascendant) rashi: ${rashiSiFromSignId(asc.sign_id)}`);
+  if (moon?.sign_id != null) facts.push(`Moon rashi: ${rashiSiFromSignId(moon.sign_id)}`);
+  if (moonNakshatra) facts.push(`Moon nakshatra: ${NAKSHATRA_SI[moonNakshatra] || moonNakshatra}`);
   if (dasha?.mahadasha) facts.push(`Current Mahadasha lord: ${PLANET_SI[dasha.mahadasha] || dasha.mahadasha}`);
   if (dasha?.antardasha) facts.push(`Current Antardasha lord: ${PLANET_SI[dasha.antardasha] || dasha.antardasha}`);
   if (kujaDosha) facts.push(`Kuja (Mars) dosha is present — Mars is placed in house ${mars.house} from the lagna.`);

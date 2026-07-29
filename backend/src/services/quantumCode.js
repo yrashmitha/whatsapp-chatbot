@@ -12,6 +12,7 @@
 
 const crypto = require('crypto');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { todayContextBlock } = require('./dateContext');
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -485,7 +486,7 @@ async function generateQuantumSections(quantumData, auraAnalysis, sections, apiK
   // Append dasha data so Gemini can reason about current/upcoming planetary periods
   let dashaContext = '';
   if (vimshottariDasha && typeof vimshottariDasha === 'object') {
-    dashaContext = '\n\n─── Vimshottari Dasha ───\n' + JSON.stringify(vimshottariDasha, null, 2);
+    dashaContext = '\n\n─── Vimshottari Dasha ───\n' + JSON.stringify(vimshottariDasha, null, 2) + todayContextBlock();
   }
 
   const genAI = new GoogleGenerativeAI(key);

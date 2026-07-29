@@ -11,6 +11,7 @@ const axios  = require('axios');
 const db     = require('../db');
 const { genAI } = require('./gemini');
 const { extractPlanetDegreesSum, generateQuantumCode, generateQuantumReading, generateQuantumSections } = require('./quantumCode');
+const { todayContextBlock } = require('./dateContext');
 // Lazy-loaded on first use to avoid crashing the server on startup if the
 // package isn't installed yet (e.g. stale Railway build cache).
 let Document, Packer, Paragraph, TextRun, AlignmentType, PageBreak, Footer, PageNumber, NumberFormat;
@@ -162,7 +163,7 @@ function buildSpecialQuestionPrompt(question, systemPrompt, birthDataJson) {
     'උපදෙස් (අනිවාර්යයෙන්ම පිළිපදින්න):\n' +
     '1. අතිශය වැදගත් (Strict Rule): පාරිභෝගිකයා අසා ඇති ගැටලුවට පමණක් සෘජුවම පිළිතුරු දෙන්න. ගැටලුවට අදාළ නැති අනෙකුත් ග්‍රහයන්, රාශි (1 සිට 12 දක්වා), පෞරුෂය, විවාහය හෝ දරු පල ආදිය කිසිසේත් විස්තර නොකරන්න.\n' +
     '2. ගැටලුවට අදාළ වන ග්‍රහ පිහිටීම් පමණක් යොදාගෙන කෙලින්ම පිළිතුර ගොඩනඟන්න (උදා: විදෙස් ගමන් ගැන ඇසුවොත් 9, 12 භාව සහ රාහු පමණක් විස්තර කිරීම).\n' +
-    '3. වර්තමාන කාලය 2026 ලෙස සලකා, ඊට අදාළ දශා කාලයන් පමණක් දක්වමින් ප්‍රශ්නයට අදාළ සාර්ථකම කාලය පවසන්න.\n' +
+    `3. වර්තමාන කාලය ${new Date().getFullYear()} ලෙස සලකා, ඊට අදාළ දශා කාලයන් පමණක් දක්වමින් ප්‍රශ්නයට අදාළ සාර්ථකම කාලය පවසන්න.\n` +
     '4. කතා කරන භාෂාවෙන් (Conversational tone), කෙටි සහ පැහැදිලි ඡේද ලෙස ලියන්න. කිසිදු විටෙක වාක්‍ය අගට \'නේද?\' යන්න නොයොදන්න.\n' +
     '5. සෑම ප්‍රධාන උප-මාතෘකාවක්ම \'###\' සලකුණෙන් ආරම්භ කරන්න. \n' +
     '6. Sinhala only, 300-500 words.\n' + 
@@ -858,7 +859,7 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
   }
 
   // 5. Only send chart data to Gemini — no order/customer details
-  const chartDataJson = JSON.stringify(chartData, null, 2);
+  const chartDataJson = JSON.stringify(chartData, null, 2) + todayContextBlock();
 
   // Normalise specialQuestions: accept legacy string[], legacy {question, sections}[],
   // and new {question, prompt, sections}[] format.
@@ -1103,7 +1104,7 @@ async function generateWaMessage(orderId, horoscopeData, waMessagePrompt) {
  * Returns the new section text.
  */
 async function regenerateHoroscopeSection({ chartData, systemPrompt, sectionKey, sectionGuide, specialAnswers = [] }) {
-  const chartDataJson = JSON.stringify(chartData, null, 2);
+  const chartDataJson = JSON.stringify(chartData, null, 2) + todayContextBlock();
   // Section regeneration uses only the system prompt + chart data — special questions
   // are never injected into sections (they are answered separately).
   const sysInstruction = systemPrompt + '\n\nමෙම කේන්ද්‍ර දත්ත සම්පූර්ණ වාර්තාව සඳහා පදනම වේ:\n\n' + chartDataJson;

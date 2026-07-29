@@ -21,6 +21,7 @@
 const db        = require('../db');
 const { genAI } = require('./gemini');
 const { buildSectionsDoc } = require('./horoscope');
+const { todayContextBlock } = require('./dateContext');
 
 const MARRIAGE_REPORT_TITLE = 'විවාහ ජීවිතය පිළිබඳ විශේෂ ශාස්ත්‍රීය වාර්තාව';
 
@@ -106,7 +107,7 @@ function resolveMarriageConfig(config) {
  * @returns {Promise<string>} the section text
  */
 async function generateMarriageSectionText({ chartData, systemPrompt, label, guide }) {
-  const chartDataJson  = JSON.stringify(chartData, null, 2);
+  const chartDataJson  = JSON.stringify(chartData, null, 2) + todayContextBlock();
   const sysInstruction = systemPrompt + '\n\nමෙම කේන්ද්‍ර දත්ත සම්පූර්ණ වාර්තාව සඳහා පදනම වේ:\n\n' + chartDataJson;
   const prompt = buildMarriageSectionPrompt(label, guide);
 

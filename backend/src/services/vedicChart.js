@@ -17,7 +17,12 @@ const crypto = require('crypto');
 const axios  = require('axios');
 const { IS_PG, pool, db } = require('../db/connection');
 
-const FREEASTRO_URL = 'https://api.freeastroapi.com/api/v1/vedic/calculate';
+const FREEASTRO_URL = 'https://api.freeastroapi.com/api/v2/vedic/calculate';
+
+// v2 nests the base chart under `chart` and adds a top-level `vargas` object
+// (v1 returned a flat chart with no divisional/varga data at all). Bump the
+// cache key so birth data already cached from v1 doesn't serve the old shape.
+const API_VERSION = 'v2';
 
 /**
  * Build the canonical freeastroapi payload from loose birth input.
@@ -48,7 +53,7 @@ function birthHash(payload) {
     payload.year, payload.month, payload.day, payload.hour, payload.minute,
     payload.lat, payload.lng, payload.tz_str, payload.ayanamsha,
     payload.house_system, payload.node_type,
-    (payload.vargas || []).join('-'), payload.dasha_levels,
+    (payload.vargas || []).join('-'), payload.dasha_levels, API_VERSION,
   ].join('|');
   return crypto.createHash('sha1').update(key).digest('hex');
 }

@@ -1129,7 +1129,8 @@ async function fetchChartData(req, res) {
       [JSON.stringify(chartData), parseFloat(lat), parseFloat(lng), birth_place_name || '', order_id]
     );
 
-    const sign = chartData.ascendant?.sign || null;
+    // v2 nests the base chart under `chart`; v1 (legacy) returned it flat.
+    const sign = (chartData.chart ?? chartData).ascendant?.sign || null;
     res.json({ ok: true, sign, sign_si: LAGNA_SINHALA[sign] || sign });
   } catch (e) {
     console.error('[FETCH-CHART]', e.message);

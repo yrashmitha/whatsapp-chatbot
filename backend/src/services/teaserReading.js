@@ -111,10 +111,10 @@ function checkKujaDosha(marsHouse) {
  * to hand to Gemini — the model must not invent anything beyond these.
  */
 function buildFacts(chartData) {
-  // Live freeastroapi response is flat: chartData.ascendant/planets, no .chart
-  // nesting, and signs are given as numeric sign_id (never a `.sign` name
-  // string) — matches the frontend's mapFreeAstro.ts, verified against real
-  // API output. Planet names come through as `.name` (e.g. "Moon", "Mars").
+  // v2 freeastroapi nests the base chart under `chart`; v1 (legacy cached
+  // orders) returned it flat. Support both. Signs are given as numeric
+  // sign_id (never a `.sign` name string) — matches the frontend's
+  // mapFreeAstro.ts. Planet names come through as `.name` (e.g. "Moon", "Mars").
   const root = chartData?.chart ?? chartData ?? {};
   const asc = root.ascendant ?? {};
   const planets = root.planets ?? [];
@@ -138,7 +138,8 @@ function buildFacts(chartData) {
   if (dasha?.mahadasha) facts.push(`Current Mahadasha lord: ${PLANET_SI[dasha.mahadasha] || dasha.mahadasha}`);
   if (dasha?.antardasha) facts.push(`Current Antardasha lord: ${PLANET_SI[dasha.antardasha] || dasha.antardasha}`);
   if (kujaDosha) facts.push(`Kuja (Mars) dosha is present — Mars is placed in house ${mars.house} from the lagna.`);
-  if (chartData?.sade_sati?.active) facts.push(`Sade Sati is currently active (phase: ${chartData.sade_sati.phase || 'unknown'}).`);
+  const sadeSati = chartData?.sade_sati ?? root.sade_sati;
+  if (sadeSati?.active) facts.push(`Sade Sati is currently active (phase: ${sadeSati.phase || 'unknown'}).`);
 
   return facts;
 }

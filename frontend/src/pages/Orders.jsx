@@ -58,6 +58,13 @@ export default function Orders() {
   });
   const showTarot = addonsStatus?.addons?.includes('tarot_reading');
 
+  const showIncome = clientId === 'pj';
+  const { data: incomeData } = useQuery({
+    queryKey: ['orders-income-summary', clientId],
+    queryFn: () => api.get('/orders/income-summary', { params: { client_id: clientId } }).then(r => r.data),
+    enabled: showIncome,
+  });
+
   const params = {
     page, limit: 20,
     ...(search && { search }),
@@ -165,6 +172,14 @@ export default function Orders() {
       <div className="flex flex-col h-full">
         <div className="px-6 py-4 border-b border-slate-200 bg-white flex items-center gap-3 flex-wrap shrink-0">
           <h1 className="text-lg font-semibold text-slate-800 mr-2">Orders</h1>
+          {showIncome && incomeData && (
+            <div
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200"
+              title={`${incomeData.order_count} paid order${incomeData.order_count === 1 ? '' : 's'} this month`}
+            >
+              💰 This month: LKR {incomeData.total.toLocaleString()}
+            </div>
+          )}
           <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
             placeholder="Search…" className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-violet-400 w-40" />
           <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }}

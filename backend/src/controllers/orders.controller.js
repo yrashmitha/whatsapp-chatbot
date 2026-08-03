@@ -115,6 +115,51 @@ async function exportOrders(req, res) {
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 
+// Statuses that represent a confirmed payment (matches metaConversions.js's Purchase-event gate)
+const PAID_STATUSES = ['payment_received', 'paid', 'delivered', 'done', 'complete'];
+
+/**
+ * GET /api/orders/income-summary — total income for the current calendar month.
+ * Amount per order: custom_fields.payment_identified.amount (confirmed payment),
+ * falling back to the sum of custom_fields.items[].price (selected package) when
+ * no payment record was captured. Only orders in a "paid" status are counted.
+ *
+ * @param {import('express').Request}  req
+ * @param {import('express').Response} res
+ * @returns {Promise<void>}
+ */
+async function incomeSummary(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    const r = await db.pgQuery(
+      `SELECT
+         COUNT(*) AS order_count,
+         COALESCE(SUM(
+           CASE
+             WHEN NULLIF(regexp_replace(custom_fields->'payment_identified'->>'amount', ',', '', 'g'), '') IS NOT NULL
+               THEN (regexp_replace(custom_fields->'payment_identified'->>'amount', ',', '', 'g'))::numeric
+             ELSE COALESCE((
+               SELECT SUM((item->>'price')::numeric)
+               FROM jsonb_array_elements(COALESCE(custom_fields->'items', '[]'::jsonb)) AS item
+             ), 0)
+           END
+         ), 0) AS total
+       FROM orders
+       WHERE client_id = $1
+         AND status = ANY($2)
+         AND created_at >= date_trunc('month', NOW())
+         AND created_at <  date_trunc('month', NOW()) + INTERVAL '1 month'`,
+      [clientId, PAID_STATUSES]
+    );
+    res.json({
+      total: parseFloat(r.rows[0].total) || 0,
+      order_count: parseInt(r.rows[0].order_count, 10) || 0,
+      month: new Date().toISOString().slice(0, 7),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
 /**
  * PATCH /api/orders/:id/status — update order status.
  *
@@ -203,4 +248,4 @@ async function createOrder(req, res) {
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 
-module.exports = { listOrders, exportOrders, updateStatus, updateFields, updateNotes, createOrder };
+module.exports = { listOrders, exportOrders, incomeSummary, updateStatus, updateFields, updateNotes, createOrder };

@@ -74,6 +74,12 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
   const [marriageSections, setMarriageSections]         = useState([]);
   const [marriageSpecialNote, setMarriageSpecialNote]   = useState('');
   const [marriageWaPrompt, setMarriageWaPrompt]         = useState('');
+  const [matchSystemPrompt, setMatchSystemPrompt]       = useState('');
+  const [matchSections, setMatchSections]               = useState([]);
+  const [matchSpecialNote, setMatchSpecialNote]         = useState('');
+  const [matchAiFillPrompt, setMatchAiFillPrompt]       = useState('');
+  // Match making is pj-only; the backend enforces the same rule via MATCH_CLIENTS.
+  const showMatch = superAdmin || clientId === 'pj';
   const [greeting, setGreeting]         = useState('');
   const [ttsVoice, setTtsVoice]                   = useState('');
   const [sttLanguage, setSttLanguage]             = useState('');
@@ -114,6 +120,10 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         setMarriageSections(Array.isArray(r.data.marriage_sections) ? r.data.marriage_sections : []);
         setMarriageSpecialNote(r.data.marriage_special_note || '');
         setMarriageWaPrompt(r.data.marriage_wa_prompt || '');
+        setMatchSystemPrompt(r.data.match_system_prompt || '');
+        setMatchSections(Array.isArray(r.data.match_sections) ? r.data.match_sections : []);
+        setMatchSpecialNote(r.data.match_special_note || '');
+        setMatchAiFillPrompt(r.data.match_ai_fill_prompt || '');
         setGreeting(r.data.greeting || '');
         const GEMINI_VOICES = ['achernar','achird','algenib','algieba','alnilam','aoede','autonoe','callirrhoe','charon','despina','enceladus','erinome','fenrir','gacrux','iapetus','kore','laomedeia','leda','orus','puck','pulcherrima','rasalgethi','sadachbia','sadaltager','schedar','sulafat','umbriel','vindemiatrix','zephyr','zubenelgenubi'];
         const savedVoice = (r.data.tts_voice || '').toLowerCase();
@@ -179,6 +189,12 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
         body.marriage_sections      = marriageSections;
         body.marriage_special_note  = marriageSpecialNote;
         body.marriage_wa_prompt     = marriageWaPrompt;
+        if (showMatch) {
+          body.match_system_prompt  = matchSystemPrompt;
+          body.match_sections       = matchSections;
+          body.match_special_note   = matchSpecialNote;
+          body.match_ai_fill_prompt = matchAiFillPrompt;
+        }
       } else if (isCallAnswering) {
         body.system_prompt = systemPrompt;
         body.greeting      = greeting;
@@ -830,6 +846,101 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
               placeholder="විශේෂ සටහන…"
             />
           </div>
+
+          {/* ── Match Making (💑) ─────────────────────────────────────────── */}
+          {showMatch && (
+          <>
+          <div className="mt-2 pt-4 border-t border-slate-200">
+            <p className="text-sm font-semibold text-slate-800">💑 Match Making (ගැළපීම)</p>
+            <p className="text-xs text-slate-400 mt-0.5">
+              A couple compatibility report built from TWO charts. Admins run it from the 💑 button on an order — the Match Making tab collects both partners&apos; birth details and a &ldquo;Check Sign&rdquo; per person. It has its own system prompt, sections, AI Fill prompt and PDF.
+            </p>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Match Making System Prompt</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              Gemini system instruction for every section (both charts are appended automatically, each labelled පිරිමි / ගැහැනු). Leave blank to use the built-in default.
+            </p>
+            <textarea
+              value={matchSystemPrompt}
+              onChange={e => setMatchSystemPrompt(e.target.value)}
+              rows={10}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 resize-y font-mono"
+              placeholder="Leave blank to use built-in default…"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Match Making Sections</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              Each section is one Gemini call and one heading in the match making PDF, in this order. Leave empty to use the built-in 12 sections.
+            </p>
+            {matchSections.map((sec, i) => (
+              <div key={i} className="flex gap-2 mb-2 items-start">
+                <div className="flex flex-col gap-1 shrink-0 mt-1">
+                  <button
+                    onClick={() => { if (i === 0) return; const u = [...matchSections]; [u[i-1], u[i]] = [u[i], u[i-1]]; setMatchSections(u); }}
+                    disabled={i === 0}
+                    className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 disabled:opacity-30 cursor-pointer bg-white text-xs"
+                  >▲</button>
+                  <button
+                    onClick={() => { if (i === matchSections.length - 1) return; const u = [...matchSections]; [u[i], u[i+1]] = [u[i+1], u[i]]; setMatchSections(u); }}
+                    disabled={i === matchSections.length - 1}
+                    className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 disabled:opacity-30 cursor-pointer bg-white text-xs"
+                  >▼</button>
+                </div>
+                <input
+                  type="text"
+                  value={sec.label}
+                  onChange={e => { const u = [...matchSections]; u[i] = { ...u[i], label: e.target.value }; setMatchSections(u); }}
+                  placeholder="Section label (heading)…"
+                  className="w-48 shrink-0 px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100"
+                />
+                <textarea
+                  value={sec.guide}
+                  onChange={e => { const u = [...matchSections]; u[i] = { ...u[i], guide: e.target.value }; setMatchSections(u); }}
+                  placeholder="Guide instructions for Gemini…"
+                  rows={3}
+                  className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 resize-y font-mono"
+                />
+                <button
+                  onClick={() => setMatchSections(matchSections.filter((_, j) => j !== i))}
+                  className="mt-1 w-7 h-7 shrink-0 flex items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-300 cursor-pointer bg-white text-xs font-bold"
+                >×</button>
+              </div>
+            ))}
+            <button
+              onClick={() => setMatchSections([...matchSections, { label: '', guide: '' }])}
+              className="mt-1 px-3 py-1.5 text-xs border border-dashed border-teal-300 text-teal-600 rounded-xl hover:bg-teal-50 cursor-pointer bg-white"
+            >+ Add Section</button>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Match Making AI Fill Prompt</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              Separate from the horoscope AI Fill because a match making chat contains TWO people. Must tell Gemini how to decide which details belong to the boy and which to the girl. Placeholder: <code className="text-teal-600">{'{{chat_log}}'}</code>
+            </p>
+            <textarea
+              value={matchAiFillPrompt}
+              onChange={e => setMatchAiFillPrompt(e.target.value)}
+              rows={10}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 resize-y font-mono"
+              placeholder="Leave blank to use built-in default…"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Match Making Special Note (Final Page)</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              Static text added as the last page of every match making document.
+            </p>
+            <textarea
+              value={matchSpecialNote}
+              onChange={e => setMatchSpecialNote(e.target.value)}
+              rows={5}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 resize-y font-mono"
+              placeholder="විශේෂ සටහන…"
+            />
+          </div>
+          </>
+          )}
         </>
       )}
 

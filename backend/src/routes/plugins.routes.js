@@ -36,6 +36,13 @@ const {
   downloadMarriagePdf,
   generateMarriageWaHandler,
   saveMarriageWaHandler,
+  aiPrepareMatch,
+  saveMatchPeople,
+  generateMatchHandler,
+  regenerateMatchSectionHandler,
+  updateMatchSections,
+  downloadMatchDocx,
+  downloadMatchPdf,
   generateFollowUpMessage,
   syncMetaAudience,
   createMetaAudience,
@@ -76,6 +83,13 @@ router.get('/horoscope/download-marriage-docx/:orderId',        jwtAuth, downloa
 router.get('/horoscope/download-marriage-pdf/:orderId',         jwtAuth, downloadMarriagePdf);
 router.post('/horoscope/generate-marriage-wa/:orderId',         jwtAuth, generateMarriageWaHandler);
 router.patch('/horoscope/marriage-wa/:orderId',                 jwtAuth, saveMarriageWaHandler);
+router.post('/horoscope/ai-prepare-match/:orderId',              jwtAuth, aiPrepareMatch);
+router.patch('/horoscope/match-people/:orderId',                jwtAuth, saveMatchPeople);
+router.post('/horoscope/generate-match/:orderId',               jwtAuth, generateMatchHandler);
+router.post('/horoscope/regenerate-match-section/:orderId',     jwtAuth, regenerateMatchSectionHandler);
+router.patch('/horoscope/match-sections/:orderId',              jwtAuth, updateMatchSections);
+router.get('/horoscope/download-match-docx/:orderId',           jwtAuth, downloadMatchDocx);
+router.get('/horoscope/download-match-pdf/:orderId',            jwtAuth, downloadMatchPdf);
 router.post('/follow-up',                               jwtAuth, generateFollowUpMessage);
 router.get('/meta/recent-events',                       jwtAuth, recentMetaEvents);
 router.post('/meta/sync-audience',                      jwtAuth, syncMetaAudience);

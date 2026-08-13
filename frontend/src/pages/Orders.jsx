@@ -16,6 +16,7 @@ import WaMessageModal from '../components/orders/WaMessageModal';
 import TarotGenerateModal from '../components/orders/TarotGenerateModal';
 import TarotEditorDrawer from '../components/orders/TarotEditorDrawer';
 import MarriageEditorDrawer from '../components/orders/MarriageEditorDrawer';
+import MatchEditorDrawer from '../components/orders/MatchEditorDrawer';
 
 function parseCustomFields(raw) {
   if (!raw) return null;
@@ -46,6 +47,8 @@ export default function Orders() {
   const [tarotOrder, setTarotOrder]           = useState(null);  // tarot generate modal
   const [tarotEditorOrder, setTarotEditorOrder] = useState(null); // tarot editor drawer
   const [marriageOrder, setMarriageOrder]       = useState(null); // marriage editor drawer
+  const [matchOrder, setMatchOrder]             = useState(null); // match making editor drawer
+  const [matchModalOrder, setMatchModalOrder]   = useState(null); // order modal opened on the match tab
   const toast = useToast();
   const qc = useQueryClient();
 
@@ -59,6 +62,8 @@ export default function Orders() {
   const showTarot = addonsStatus?.addons?.includes('tarot_reading');
 
   const showIncome = clientId === 'pj';
+  // Match making is a pj-only report; the backend enforces the same rule (MATCH_CLIENTS).
+  const showMatch  = showHoroscope && (superAdmin || clientId === 'pj');
   const { data: incomeData } = useQuery({
     queryKey: ['orders-income-summary', clientId],
     queryFn: () => api.get('/orders/income-summary', { params: { client_id: clientId } }).then(r => r.data),
@@ -91,7 +96,7 @@ export default function Orders() {
       const hd = o.horoscope_data && typeof o.horoscope_data === 'string'
         ? (() => { try { return JSON.parse(o.horoscope_data); } catch { return {}; } })()
         : (o.horoscope_data || {});
-      if (hd.generating === true || hd.quantum_generating === true || hd.marriage_generating === true) return true;
+      if (hd.generating === true || hd.quantum_generating === true || hd.marriage_generating === true || hd.match_generating === true) return true;
       const td = o.tarot_data && typeof o.tarot_data === 'string'
         ? (() => { try { return JSON.parse(o.tarot_data); } catch { return {}; } })()
         : (o.tarot_data || {});
@@ -237,6 +242,9 @@ export default function Orders() {
                   const marriageGenerating = hd?.marriage_generating === true;
                   const marriageError      = hd?.marriage_error || null;
                   const marriageDone       = Array.isArray(hd?.marriage_sections_data) && hd.marriage_sections_data.length > 0;
+                  const matchGenerating    = hd?.match_generating === true;
+                  const matchError         = hd?.match_error || null;
+                  const matchDone          = Array.isArray(hd?.match_sections_data) && hd.match_sections_data.length > 0;
                   const td = o.tarot_data && typeof o.tarot_data === 'string'
                     ? (() => { try { return JSON.parse(o.tarot_data); } catch { return null; } })()
                     : (o.tarot_data || null);
@@ -353,6 +361,28 @@ export default function Orders() {
                                           : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
                                         }`}
                                       >{marriageDone ? '💍 ✏' : '💍'}</button>
+                                    </>
+                                  )
+                                )}
+                                {showMatch && (
+                                  matchGenerating ? (
+                                    <span className="flex items-center gap-1 text-xs text-teal-600 font-medium">
+                                      <span className="w-3 h-3 border-2 border-teal-300 border-t-teal-600 rounded-full animate-spin inline-block" />
+                                      💑 Generating…
+                                    </span>
+                                  ) : (
+                                    <>
+                                      {matchError && !matchDone && (
+                                        <span title={matchError} className="text-xs px-1.5 py-0.5 rounded border-0 bg-red-100 text-red-600 cursor-default">⚠</span>
+                                      )}
+                                      <button
+                                        onClick={() => (matchDone ? setMatchOrder(o) : setMatchModalOrder(o))}
+                                        title={matchDone ? 'View/edit match making report' : 'Match making — enter both charts'}
+                                        className={`text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 ${
+                                          matchDone ? 'bg-teal-200 text-teal-800 hover:bg-teal-300'
+                                                    : 'bg-teal-100 text-teal-700 hover:bg-teal-200'
+                                        }`}
+                                      >{matchDone ? '💑 ✏' : '💑'}</button>
                                     </>
                                   )
                                 )}
@@ -573,7 +603,18 @@ export default function Orders() {
         <HoroscopeModal
           order={horoscopeOrder}
           clientId={clientId}
+          showMatch={showMatch}
           onClose={() => setHoroscopeOrder(null)}
+          onGenerated={() => qc.invalidateQueries({ queryKey: ['orders'] })}
+        />
+      )}
+      {matchModalOrder && (
+        <HoroscopeModal
+          order={matchModalOrder}
+          clientId={clientId}
+          showMatch
+          initialTab="match"
+          onClose={() => setMatchModalOrder(null)}
           onGenerated={() => qc.invalidateQueries({ queryKey: ['orders'] })}
         />
       )}
@@ -605,6 +646,12 @@ export default function Orders() {
         clientId={clientId}
         open={!!marriageOrder}
         onClose={() => setMarriageOrder(null)}
+      />
+      <MatchEditorDrawer
+        order={orders.find(o => o.order_id === matchOrder?.order_id) || matchOrder}
+        clientId={clientId}
+        open={!!matchOrder}
+        onClose={() => setMatchOrder(null)}
       />
       {waMessageOrder && (
         <WaMessageModal

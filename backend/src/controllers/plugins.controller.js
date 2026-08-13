@@ -13,9 +13,21 @@ const { calculateVedicChart } = require('../services/vedicChart');
 const { analyzeAura, generateQuantumReading, generateQuantumSections } = require('../services/quantumCode');
 const {
   generateMarriageReading, generateMarriageSectionText, generateMarriageWaMessage,
-  buildMarriageDoc, resolveMarriageConfig,
+  buildMarriageDoc, resolveMarriageConfig, historyFromSections,
   MARRIAGE_REPORT_TITLE, DEFAULT_MARRIAGE_SECTIONS, DEFAULT_MARRIAGE_SYSTEM_PROMPT,
 } = require('../services/marriage');
+const {
+  generateMatchReading, generateMatchSectionText, buildMatchDoc, buildCoupleContext,
+  resolveMatchConfig, historyFromSections: matchHistoryFromSections,
+  MATCH_REPORT_TITLE, DEFAULT_MATCH_SECTIONS, DEFAULT_MATCH_SYSTEM_PROMPT,
+  DEFAULT_MATCH_SPECIAL_NOTE,
+} = require('../services/matchReport');
+
+/**
+ * Clients allowed to use the match-making report. Comma-separated env override so the
+ * rollout can widen without a code change; defaults to Purana Jothirwedaya only.
+ */
+const MATCH_CLIENTS = (process.env.MATCHMAKING_CLIENTS || 'pj').split(',').map(s => s.trim()).filter(Boolean);
 const { DEFAULT_TAROT_PROMPT } = require('../services/tarot');
 const { generateFollowUp, DEFAULT_FOLLOWUP_PROMPT } = require('../services/followup');
 const { syncAudienceForClient, createAudienceForClient, getRecentEvents } = require('../services/metaConversions');
@@ -124,6 +136,75 @@ The "sections" array must use the exact Sinhala section keys from this list:
 - "වර්තමාන දශාව අනුව පලාපල"
 - "ජීවිතයේ අභියෝග ජයගැනීම සඳහා වූ පොදු ශාස්ත්‍රීය සහ බෞද්ධ පිළියම්"`;
 
+/**
+ * AI Fill prompt for the MATCH MAKING report. Deliberately separate from the horoscope
+ * one: a match-making chat contains TWO people's birth details, and the only thing that
+ * matters more than extracting them is attributing them to the right person. Guessing
+ * wrong silently produces a confident, completely wrong compatibility report, so the
+ * prompt is written to return null rather than guess.
+ * Placeholder: {{chat_log}}
+ */
+const DEFAULT_MATCH_AI_FILL_PROMPT = `You are an expert Vedic astrology assistant and Sinhala language expert preparing a COUPLE COMPATIBILITY (ගැළපීම / match making) reading.
+
+## Full Customer Chat Conversation
+{{chat_log}}
+
+## Your Task
+This chat contains the birth details of TWO different people — a male (පිරිමි / boy) and a female (ගැහැනු / girl) — because the customer wants their horoscopes compared. Extract BOTH, and return the exact JSON schema below, nothing else.
+
+## CRITICAL — attributing details to the right person
+Getting this backwards produces a confident but completely wrong report, so be strict:
+- Sinhala cues for the MALE: පිරිමි, පුතා, පුතාගේ, කොල්ලා, මහත්මයා, ඔහුගේ, මනාලයා, සැමියා, පිරිමි ළමයා
+- Sinhala cues for the FEMALE: ගැහැනු, දුව, දුවගේ, කෙල්ල, මිස්, ඇයගේ, මනාලිය, බිරිඳ, ගැහැනු ළමයා
+- Also use: which name is customarily male or female in Sri Lanka; the order the customer introduced them; and possessive context ("මගේ පුතාගේ උපන් දිනය…").
+- If the chat gives two sets of details but you CANNOT confidently tell which is which, return null for BOTH. A wrong pairing is far worse than an empty form.
+- If only ONE person's details appear, fill that person and return null for the other. NEVER duplicate one person's details into both slots, and never invent the second person.
+- Return null for a person whose BIRTH DATE you cannot find, even if you found their name.
+
+### name
+The person's name as written in the chat (Sinhala or English, whichever the customer used). Empty string if never stated.
+
+### birth_date_iso
+Normalize to exactly "YYYY-MM-DD" (e.g. "1990-03-15").
+Sinhala month names: ජනවාරි=01 පෙබරවාරි=02 මාර්තු=03 අප්‍රේල්=04 මැයි=05 ජූනි=06 ජූලි=07 අගෝස්තු=08 සැප්තැම්බර්=09 ඔක්තෝබර්=10 නොවැම්බර්=11 දෙසැම්බර්=12
+Return null if genuinely unknown.
+
+### birth_time_24h
+Normalize to exactly "HH:MM" 24-hour format.
+CRITICAL: "ප.ව" means afternoon/PM. Add 12 to hours 1–11 for PM. Examples: "ප.ව 3.30" → "15:30", "ප.ව 9.00" → "21:00", "ප.ව 12.00" → "12:00".
+"පෙ.ව" or "උදෑසන" or "උදේ" = AM (do NOT add 12). Examples: "පෙ.ව 6.30" → "06:30", "උදේ 3.30" → "03:30".
+"සවස" or "රාත්‍රී" or "රාත්රී" or "දහවල්" = PM.
+Midnight = "00:00". Noon = "12:00". Return null if genuinely unknown.
+
+### birth_place_en
+The English name of that person's birth place (translated from Sinhala if needed). Just the place name, no country suffix. Each person has their OWN birth place — do not copy one to the other unless the chat actually says they were born in the same town.
+
+### lat / lng
+Latitude and longitude (decimal degrees) of THAT person's birth place. Use your geographic knowledge and return precise coordinates with a minimum of 4 decimal places. Return numbers, not strings. Example: 8.4983 / 80.6015 — not 8.5 / 80.6.
+
+### special_questions
+The specific things THIS COUPLE asked about their relationship. Two fields each:
+- "question": the SHORT, polished Sinhala question shown to the customer in the final PDF. One clear sentence they will recognise as their own concern.
+- "prompt": a DETAILED Sinhala instruction written FOR GEMINI ONLY (the customer never sees it). Spell out the couple's exact situation from the chat, the angle to analyse, and what the answer must cover.
+
+The following are ALREADY covered by the report's standard sections. Do NOT create questions duplicating them:
+- overall chart compatibility and ගැළපීම percentage
+- personality similarities and complementary traits
+- communication and intellectual understanding
+- love, affection and emotional bonding
+- physical and sexual compatibility
+- conflict tendencies and how to resolve them
+- current dasha periods and transits affecting the relationship
+- childbirth prospects (දරු පල)
+- long-term survival of the relationship
+- major doshas (කුජ, ශනි මංගල, සර්ප) and their cancellation
+- remedies
+- final verdict on whether to proceed
+
+A special question is ONLY valid if it targets something SPECIFIC this couple personally mentioned — family opposition, an age gap, a long-distance situation, a specific wedding date they are considering, a previous relationship, a health or financial worry, and so on.
+
+If the chat contains no such specific concern, return an EMPTY array. Do not invent questions.`;
+
 const { exec } = require('child_process');
 const fs   = require('fs');
 const os   = require('os');
@@ -198,6 +279,10 @@ async function getPluginConfig(req, res) {
         marriage_system_prompt: DEFAULT_MARRIAGE_SYSTEM_PROMPT,
         marriage_sections: DEFAULT_MARRIAGE_SECTIONS,
         marriage_special_note: '', marriage_wa_prompt: '',
+        match_system_prompt: DEFAULT_MATCH_SYSTEM_PROMPT,
+        match_sections: DEFAULT_MATCH_SECTIONS,
+        match_special_note: DEFAULT_MATCH_SPECIAL_NOTE,
+        match_ai_fill_prompt: DEFAULT_MATCH_AI_FILL_PROMPT,
       };
     } else if (pluginId === 'ai_call_answering') {
       defaults = { name: 'AI Call Answering', system_prompt: '', greeting: 'Hello, how can I help you today?', tts_voice: 'Kore', stt_language: 'en-US' };
@@ -216,7 +301,17 @@ async function getPluginConfig(req, res) {
     } else {
       defaults = { name: pluginId, prompt: '' };
     }
-    res.json({ ...defaults, ...config });
+    const merged = { ...defaults, ...config };
+
+    // An empty saved match_sections array means "unset", which is how resolveMatchConfig
+    // treats it at generation time. Surface the defaults here too, otherwise deleting the
+    // last section leaves the settings editor permanently blank with no way back.
+    if (pluginId === 'horoscope_reading'
+        && Array.isArray(merged.match_sections) && merged.match_sections.length === 0) {
+      merged.match_sections = DEFAULT_MATCH_SECTIONS;
+    }
+
+    res.json(merged);
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 
@@ -234,7 +329,7 @@ async function updatePluginConfig(req, res) {
     return res.status(403).json({ error: 'Forbidden' });
   }
   const { pluginId } = req.params;
-  const { name, prompt, api_key, system_prompt, quantum_system_prompt, aura_system_prompt, horoscope_sections, quantum_sections, section_guides, special_note, wa_message_prompt, ai_fill_prompt, greeting, tts_voice, stt_language, verification_prompt, page1_body, page2_body, page4_body, quantum_enabled, pixel_id, ad_account_id, audience_id, marriage_system_prompt, marriage_sections, marriage_special_note, marriage_wa_prompt } = req.body;
+  const { name, prompt, api_key, system_prompt, quantum_system_prompt, aura_system_prompt, horoscope_sections, quantum_sections, section_guides, special_note, wa_message_prompt, ai_fill_prompt, greeting, tts_voice, stt_language, verification_prompt, page1_body, page2_body, page4_body, quantum_enabled, pixel_id, ad_account_id, audience_id, marriage_system_prompt, marriage_sections, marriage_special_note, marriage_wa_prompt, match_system_prompt, match_sections, match_special_note, match_ai_fill_prompt } = req.body;
   try {
     const existing = await db.getPluginConfig(clientId, pluginId);
     const update = { ...existing };
@@ -252,6 +347,10 @@ async function updatePluginConfig(req, res) {
     if (marriage_sections !== undefined)      update.marriage_sections      = marriage_sections;
     if (marriage_special_note !== undefined)  update.marriage_special_note  = marriage_special_note;
     if (marriage_wa_prompt !== undefined)     update.marriage_wa_prompt     = marriage_wa_prompt;
+    if (match_system_prompt !== undefined)    update.match_system_prompt    = match_system_prompt;
+    if (match_sections !== undefined)         update.match_sections         = match_sections;
+    if (match_special_note !== undefined)     update.match_special_note     = match_special_note;
+    if (match_ai_fill_prompt !== undefined)   update.match_ai_fill_prompt   = match_ai_fill_prompt;
     if (wa_message_prompt !== undefined)     update.wa_message_prompt     = wa_message_prompt;
     if (ai_fill_prompt !== undefined)        update.ai_fill_prompt        = ai_fill_prompt;
     if (quantum_enabled !== undefined)       update.quantum_enabled       = quantum_enabled;
@@ -861,6 +960,7 @@ async function regenerateHoroscopeSectionHandler(req, res) {
       sectionKey:    label.trim(),
       sectionGuide,
       specialAnswers: hd.special_answers || [],
+      otherSections:  hd.sections || null,
     });
 
     await db.pgQuery(
@@ -1094,9 +1194,14 @@ async function fetchChartData(req, res) {
   const clientId = resolveClientId(req);
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
 
-  const { order_id, lat, lng, birth_place_name, birth_overrides } = req.body;
+  // `target` routes the chart to one half of a match-making couple instead of the
+  // order's own chart_data. Omitted → unchanged single-person behaviour.
+  const { order_id, lat, lng, birth_place_name, birth_overrides, target, name } = req.body;
   if (!order_id || lat == null || lng == null) {
     return res.status(400).json({ error: 'order_id, lat, lng required' });
+  }
+  if (target && !['boy', 'girl'].includes(target)) {
+    return res.status(400).json({ error: "target must be 'boy' or 'girl'" });
   }
 
   const overrides = birth_overrides || {};
@@ -1117,21 +1222,43 @@ async function fetchChartData(req, res) {
       apiKey
     );
 
-    await db.pgQuery(
-      `UPDATE orders SET horoscope_data = COALESCE(horoscope_data,'{}') ||
-        jsonb_build_object(
-          'chart_data', $1::jsonb,
-          'lat', $2::float,
-          'lng', $3::float,
-          'birth_place_name', $4::text
-        )
-       WHERE order_id=$5`,
-      [JSON.stringify(chartData), parseFloat(lat), parseFloat(lng), birth_place_name || '', order_id]
-    );
-
     // v2 nests the base chart under `chart`; v1 (legacy) returned it flat.
     const sign = (chartData.chart ?? chartData).ascendant?.sign || null;
-    res.json({ ok: true, sign, sign_si: LAGNA_SINHALA[sign] || sign });
+
+    if (target) {
+      // Store the whole person (inputs + chart) under match_boy / match_girl so the
+      // report generator has everything it needs without re-deriving it.
+      const person = {
+        name:             name || '',
+        birth_date:       overrides.birth_date || '',
+        birth_time:       overrides.birth_time || '',
+        birth_place_name: birth_place_name || '',
+        lat:              parseFloat(lat),
+        lng:              parseFloat(lng),
+        lagna:            sign,
+        chart_data:       chartData,
+      };
+      // `target` is whitelisted to boy|girl above, so interpolating the path is safe.
+      await db.pgQuery(
+        `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), '{match_${target}}', $1::jsonb, true)
+         WHERE order_id=$2`,
+        [JSON.stringify(person), order_id]
+      );
+    } else {
+      await db.pgQuery(
+        `UPDATE orders SET horoscope_data = COALESCE(horoscope_data,'{}') ||
+          jsonb_build_object(
+            'chart_data', $1::jsonb,
+            'lat', $2::float,
+            'lng', $3::float,
+            'birth_place_name', $4::text
+          )
+         WHERE order_id=$5`,
+        [JSON.stringify(chartData), parseFloat(lat), parseFloat(lng), birth_place_name || '', order_id]
+      );
+    }
+
+    res.json({ ok: true, target: target || null, sign, sign_si: LAGNA_SINHALA[sign] || sign });
   } catch (e) {
     console.error('[FETCH-CHART]', e.message);
     res.status(500).json({ error: e.message });
@@ -1327,14 +1454,18 @@ async function regenerateMarriageSectionHandler(req, res) {
     const sectionDef = sections.find(s => s.label === label.trim());
     if (!sectionDef) return res.status(404).json({ error: `Section "${label}" not found in config.` });
 
+    const existing = Array.isArray(order.hd.marriage_sections_data) ? order.hd.marriage_sections_data : [];
+
+    // No live session exists any more, so rebuild the conversation from the saved
+    // sections (minus this one) — otherwise the regenerated text repeats its neighbours.
     const content = await generateMarriageSectionText({
       chartData:    order.hd.chart_data,
       systemPrompt,
       label:        sectionDef.label,
       guide:        sectionDef.guide || '',
+      history:      historyFromSections(existing, label.trim()),
     });
 
-    const existing = Array.isArray(order.hd.marriage_sections_data) ? order.hd.marriage_sections_data : [];
     const idx = existing.findIndex(s => s.label === label.trim());
     const updated = idx >= 0
       ? existing.map((s, i) => (i === idx ? { ...s, content } : s))
@@ -1483,6 +1614,340 @@ async function saveMarriageWaHandler(req, res) {
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 
+// ─── Match Making (ගැළපීම) — couple compatibility report ─────────────────────
+
+/**
+ * Guard every match-making endpoint. This report is scoped to specific clients on top of
+ * the usual horoscope addon check. Env-driven so the rollout can widen without a deploy.
+ * @returns {Promise<string|null>} the resolved clientId, or null if the response was sent
+ */
+async function guardMatchRequest(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) { res.status(400).json({ error: 'client_id required' }); return null; }
+  if (!MATCH_CLIENTS.includes(clientId)) {
+    res.status(403).json({ error: 'Match making is not enabled for this client' });
+    return null;
+  }
+  const addonCheck = await db.pgQuery(
+    `SELECT enabled FROM client_addons WHERE client_id=$1 AND addon_id='horoscope_reading' AND enabled=TRUE`,
+    [clientId]
+  );
+  if (!addonCheck.rows.length) {
+    res.status(403).json({ error: 'horoscope_reading addon not enabled' });
+    return null;
+  }
+  return clientId;
+}
+
+/**
+ * POST /api/plugins/horoscope/ai-prepare-match/:orderId
+ * Reads the WhatsApp thread and extracts BOTH partners' birth details in one pass.
+ */
+async function aiPrepareMatch(req, res) {
+  const clientId = await guardMatchRequest(req, res);
+  if (!clientId) return;
+  const { orderId } = req.params;
+
+  try {
+    const orderRes = await db.pgQuery('SELECT * FROM orders WHERE order_id=$1', [orderId]);
+    if (!orderRes.rows.length) return res.status(404).json({ error: 'Order not found' });
+    const order = orderRes.rows[0];
+
+    const messages = await db.getMessagesByPhone(order.phone_number, clientId);
+    const chatLog = messages.map(m =>
+      `[${m.sender_type === 'user' ? 'Customer' : 'Agent'}]: ${m.message_text || ''}`
+    ).filter(l => l.length > 12).join('\n');
+
+    const config = await db.getPluginConfig(clientId, 'horoscope_reading');
+    const template = (config.match_ai_fill_prompt && config.match_ai_fill_prompt.trim())
+      ? config.match_ai_fill_prompt
+      : DEFAULT_MATCH_AI_FILL_PROMPT;
+
+    const prompt = template.replace(/\{\{chat_log\}\}/g, chatLog || '(no messages found)');
+
+    const person = {
+      type: 'object',
+      nullable: true,
+      properties: {
+        name:            { type: 'string',  nullable: true },
+        birth_date_iso:  { type: 'string',  nullable: true },
+        birth_time_24h:  { type: 'string',  nullable: true },
+        birth_place_en:  { type: 'string',  nullable: true },
+        lat:             { type: 'number',  nullable: true },
+        lng:             { type: 'number',  nullable: true },
+      },
+      required: ['name', 'birth_date_iso', 'birth_time_24h', 'birth_place_en', 'lat', 'lng'],
+    };
+
+    const geminiModel = genAI.getGenerativeModel({
+      model: 'gemini-2.5-flash',
+      generationConfig: {
+        temperature: 0.2,
+        topP: 0.9,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: 'object',
+          properties: {
+            boy:  person,
+            girl: person,
+            special_questions: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  question: { type: 'string' },
+                  prompt:   { type: 'string' },
+                },
+                required: ['question', 'prompt'],
+              },
+            },
+          },
+          required: ['boy', 'girl', 'special_questions'],
+        },
+      },
+    });
+
+    const result = await geminiModel.generateContent(prompt);
+    const raw = result.response.text().trim();
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch { return res.status(500).json({ error: 'Gemini returned invalid JSON', raw }); }
+
+    // A person object whose date is missing is treated as "not found" rather than
+    // half-filled — the operator must see an empty column, not a plausible guess.
+    const clean = (p) => (p && p.birth_date_iso) ? {
+      name:           p.name || '',
+      birth_date_iso: p.birth_date_iso,
+      birth_time_24h: p.birth_time_24h || null,
+      birth_place_en: p.birth_place_en || null,
+      lat:            p.lat ?? null,
+      lng:            p.lng ?? null,
+    } : null;
+
+    res.json({
+      boy:  clean(parsed.boy),
+      girl: clean(parsed.girl),
+      special_questions: Array.isArray(parsed.special_questions) ? parsed.special_questions : [],
+    });
+  } catch (e) {
+    console.error('[AI-PREPARE-MATCH]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+}
+
+/**
+ * PATCH /api/plugins/horoscope/match-people/:orderId
+ * Saves the two partners' form values and the couple's custom questions. The charts
+ * themselves are written by fetch-chart (the "Check Sign" buttons), so this merges
+ * rather than overwrites.
+ */
+async function saveMatchPeople(req, res) {
+  const clientId = await guardMatchRequest(req, res);
+  if (!clientId) return;
+  const { orderId } = req.params;
+  const { match_boy, match_girl, match_special_questions } = req.body;
+
+  try {
+    const order = await loadOrderReport(orderId);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const merge = (existing, incoming) => (incoming ? { ...(existing || {}), ...incoming } : existing);
+    const updated = {
+      ...order.hd,
+      match_boy:  merge(order.hd.match_boy,  match_boy),
+      match_girl: merge(order.hd.match_girl, match_girl),
+      ...(Array.isArray(match_special_questions) && { match_special_questions }),
+    };
+
+    await db.pgQuery('UPDATE orders SET horoscope_data=$1 WHERE order_id=$2', [JSON.stringify(updated), orderId]);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[MATCH-PEOPLE]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+}
+
+/**
+ * POST /api/plugins/horoscope/generate-match/:orderId
+ * Runs in the background; the UI polls `match_generating` on the order.
+ */
+async function generateMatchHandler(req, res) {
+  const clientId = await guardMatchRequest(req, res);
+  if (!clientId) return;
+  const { orderId } = req.params;
+
+  try {
+    const order = await loadOrderReport(orderId);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const missing = [];
+    if (!order.hd.match_boy?.chart_data)  missing.push('boy');
+    if (!order.hd.match_girl?.chart_data) missing.push('girl');
+    if (missing.length) {
+      return res.status(400).json({
+        error: `No birth chart for the ${missing.join(' and ')}. Open the Match Making tab, `
+             + 'fill both sides and click "Check Sign" for each before generating.',
+      });
+    }
+
+    await db.pgQuery(
+      `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}') - 'match_error', '{match_generating}', 'true'::jsonb) WHERE order_id=$1`,
+      [orderId]
+    );
+
+    res.json({ ok: true, generating: true });
+
+    generateMatchReading(clientId, orderId).catch(async (e) => {
+      console.error('[MATCH] generate error:', e.message);
+      await db.pgQuery(
+        `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}') - 'match_generating', '{match_error}', $1::jsonb) WHERE order_id=$2`,
+        [JSON.stringify(e.message), orderId]
+      ).catch(() => {});
+    });
+  } catch (e) {
+    console.error('[MATCH] handler error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+}
+
+/**
+ * POST /api/plugins/horoscope/regenerate-match-section/:orderId
+ */
+async function regenerateMatchSectionHandler(req, res) {
+  const clientId = await guardMatchRequest(req, res);
+  if (!clientId) return;
+  const { orderId } = req.params;
+  const { label } = req.body;
+  if (!label?.trim()) return res.status(400).json({ error: 'label required' });
+
+  try {
+    const order = await loadOrderReport(orderId);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (!order.hd.match_boy?.chart_data || !order.hd.match_girl?.chart_data) {
+      return res.status(400).json({ error: 'Both charts are required.' });
+    }
+
+    const config = await db.getPluginConfig(clientId, 'horoscope_reading');
+    const { sections, systemPrompt } = resolveMatchConfig(config);
+    const sectionDef = sections.find(s => s.label === label.trim());
+    if (!sectionDef) return res.status(404).json({ error: `Section "${label}" not found in config.` });
+
+    const existing = Array.isArray(order.hd.match_sections_data) ? order.hd.match_sections_data : [];
+
+    // The run's session is long gone, so replay the other sections as history — without
+    // it the rewrite has no idea what the rest of the report says.
+    const content = await generateMatchSectionText({
+      coupleContext: buildCoupleContext(order.hd),
+      systemPrompt,
+      label:   sectionDef.label,
+      guide:   sectionDef.guide || '',
+      history: matchHistoryFromSections(existing, label.trim()),
+    });
+
+    const idx = existing.findIndex(s => s.label === label.trim());
+    const updated = idx >= 0
+      ? existing.map((s, i) => (i === idx ? { ...s, content } : s))
+      : [...existing, { label: label.trim(), content }];
+
+    await db.pgQuery(
+      `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), '{match_sections_data}', $1::jsonb) WHERE order_id=$2`,
+      [JSON.stringify(updated), orderId]
+    );
+
+    res.json({ ok: true, label: label.trim(), content });
+  } catch (e) {
+    console.error('[MATCH-REGEN-SECTION] Error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+}
+
+/**
+ * PATCH /api/plugins/horoscope/match-sections/:orderId — save edited section text.
+ */
+async function updateMatchSections(req, res) {
+  const { orderId } = req.params;
+  const { match_sections_data, match_special_answers } = req.body;
+  if (!Array.isArray(match_sections_data)) {
+    return res.status(400).json({ error: 'match_sections_data array required' });
+  }
+  try {
+    const order = await loadOrderReport(orderId);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const updated = {
+      ...order.hd,
+      match_sections_data,
+      ...(Array.isArray(match_special_answers) && { match_special_answers }),
+    };
+    await db.pgQuery('UPDATE orders SET horoscope_data=$1 WHERE order_id=$2', [JSON.stringify(updated), orderId]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+/** Build the match .docx buffer for an order, or throw a 404-ish error. */
+async function matchDocxFor(orderId, clientId) {
+  const order = await loadOrderReport(orderId);
+  if (!order) { const e = new Error('Order not found'); e.status = 404; throw e; }
+  const data = order.hd.match_sections_data;
+  if (!Array.isArray(data) || data.length === 0) {
+    const e = new Error('No match making reading generated yet'); e.status = 404; throw e;
+  }
+  const config = clientId ? await db.getPluginConfig(clientId, 'horoscope_reading') : {};
+  const { sections, specialNote } = resolveMatchConfig(config);
+
+  const buffer = await buildMatchDoc({
+    hd:             order.hd,
+    sections:       data,
+    specialNote,
+    sectionOrder:   sections,
+    specialAnswers: order.hd.match_special_answers || [],
+  });
+  return { buffer, order };
+}
+
+/** Filename stem: <phone>-<boy birthday>-match */
+function matchFilenameStem(order, orderId) {
+  const phone  = (order.phone || orderId).replace(/\D/g, '');
+  const raw    = order.hd.match_boy?.birth_date || '';
+  const parsed = parseSinhalaDate(raw);
+  const birthday = parsed
+    ? `${parsed.year}${String(parsed.month).padStart(2, '0')}${String(parsed.day).padStart(2, '0')}`
+    : raw.replace(/[^0-9]/g, '').slice(0, 8) || 'birthday';
+  return `${phone}-${birthday}-match`;
+}
+
+/**
+ * GET /api/plugins/horoscope/download-match-docx/:orderId — .docx (also used for preview).
+ */
+async function downloadMatchDocx(req, res) {
+  const { orderId } = req.params;
+  try {
+    const { buffer, order } = await matchDocxFor(orderId, resolveClientId(req));
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="${matchFilenameStem(order, orderId)}.docx"`);
+    res.send(buffer);
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+}
+
+/**
+ * GET /api/plugins/horoscope/download-match-pdf/:orderId — PDF.
+ */
+async function downloadMatchPdf(req, res) {
+  const { orderId } = req.params;
+  try {
+    const { buffer: docxBuffer, order } = await matchDocxFor(orderId, resolveClientId(req));
+    const pdf = await docxBufferToPdf(docxBuffer, `match-${orderId}-${Date.now()}`, {
+      title:   MATCH_REPORT_TITLE,
+      subject: MATCH_REPORT_TITLE,
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${matchFilenameStem(order, orderId)}.pdf"`);
+    res.send(pdf);
+  } catch (e) {
+    console.error('[MATCH-PDF] Error:', e.message);
+    res.status(e.status || 500).json({ error: e.message });
+  }
+}
+
 module.exports = {
   getPluginConfig, updatePluginConfig, getPluginCustomerData, generateAstroChart,
   analyzeAuraImage,
@@ -1497,6 +1962,8 @@ module.exports = {
   generateMarriageHandler, regenerateMarriageSectionHandler, updateMarriageSections,
   downloadMarriageDocx, downloadMarriagePdf,
   generateMarriageWaHandler, saveMarriageWaHandler,
+  aiPrepareMatch, saveMatchPeople, generateMatchHandler, regenerateMatchSectionHandler,
+  updateMatchSections, downloadMatchDocx, downloadMatchPdf,
   generateFollowUpMessage,
   syncMetaAudience,
   createMetaAudience,

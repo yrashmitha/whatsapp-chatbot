@@ -103,24 +103,48 @@ function resolveMarriageConfig(config) {
 }
 
 /**
- * Generate one marriage section from saved chart data.
- * @returns {Promise<string>} the section text
+ * Build the Gemini model for a marriage run. The chart data is constant across every
+ * section, so it belongs in the systemInstruction and the model is built once per run.
  */
-async function generateMarriageSectionText({ chartData, systemPrompt, label, guide }) {
+function buildMarriageModel({ chartData, systemPrompt }) {
   const chartDataJson  = JSON.stringify(chartData, null, 2) + todayContextBlock();
   const sysInstruction = systemPrompt + '\n\nමෙම කේන්ද්‍ර දත්ත සම්පූර්ණ වාර්තාව සඳහා පදනම වේ:\n\n' + chartDataJson;
+  return genAI.getGenerativeModel({
+    model: 'gemini-2.5-flash',
+    generationConfig: { temperature: 0.4, topP: 0.8, topK: 40 },
+    systemInstruction: sysInstruction,
+  });
+}
+
+/**
+ * Rebuild a chat history from already-saved sections, for the regenerate-one-section
+ * path where no live session exists any more. The section being redone is excluded so
+ * the model rewrites it rather than repeating itself.
+ */
+function historyFromSections(sectionsData, excludeLabel) {
+  return (sectionsData || [])
+    .filter(s => s && s.label && s.content && s.label !== excludeLabel)
+    .flatMap(s => [
+      { role: 'user',  parts: [{ text: `මාතෘකාව: [${s.label}]` }] },
+      { role: 'model', parts: [{ text: s.content }] },
+    ]);
+}
+
+/**
+ * Generate one marriage section from saved chart data.
+ * Pass an existing `chat` to keep the run's shared session (and its accumulated history);
+ * omit it and a one-off session is built instead.
+ * @returns {Promise<string>} the section text
+ */
+async function generateMarriageSectionText({ chartData, systemPrompt, label, guide, chat, history }) {
   const prompt = buildMarriageSectionPrompt(label, guide);
 
   console.log(`[MARRIAGE] ── REQUEST: "${label}"`);
   console.log('[MARRIAGE] userPrompt:\n' + prompt);
 
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-2.5-flash',
-    generationConfig: { temperature: 0.4, topP: 0.8, topK: 40 },
-    systemInstruction: sysInstruction,
-  });
-  const chat   = model.startChat({});
-  const result = await chat.sendMessage(prompt);
+  const activeChat = chat
+    || buildMarriageModel({ chartData, systemPrompt }).startChat({ history: history || [] });
+  const result = await activeChat.sendMessage(prompt);
   const text   = result.response.text();
   const usage  = result.response.usageMetadata;
   console.log(`[MARRIAGE] ── RESPONSE: "${label}" tokens in=${usage?.promptTokenCount ?? '?'} out=${usage?.candidatesTokenCount ?? '?'} chars=${text.length}`);
@@ -153,13 +177,17 @@ async function generateMarriageReading(clientId, orderId) {
   console.log(`[MARRIAGE] Generating ${sections.length} sections for order ${orderId}`);
   console.log(`[MARRIAGE] systemPrompt (${systemPrompt.length} chars):\n` + systemPrompt);
 
+  // ONE session for the whole run — every section sees what came before it, which is what
+  // makes rule 3 of MARRIAGE_FIXED_INSTRUCTIONS ("do not reuse earlier wording") effective.
+  // Scoped to this call: created per order, discarded when the run ends.
+  const chat = buildMarriageModel({ chartData: hd.chart_data, systemPrompt }).startChat({});
+
   const out = [];
   for (const sec of sections) {
     const content = await generateMarriageSectionText({
-      chartData:    hd.chart_data,
-      systemPrompt,
-      label:        sec.label,
-      guide:        sec.guide || '',
+      label: sec.label,
+      guide: sec.guide || '',
+      chat,
     });
     out.push({ label: sec.label, content });
   }
@@ -242,6 +270,7 @@ async function buildMarriageDoc({ customerName, sections, specialNote, birthDate
 module.exports = {
   generateMarriageReading,
   generateMarriageSectionText,
+  historyFromSections,
   generateMarriageWaMessage,
   buildMarriageDoc,
   resolveMarriageConfig,

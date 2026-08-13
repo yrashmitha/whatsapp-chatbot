@@ -416,9 +416,19 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
 
 /**
  * Build a Word document from an ordered list of {label, content} sections.
- * Used by any reading that is "cover page + N titled sections" (e.g. marriage).
+ * Used by any reading that is "cover page + N titled sections" (e.g. marriage, matchmaking).
+ *
+ * Optional params (omit for the original single-person layout):
+ *   subtitleLines  — replaces the `birthDate · birthTime` cover line, for reports about
+ *                    more than one person (matchmaking prints both partners here).
+ *   specialAnswers — [{question, answer}] rendered as a Q&A block after the sections.
  */
-async function buildSectionsDoc({ customerName, reportTitle, sections, specialNote, birthDate, birthTime }) {
+async function buildSectionsDoc({
+  customerName, reportTitle, sections, specialNote, birthDate, birthTime,
+  subtitleLines = null,
+  specialAnswers = null,
+  specialQuestionsTitle = 'විශේෂ උපදේශනය සහ විසඳුම් සේවාව',
+}) {
   ensureDocx();
   const children = [];
 
@@ -450,7 +460,15 @@ async function buildSectionsDoc({ customerName, reportTitle, sections, specialNo
     alignment: AlignmentType.CENTER,
     spacing: { after: 200 },
   }));
-  if (birthDate || birthTime) {
+  if (Array.isArray(subtitleLines) && subtitleLines.length > 0) {
+    subtitleLines.filter(Boolean).forEach((line) => {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: line, size: 28, font: 'Abhaya Libre' })],
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 120 },
+      }));
+    });
+  } else if (birthDate || birthTime) {
     children.push(new Paragraph({
       children: [new TextRun({ text: [birthDate, birthTime].filter(Boolean).join('  ·  '), size: 24, font: 'Abhaya Libre' })],
       alignment: AlignmentType.CENTER,
@@ -471,6 +489,30 @@ async function buildSectionsDoc({ customerName, reportTitle, sections, specialNo
     }));
     children.push(...contentToParagraphs(sec.content));
   });
+
+  // Custom questions the customer asked, answered individually (same layout the
+  // horoscope document uses at buildHoroscopeDoc).
+  if (Array.isArray(specialAnswers) && specialAnswers.length > 0) {
+    children.push(new Paragraph({
+      children: [new PageBreak(), new TextRun({ text: specialQuestionsTitle, bold: true, size: 36, font: 'Abhaya Libre' })],
+      alignment: AlignmentType.LEFT,
+      spacing: { after: 240 },
+    }));
+
+    specialAnswers.forEach((qa, i) => {
+      if (!qa || !qa.answer) return;
+      children.push(new Paragraph({
+        children: [new TextRun({ text: `ගැටලුව ${i + 1}: ${qa.question || ''}`, bold: true, size: 26, font: 'Abhaya Libre' })],
+        spacing: { before: 400, after: 160 },
+      }));
+      children.push(...contentToParagraphs(qa.answer));
+      children.push(new Paragraph({
+        children: [new TextRun({ text: '─'.repeat(40), size: 20, font: 'Abhaya Libre' })],
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 160, after: 160 },
+      }));
+    });
+  }
 
   if (specialNote && specialNote.trim()) {
     let firstLine = true;
@@ -927,16 +969,20 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
     agentAudit = buildAudit(agentResult);
     console.log(`[HOROSCOPE] Agent finished: status=${agentAudit.status} iterations=${agentAudit.iterations} issues=${agentAudit.totalIssues}`);
   } else {
+    // ONE chat session for the whole run, so each section sees everything written before
+    // it and the "do not repeat earlier sections" rule in FIXED_INSTRUCTIONS actually has
+    // something to act on. The session is local to this call — it is created per order per
+    // report and discarded when the run ends, so no chart data ever crosses orders.
+    const geminiModel = genAI.getGenerativeModel({
+      model: 'gemini-2.5-flash',
+      generationConfig: { temperature: 0.4, topP: 0.8, topK: 40 },
+      systemInstruction: baseSystemInstruction,
+    });
+    const chat = geminiModel.startChat({});
+
     for (const sec of activeSections) {
       // Sections are generated purely from the system prompt + chart data.
       // Special questions are NOT injected here — they are answered separately (step 8).
-      const geminiModel = genAI.getGenerativeModel({
-        model: 'gemini-2.5-flash',
-        generationConfig: { temperature: 0.4, topP: 0.8, topK: 40 },
-        systemInstruction: baseSystemInstruction,
-      });
-      const chat = geminiModel.startChat({});
-
       const sectionPrompt = buildSectionPrompt(sec, sectionGuidesOverride);
       console.log(`\n[HORO-CHAT] ── REQUEST: "${sec}" ${'─'.repeat(Math.max(0, 50 - sec.length))}`);
       console.log('[HORO-CHAT] userPrompt:\n' + sectionPrompt);
@@ -1103,7 +1149,7 @@ async function generateWaMessage(orderId, horoscopeData, waMessagePrompt) {
  * Regenerate a single horoscope section using saved chart data.
  * Returns the new section text.
  */
-async function regenerateHoroscopeSection({ chartData, systemPrompt, sectionKey, sectionGuide, specialAnswers = [] }) {
+async function regenerateHoroscopeSection({ chartData, systemPrompt, sectionKey, sectionGuide, specialAnswers = [], otherSections = null }) {
   const chartDataJson = JSON.stringify(chartData, null, 2) + todayContextBlock();
   // Section regeneration uses only the system prompt + chart data — special questions
   // are never injected into sections (they are answered separately).
@@ -1122,7 +1168,21 @@ async function regenerateHoroscopeSection({ chartData, systemPrompt, sectionKey,
     systemInstruction: sysInstruction,
   });
 
-  const chat = model.startChat({});
+  // The generation run's chat session is long gone by the time a single section is
+  // regenerated from the editor drawer, so rebuild the conversation from the sections
+  // already saved (excluding this one). Without it the rewrite has no idea what the rest
+  // of the report says and tends to repeat its neighbours.
+  const history = otherSections
+    ? Object.entries(otherSections)
+        .filter(([label, content]) => label !== sectionKey && content)
+        .flatMap(([label, content]) => [
+          { role: 'user',  parts: [{ text: `මාතෘකාව: [${label}]` }] },
+          { role: 'model', parts: [{ text: content }] },
+        ])
+    : [];
+  if (history.length) console.log(`[REGEN-SECTION] replaying ${history.length / 2} earlier section(s) as history`);
+
+  const chat = model.startChat({ history });
   const result = await chat.sendMessage(prompt);
   const text = result.response.text();
   const usage = result.response.usageMetadata;

@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import api from '../../lib/api';
 import { useToast } from '../ui/Toast';
 import ChatThread from '../chat/ChatThread';
+import MatchMakingPanel from './MatchMakingPanel';
 
 const HOURS   = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
 const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
@@ -44,8 +45,11 @@ function auraScoreColor(score) {
   return '#dc2626';
 }
 
-export default function HoroscopeModal({ order, clientId, onClose, onGenerated }) {
+export default function HoroscopeModal({ order, clientId, onClose, onGenerated, showMatch = false, initialTab = 'horoscope' }) {
   const toast  = useToast();
+  // Which report the right-hand pane is editing. The chat stays mounted on the left in
+  // both tabs — reading the thread is exactly what you need while filling either form.
+  const [tab, setTab] = useState(showMatch ? initialTab : 'horoscope');
   const geoRef = useRef();
   const auraFileRef = useRef();
   const [showOrderDetails, setShowOrderDetails] = useState(true);
@@ -355,7 +359,9 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 shrink-0">
           <div>
-            <h2 className="text-base font-semibold text-slate-800">🔮 Generate Horoscope Reading</h2>
+            <h2 className="text-base font-semibold text-slate-800">
+              {tab === 'match' ? '💑 Generate Match Making Report' : '🔮 Generate Horoscope Reading'}
+            </h2>
             <p className="text-xs text-slate-400 mt-0.5">#{order?.order_id}</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 bg-transparent border-0 cursor-pointer text-xl leading-none">×</button>
@@ -374,6 +380,41 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
 
           {/* Right: Form */}
           <div className="flex flex-1 flex-col overflow-hidden min-w-0">
+
+        {/* Report tabs */}
+        {showMatch && (
+          <div className="flex gap-1 px-5 pt-3 border-b border-slate-100 shrink-0">
+            {[
+              { key: 'horoscope', label: '🔮 Horoscope' },
+              { key: 'match',     label: '💑 Match Making' },
+            ].map(t => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setTab(t.key)}
+                className="px-4 py-2 text-sm font-medium bg-transparent border-0 cursor-pointer"
+                style={{
+                  color: tab === t.key ? (t.key === 'match' ? '#0d9488' : '#6366f1') : '#94a3b8',
+                  borderBottom: `2px solid ${tab === t.key ? (t.key === 'match' ? '#0d9488' : '#6366f1') : 'transparent'}`,
+                  marginBottom: '-1px',
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {tab === 'match' ? (
+          <MatchMakingPanel
+            order={order}
+            clientId={clientId}
+            existingHd={existingHd}
+            onClose={onClose}
+            onGenerated={onGenerated}
+          />
+        ) : (
+        <>
 
         {/* Customer details */}
         {Object.keys(cf).length > 0 && (
@@ -992,6 +1033,9 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated }
             )}
           </div>
         </div>{/* end footer */}
+
+        </>
+        )}
 
           </div>{/* end right column */}
         </div>{/* end two-column body */}

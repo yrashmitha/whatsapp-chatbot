@@ -428,6 +428,11 @@ async function buildSectionsDoc({
   subtitleLines = null,
   specialAnswers = null,
   specialQuestionsTitle = 'විශේෂ උපදේශනය සහ විසඳුම් සේවාව',
+  // Optional non-text blocks (currently birth-chart tables) appended after the
+  // written sections. Each entry is { heading, table }, where `table` is a
+  // docx Table instance. Defaults to null so every existing caller is
+  // unaffected.
+  extraBlocks = null,
 }) {
   ensureDocx();
   const children = [];
@@ -489,6 +494,24 @@ async function buildSectionsDoc({
     }));
     children.push(...contentToParagraphs(sec.content));
   });
+
+  // Non-text blocks (birth-chart tables), each starting a fresh page so a
+  // chart is never split across a page boundary.
+  if (Array.isArray(extraBlocks) && extraBlocks.length > 0) {
+    for (const block of extraBlocks) {
+      if (!block || !block.table) continue;
+      children.push(new Paragraph({
+        children: [
+          new PageBreak(),
+          new TextRun({ text: block.heading || '', bold: true, size: 32, font: 'Abhaya Libre' }),
+        ],
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 240 },
+      }));
+      children.push(block.table);
+      children.push(new Paragraph({ children: [], spacing: { after: 200 } }));
+    }
+  }
 
   // Custom questions the customer asked, answered individually (same layout the
   // horoscope document uses at buildHoroscopeDoc).

@@ -32,6 +32,7 @@ export default function MatchEditorDrawer({ order, clientId, open, onClose }) {
   const [regeneratingSection, setRegeneratingSection] = useState(null);
   const [downloading, setDownloading]                 = useState(false);
   const [downloadingPdf, setDownloadingPdf]           = useState(false);
+  const [downloadingPorondam, setDownloadingPorondam] = useState(false);
   const [loadingPreview, setLoadingPreview]           = useState(false);
 
   const params = clientId ? `?client_id=${clientId}` : '';
@@ -132,15 +133,22 @@ export default function MatchEditorDrawer({ order, clientId, open, onClose }) {
     }
   };
 
-  const download = async (kind) => {
+  /**
+   * Stream a generated document down as a file.
+   *
+   * @param {'pdf'|'docx'} kind
+   * @param {'match'|'porondam'} report - `porondam` is the deterministic
+   *   20-Porondam table, which needs no generated sections (see below).
+   */
+  const download = async (kind, report = 'match') => {
     const isPdf = kind === 'pdf';
-    const setBusy = isPdf ? setDownloadingPdf : setDownloading;
+    const setBusy = report === 'porondam'
+      ? setDownloadingPorondam
+      : (isPdf ? setDownloadingPdf : setDownloading);
     setBusy(true);
     try {
       const token = localStorage.getItem('crm_token');
-      const url = isPdf
-        ? `/api/plugins/horoscope/download-match-pdf/${order.order_id}${params}`
-        : `/api/plugins/horoscope/download-match-docx/${order.order_id}${params}`;
+      const url = `/api/plugins/horoscope/download-${report}-${isPdf ? 'pdf' : 'docx'}/${order.order_id}${params}`;
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) {
         const errJson = await res.json().catch(() => null);
@@ -149,7 +157,7 @@ export default function MatchEditorDrawer({ order, clientId, open, onClose }) {
       const blob = await res.blob();
       const cd    = res.headers.get('Content-Disposition') || '';
       const match = cd.match(/filename="([^"]+)"/);
-      const filename = match ? match[1] : `match-${order.order_id}.${isPdf ? 'pdf' : 'docx'}`;
+      const filename = match ? match[1] : `${report}-${order.order_id}.${isPdf ? 'pdf' : 'docx'}`;
       const objUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = objUrl; a.download = filename; a.click();
@@ -338,6 +346,18 @@ export default function MatchEditorDrawer({ order, clientId, open, onClose }) {
             style={{ marginRight: 'auto', padding: '8px 14px', fontSize: 13, fontWeight: 600, background: regenerating ? '#e2e8f0' : '#0f766e', color: regenerating ? '#94a3b8' : '#fff', border: 0, borderRadius: 8, cursor: regenerating ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}
           >
             {regenerating ? '⏳ Generating…' : '↺ Regenerate All'}
+          </button>
+          {/* 20-Porondam table. Deliberately NOT gated on sections.length —
+              it is computed from both people's saved charts, so it is ready
+              as soon as the couple's birth details exist, with no AI
+              generation step needed. */}
+          <button
+            onClick={() => download('pdf', 'porondam')}
+            disabled={downloadingPorondam}
+            title="විසි පොරොන්දම් — needs only both birth charts, no generated sections"
+            style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, background: '#7c3aed', color: '#ffffff', border: 0, borderRadius: 8, cursor: downloadingPorondam ? 'not-allowed' : 'pointer', opacity: downloadingPorondam ? 0.6 : 1 }}
+          >
+            {downloadingPorondam ? 'Preparing…' : '⬇ Porondam 20 PDF'}
           </button>
           <button
             onClick={() => download('docx')}

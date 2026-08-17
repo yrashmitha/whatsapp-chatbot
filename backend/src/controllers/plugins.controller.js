@@ -22,6 +22,7 @@ const {
   MATCH_REPORT_TITLE, DEFAULT_MATCH_SECTIONS, DEFAULT_MATCH_SYSTEM_PROMPT,
   DEFAULT_MATCH_SPECIAL_NOTE,
 } = require('../services/matchReport');
+const { buildPorondamDoc, PORONDAM_REPORT_TITLE } = require('../services/porondamReport');
 
 /**
  * Clients allowed to use the match-making report. Comma-separated env override so the
@@ -1948,6 +1949,78 @@ async function downloadMatchPdf(req, res) {
   }
 }
 
+/**
+ * Build the full 20-porondam .docx for an order.
+ *
+ * Unlike the match reading, this needs no generated AI sections — the porondam
+ * result is deterministic, so the document can be produced the moment both
+ * people's charts are saved on the order (which aiPrepareMatch/saveMatchPeople
+ * already does, storing chart_data on match_boy / match_girl).
+ */
+async function porondamDocxFor(orderId, clientId) {
+  const order = await loadOrderReport(orderId);
+  if (!order) { const e = new Error('Order not found'); e.status = 404; throw e; }
+
+  const boy  = order.hd.match_boy;
+  const girl = order.hd.match_girl;
+  const missing = [];
+  if (!boy?.chart_data)  missing.push('මනාලයාගේ');
+  if (!girl?.chart_data) missing.push('මනාලියගේ');
+  if (missing.length) {
+    const e = new Error(`${missing.join(' සහ ')} ග්‍රහ දත්ත නොමැත — පළමුව උපන් විස්තර සුරකින්න`);
+    e.status = 400;
+    throw e;
+  }
+
+  const config = clientId ? await db.getPluginConfig(clientId, 'horoscope_reading') : {};
+  const buffer = await buildPorondamDoc(
+    boy, girl, boy.chart_data, girl.chart_data,
+    config?.porondam_special_note || undefined,
+  );
+  return { buffer, order };
+}
+
+/** Filename stem: <phone>-<boy birthday>-porondam */
+function porondamFilenameStem(order, orderId) {
+  return matchFilenameStem(order, orderId).replace(/-match$/, '-porondam');
+}
+
+/**
+ * GET /api/plugins/horoscope/download-porondam-docx/:orderId — .docx.
+ */
+async function downloadPorondamDocx(req, res) {
+  const { orderId } = req.params;
+  try {
+    const { buffer, order } = await porondamDocxFor(orderId, resolveClientId(req));
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="${porondamFilenameStem(order, orderId)}.docx"`);
+    res.send(buffer);
+  } catch (e) {
+    console.error('[PORONDAM-DOCX] Error:', e.message);
+    res.status(e.status || 500).json({ error: e.message });
+  }
+}
+
+/**
+ * GET /api/plugins/horoscope/download-porondam-pdf/:orderId — PDF.
+ */
+async function downloadPorondamPdf(req, res) {
+  const { orderId } = req.params;
+  try {
+    const { buffer: docxBuffer, order } = await porondamDocxFor(orderId, resolveClientId(req));
+    const pdf = await docxBufferToPdf(docxBuffer, `porondam-${orderId}-${Date.now()}`, {
+      title:   PORONDAM_REPORT_TITLE,
+      subject: PORONDAM_REPORT_TITLE,
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${porondamFilenameStem(order, orderId)}.pdf"`);
+    res.send(pdf);
+  } catch (e) {
+    console.error('[PORONDAM-PDF] Error:', e.message);
+    res.status(e.status || 500).json({ error: e.message });
+  }
+}
+
 module.exports = {
   getPluginConfig, updatePluginConfig, getPluginCustomerData, generateAstroChart,
   analyzeAuraImage,
@@ -1964,6 +2037,7 @@ module.exports = {
   generateMarriageWaHandler, saveMarriageWaHandler,
   aiPrepareMatch, saveMatchPeople, generateMatchHandler, regenerateMatchSectionHandler,
   updateMatchSections, downloadMatchDocx, downloadMatchPdf,
+  downloadPorondamDocx, downloadPorondamPdf,
   generateFollowUpMessage,
   syncMetaAudience,
   createMetaAudience,

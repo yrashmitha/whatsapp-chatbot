@@ -43,6 +43,8 @@ const {
   updateMatchSections,
   downloadMatchDocx,
   downloadMatchPdf,
+  downloadPorondamDocx,
+  downloadPorondamPdf,
   generateFollowUpMessage,
   syncMetaAudience,
   createMetaAudience,
@@ -90,6 +92,9 @@ router.post('/horoscope/regenerate-match-section/:orderId',     jwtAuth, regener
 router.patch('/horoscope/match-sections/:orderId',              jwtAuth, updateMatchSections);
 router.get('/horoscope/download-match-docx/:orderId',           jwtAuth, downloadMatchDocx);
 router.get('/horoscope/download-match-pdf/:orderId',            jwtAuth, downloadMatchPdf);
+// Full 20-Porondam report (data comes from the pahantharu_web site) — docx + PDF
+router.get('/horoscope/download-porondam-docx/:orderId',        jwtAuth, downloadPorondamDocx);
+router.get('/horoscope/download-porondam-pdf/:orderId',         jwtAuth, downloadPorondamPdf);
 router.post('/follow-up',                               jwtAuth, generateFollowUpMessage);
 router.get('/meta/recent-events',                       jwtAuth, recentMetaEvents);
 router.post('/meta/sync-audience',                      jwtAuth, syncMetaAudience);

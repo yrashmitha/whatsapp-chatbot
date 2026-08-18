@@ -591,7 +591,8 @@ async function deleteProduct(req, res) {
  * @returns {Promise<void>}
  */
 async function listAttributes(req, res) {
-  const clientId = req.query.client || 'astrology_001';
+  const clientId = resolveClientId(req) || req.query.client;
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
   try {
     const result = await db.pgQuery(
       `SELECT * FROM client_attribute_schemas WHERE client_id = $1 ORDER BY sort_order`,

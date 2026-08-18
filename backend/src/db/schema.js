@@ -666,9 +666,11 @@ async function init() {
     try { db.exec(`ALTER TABLE customers ADD COLUMN client_id TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE messages  ADD COLUMN client_id TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE orders    ADD COLUMN client_id TEXT`); } catch (_) {}
-    db.exec(`UPDATE customers SET client_id='astrology_001' WHERE client_id IS NULL`);
-    db.exec(`UPDATE messages  SET client_id='astrology_001' WHERE client_id IS NULL`);
-    db.exec(`UPDATE orders    SET client_id='astrology_001' WHERE client_id IS NULL`);
+    // Local SQLite dev only: adopt pre-tenancy rows under the neutral dev client
+    // rather than assigning them to a real tenant.
+    db.exec(`UPDATE customers SET client_id='local_dev' WHERE client_id IS NULL`);
+    db.exec(`UPDATE messages  SET client_id='local_dev' WHERE client_id IS NULL`);
+    db.exec(`UPDATE orders    SET client_id='local_dev' WHERE client_id IS NULL`);
     // Dynamic order fields migration
     try { db.exec(`ALTER TABLE client_configs ADD COLUMN order_fields TEXT NOT NULL DEFAULT '[]'`); } catch (_) {}
     try { db.exec(`ALTER TABLE orders ADD COLUMN custom_fields TEXT`); } catch (_) {}

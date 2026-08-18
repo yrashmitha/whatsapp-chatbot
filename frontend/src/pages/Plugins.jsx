@@ -6,6 +6,69 @@ import { useToast } from '../components/ui/Toast';
 import api from '../lib/api';
 
 
+
+/**
+ * Report labels and writing instructions that used to be hardcoded constants.
+ * Declared once so adding a field is one entry here rather than a useState, a
+ * loader line, a save line and a JSX block that can quietly drift apart.
+ */
+const HOROSCOPE_EXTRAS = [
+  { key: 'fixed_instructions', label: 'Fixed Writing Instructions', rows: 8,
+    hint: 'Appended to every horoscope section prompt \u2014 tone, structure, and what not to repeat.' },
+  { key: 'vip_section_label', label: 'VIP Section Label', rows: 2,
+    hint: 'Extra section added when an order is marked VIP.' },
+  { key: 'remedies_section_label', label: 'Remedies Section Label', rows: 2,
+    hint: 'Must exactly match one of your section labels \u2014 it marks where the remedies half of the document begins.' },
+  { key: 'special_questions_title', label: 'Special Questions Heading', rows: 2,
+    hint: 'Heading above the customer\u2019s own questions. Use {year} for the current year.' },
+  { key: 'quantum_report_title', label: 'Quantum Report Title', rows: 2,
+    hint: 'Cover title of the quantum / aura report.' },
+  { key: 'porondam_report_title', label: 'Porondam Report Title', rows: 2,
+    hint: 'Cover title of the 20-Porondam report.' },
+  { key: 'porondam_special_note', label: 'Porondam Special Note', rows: 4,
+    hint: 'Final page of the Porondam report.' },
+  { key: 'marriage_report_title', label: 'Marriage Report Title', rows: 2,
+    hint: 'Cover title of the marriage report.' },
+  { key: 'marriage_fixed_instructions', label: 'Marriage Fixed Instructions', rows: 6,
+    hint: 'Appended to every marriage section prompt.' },
+];
+
+const MATCH_EXTRAS = [
+  { key: 'match_report_title', label: 'Match Report Title', rows: 2,
+    hint: 'Cover title of the compatibility report.' },
+  { key: 'match_questions_title', label: 'Match Questions Heading', rows: 2,
+    hint: 'Heading above the couple\u2019s own questions.' },
+  { key: 'match_fixed_instructions', label: 'Match Fixed Instructions', rows: 6,
+    hint: 'Appended to every match-making section prompt.' },
+  { key: 'match_question_instructions', label: 'Match Question Instructions', rows: 6,
+    hint: 'Appended when answering the couple\u2019s own questions.' },
+];
+
+const TAROT_EXTRAS = [
+  { key: 'page1_heading', label: 'Page 1 Heading', rows: 2, hint: 'Heading of the first constant page.' },
+  { key: 'page2_heading', label: 'Page 2 Heading', rows: 2, hint: 'Heading of the second constant page.' },
+  { key: 'page4_heading', label: 'Page 4 Heading', rows: 2, hint: 'Heading of the closing disclaimer page.' },
+];
+
+const ALL_EXTRAS = [...HOROSCOPE_EXTRAS, ...MATCH_EXTRAS, ...TAROT_EXTRAS];
+
+/** One labelled textarea backed by the `extras` bag. */
+function ExtraField({ field, value, onChange }) {
+  return (
+    <div>
+      <label className="text-xs font-medium text-slate-500 block mb-1">{field.label}</label>
+      {field.hint && <p className="text-xs text-slate-400 mb-1.5">{field.hint}</p>}
+      <textarea
+        value={value || ''}
+        onChange={e => onChange(field.key, e.target.value)}
+        rows={field.rows || 3}
+        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
+        placeholder="(not set \u2014 omitted from the report)"
+      />
+    </div>
+  );
+}
+
 function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
   const toast = useToast();
   const isHoroscope       = pluginMeta.id === 'horoscope_reading';
@@ -28,6 +91,9 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
   const [quantumEnabled, setQuantumEnabled]           = useState(true);
   const [sectionGuides, setSectionGuides]             = useState({});
   const [specialNote, setSpecialNote]                 = useState('');
+  // One bag for the declarative fields above, instead of 16 more useState hooks.
+  const [extras, setExtras] = useState({});
+  const setExtra = (key, val) => setExtras(p => ({ ...p, [key]: val }));
   const [marriageSystemPrompt, setMarriageSystemPrompt] = useState('');
   const [marriageSections, setMarriageSections]         = useState([]);
   const [marriageSpecialNote, setMarriageSpecialNote]   = useState('');
@@ -74,6 +140,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
         setQuantumEnabled(r.data.quantum_enabled !== false);
         setSectionGuides(r.data.section_guides && typeof r.data.section_guides === 'object' ? r.data.section_guides : {});
         setSpecialNote(r.data.special_note || '');
+        setExtras(Object.fromEntries(ALL_EXTRAS.map(f => [f.key, r.data[f.key] || ''])));
         setMarriageSystemPrompt(r.data.marriage_system_prompt || '');
         setMarriageSections(Array.isArray(r.data.marriage_sections) ? r.data.marriage_sections : []);
         setMarriageSpecialNote(r.data.marriage_special_note || '');
@@ -110,6 +177,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
         setQuantumEnabled(true);
         setSectionGuides({});
         setSpecialNote('');
+        setExtras({});
         setMarriageSystemPrompt('');
         setMarriageSections([]);
         setMarriageSpecialNote('');
@@ -141,6 +209,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
         body.quantum_enabled       = quantumEnabled;
         body.section_guides        = sectionGuides;
         body.special_note          = specialNote;
+        for (const f of HOROSCOPE_EXTRAS) body[f.key] = extras[f.key] || '';
         body.wa_message_prompt     = waMessagePrompt;
         body.ai_fill_prompt        = aiFillPrompt;
         body.marriage_system_prompt = marriageSystemPrompt;
@@ -152,6 +221,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
           body.match_sections       = matchSections;
           body.match_special_note   = matchSpecialNote;
           body.match_ai_fill_prompt = matchAiFillPrompt;
+          for (const f of MATCH_EXTRAS) body[f.key] = extras[f.key] || '';
         }
       } else if (isCallAnswering) {
         body.system_prompt = systemPrompt;
@@ -165,6 +235,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
         body.page1_body = page1Body;
         body.page2_body = page2Body;
         body.page4_body = page4Body;
+        for (const f of TAROT_EXTRAS) body[f.key] = extras[f.key] || '';
       } else if (isMetaConversions) {
         body.pixel_id      = pixelId;
         body.ad_account_id = adAccountId;
@@ -325,6 +396,9 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
 
       {isTarot && (
         <>
+          {TAROT_EXTRAS.map(f => (
+            <ExtraField key={f.key} field={f} value={extras[f.key]} onChange={setExtra} />
+          ))}
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">Reading Prompt</label>
             <p className="text-xs text-slate-400 mb-1.5">
@@ -712,6 +786,24 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
               placeholder="විශේෂ ශාස්ත්‍රීය සටහන…"
             />
+          </div>
+
+          {/* Report labels and writing instructions. Nothing here is inherited from
+              another client — a blank field simply means the text is omitted. */}
+          <div className="mt-2 pt-4 border-t border-slate-200 flex flex-col gap-4">
+            <div>
+              <p className="text-sm font-semibold text-slate-800">Report Labels &amp; Instructions</p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                These have no built-in defaults. A blank field is omitted from the report;
+                a blank system prompt stops generation rather than producing an unbranded one.
+              </p>
+            </div>
+            {HOROSCOPE_EXTRAS.map(f => (
+              <ExtraField key={f.key} field={f} value={extras[f.key]} onChange={setExtra} />
+            ))}
+            {showMatch && MATCH_EXTRAS.map(f => (
+              <ExtraField key={f.key} field={f} value={extras[f.key]} onChange={setExtra} />
+            ))}
           </div>
 
           {/* ── Marriage Reading (💍) ─────────────────────────────────────── */}

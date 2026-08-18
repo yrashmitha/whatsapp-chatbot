@@ -180,7 +180,7 @@ function resolveGenAI(client) {
  *
  * @param {Object} chartData - Full freeastroapi response (as returned by calculateVedicChart)
  * @param {string} birthHash - Same hash used by vedicChart's astro_cache row
- * @param {string} clientId  - Client id whose configured Gemini key to use (e.g. 'astrology_001')
+ * @param {string} clientId  - Client id whose configured Gemini key to use
  * @returns {Promise<Array<{topic:string, teaser:string}>|null>} Chosen sections, or null
  */
 async function generateTeaserReading(chartData, birthHash, clientId) {

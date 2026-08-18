@@ -38,7 +38,7 @@ const HOUSE_POSITIONS = {
   9: [3, 3], 10: [2, 3], 11: [1, 3], 12: [0, 3],
 };
 
-const FONT = 'Abhaya Libre';
+const { FALLBACK_FONT } = require('./branding');
 const CELL_PCT = 25;
 
 /** Group a chart's planets by house number. */
@@ -55,13 +55,13 @@ function planetsByHouse(planets) {
   return byHouse;
 }
 
-function textPara(text, opts = {}) {
+function textPara(text, font, opts = {}) {
   return new Paragraph({
     alignment: opts.alignment || AlignmentType.CENTER,
     spacing: { before: 20, after: 20 },
     children: [new TextRun({
       text,
-      font: FONT,
+      font,
       size: opts.size || 20,
       bold: !!opts.bold,
       color: opts.color,
@@ -70,13 +70,13 @@ function textPara(text, opts = {}) {
 }
 
 /** One house cell: small house number, then its planets. */
-function houseCell(houseNum, planets, lagnaHouse) {
+function houseCell(houseNum, planets, lagnaHouse, font) {
   const children = [
-    textPara(String(houseNum) + (houseNum === lagnaHouse ? ' ල' : ''), {
+    textPara(String(houseNum) + (houseNum === lagnaHouse ? ' ල' : ''), font, {
       size: 14, color: '888888', alignment: AlignmentType.LEFT,
     }),
   ];
-  children.push(textPara(planets.length ? planets.join('  ') : '', { size: 22, bold: true }));
+  children.push(textPara(planets.length ? planets.join('  ') : '', font, { size: 22, bold: true }));
   return new TableCell({
     width: { size: CELL_PCT, type: WidthType.PERCENTAGE },
     verticalAlign: VerticalAlign.CENTER,
@@ -86,9 +86,9 @@ function houseCell(houseNum, planets, lagnaHouse) {
 }
 
 /** The merged 2x2 centre cell carrying the lagna label. */
-function centreCell(label, subLabel) {
-  const children = [textPara(label || '', { size: 24, bold: true })];
-  if (subLabel) children.push(textPara(subLabel, { size: 16, color: '666666' }));
+function centreCell(label, subLabel, font) {
+  const children = [textPara(label || '', font, { size: 24, bold: true })];
+  if (subLabel) children.push(textPara(subLabel, font, { size: 16, color: '666666' }));
   return new TableCell({
     width: { size: CELL_PCT * 2, type: WidthType.PERCENTAGE },
     columnSpan: 2,
@@ -105,10 +105,12 @@ function centreCell(label, subLabel) {
  * @param {Object} chartData - the stored chart payload (v2 nests under .chart)
  * @param {string} [label]    - centre label, e.g. the lagna rashi in Sinhala
  * @param {string} [subLabel] - small line under the centre label
+ * @param {string} [font]     - client's configured typeface (defaults to FALLBACK_FONT)
  * @returns {import('docx').Table}
  */
-function buildChartTable(chartData, label, subLabel) {
+function buildChartTable(chartData, label, subLabel, font) {
   ensureDocx();
+  const typeface = font || FALLBACK_FONT;
   const base = (chartData && chartData.chart) ? chartData.chart : (chartData || {});
   const byHouse = planetsByHouse(base.planets);
   // Ascendant always sits in house 1 in a whole-sign chart; marked with "ල".
@@ -123,14 +125,14 @@ function buildChartTable(chartData, label, subLabel) {
   };
   const cellAt = (row, col) => {
     const h = at(row, col);
-    return houseCell(h, byHouse[h] || [], lagnaHouse);
+    return houseCell(h, byHouse[h] || [], lagnaHouse, typeface);
   };
 
   const rows = [
     // Top row: houses 3, 2, 1, 12
     new TableRow({ children: [cellAt(0, 0), cellAt(0, 1), cellAt(0, 2), cellAt(0, 3)] }),
     // Second row: house 4, merged centre (spans 2x2), house 11
-    new TableRow({ children: [cellAt(1, 0), centreCell(label, subLabel), cellAt(1, 3)] }),
+    new TableRow({ children: [cellAt(1, 0), centreCell(label, subLabel, typeface), cellAt(1, 3)] }),
     // Third row: house 5, (centre continues via rowSpan), house 10
     new TableRow({ children: [cellAt(2, 0), cellAt(2, 3)] }),
     // Bottom row: houses 6, 7, 8, 9

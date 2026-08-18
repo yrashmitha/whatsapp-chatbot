@@ -182,13 +182,17 @@ function buildClient(row) {
 /**
  * Build a fallback local client for SQLite / local dev when no DB client matches.
  *
- * @returns {Object} Hardcoded local client object
+ * Deliberately carries no brand identity: this stands in for *any* unmatched
+ * client, so naming a real one here would put their name on another tenant's
+ * traffic. It is a dev-only shim, not a tenant.
+ *
+ * @returns {Object} Neutral placeholder client object
  */
 function buildLocalClient() {
   console.warn('[clientRouter] WARNING: falling back to buildLocalClient — no DB client matched phone_number_id');
   return {
-    id: 'astrology_001',
-    name: 'පුරාණ ජෝතීර්වේදය',
+    id: 'local_dev',
+    name: 'Local Dev Client',
     type: 'astrology',
     active: true,
     phone_number_id: process.env.PROD_PHONE_NUMBER_ID || null,
@@ -198,10 +202,10 @@ function buildLocalClient() {
     system_prompt_mode: 'builtin',
     custom_prompt: null,
     temperature: 0.70,
-    brand_name: 'පුරාණ ජෝතීර්වේදය',
+    brand_name: 'Local Dev Client',
     brand_color: '#075e54',
     logo_url: null,
-    order_id_prefix: 'PJ',
+    order_id_prefix: 'DEV',
     product_catalog_enabled: false,
     max_products_in_context: 10,
     catalog_search_mode: 'fts',

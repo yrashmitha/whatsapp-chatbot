@@ -160,18 +160,19 @@ function buildPorondamSections(porondam, boy, girl, boyChart, girlChart) {
  * @param {string} [specialNote]
  * @returns {Promise<Buffer>} docx buffer
  */
-async function buildPorondamDoc(boy, girl, boyChart, girlChart, specialNote) {
+async function buildPorondamDoc(boy, girl, boyChart, girlChart, specialNote, brand) {
   const porondam = computePorondam(boyChart, girlChart);
   const sections = buildPorondamSections(porondam, boy, girl, boyChart, girlChart);
 
   // Both birth charts, rendered as native docx tables and appended after the
   // written sections (same content the website's PDF shows).
   const extraBlocks = [
-    { heading: `${(boy && boy.name) || 'මනාලයා'} — ලග්න කේන්දරය`, table: buildChartTable(boyChart, lagnaSinhala(boyChart), 'ලග්නය') },
-    { heading: `${(girl && girl.name) || 'මනාලිය'} — ලග්න කේන්දරය`, table: buildChartTable(girlChart, lagnaSinhala(girlChart), 'ලග්නය') },
+    { heading: `${(boy && boy.name) || 'මනාලයා'} — ලග්න කේන්දරය`, table: buildChartTable(boyChart, lagnaSinhala(boyChart), 'ලග්නය', brand?.font) },
+    { heading: `${(girl && girl.name) || 'මනාලිය'} — ලග්න කේන්දරය`, table: buildChartTable(girlChart, lagnaSinhala(girlChart), 'ලග්නය', brand?.font) },
   ];
 
   return buildSectionsDoc({
+    brand,
     customerName: [boy && boy.name, girl && girl.name].filter(Boolean).join(' ⚭ ') || 'ගැළපීම',
     reportTitle: PORONDAM_REPORT_TITLE,
     sections,

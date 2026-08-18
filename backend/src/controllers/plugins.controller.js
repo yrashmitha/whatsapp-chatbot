@@ -8,8 +8,10 @@
 
 const db   = require('../db');
 const { generateAstroMessage, DEFAULT_ASTRO_PROMPT } = require('../services/astro');
-const { generateHoroscope, buildHoroscopeDoc, buildQuantumDoc, regenerateHoroscopeSection, generateWaMessage, SECTIONS, SECTION_GUIDES, parseSinhalaDate, parseSinhalaTime } = require('../services/horoscope');
+const { generateHoroscope, buildHoroscopeDoc, buildQuantumDoc, regenerateHoroscopeSection, generateWaMessage, SECTIONS, SECTION_GUIDES, QUANTUM_REPORT_TITLE, parseSinhalaDate, parseSinhalaTime } = require('../services/horoscope');
 const { calculateVedicChart } = require('../services/vedicChart');
+const { getFreeAstroKey, getGeminiKey, getGenAI, MissingClientKeyError } = require('../services/clientKeys');
+const { getBrand, DEFAULT_BRAND } = require('../services/branding');
 const { analyzeAura, generateQuantumReading, generateQuantumSections } = require('../services/quantumCode');
 const {
   generateMarriageReading, generateMarriageSectionText, generateMarriageWaMessage,
@@ -632,6 +634,7 @@ async function downloadHoroscope(req, res) {
       birthDate:      cf.birth_date || '',
       birthTime:      cf.birth_time || '',
       sectionOrder:   config.horoscope_sections || [],
+      brand:          await getBrand(clientId),
     });
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
@@ -677,6 +680,7 @@ async function downloadHoroscopePdf(req, res) {
       birthDate:      cf.birth_date || '',
       birthTime:      cf.birth_time || '',
       sectionOrder:   config.horoscope_sections || [],
+      brand:          await getBrand(clientId),
     });
 
     const uid  = `${orderId}-${Date.now()}`;
@@ -703,11 +707,12 @@ async function downloadHoroscopePdf(req, res) {
     const { PDFDocument } = require('pdf-lib');
     const rawPdf = fs.readFileSync(tmpPdf);
     const pdfDoc = await PDFDocument.load(rawPdf);
-    pdfDoc.setTitle('පුරාණ ජෝතිර්වේදය හදහන් සේවය');
-    pdfDoc.setAuthor('පුරාණ ජෝතිර්වේදය හදහන් සේවය');
-    pdfDoc.setCreator('පුරාණ ජෝතිර්වේදය');
-    pdfDoc.setProducer('පුරාණ ජෝතිර්වේදය');
-    pdfDoc.setSubject('ජෝතිෂ්‍ය පඨනය');
+    const brand = await getBrand(clientId);
+    pdfDoc.setTitle(brand.pdf.title || '');
+    pdfDoc.setAuthor(brand.pdf.author || '');
+    pdfDoc.setCreator(brand.pdf.producer || '');
+    pdfDoc.setProducer(brand.pdf.producer || '');
+    pdfDoc.setSubject(brand.pdf.subject || '');
     pdfDoc.setKeywords([]);
     const buffer = Buffer.from(await pdfDoc.save());
     fs.rm(tmpHome, { recursive: true, force: true }, () => {});
@@ -754,6 +759,7 @@ async function updateQuantumSections(req, res) {
  */
 async function downloadQuantumDocx(req, res) {
   const { orderId } = req.params;
+  const clientId = resolveClientId(req);
   try {
     const r = await db.pgQuery(
       'SELECT custom_fields, horoscope_data FROM orders WHERE order_id=$1', [orderId]
@@ -773,6 +779,7 @@ async function downloadQuantumDocx(req, res) {
       auraAnalysis:        hd.aura_analysis,
       quantumReading:      hd.quantum_reading      || null,
       quantumSectionsData: hd.quantum_sections_data || null,
+      brand:               await getBrand(clientId),
     });
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
@@ -786,6 +793,7 @@ async function downloadQuantumDocx(req, res) {
  */
 async function downloadQuantumPdf(req, res) {
   const { orderId } = req.params;
+  const clientId = resolveClientId(req);
   try {
     const r = await db.pgQuery(
       'SELECT phone_number, custom_fields, horoscope_data FROM orders WHERE order_id=$1', [orderId]
@@ -806,6 +814,7 @@ async function downloadQuantumPdf(req, res) {
       auraAnalysis:        hd.aura_analysis,
       quantumReading:      hd.quantum_reading      || null,
       quantumSectionsData: hd.quantum_sections_data || null,
+      brand:               await getBrand(clientId),
     });
 
     const uid  = `${orderId}-qc-${Date.now()}`;
@@ -832,11 +841,12 @@ async function downloadQuantumPdf(req, res) {
     const { PDFDocument } = require('pdf-lib');
     const rawPdf = fs.readFileSync(tmpPdf);
     const pdfDoc = await PDFDocument.load(rawPdf);
-    pdfDoc.setTitle('ක්වොන්ටම් ශක්ති කේතය');
-    pdfDoc.setAuthor('පුරාණ ජෝතිර්වේදය හදහන් සේවය');
-    pdfDoc.setCreator('පුරාණ ජෝතිර්වේදය');
-    pdfDoc.setProducer('පුරාණ ජෝතිර්වේදය');
-    pdfDoc.setSubject('ක්වොන්ටම් ශක්ති කේතය');
+    const brandQ = await getBrand(clientId);
+    pdfDoc.setTitle(QUANTUM_REPORT_TITLE);
+    pdfDoc.setAuthor(brandQ.pdf.author || '');
+    pdfDoc.setCreator(brandQ.pdf.producer || '');
+    pdfDoc.setProducer(brandQ.pdf.producer || '');
+    pdfDoc.setSubject(QUANTUM_REPORT_TITLE);
     pdfDoc.setKeywords([]);
     const buffer = Buffer.from(await pdfDoc.save());
     fs.rm(tmpHome, { recursive: true, force: true }, () => {});
@@ -1085,7 +1095,6 @@ async function generateWaMessageHandler(req, res) {
   }
 }
 
-const { getFreeAstroKey, getGeminiKey, getGenAI, MissingClientKeyError } = require('../services/clientKeys');
 
 /**
  * POST /api/plugins/horoscope/ai-prepare/:orderId
@@ -1342,6 +1351,7 @@ async function createMetaAudience(req, res) {
  * Convert a .docx buffer to a PDF buffer via LibreOffice, stamping document metadata.
  */
 async function docxBufferToPdf(docxBuffer, uid, meta = {}) {
+  const brand = meta.brand || DEFAULT_BRAND;
   const tmpHome = path.join(os.tmpdir(), `lo-home-${uid}`);
   const tmpDocx = path.join(os.tmpdir(), `${uid}.docx`);
   const tmpPdf  = path.join(os.tmpdir(), `${uid}.pdf`);
@@ -1364,11 +1374,11 @@ async function docxBufferToPdf(docxBuffer, uid, meta = {}) {
 
   const { PDFDocument } = require('pdf-lib');
   const pdfDoc = await PDFDocument.load(fs.readFileSync(tmpPdf));
-  pdfDoc.setTitle(meta.title || 'පුරාණ ජෝතිර්වේදය හදහන් සේවය');
-  pdfDoc.setAuthor('පුරාණ ජෝතිර්වේදය හදහන් සේවය');
-  pdfDoc.setCreator('පුරාණ ජෝතිර්වේදය');
-  pdfDoc.setProducer('පුරාණ ජෝතිර්වේදය');
-  pdfDoc.setSubject(meta.subject || 'ජෝතිෂ්‍ය පඨනය');
+  pdfDoc.setTitle(meta.title || brand.pdf.title || '');
+  pdfDoc.setAuthor(brand.pdf.author || '');
+  pdfDoc.setCreator(brand.pdf.producer || '');
+  pdfDoc.setProducer(brand.pdf.producer || '');
+  pdfDoc.setSubject(meta.subject || brand.pdf.subject || '');
   pdfDoc.setKeywords([]);
   const buffer = Buffer.from(await pdfDoc.save());
 
@@ -1525,6 +1535,7 @@ async function marriageDocxFor(orderId, clientId) {
     birthDate:    order.cf.birth_date || '',
     birthTime:    order.cf.birth_time || '',
     sectionOrder: sections,
+    brand:        await getBrand(clientId),
   });
   return { buffer, order };
 }
@@ -1562,6 +1573,7 @@ async function downloadMarriagePdf(req, res) {
     const pdf = await docxBufferToPdf(docxBuffer, `marriage-${orderId}-${Date.now()}`, {
       title:   MARRIAGE_REPORT_TITLE,
       subject: MARRIAGE_REPORT_TITLE,
+      brand:   await getBrand(resolveClientId(req)),
     });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${marriageFilenameStem(order, orderId)}.pdf"`);
@@ -1905,6 +1917,7 @@ async function matchDocxFor(orderId, clientId) {
     specialNote,
     sectionOrder:   sections,
     specialAnswers: order.hd.match_special_answers || [],
+    brand:          await getBrand(clientId),
   });
   return { buffer, order };
 }
@@ -1943,6 +1956,7 @@ async function downloadMatchPdf(req, res) {
     const pdf = await docxBufferToPdf(docxBuffer, `match-${orderId}-${Date.now()}`, {
       title:   MATCH_REPORT_TITLE,
       subject: MATCH_REPORT_TITLE,
+      brand:   await getBrand(resolveClientId(req)),
     });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${matchFilenameStem(order, orderId)}.pdf"`);
@@ -1980,6 +1994,7 @@ async function porondamDocxFor(orderId, clientId) {
   const buffer = await buildPorondamDoc(
     boy, girl, boy.chart_data, girl.chart_data,
     config?.porondam_special_note || undefined,
+    await getBrand(clientId),
   );
   return { buffer, order };
 }
@@ -2015,6 +2030,7 @@ async function downloadPorondamPdf(req, res) {
     const pdf = await docxBufferToPdf(docxBuffer, `porondam-${orderId}-${Date.now()}`, {
       title:   PORONDAM_REPORT_TITLE,
       subject: PORONDAM_REPORT_TITLE,
+      brand:   await getBrand(resolveClientId(req)),
     });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${porondamFilenameStem(order, orderId)}.pdf"`);

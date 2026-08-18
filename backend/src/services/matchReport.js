@@ -346,7 +346,7 @@ async function generateMatchReading(clientId, orderId) {
 /**
  * Build the match-making Word document.
  */
-async function buildMatchDoc({ hd, sections, specialNote, sectionOrder, specialAnswers }) {
+async function buildMatchDoc({ hd, sections, specialNote, sectionOrder, specialAnswers, brand }) {
   // Order by plugin config if provided; saved data may predate a reorder.
   let ordered = Array.isArray(sections) ? sections.map(s => ({ ...s })) : [];
   if (Array.isArray(sectionOrder) && sectionOrder.length > 0) {
@@ -362,6 +362,7 @@ async function buildMatchDoc({ hd, sections, specialNote, sectionOrder, specialA
   const personLine = (p) => [p.name, p.birth_date, p.birth_time].filter(Boolean).join('  ·  ');
 
   return await buildSectionsDoc({
+    brand,
     customerName: [boy.name, girl.name].filter(Boolean).join('  ⚭  '),
     reportTitle:  MATCH_REPORT_TITLE,
     sections:     ordered,

@@ -9,6 +9,7 @@
 'use strict';
 
 const { getGenAI } = require('./clientKeys');
+const { DEFAULT_BRAND, footerText } = require('./branding');
 
 let Document, Packer, Paragraph, TextRun, AlignmentType, PageBreak, Footer, PageNumber, NumberFormat;
 function ensureDocx() {
@@ -165,16 +166,16 @@ STRICT RULES:
  * @param {string} line
  * @returns {TextRun[]}
  */
-function parseRuns(line) {
+function parseRuns(line, font) {
   const runs = [];
   if (!line.includes('**') && !line.includes('*')) {
-    runs.push(new TextRun({ text: line, size: 24, font: 'Abhaya Libre' }));
+    runs.push(new TextRun({ text: line, size: 24, font }));
     return runs;
   }
   const normalised = line.replace(/\*\*/g, '*');
   const parts = normalised.split('*');
   parts.forEach((part, i) => {
-    if (part) runs.push(new TextRun({ text: part, bold: i % 2 !== 0, size: 24, font: 'Abhaya Libre' }));
+    if (part) runs.push(new TextRun({ text: part, bold: i % 2 !== 0, size: 24, font }));
   });
   return runs;
 }
@@ -184,7 +185,7 @@ function parseRuns(line) {
  * @param {string} content
  * @returns {Paragraph[]}
  */
-function contentToParagraphs(content) {
+function contentToParagraphs(content, font) {
   const paragraphs = [];
   if (!content) return paragraphs;
   // Split into paragraph blocks on double newlines; treat single newlines as continuations
@@ -197,7 +198,7 @@ function contentToParagraphs(content) {
       if (line.startsWith('###') || line.startsWith('##') || line.startsWith('#')) {
         const text = line.replace(/^#+\s*/, '').replace(/\*/g, '').trim();
         paragraphs.push(new Paragraph({
-          children: [new TextRun({ text, bold: true, size: 32, font: 'Abhaya Libre' })],
+          children: [new TextRun({ text, bold: true, size: 32, font })],
           alignment: AlignmentType.LEFT,
           spacing: { before: 240, after: 120 },
         }));
@@ -210,7 +211,7 @@ function contentToParagraphs(content) {
         }));
       } else {
         paragraphs.push(new Paragraph({
-          children: parseRuns(line),
+          children: parseRuns(line, font),
           alignment: AlignmentType.JUSTIFIED,
           spacing: { after: 160 },
         }));
@@ -274,11 +275,11 @@ const DEFAULT_PAGE4_BODY = [
  * Helper: heading paragraph for constant pages.
  * Pass pageBreak=true to embed a page break before the heading text (like horoscope pattern).
  */
-function makeHeading(text, pageBreak = false) {
+function makeHeading(text, font, pageBreak = false) {
   return new Paragraph({
     children: [
       ...(pageBreak ? [new PageBreak()] : []),
-      new TextRun({ text, bold: true, size: 36, font: 'Abhaya Libre', color: '000000' }),
+      new TextRun({ text, bold: true, size: 36, font, color: '000000' }),
     ],
     alignment: AlignmentType.LEFT,
     spacing: { before: pageBreak ? 0 : 480, after: 320 },
@@ -286,44 +287,44 @@ function makeHeading(text, pageBreak = false) {
 }
 
 /** Helper: build body paragraphs for constant pages from a newline-separated string */
-function makeBodyParagraphs(text) {
+function makeBodyParagraphs(text, font) {
   return text.split('\n').filter(l => l.trim()).map(line => new Paragraph({
-    children: [new TextRun({ text: line, size: 24, font: 'Abhaya Libre' })],
+    children: [new TextRun({ text: line, size: 24, font })],
     alignment: AlignmentType.JUSTIFIED,
     spacing: { after: 200 },
   }));
 }
 
-async function buildTarotDoc({ question, reading, cards, page1_body, page2_body, page4_body }) {
+async function buildTarotDoc({ question, reading, cards, page1_body, page2_body, page4_body, brand = DEFAULT_BRAND }) {
   ensureDocx();
 
   const children = [];
 
   // ── Page 1: ටැරෝ කාඩ්පත් යනු කුමක්ද? ──────────────────────────────────
-  children.push(makeHeading(PAGE1_HEADING));
-  children.push(...makeBodyParagraphs(page1_body || DEFAULT_PAGE1_BODY));
+  children.push(makeHeading(PAGE1_HEADING, brand.font));
+  children.push(...makeBodyParagraphs(page1_body || DEFAULT_PAGE1_BODY, brand.font));
 
   // ── Page 2: ටැරෝ කාඩ්පත් ක්‍රියා කරන්නේ කෙසේද? — page break embedded in heading
-  children.push(makeHeading(PAGE2_HEADING, true));
-  children.push(...makeBodyParagraphs(page2_body || DEFAULT_PAGE2_BODY));
+  children.push(makeHeading(PAGE2_HEADING, brand.font, true));
+  children.push(...makeBodyParagraphs(page2_body || DEFAULT_PAGE2_BODY, brand.font));
 
   // ── Page 3: Question + Cards drawn — page break embedded in heading
   children.push(new Paragraph({
     children: [
       new PageBreak(),
-      new TextRun({ text: SINHALA_QUESTION_HEADING, bold: true, size: 28, font: 'Abhaya Libre' }),
+      new TextRun({ text: SINHALA_QUESTION_HEADING, bold: true, size: 28, font: brand.font }),
     ],
     alignment: AlignmentType.LEFT,
     spacing: { before: 0, after: 120 },
   }));
   children.push(new Paragraph({
-    children: [new TextRun({ text: question, size: 24, font: 'Abhaya Libre', italics: true })],
+    children: [new TextRun({ text: question, size: 24, font: brand.font, italics: true })],
     alignment: AlignmentType.JUSTIFIED,
     spacing: { after: 320 },
   }));
 
   children.push(new Paragraph({
-    children: [new TextRun({ text: SINHALA_CARDS_HEADING, bold: true, size: 28, font: 'Abhaya Libre' })],
+    children: [new TextRun({ text: SINHALA_CARDS_HEADING, bold: true, size: 28, font: brand.font })],
     alignment: AlignmentType.LEFT,
     spacing: { before: 160, after: 200 },
   }));
@@ -336,13 +337,13 @@ async function buildTarotDoc({ question, reading, cards, page1_body, page2_body,
 
     children.push(new Paragraph({
       children: [
-        new TextRun({ text: `${posLabel}: `, bold: true, size: 24, font: 'Abhaya Libre' }),
-        new TextRun({ text: `${cardName} (${oriLabel})`, size: 24, font: 'Abhaya Libre' }),
+        new TextRun({ text: `${posLabel}: `, bold: true, size: 24, font: brand.font }),
+        new TextRun({ text: `${cardName} (${oriLabel})`, size: 24, font: brand.font }),
       ],
       spacing: { after: 60 },
     }));
     children.push(new Paragraph({
-      children: [new TextRun({ text: cardMeaning, size: 22, font: 'Abhaya Libre', color: '555555' })],
+      children: [new TextRun({ text: cardMeaning, size: 22, font: brand.font, color: '555555' })],
       spacing: { after: 160 },
     }));
   }
@@ -351,23 +352,23 @@ async function buildTarotDoc({ question, reading, cards, page1_body, page2_body,
   children.push(new Paragraph({
     children: [
       new PageBreak(),
-      new TextRun({ text: SINHALA_READING_HEADING, bold: true, size: 36, font: 'Abhaya Libre' }),
+      new TextRun({ text: SINHALA_READING_HEADING, bold: true, size: 36, font: brand.font }),
     ],
     alignment: AlignmentType.LEFT,
     spacing: { before: 0, after: 280 },
   }));
 
-  children.push(...contentToParagraphs(reading));
+  children.push(...contentToParagraphs(reading, brand.font));
 
   // ── Final page: ආධ්‍යාත්මික වගකීම් ප්‍රකාශය — page break embedded in heading
-  children.push(makeHeading(PAGE4_HEADING, true));
-  children.push(...makeBodyParagraphs(page4_body || DEFAULT_PAGE4_BODY));
+  children.push(makeHeading(PAGE4_HEADING, brand.font, true));
+  children.push(...makeBodyParagraphs(page4_body || DEFAULT_PAGE4_BODY, brand.font));
 
   const doc = new Document({
     styles: {
       default: {
         document: {
-          run: { font: 'Abhaya Libre', size: 24 },
+          run: { font: brand.font, size: 24 },
           paragraph: { alignment: AlignmentType.JUSTIFIED, spacing: { after: 160 } },
         },
       },
@@ -382,8 +383,8 @@ async function buildTarotDoc({ question, reading, cards, page1_body, page2_body,
         default: new Footer({
           children: [new Paragraph({
             children: [
-              new TextRun({ text: 'පුරාණ ජෝතිර්වේදය හදහන් සේවය | පිටුව: ', size: 20, font: 'Abhaya Libre' }),
-              new TextRun({ children: [PageNumber.CURRENT], size: 20, font: 'Abhaya Libre' }),
+              new TextRun({ text: footerText(brand), size: 20, font: brand.font }),
+              new TextRun({ children: [PageNumber.CURRENT], size: 20, font: brand.font }),
             ],
             alignment: AlignmentType.CENTER,
           })],

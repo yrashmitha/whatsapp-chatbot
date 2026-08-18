@@ -10,14 +10,15 @@
 const axios  = require('axios');
 const db     = require('../db');
 const { getFreeAstroKey, getGeminiKey, getGenAI } = require('./clientKeys');
+const { DEFAULT_BRAND, footerText } = require('./branding');
 const { extractPlanetDegreesSum, generateQuantumCode, generateQuantumReading, generateQuantumSections } = require('./quantumCode');
 const { todayContextBlock } = require('./dateContext');
 // Lazy-loaded on first use to avoid crashing the server on startup if the
 // package isn't installed yet (e.g. stale Railway build cache).
-let Document, Packer, Paragraph, TextRun, AlignmentType, PageBreak, Footer, PageNumber, NumberFormat;
+let Document, Packer, Paragraph, TextRun, AlignmentType, PageBreak, Footer, PageNumber, NumberFormat, ImageRun;
 function ensureDocx() {
   if (!Document) {
-    ({ Document, Packer, Paragraph, TextRun, AlignmentType, PageBreak, Footer, PageNumber, NumberFormat } = require('docx'));
+    ({ Document, Packer, Paragraph, TextRun, AlignmentType, PageBreak, Footer, PageNumber, NumberFormat, ImageRun } = require('docx'));
   }
 }
 
@@ -78,6 +79,8 @@ const SECTIONS = [
   'වර්තමාන දශාව අනුව පලාපල',
   'ජීවිතයේ අභියෝග ජයගැනීම සඳහා වූ පොදු ශාස්ත්‍රීය සහ බෞද්ධ පිළියම්',
 ];
+
+const QUANTUM_REPORT_TITLE = 'ක්වොන්ටම් ශක්ති කේතය';
 
 const VIP_SECTION = 'විශේෂ VIP උපදේශනය: ග්‍රහ අපල සඳහා වන සුවිශේෂී ස්තෝත්‍රය සහ වත්පිළිවෙත්';
 
@@ -173,24 +176,43 @@ function buildSpecialQuestionPrompt(question, systemPrompt, birthDataJson) {
 
 // ─── Word document builder ────────────────────────────────────────────────────
 
-function parseContentToRuns(line) {
+/**
+ * Cover-page logo paragraph, or nothing when the client has not set one.
+ *
+ * @param {Object} brand
+ * @returns {Array} Zero or one Paragraph
+ */
+function logoParagraphs(brand) {
+  if (!brand.logo) return [];
+  return [new Paragraph({
+    children: [new ImageRun({
+      data: brand.logo.buffer,
+      type: brand.logo.type,
+      transformation: { width: brand.logo.width, height: brand.logo.height },
+    })],
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 240 },
+  })];
+}
+
+function parseContentToRuns(line, font) {
   // Parse **bold** markers into TextRun array
   const runs = [];
   const marker = '**';
   if (!line.includes(marker) && !line.includes('*')) {
-    runs.push(new TextRun({ text: line, size: 24, font: 'Abhaya Libre' }));
+    runs.push(new TextRun({ text: line, size: 24, font }));
     return runs;
   }
   // Normalise: replace ** with single *
   const normalised = line.replace(/\*\*/g, '*');
   const parts = normalised.split('*');
   parts.forEach((part, i) => {
-    if (part) runs.push(new TextRun({ text: part, bold: i % 2 !== 0, size: 24, font: 'Abhaya Libre' }));
+    if (part) runs.push(new TextRun({ text: part, bold: i % 2 !== 0, size: 24, font }));
   });
   return runs;
 }
 
-function contentToParagraphs(content) {
+function contentToParagraphs(content, font) {
   const paragraphs = [];
   if (!content) return paragraphs;
 
@@ -206,7 +228,7 @@ function contentToParagraphs(content) {
         // Sub-heading
         const text = line.replace(/^###\s*/, '').replace(/\*/g, '').trim();
         paragraphs.push(new Paragraph({
-          children: [new TextRun({ text, bold: true, size: 32, font: 'Abhaya Libre' })],
+          children: [new TextRun({ text, bold: true, size: 32, font })],
           alignment: AlignmentType.LEFT,
           spacing: { before: 240, after: 120 },
         }));
@@ -214,7 +236,7 @@ function contentToParagraphs(content) {
         // Bullet point
         const text = line.slice(2).trim();
         paragraphs.push(new Paragraph({
-          children: parseContentToRuns(text),
+          children: parseContentToRuns(text, font),
           bullet: { level: 0 },
           alignment: AlignmentType.LEFT,
           spacing: { after: 80 },
@@ -223,7 +245,7 @@ function contentToParagraphs(content) {
         // Numbered list
         const text = line.replace(/^\d+[.)]\s*/, '');
         paragraphs.push(new Paragraph({
-          children: parseContentToRuns(text),
+          children: parseContentToRuns(text, font),
           numbering: { reference: 'default-numbering', level: 0 },
           alignment: AlignmentType.LEFT,
           spacing: { after: 80 },
@@ -231,7 +253,7 @@ function contentToParagraphs(content) {
       } else {
         // Normal justified paragraph
         paragraphs.push(new Paragraph({
-          children: parseContentToRuns(line),
+          children: parseContentToRuns(line, font),
           alignment: AlignmentType.JUSTIFIED,
           spacing: { after: 160 },
         }));
@@ -241,36 +263,38 @@ function contentToParagraphs(content) {
   return paragraphs;
 }
 
-async function buildHoroscopeDoc({ customerName, sections, specialAnswers, specialNote, birthDate, birthTime, sectionOrder }) {
+async function buildHoroscopeDoc({ customerName, sections, specialAnswers, specialNote, birthDate, birthTime, sectionOrder, brand = DEFAULT_BRAND }) {
   ensureDocx();
   const children = [];
 
   // ── Cover page ──────────────────────────────────────────────────────────────
-  for (let i = 0; i < 5; i++) children.push(new Paragraph({ children: [], spacing: { after: 400 } }));
-  children.push(new Paragraph({
-    children: [new TextRun({ text: '✦  ══════════════════════════════════════  ✦', size: 26, font: 'Abhaya Libre' })],
+  const _spacers = brand.logo ? 3 : 5;
+  for (let i = 0; i < _spacers; i++) children.push(new Paragraph({ children: [], spacing: { after: 400 } }));
+  children.push(...logoParagraphs(brand));
+  if (brand.divider) children.push(new Paragraph({
+    children: [new TextRun({ text: brand.divider, size: 26, font: brand.font })],
     alignment: AlignmentType.CENTER,
     spacing: { after: 280 },
   }));
-  children.push(new Paragraph({
-    children: [new TextRun({ text: 'නමෝ බුද්ධාය!', bold: true, size: 56, font: 'Abhaya Libre' })],
+  if (brand.invocation) children.push(new Paragraph({
+    children: [new TextRun({ text: brand.invocation, bold: true, size: 56, font: brand.font })],
     alignment: AlignmentType.CENTER,
     spacing: { after: 280 },
   }));
-  children.push(new Paragraph({
-    children: [new TextRun({ text: '✦  ══════════════════════════════════════  ✦', size: 26, font: 'Abhaya Libre' })],
+  if (brand.divider) children.push(new Paragraph({
+    children: [new TextRun({ text: brand.divider, size: 26, font: brand.font })],
     alignment: AlignmentType.CENTER,
     spacing: { after: 640 },
   }));
   children.push(new Paragraph({
-    children: [new TextRun({ text: customerName || '', bold: true, size: 72, font: 'Abhaya Libre' })],
+    children: [new TextRun({ text: customerName || '', bold: true, size: 72, font: brand.font })],
     alignment: AlignmentType.CENTER,
     spacing: { after: 200 },
   }));
   if (birthDate || birthTime) {
     const dateTimeText = [birthDate, birthTime].filter(Boolean).join('  ·  ');
     children.push(new Paragraph({
-      children: [new TextRun({ text: dateTimeText, size: 24, font: 'Abhaya Libre' })],
+      children: [new TextRun({ text: dateTimeText, size: 24, font: brand.font })],
       alignment: AlignmentType.CENTER,
       spacing: { after: 120 },
     }));
@@ -302,30 +326,30 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
     children.push(new Paragraph({
       children: [
         ...(idx > 0 ? [new PageBreak()] : []),
-        new TextRun({ text: sec, bold: true, size: 36, font: 'Abhaya Libre' }),
+        new TextRun({ text: sec, bold: true, size: 36, font: brand.font }),
       ],
       alignment: AlignmentType.LEFT,
       spacing: { after: 240 },
     }));
-    children.push(...contentToParagraphs(sections[sec] || ''));
+    children.push(...contentToParagraphs(sections[sec] || '', brand.font));
   });
 
   // Special questions (before remedies section)
   if (specialAnswers && specialAnswers.length > 0) {
     children.push(new Paragraph({
-      children: [new PageBreak(), new TextRun({ text: 'විශේෂ උපදේශනය සහ විසඳුම් සේවාව (2026 සිට ඉදිරියට)', bold: true, size: 36, font: 'Abhaya Libre' })],
+      children: [new PageBreak(), new TextRun({ text: 'විශේෂ උපදේශනය සහ විසඳුම් සේවාව (2026 සිට ඉදිරියට)', bold: true, size: 36, font: brand.font })],
       alignment: AlignmentType.LEFT,
       spacing: { after: 240 },
     }));
 
     specialAnswers.forEach((qa, i) => {
       children.push(new Paragraph({
-        children: [new TextRun({ text: `ගැටලුව ${i + 1}: ${qa.question}`, bold: true, size: 26, font: 'Abhaya Libre' })],
+        children: [new TextRun({ text: `ගැටලුව ${i + 1}: ${qa.question}`, bold: true, size: 26, font: brand.font })],
         spacing: { before: 400, after: 160 },
       }));
-      children.push(...contentToParagraphs(qa.answer || ''));
+      children.push(...contentToParagraphs(qa.answer || '', brand.font));
       children.push(new Paragraph({
-        children: [new TextRun({ text: '─'.repeat(40), size: 20, font: 'Abhaya Libre' })],
+        children: [new TextRun({ text: '─'.repeat(40), size: 20, font: brand.font })],
         alignment: AlignmentType.CENTER,
         spacing: { before: 160, after: 160 },
       }));
@@ -335,11 +359,11 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
   // Render remedies section and any sections after it
   fromRemedies.forEach((sec) => {
     children.push(new Paragraph({
-      children: [new PageBreak(), new TextRun({ text: sec, bold: true, size: 36, font: 'Abhaya Libre' })],
+      children: [new PageBreak(), new TextRun({ text: sec, bold: true, size: 36, font: brand.font })],
       alignment: AlignmentType.LEFT,
       spacing: { after: 240 },
     }));
-    children.push(...contentToParagraphs(sections[sec] || ''));
+    children.push(...contentToParagraphs(sections[sec] || '', brand.font));
   });
 
   // Special note page
@@ -353,7 +377,7 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
       children.push(new Paragraph({
         children: [
           ...(firstLine ? [new PageBreak()] : []),
-          new TextRun({ text: trimmed, bold: isHeading, size: isHeading ? 36 : 24, font: 'Abhaya Libre' }),
+          new TextRun({ text: trimmed, bold: isHeading, size: isHeading ? 36 : 24, font: brand.font }),
         ],
         alignment: isHeading ? AlignmentType.CENTER : AlignmentType.JUSTIFIED,
         spacing: { after: 160 },
@@ -364,12 +388,12 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
 
   // Signature
   children.push(new Paragraph({
-    children: [new TextRun({ text: 'මෙයට,', bold: true, size: 24, font: 'Abhaya Libre' })],
+    children: [new TextRun({ text: 'මෙයට,', bold: true, size: 24, font: brand.font })],
     alignment: AlignmentType.RIGHT,
     spacing: { before: 600 },
   }));
   children.push(new Paragraph({
-    children: [new TextRun({ text: 'පුරාණ ජෝතිර්වේදය හදහන් සේවය', bold: true, size: 24, font: 'Abhaya Libre' })],
+    children: [new TextRun({ text: brand.signature, bold: true, size: 24, font: brand.font })],
     alignment: AlignmentType.RIGHT,
   }));
 
@@ -377,7 +401,7 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
     styles: {
       default: {
         document: {
-          run: { font: 'Abhaya Libre', size: 24 },
+          run: { font: brand.font, size: 24 },
           paragraph: { alignment: AlignmentType.JUSTIFIED, spacing: { after: 160, line: 360, lineRule: 'auto' } },
         },
       },
@@ -398,8 +422,8 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
         default: new Footer({
           children: [new Paragraph({
             children: [
-              new TextRun({ text: 'පුරාණ ජෝතිර්වේදය හදහන් සේවය | පිටුව: ', size: 20, font: 'Abhaya Libre' }),
-              new TextRun({ children: [PageNumber.CURRENT], size: 20, font: 'Abhaya Libre' }),
+              new TextRun({ text: footerText(brand), size: 20, font: brand.font }),
+              new TextRun({ children: [PageNumber.CURRENT], size: 20, font: brand.font }),
             ],
             alignment: AlignmentType.CENTER,
           })],
@@ -433,49 +457,52 @@ async function buildSectionsDoc({
   // docx Table instance. Defaults to null so every existing caller is
   // unaffected.
   extraBlocks = null,
+  brand = DEFAULT_BRAND,
 }) {
   ensureDocx();
   const children = [];
 
-  for (let i = 0; i < 5; i++) children.push(new Paragraph({ children: [], spacing: { after: 400 } }));
-  children.push(new Paragraph({
-    children: [new TextRun({ text: '✦  ══════════════════════════════════════  ✦', size: 26, font: 'Abhaya Libre' })],
+  const _spacers = brand.logo ? 3 : 5;
+  for (let i = 0; i < _spacers; i++) children.push(new Paragraph({ children: [], spacing: { after: 400 } }));
+  children.push(...logoParagraphs(brand));
+  if (brand.divider) children.push(new Paragraph({
+    children: [new TextRun({ text: brand.divider, size: 26, font: brand.font })],
     alignment: AlignmentType.CENTER,
     spacing: { after: 280 },
   }));
-  children.push(new Paragraph({
-    children: [new TextRun({ text: 'නමෝ බුද්ධාය!', bold: true, size: 56, font: 'Abhaya Libre' })],
+  if (brand.invocation) children.push(new Paragraph({
+    children: [new TextRun({ text: brand.invocation, bold: true, size: 56, font: brand.font })],
     alignment: AlignmentType.CENTER,
     spacing: { after: 200 },
   }));
   if (reportTitle) {
     children.push(new Paragraph({
-      children: [new TextRun({ text: reportTitle, bold: true, size: 40, font: 'Abhaya Libre' })],
+      children: [new TextRun({ text: reportTitle, bold: true, size: 40, font: brand.font })],
       alignment: AlignmentType.CENTER,
       spacing: { after: 200 },
     }));
   }
-  children.push(new Paragraph({
-    children: [new TextRun({ text: '✦  ══════════════════════════════════════  ✦', size: 26, font: 'Abhaya Libre' })],
+  if (brand.divider) children.push(new Paragraph({
+    children: [new TextRun({ text: brand.divider, size: 26, font: brand.font })],
     alignment: AlignmentType.CENTER,
     spacing: { after: 640 },
   }));
   children.push(new Paragraph({
-    children: [new TextRun({ text: customerName || '', bold: true, size: 72, font: 'Abhaya Libre' })],
+    children: [new TextRun({ text: customerName || '', bold: true, size: 72, font: brand.font })],
     alignment: AlignmentType.CENTER,
     spacing: { after: 200 },
   }));
   if (Array.isArray(subtitleLines) && subtitleLines.length > 0) {
     subtitleLines.filter(Boolean).forEach((line) => {
       children.push(new Paragraph({
-        children: [new TextRun({ text: line, size: 28, font: 'Abhaya Libre' })],
+        children: [new TextRun({ text: line, size: 28, font: brand.font })],
         alignment: AlignmentType.CENTER,
         spacing: { after: 120 },
       }));
     });
   } else if (birthDate || birthTime) {
     children.push(new Paragraph({
-      children: [new TextRun({ text: [birthDate, birthTime].filter(Boolean).join('  ·  '), size: 24, font: 'Abhaya Libre' })],
+      children: [new TextRun({ text: [birthDate, birthTime].filter(Boolean).join('  ·  '), size: 24, font: brand.font })],
       alignment: AlignmentType.CENTER,
       spacing: { after: 120 },
     }));
@@ -487,12 +514,12 @@ async function buildSectionsDoc({
     children.push(new Paragraph({
       children: [
         ...(idx > 0 ? [new PageBreak()] : []),
-        new TextRun({ text: sec.label || '', bold: true, size: 36, font: 'Abhaya Libre' }),
+        new TextRun({ text: sec.label || '', bold: true, size: 36, font: brand.font }),
       ],
       alignment: AlignmentType.LEFT,
       spacing: { after: 240 },
     }));
-    children.push(...contentToParagraphs(sec.content));
+    children.push(...contentToParagraphs(sec.content, brand.font));
   });
 
   // Non-text blocks (birth-chart tables), each starting a fresh page so a
@@ -503,7 +530,7 @@ async function buildSectionsDoc({
       children.push(new Paragraph({
         children: [
           new PageBreak(),
-          new TextRun({ text: block.heading || '', bold: true, size: 32, font: 'Abhaya Libre' }),
+          new TextRun({ text: block.heading || '', bold: true, size: 32, font: brand.font }),
         ],
         alignment: AlignmentType.CENTER,
         spacing: { after: 240 },
@@ -517,7 +544,7 @@ async function buildSectionsDoc({
   // horoscope document uses at buildHoroscopeDoc).
   if (Array.isArray(specialAnswers) && specialAnswers.length > 0) {
     children.push(new Paragraph({
-      children: [new PageBreak(), new TextRun({ text: specialQuestionsTitle, bold: true, size: 36, font: 'Abhaya Libre' })],
+      children: [new PageBreak(), new TextRun({ text: specialQuestionsTitle, bold: true, size: 36, font: brand.font })],
       alignment: AlignmentType.LEFT,
       spacing: { after: 240 },
     }));
@@ -525,12 +552,12 @@ async function buildSectionsDoc({
     specialAnswers.forEach((qa, i) => {
       if (!qa || !qa.answer) return;
       children.push(new Paragraph({
-        children: [new TextRun({ text: `ගැටලුව ${i + 1}: ${qa.question || ''}`, bold: true, size: 26, font: 'Abhaya Libre' })],
+        children: [new TextRun({ text: `ගැටලුව ${i + 1}: ${qa.question || ''}`, bold: true, size: 26, font: brand.font })],
         spacing: { before: 400, after: 160 },
       }));
-      children.push(...contentToParagraphs(qa.answer));
+      children.push(...contentToParagraphs(qa.answer, brand.font));
       children.push(new Paragraph({
-        children: [new TextRun({ text: '─'.repeat(40), size: 20, font: 'Abhaya Libre' })],
+        children: [new TextRun({ text: '─'.repeat(40), size: 20, font: brand.font })],
         alignment: AlignmentType.CENTER,
         spacing: { before: 160, after: 160 },
       }));
@@ -545,7 +572,7 @@ async function buildSectionsDoc({
       children.push(new Paragraph({
         children: [
           ...(firstLine ? [new PageBreak()] : []),
-          new TextRun({ text: trimmed, size: 24, font: 'Abhaya Libre' }),
+          new TextRun({ text: trimmed, size: 24, font: brand.font }),
         ],
         alignment: AlignmentType.JUSTIFIED,
         spacing: { after: 160 },
@@ -555,12 +582,12 @@ async function buildSectionsDoc({
   }
 
   children.push(new Paragraph({
-    children: [new TextRun({ text: 'මෙයට,', bold: true, size: 24, font: 'Abhaya Libre' })],
+    children: [new TextRun({ text: 'මෙයට,', bold: true, size: 24, font: brand.font })],
     alignment: AlignmentType.RIGHT,
     spacing: { before: 600 },
   }));
   children.push(new Paragraph({
-    children: [new TextRun({ text: 'පුරාණ ජෝතිර්වේදය හදහන් සේවය', bold: true, size: 24, font: 'Abhaya Libre' })],
+    children: [new TextRun({ text: brand.signature, bold: true, size: 24, font: brand.font })],
     alignment: AlignmentType.RIGHT,
   }));
 
@@ -568,7 +595,7 @@ async function buildSectionsDoc({
     styles: {
       default: {
         document: {
-          run: { font: 'Abhaya Libre', size: 24 },
+          run: { font: brand.font, size: 24 },
           paragraph: { alignment: AlignmentType.JUSTIFIED, spacing: { after: 160, line: 360, lineRule: 'auto' } },
         },
       },
@@ -585,8 +612,8 @@ async function buildSectionsDoc({
         default: new Footer({
           children: [new Paragraph({
             children: [
-              new TextRun({ text: 'පුරාණ ජෝතිර්වේදය හදහන් සේවය | පිටුව: ', size: 20, font: 'Abhaya Libre' }),
-              new TextRun({ children: [PageNumber.CURRENT], size: 20, font: 'Abhaya Libre' }),
+              new TextRun({ text: footerText(brand), size: 20, font: brand.font }),
+              new TextRun({ children: [PageNumber.CURRENT], size: 20, font: brand.font }),
             ],
             alignment: AlignmentType.CENTER,
           })],
@@ -601,7 +628,7 @@ async function buildSectionsDoc({
 
 // ─── Standalone Quantum / Aura document builder ──────────────────────────────
 
-async function buildQuantumDoc({ customerName, quantumData, auraAnalysis, quantumReading, quantumSectionsData }) {
+async function buildQuantumDoc({ customerName, quantumData, auraAnalysis, quantumReading, quantumSectionsData, brand = DEFAULT_BRAND }) {
   ensureDocx();
   if (!quantumData || quantumData.status !== 'Success' || !auraAnalysis) {
     throw new Error('Quantum data or aura analysis not available');
@@ -609,29 +636,31 @@ async function buildQuantumDoc({ customerName, quantumData, auraAnalysis, quantu
   const children = [];
 
   // ── Cover page ──────────────────────────────────────────────────────────────
-  for (let i = 0; i < 4; i++) children.push(new Paragraph({ children: [], spacing: { after: 400 } }));
-  children.push(new Paragraph({
-    children: [new TextRun({ text: '✦  ══════════════════════════════════════  ✦', size: 26, font: 'Abhaya Libre' })],
+  const _spacers = brand.logo ? 2 : 4;
+  for (let i = 0; i < _spacers; i++) children.push(new Paragraph({ children: [], spacing: { after: 400 } }));
+  children.push(...logoParagraphs(brand));
+  if (brand.divider) children.push(new Paragraph({
+    children: [new TextRun({ text: brand.divider, size: 26, font: brand.font })],
     alignment: AlignmentType.CENTER,
     spacing: { after: 280 },
   }));
   children.push(new Paragraph({
-    children: [new TextRun({ text: 'ක්වොන්ටම් ශක්ති කේතය', bold: true, size: 56, font: 'Abhaya Libre' })],
+    children: [new TextRun({ text: QUANTUM_REPORT_TITLE, bold: true, size: 56, font: brand.font })],
     alignment: AlignmentType.CENTER,
     spacing: { after: 280 },
   }));
-  children.push(new Paragraph({
-    children: [new TextRun({ text: '✦  ══════════════════════════════════════  ✦', size: 26, font: 'Abhaya Libre' })],
+  if (brand.divider) children.push(new Paragraph({
+    children: [new TextRun({ text: brand.divider, size: 26, font: brand.font })],
     alignment: AlignmentType.CENTER,
     spacing: { after: 560 },
   }));
   children.push(new Paragraph({
-    children: [new TextRun({ text: customerName || '', bold: true, size: 72, font: 'Abhaya Libre' })],
+    children: [new TextRun({ text: customerName || '', bold: true, size: 72, font: brand.font })],
     alignment: AlignmentType.CENTER,
     spacing: { after: 280 },
   }));
   children.push(new Paragraph({
-    children: [new TextRun({ text: quantumData.quantum_id, bold: true, size: 64, font: 'Abhaya Libre' })],
+    children: [new TextRun({ text: quantumData.quantum_id, bold: true, size: 64, font: brand.font })],
     alignment: AlignmentType.CENTER,
     spacing: { after: 0 },
   }));
@@ -640,7 +669,7 @@ async function buildQuantumDoc({ customerName, quantumData, auraAnalysis, quantu
 
   // Aura subsection
   children.push(new Paragraph({
-    children: [new TextRun({ text: 'ඕරා ශක්ති විශ්ලේෂණය  (Aura Frequency Analysis)', bold: true, size: 30, font: 'Abhaya Libre' })],
+    children: [new TextRun({ text: 'ඕරා ශක්ති විශ්ලේෂණය  (Aura Frequency Analysis)', bold: true, size: 30, font: brand.font })],
     alignment: AlignmentType.LEFT,
     spacing: { after: 160 },
   }));
@@ -655,8 +684,8 @@ async function buildQuantumDoc({ customerName, quantumData, auraAnalysis, quantu
   for (const [label, value] of auraRows) {
     children.push(new Paragraph({
       children: [
-        new TextRun({ text: `${label}: `, bold: true, size: 24, font: 'Abhaya Libre' }),
-        new TextRun({ text: value, size: 24, font: 'Abhaya Libre' }),
+        new TextRun({ text: `${label}: `, bold: true, size: 24, font: brand.font }),
+        new TextRun({ text: value, size: 24, font: brand.font }),
       ],
       alignment: AlignmentType.LEFT,
       spacing: { after: 80 },
@@ -665,12 +694,12 @@ async function buildQuantumDoc({ customerName, quantumData, auraAnalysis, quantu
 
   if (Array.isArray(auraAnalysis.detected_blockages) && auraAnalysis.detected_blockages.length) {
     children.push(new Paragraph({
-      children: [new TextRun({ text: 'ශක්ති රටා (Detected Energy Patterns):', bold: true, size: 24, font: 'Abhaya Libre' })],
+      children: [new TextRun({ text: 'ශක්ති රටා (Detected Energy Patterns):', bold: true, size: 24, font: brand.font })],
       spacing: { before: 120, after: 60 },
     }));
     for (const b of auraAnalysis.detected_blockages) {
       children.push(new Paragraph({
-        children: [new TextRun({ text: b, size: 24, font: 'Abhaya Libre' })],
+        children: [new TextRun({ text: b, size: 24, font: brand.font })],
         bullet: { level: 0 },
         spacing: { after: 60 },
       }));
@@ -680,12 +709,12 @@ async function buildQuantumDoc({ customerName, quantumData, auraAnalysis, quantu
   const hints2 = Array.isArray(auraAnalysis.recommendation_hint) ? auraAnalysis.recommendation_hint : (auraAnalysis.recommendation_hint ? [auraAnalysis.recommendation_hint] : []);
   if (hints2.length > 0) {
     children.push(new Paragraph({
-      children: [new TextRun({ text: 'නිර්දේශය (Recommendation):', bold: true, size: 24, font: 'Abhaya Libre' })],
+      children: [new TextRun({ text: 'නිර්දේශය (Recommendation):', bold: true, size: 24, font: brand.font })],
       spacing: { before: 120, after: 60 },
     }));
     for (const h of hints2) {
       children.push(new Paragraph({
-        children: [new TextRun({ text: h, size: 24, font: 'Abhaya Libre' })],
+        children: [new TextRun({ text: h, size: 24, font: brand.font })],
         bullet: { level: 0 },
         spacing: { after: 60 },
       }));
@@ -694,7 +723,7 @@ async function buildQuantumDoc({ customerName, quantumData, auraAnalysis, quantu
 
   // Quantum metrics subsection
   children.push(new Paragraph({
-    children: [new TextRun({ text: 'ක්වොන්ටම් ගණනය  (Quantum Resonance Metrics)', bold: true, size: 30, font: 'Abhaya Libre' })],
+    children: [new TextRun({ text: 'ක්වොන්ටම් ගණනය  (Quantum Resonance Metrics)', bold: true, size: 30, font: brand.font })],
     alignment: AlignmentType.LEFT,
     spacing: { before: 200, after: 160 },
   }));
@@ -708,8 +737,8 @@ async function buildQuantumDoc({ customerName, quantumData, auraAnalysis, quantu
   for (const [label, value] of qcRows) {
     children.push(new Paragraph({
       children: [
-        new TextRun({ text: `${label}: `, bold: true, size: 24, font: 'Abhaya Libre' }),
-        new TextRun({ text: value, size: 24, font: 'Abhaya Libre' }),
+        new TextRun({ text: `${label}: `, bold: true, size: 24, font: brand.font }),
+        new TextRun({ text: value, size: 24, font: brand.font }),
       ],
       alignment: AlignmentType.LEFT,
       spacing: { after: 80 },
@@ -724,28 +753,28 @@ async function buildQuantumDoc({ customerName, quantumData, auraAnalysis, quantu
       children.push(new Paragraph({
         children: [
           ...(i > 0 ? [new PageBreak()] : []),
-          new TextRun({ text: label, bold: true, size: 32, font: 'Abhaya Libre' }),
+          new TextRun({ text: label, bold: true, size: 32, font: brand.font }),
         ],
         alignment: AlignmentType.LEFT,
         spacing: { before: i === 0 ? 320 : 0, after: 200 },
       }));
-      children.push(...contentToParagraphs(content));
+      children.push(...contentToParagraphs(content, brand.font));
     }
   } else if (quantumReading) {
     // Fallback: legacy single-block reading
     children.push(new Paragraph({
-      children: [new TextRun({ text: 'ක්වොන්ටම් ජීවන වාර්තාව  (Quantum Life Architect Reading)', bold: true, size: 30, font: 'Abhaya Libre' })],
+      children: [new TextRun({ text: 'ක්වොන්ටම් ජීවන වාර්තාව  (Quantum Life Architect Reading)', bold: true, size: 30, font: brand.font })],
       alignment: AlignmentType.LEFT,
       spacing: { before: 320, after: 200 },
     }));
-    children.push(...contentToParagraphs(quantumReading));
+    children.push(...contentToParagraphs(quantumReading, brand.font));
   }
 
   const doc = new Document({
     styles: {
       default: {
         document: {
-          run: { font: 'Abhaya Libre', size: 24 },
+          run: { font: brand.font, size: 24 },
           paragraph: { alignment: AlignmentType.JUSTIFIED, spacing: { after: 160, line: 360, lineRule: 'auto' } },
         },
       },
@@ -764,8 +793,8 @@ async function buildQuantumDoc({ customerName, quantumData, auraAnalysis, quantu
         default: new Footer({
           children: [new Paragraph({
             children: [
-              new TextRun({ text: 'පුරාණ ජෝතිර්වේදය හදහන් සේවය | පිටුව: ', size: 20, font: 'Abhaya Libre' }),
-              new TextRun({ children: [PageNumber.CURRENT], size: 20, font: 'Abhaya Libre' }),
+              new TextRun({ text: footerText(brand), size: 20, font: brand.font }),
+              new TextRun({ children: [PageNumber.CURRENT], size: 20, font: brand.font }),
             ],
             alignment: AlignmentType.CENTER,
           })],
@@ -1223,5 +1252,6 @@ module.exports = {
   parseSinhalaDate,
   parseSinhalaTime,
   SECTIONS,
+  QUANTUM_REPORT_TITLE,
   SECTION_GUIDES,
 };

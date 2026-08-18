@@ -13,6 +13,7 @@ const { waToken, waPhoneId } = require('../services/whatsapp');
 const { PUBLIC_URL } = require('../config/env');
 const resolveClientId = require('../middleware/resolveClientId');
 const { generateTarotReading, buildTarotDoc } = require('../services/tarot');
+const { getBrand } = require('../services/branding');
 
 /**
  * Catalog of available addons with their metadata.
@@ -312,11 +313,13 @@ async function downloadTarotDocx(req, res) {
       : (r.rows[0].tarot_data || {});
     if (!td.reading || !td.cards) return res.status(404).json({ error: 'No tarot reading saved' });
 
+    const brand = await getBrand(clientId);
     const docxBuffer = await buildTarotDoc({
       question: td.question || '', reading: td.reading, cards: td.cards,
       page1_body: pluginCfg.page1_body || undefined,
       page2_body: pluginCfg.page2_body || undefined,
       page4_body: pluginCfg.page4_body || undefined,
+      brand,
     });
     const last4 = (r.rows[0].phone_number || '').replace(/\D/g, '').slice(-4) || '0000';
     const filename = `tarot-reading-${last4}.docx`;
@@ -371,11 +374,13 @@ async function downloadTarotPdfByOrder(req, res) {
     }
     const fontDest = fontDirs[0];
 
+    const brand = await getBrand(clientId);
     const docxBuffer = await buildTarotDoc({
       question: td.question || '', reading: td.reading, cards: td.cards,
       page1_body: pluginCfg.page1_body || undefined,
       page2_body: pluginCfg.page2_body || undefined,
       page4_body: pluginCfg.page4_body || undefined,
+      brand,
     });
     fs.writeFileSync(tmpDocx, docxBuffer);
 
@@ -390,10 +395,10 @@ async function downloadTarotPdfByOrder(req, res) {
     const { PDFDocument } = require('pdf-lib');
     const rawPdf = fs.readFileSync(tmpPdf);
     const pdfDoc = await PDFDocument.load(rawPdf);
-    pdfDoc.setTitle('Tarot Card Reading');
-    pdfDoc.setAuthor('Tarot Reading Service');
-    pdfDoc.setCreator(''); pdfDoc.setProducer('');
-    pdfDoc.setSubject('Tarot Reading'); pdfDoc.setKeywords([]);
+    pdfDoc.setTitle(brand.pdf.title || '');
+    pdfDoc.setAuthor(brand.pdf.author || '');
+    pdfDoc.setCreator(brand.pdf.producer || ''); pdfDoc.setProducer(brand.pdf.producer || '');
+    pdfDoc.setSubject(brand.pdf.subject || ''); pdfDoc.setKeywords([]);
     const buffer = Buffer.from(await pdfDoc.save());
 
     fs.rm(tmpHome, { recursive: true, force: true }, () => {});
@@ -471,7 +476,8 @@ async function downloadTarotPdf(req, res) {
   const fontDest2 = fontDirs2[0];
 
   try {
-    const docxBuffer = await buildTarotDoc({ question, reading, cards });
+    const brand = await getBrand(resolveClientId(req));
+    const docxBuffer = await buildTarotDoc({ question, reading, cards, brand });
     fs.writeFileSync(tmpDocx, docxBuffer);
 
     await new Promise((resolve, reject) => {
@@ -489,11 +495,11 @@ async function downloadTarotPdf(req, res) {
     const { PDFDocument } = require('pdf-lib');
     const rawPdf = fs.readFileSync(tmpPdf);
     const pdfDoc = await PDFDocument.load(rawPdf);
-    pdfDoc.setTitle('Tarot Card Reading');
-    pdfDoc.setAuthor('Tarot Reading Service');
-    pdfDoc.setCreator('');
-    pdfDoc.setProducer('');
-    pdfDoc.setSubject('Tarot Reading');
+    pdfDoc.setTitle(brand.pdf.title || '');
+    pdfDoc.setAuthor(brand.pdf.author || '');
+    pdfDoc.setCreator(brand.pdf.producer || '');
+    pdfDoc.setProducer(brand.pdf.producer || '');
+    pdfDoc.setSubject(brand.pdf.subject || '');
     pdfDoc.setKeywords([]);
     const buffer = Buffer.from(await pdfDoc.save());
 

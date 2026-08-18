@@ -369,6 +369,19 @@ async function init() {
       console.log('[SCHEMA] freeastro_api_key added; migrated existing keys and set system-key opt-ins');
     }
 
+    // ── Per-client report branding ───────────────────────────────────────────
+    // Nothing here has a default: an unset field renders as nothing rather than
+    // inheriting another client's identity. See services/branding.js.
+    for (const col of [
+      'report_signature TEXT', 'report_footer TEXT', 'report_invocation TEXT',
+      'report_divider TEXT', 'report_font TEXT', 'report_logo_url TEXT',
+      'pdf_title TEXT', 'pdf_author TEXT', 'pdf_subject TEXT', 'pdf_producer TEXT',
+    ]) {
+      await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS ${col}`);
+    }
+    await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS report_logo_width  INT NOT NULL DEFAULT 160`);
+    await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS report_logo_height INT NOT NULL DEFAULT 160`);
+
     // ── Quick replies ─────────────────────────────────────────────────────────
     await pool.query(`
       CREATE TABLE IF NOT EXISTS quick_replies (
@@ -655,6 +668,15 @@ async function init() {
     try { db.exec(`ALTER TABLE client_configs ADD COLUMN use_system_gemini_key INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
     try { db.exec(`ALTER TABLE client_configs ADD COLUMN freeastro_api_key TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE client_configs ADD COLUMN use_system_freeastro_key INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
+    for (const col of [
+      'report_signature TEXT', 'report_footer TEXT', 'report_invocation TEXT',
+      'report_divider TEXT', 'report_font TEXT', 'report_logo_url TEXT',
+      'pdf_title TEXT', 'pdf_author TEXT', 'pdf_subject TEXT', 'pdf_producer TEXT',
+      'report_logo_width INTEGER NOT NULL DEFAULT 160',
+      'report_logo_height INTEGER NOT NULL DEFAULT 160',
+    ]) {
+      try { db.exec(`ALTER TABLE client_configs ADD COLUMN ${col}`); } catch (_) {}
+    }
     // SQLite cannot DROP columns — old columns (package, birth_date, etc.) remain but are ignored
 
     // ── Per-chat AI mode (SQLite) ────────────────────────────────────────────

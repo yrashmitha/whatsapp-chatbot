@@ -247,7 +247,7 @@ async function generateMarriageWaMessage(clientId, orderId, sectionsData, waProm
 /**
  * Build the marriage Word document.
  */
-async function buildMarriageDoc({ customerName, sections, specialNote, birthDate, birthTime, sectionOrder }) {
+async function buildMarriageDoc({ customerName, sections, specialNote, birthDate, birthTime, sectionOrder, brand }) {
   // Order by plugin config if provided; saved data may predate a reorder.
   let ordered = Array.isArray(sections) ? sections.map(s => ({ ...s })) : [];
   if (Array.isArray(sectionOrder) && sectionOrder.length > 0) {
@@ -259,6 +259,7 @@ async function buildMarriageDoc({ customerName, sections, specialNote, birthDate
   }
 
   return await buildSectionsDoc({
+    brand,
     customerName,
     reportTitle: MARRIAGE_REPORT_TITLE,
     sections:    ordered,

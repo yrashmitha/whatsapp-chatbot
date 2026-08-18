@@ -50,7 +50,7 @@ async function listOrders(req, res) {
       db.pgQuery(`SELECT COUNT(*) FROM orders ${countWhere}`, countParams),
     ]);
     res.json({ orders: rows.rows, total: parseInt(countRes.rows[0].count), page, limit });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
 /**
@@ -112,7 +112,7 @@ async function exportOrders(req, res) {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="orders-${Date.now()}.csv"`);
     res.send(csv);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
 // Statuses that represent a confirmed payment (matches metaConversions.js's Purchase-event gate)
@@ -157,7 +157,7 @@ async function incomeSummary(req, res) {
       order_count: parseInt(r.rows[0].order_count, 10) || 0,
       month: new Date().toISOString().slice(0, 7),
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
 /**
@@ -185,7 +185,7 @@ async function updateStatus(req, res) {
           }
         }).catch(() => {});
     }
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
 /**
@@ -202,7 +202,7 @@ async function updateFields(req, res) {
   try {
     await db.updateOrderCustomFields(req.params.id, custom_fields);
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
 /**
@@ -217,7 +217,7 @@ async function updateNotes(req, res) {
   try {
     await db.pgQuery(`UPDATE orders SET notes=$1 WHERE order_id=$2`, [notes ?? null, req.params.id]);
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
 async function createOrder(req, res) {
@@ -245,7 +245,7 @@ async function createOrder(req, res) {
       await db.pgQuery(`UPDATE orders SET notes=$1 WHERE order_id=$2`, [notes, orderId]);
     }
     res.json({ ok: true, order_id: orderId });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
 module.exports = { listOrders, exportOrders, incomeSummary, updateStatus, updateFields, updateNotes, createOrder };

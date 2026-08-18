@@ -95,7 +95,8 @@ async function calculateVedicChart(birth, apiKey) {
   const cached = await cacheGet(hash);
   if (cached) return { data: cached, cached: true, hash };
 
-  const key = apiKey || process.env.FREEASTRO_API_KEY;
+  // Supplied by the caller from the client's own configuration.
+  const key = apiKey;
   if (!key) throw new Error('FREEASTRO_API_KEY not configured');
 
   const resp = await axios.post(FREEASTRO_URL, payload, {

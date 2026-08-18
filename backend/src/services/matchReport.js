@@ -28,7 +28,7 @@
  */
 
 const db        = require('../db');
-const { genAI } = require('./gemini');
+const { getGenAI } = require('./clientKeys');
 const { buildSectionsDoc } = require('./horoscope');
 const { todayContextBlock } = require('./dateContext');
 
@@ -219,11 +219,11 @@ function buildCoupleContext(hd) {
  * Build the Gemini model for a match run. The couple context is constant across every
  * section, so it lives in the systemInstruction and the model is built once per run.
  */
-function buildMatchModel({ coupleContext, systemPrompt }) {
+async function buildMatchModel({ clientId, coupleContext, systemPrompt }) {
   const sysInstruction = systemPrompt
     + '\n\nමෙම යුවලගේ කේන්ද්‍ර දත්ත සම්පූර්ණ වාර්තාව සඳහා පදනම වේ:\n\n'
     + coupleContext;
-  return genAI.getGenerativeModel({
+  return (await getGenAI(clientId)).getGenerativeModel({
     model: 'gemini-2.5-flash',
     generationConfig: { temperature: 0.4, topP: 0.8, topK: 40 },
     systemInstruction: sysInstruction,
@@ -250,14 +250,14 @@ function historyFromSections(sectionsData, excludeLabel) {
  * a one-off session is built from `coupleContext` + optional `history`.
  * @returns {Promise<string>} the section text
  */
-async function generateMatchSectionText({ coupleContext, systemPrompt, label, guide, chat, history }) {
+async function generateMatchSectionText({ clientId, coupleContext, systemPrompt, label, guide, chat, history }) {
   const prompt = buildMatchSectionPrompt(label, guide);
 
   console.log(`[MATCH] ── REQUEST: "${label}"`);
   console.log('[MATCH] userPrompt:\n' + prompt);
 
   const activeChat = chat
-    || buildMatchModel({ coupleContext, systemPrompt }).startChat({ history: history || [] });
+    || (await buildMatchModel({ clientId, coupleContext, systemPrompt })).startChat({ history: history || [] });
   const result = await activeChat.sendMessage(prompt);
   const text   = result.response.text();
   const usage  = result.response.usageMetadata;
@@ -301,11 +301,12 @@ async function generateMatchReading(clientId, orderId) {
   console.log(`[MATCH] coupleContext: ${coupleContext.length} chars`);
 
   // ONE session for the whole run (see module docstring).
-  const chat = buildMatchModel({ coupleContext, systemPrompt }).startChat({});
+  const chat = (await buildMatchModel({ clientId, coupleContext, systemPrompt })).startChat({});
 
   const out = [];
   for (const sec of sections) {
     const content = await generateMatchSectionText({
+      clientId,
       label: sec.label,
       guide: sec.guide || '',
       chat,

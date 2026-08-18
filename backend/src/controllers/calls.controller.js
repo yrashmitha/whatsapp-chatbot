@@ -16,6 +16,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const db = require('../db');
 const resolveClientId = require('../middleware/resolveClientId');
 const { PUBLIC_URL } = require('../config/env');
+const { getGeminiKey } = require('../services/clientKeys');
 
 // ─── PCM → WAV conversion ─────────────────────────────────────────────────────
 /**
@@ -82,9 +83,9 @@ function silentWav(durationMs = 500) {
  * @returns {Promise<Buffer>} WAV audio buffer
  */
 async function synthesizeSpeech(text, voiceName = 'Kore', apiKey) {
-  const key = apiKey || process.env.GEMINI_API_KEY;
+  const key = apiKey;
   if (!key) {
-    console.error('[TTS] GEMINI_API_KEY not configured — returning silence');
+    console.error('[TTS] no client Gemini API key supplied — returning silence');
     return silentWav();
   }
 
@@ -166,8 +167,8 @@ async function synthesizeSpeech(text, voiceName = 'Kore', apiKey) {
  * @returns {Promise<string>} AI text response
  */
 async function geminiCallReply(systemPrompt, transcript, apiKey) {
-  const key = apiKey || process.env.GEMINI_API_KEY;
-  const genAI = new GoogleGenerativeAI(key);
+  if (!apiKey) throw new Error('No Gemini API key supplied for call reply');
+  const genAI = new GoogleGenerativeAI(apiKey);
   const callModel = genAI.getGenerativeModel({
     model: 'gemini-2.5-flash',
     systemInstruction: systemPrompt || 'You are a helpful telephone receptionist. Keep responses concise and conversational.',
@@ -207,7 +208,8 @@ async function loadCallConfig(clientId) {
     greeting:     config.greeting      || 'Hello, how can I help you today?',
     ttsVoice:     config.tts_voice     || 'Kore',       // Gemini prebuilt voice name
     sttLanguage:  config.stt_language  || 'en-US',      // Twilio <Gather> STT language code
-    geminiApiKey: config.api_key       || null,
+    // Falls back to the client's own Gemini key, never the platform key.
+    geminiApiKey: config.api_key       || await getGeminiKey(clientId),
   };
 }
 
@@ -377,7 +379,7 @@ async function handleStatusWebhook(req, res) {
             .map(t => `${t.speaker === 'caller' ? 'Caller' : 'AI'}: ${t.text}`)
             .join('\n');
 
-          const genAI = new GoogleGenerativeAI(cfg.geminiApiKey || process.env.GEMINI_API_KEY);
+          const genAI = new GoogleGenerativeAI(cfg.geminiApiKey);
           const summaryModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
           const result = await summaryModel.generateContent(
             `Summarize this phone call transcript in 2-3 sentences. Focus on what the caller wanted and how it was resolved.\n\nTranscript:\n${transcriptText}`

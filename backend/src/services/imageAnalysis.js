@@ -54,8 +54,9 @@ Rules:
  * @returns {Promise<Object>} Parsed extraction result
  */
 async function analyzePaymentDocument(buffer, mimeType, apiKey) {
-  const key = apiKey || process.env.GEMINI_API_KEY;
-  if (!key) throw new Error('GEMINI_API_KEY not configured');
+  // Supplied by the caller from the client's own configuration.
+  const key = apiKey;
+  if (!key) throw new Error('No Gemini API key supplied for image analysis');
 
   const genAI = new GoogleGenerativeAI(key);
   const model = genAI.getGenerativeModel({

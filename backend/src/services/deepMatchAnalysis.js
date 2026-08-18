@@ -18,7 +18,6 @@
 
 const { IS_PG, pool, db } = require('../db/connection');
 const clientRouter = require('./clientRouter');
-const { genAI } = require('./gemini');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const DEEP_MATCH_SCHEMA = {
@@ -86,11 +85,13 @@ async function saveCache(matchHash, response) {
 }
 
 function resolveGenAI(client) {
+  // No blanket `|| process.env.GEMINI_API_KEY` fallback: a client either has its
+  // own key or has explicitly opted into the system key. Anything else must fail
+  // rather than quietly bill the platform.
   const apiKey = client?.gemini_api_key
-    || (client?.use_system_gemini_key ? process.env.GEMINI_API_KEY : null)
-    || process.env.GEMINI_API_KEY;
+    || (client?.use_system_gemini_key ? process.env.GEMINI_API_KEY : null);
   if (!apiKey) return null;
-  return apiKey !== process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(apiKey) : genAI;
+  return new GoogleGenerativeAI(apiKey);
 }
 
 /**

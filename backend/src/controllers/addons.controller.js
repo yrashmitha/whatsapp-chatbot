@@ -82,7 +82,7 @@ async function listAddons(req, res) {
     const enabledMap = Object.fromEntries(r.rows.map(row => [row.addon_id, row.enabled]));
     const addons = ADDON_CATALOG.map(a => ({ ...a, enabled: enabledMap[a.id] ?? false }));
     res.json({ addons });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
 /**
@@ -105,7 +105,7 @@ async function toggleAddon(req, res) {
       [clientId, addonId, !!enabled]
     );
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
 /**
@@ -124,7 +124,7 @@ async function getAddonsStatus(req, res) {
       [clientId]
     );
     res.json({ addons: r.rows.map(row => row.addon_id) });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
 /**
@@ -272,7 +272,7 @@ async function triggerTarotReading(req, res) {
 
   } catch (e) {
     console.error('[TAROT] triggerTarotReading error:', e.message);
-    if (!res.headersSent) res.status(500).json({ error: e.message });
+    if (!res.headersSent) res.status(e.statusCode || 500).json({ error: e.message });
   }
 }
 
@@ -292,7 +292,7 @@ async function updateTarotSections(req, res) {
     if (cards   !== undefined) td.cards   = cards;
     await db.pgQuery('UPDATE orders SET tarot_data=$1 WHERE order_id=$2', [JSON.stringify(td), orderId]);
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
 /**
@@ -325,7 +325,7 @@ async function downloadTarotDocx(req, res) {
     res.send(docxBuffer);
   } catch (e) {
     console.error('[TAROT DOCX] error:', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 }
 
@@ -406,7 +406,7 @@ async function downloadTarotPdfByOrder(req, res) {
     res.send(buffer);
   } catch (e) {
     console.error('[TAROT PDF] error:', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 }
 
@@ -437,7 +437,7 @@ async function downloadTarotPdf(req, res) {
       reading  = td.reading;
       cards    = td.cards;
     } catch (e) {
-      return res.status(500).json({ error: e.message });
+      return res.status(e.statusCode || 500).json({ error: e.message });
     }
   }
 
@@ -511,7 +511,7 @@ async function downloadTarotPdf(req, res) {
     fs.unlink(tmpDocx, () => {});
     fs.unlink(tmpPdf, () => {});
     console.error('[TAROT PDF] error:', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 }
 

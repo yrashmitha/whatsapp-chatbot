@@ -103,6 +103,8 @@ function buildEffectivePrompt(rawPrompt) {
 
 // ── Gemini factory ────────────────────────────────────────────────────────────
 
+// Platform-level: the public "Nova Consult" sales chat is our own product surface,
+// not a tenant's work, so it deliberately runs on the platform key.
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 function getConsultModel(rawPrompt) {

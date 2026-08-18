@@ -16,6 +16,8 @@ const EMBED_MODEL = 'gemini-embedding-001';
  * @returns {Promise<number[]>} 768-dimensional embedding vector
  */
 async function embedText(text) {
+  // Platform-level: knowledge-base embeddings are our infrastructure, not client
+  // work, so this deliberately uses the platform key rather than a client's.
   const apiKey = process.env.GEMINI_API_KEY;
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${EMBED_MODEL}:embedContent?key=${apiKey}`;
   const res = await fetch(url, {

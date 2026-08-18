@@ -113,8 +113,9 @@ function extractPlanetDegreesSum(chartData) {
  * @returns {Promise<object>}  The aura_analysis inner object.
  */
 async function analyzeAura(imageBuffer, mimeType, apiKey, systemPromptOverride) {
-  const key = apiKey || process.env.GEMINI_API_KEY;
-  if (!key) throw new Error('GEMINI_API_KEY not configured');
+  // Supplied by the caller from the client's own configuration.
+  const key = apiKey;
+  if (!key) throw new Error('No Gemini API key supplied for quantum analysis');
 
   const prompt = (systemPromptOverride && systemPromptOverride.trim())
     ? systemPromptOverride.trim()
@@ -268,8 +269,9 @@ ${isImbalanced
  * @returns {Promise<string>}    The Sinhala narrative text
  */
 async function generateQuantumReading(quantumData, auraAnalysis, apiKey, systemPromptOverride) {
-  const key = apiKey || process.env.GEMINI_API_KEY;
-  if (!key) throw new Error('GEMINI_API_KEY not configured');
+  // Supplied by the caller from the client's own configuration.
+  const key = apiKey;
+  if (!key) throw new Error('No Gemini API key supplied for quantum analysis');
 
   const sysPrompt = (systemPromptOverride && systemPromptOverride.trim())
     ? systemPromptOverride.trim()
@@ -473,8 +475,9 @@ Detected Blockages : ${blockages}${hint ? `\nRecommendation     : ${hint}` : ''}
  * @returns {Promise<Array<{label:string,content:string}>>}
  */
 async function generateQuantumSections(quantumData, auraAnalysis, sections, apiKey, systemPrompt, vimshottariDasha) {
-  const key = apiKey || process.env.GEMINI_API_KEY;
-  if (!key) throw new Error('GEMINI_API_KEY not configured');
+  // Supplied by the caller from the client's own configuration.
+  const key = apiKey;
+  if (!key) throw new Error('No Gemini API key supplied for quantum analysis');
   if (!Array.isArray(sections) || sections.length === 0) return [];
 
   const sysPrompt = (systemPrompt && systemPrompt.trim())

@@ -335,6 +335,39 @@ async function init() {
     await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS gemini_api_key TEXT`);
     await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS use_system_wa_token BOOLEAN NOT NULL DEFAULT FALSE`);
     await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS use_system_gemini_key BOOLEAN NOT NULL DEFAULT FALSE`);
+    // ── Per-client freeastroapi key (mirrors the Gemini pair above) ───────────
+    // Previously lived in plugin_configs.config->>'api_key', a generic field name
+    // shared with unrelated plugins. Promoted here so report generation bills the
+    // client's own account rather than the platform's.
+    // The one-time migration below must not re-run on later boots, or it would
+    // silently undo an admin who deliberately turned the system-key opt-in off.
+    // Detect a genuinely fresh column rather than relying on ADD COLUMN IF NOT EXISTS.
+    const freeastroCol = await pool.query(`
+      SELECT 1 FROM information_schema.columns
+       WHERE table_name = 'client_configs' AND column_name = 'freeastro_api_key'
+    `);
+    const freeastroIsNew = freeastroCol.rows.length === 0;
+    await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS freeastro_api_key TEXT`);
+    await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS use_system_freeastro_key BOOLEAN NOT NULL DEFAULT FALSE`);
+    if (freeastroIsNew) {
+      // Move any key already stored under the old plugin_configs.config->>'api_key'.
+      await pool.query(`
+        UPDATE client_configs cc
+           SET freeastro_api_key = pc.config->>'api_key'
+          FROM plugin_configs pc
+         WHERE pc.client_id = cc.client_id
+           AND pc.plugin_id = 'horoscope_reading'
+           AND COALESCE(pc.config->>'api_key', '') <> ''
+      `);
+      // Clients that predate per-client keys keep running on the platform key,
+      // but from now on by explicit opt-in rather than a silent fallback.
+      await pool.query(`
+        UPDATE client_configs
+           SET use_system_freeastro_key = (freeastro_api_key IS NULL),
+               use_system_gemini_key    = use_system_gemini_key OR (gemini_api_key IS NULL)
+      `);
+      console.log('[SCHEMA] freeastro_api_key added; migrated existing keys and set system-key opt-ins');
+    }
 
     // ── Quick replies ─────────────────────────────────────────────────────────
     await pool.query(`
@@ -620,6 +653,8 @@ async function init() {
     try { db.exec(`ALTER TABLE client_configs ADD COLUMN gemini_api_key TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE client_configs ADD COLUMN use_system_wa_token INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
     try { db.exec(`ALTER TABLE client_configs ADD COLUMN use_system_gemini_key INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
+    try { db.exec(`ALTER TABLE client_configs ADD COLUMN freeastro_api_key TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE client_configs ADD COLUMN use_system_freeastro_key INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
     // SQLite cannot DROP columns — old columns (package, birth_date, etc.) remain but are ignored
 
     // ── Per-chat AI mode (SQLite) ────────────────────────────────────────────

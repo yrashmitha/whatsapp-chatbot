@@ -71,7 +71,7 @@ async function cacheSet(hash, response) {
  *
  * @param {Object} person1 - { year, month, day, hour, minute, lat, lng, ... }
  * @param {Object} person2 - Same shape as person1
- * @param {string} [apiKey] - Override key (falls back to FREEASTRO_API_KEY)
+ * @param {string} apiKey - The calling client's freeastroapi key (required)
  * @returns {Promise<{ data: Object, cached: boolean }>}
  */
 async function calculateMatch(person1, person2, apiKey) {
@@ -82,8 +82,10 @@ async function calculateMatch(person1, person2, apiKey) {
   const cached = await cacheGet(hash);
   if (cached) return { data: cached, cached: true };
 
-  const key = apiKey || process.env.FREEASTRO_API_KEY;
-  if (!key) throw new Error('FREEASTRO_API_KEY not configured');
+  // The caller resolves this from the client's own configuration; there is
+  // deliberately no platform-key fallback here.
+  if (!apiKey) throw new Error('freeastroapi key not supplied by caller');
+  const key = apiKey;
 
   const resp = await axios.post(MATCH_URL, { person1: p1, person2: p2 }, {
     headers: { 'x-api-key': key, 'Content-Type': 'application/json' },

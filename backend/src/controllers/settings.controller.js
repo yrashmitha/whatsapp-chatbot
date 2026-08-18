@@ -9,6 +9,7 @@
 const bcrypt = require('bcryptjs');
 const db     = require('../db');
 const clientRouter  = require('../services/clientRouter');
+const { invalidateClientKeys } = require('../services/clientKeys');
 const pluginLoader  = require('../services/pluginLoader');
 const { chatSessions } = require('../workers/sessionManager');
 const resolveClientId  = require('../middleware/resolveClientId');
@@ -81,6 +82,7 @@ async function updatePrompt(req, res) {
       ]
     );
     clientRouter.invalidateCache(clientId);
+    invalidateClientKeys(clientId);
     pluginLoader.invalidatePlugin(clientId);
     for (const key of chatSessions.keys()) {
       if (key.startsWith(`${clientId}:`)) chatSessions.delete(key);
@@ -137,6 +139,7 @@ async function updateTokens(req, res) {
       vals
     );
     clientRouter.invalidateCache(clientId);
+    invalidateClientKeys(clientId);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 }

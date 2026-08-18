@@ -115,6 +115,7 @@ const EMPTY = {
   ai_model: 'gemini-2.5-flash', temperature: 0.70,
   system_prompt_mode: 'builtin', custom_prompt: '', error_message: '',
   gemini_api_key: '', use_system_gemini_key: false,
+  freeastro_api_key: '', use_system_freeastro_key: false,
   brand_name: '', brand_color: '#075e54', logo_url: '', contact_number: '',
   product_catalog_enabled: false, order_flow_enabled: true,
   knowledge_base_enabled: false, plugin_enabled: false,
@@ -247,6 +248,8 @@ export default function Clients() {
       error_message: c.error_message || '',
       gemini_api_key: '',  // never pre-fill for security
       use_system_gemini_key: !!c.use_system_gemini_key,
+      freeastro_api_key: '',  // never pre-fill for security
+      use_system_freeastro_key: !!c.use_system_freeastro_key,
       brand_name: c.brand_name || '',
       brand_color: c.brand_color || '#075e54',
       logo_url: c.logo_url || '',
@@ -402,8 +405,34 @@ export default function Clients() {
             </p>
           </div>
           {!form.use_system_gemini_key && (
-            <Field label="Gemini API Key" hint={editing && '⚠ Leave blank to keep existing key'}>
+            <Field
+              label="Gemini API Key"
+              hint={editing && (editing?.has_gemini_key
+                ? `⚠ Leave blank to keep existing key (${editing.gemini_key_masked})`
+                : '⚠ No key stored yet — report generation will fail until one is set')}
+            >
               <SecretInput value={form.gemini_api_key} onChange={set('gemini_api_key')} placeholder={editing ? '(unchanged)' : 'AIzaSy...'} />
+            </Field>
+          )}
+          <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
+            <Toggle
+              checked={form.use_system_freeastro_key}
+              onChange={set('use_system_freeastro_key')}
+              label="Use my freeastroapi key (FREEASTRO_API_KEY)"
+            />
+            <p className="text-xs mt-1.5" style={{ color: 'var(--text-3)' }}>
+              When ON, this client's birth-chart lookups are billed to your server key
+              instead of their own.
+            </p>
+          </div>
+          {!form.use_system_freeastro_key && (
+            <Field
+              label="freeastroapi Key"
+              hint={editing && (editing?.has_freeastro_key
+                ? `⚠ Leave blank to keep existing key (${editing.freeastro_key_masked})`
+                : '⚠ No key stored yet — chart lookups will fail until one is set')}
+            >
+              <SecretInput value={form.freeastro_api_key} onChange={set('freeastro_api_key')} placeholder={editing ? '(unchanged)' : 'fa_...'} />
             </Field>
           )}
         </div>

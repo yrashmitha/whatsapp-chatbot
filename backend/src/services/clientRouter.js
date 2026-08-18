@@ -94,7 +94,8 @@ async function getAllClients() {
       cc.phone_number_id, cc.brand_name, cc.brand_color, cc.logo_url,
       cc.order_id_prefix, cc.product_catalog_enabled, cc.ai_model,
       cc.system_prompt_mode, cc.order_flow_enabled, cc.ai_enabled,
-      cc.use_system_wa_token, cc.use_system_gemini_key,
+      cc.use_system_wa_token, cc.use_system_gemini_key, cc.use_system_freeastro_key,
+      cc.gemini_api_key, cc.freeastro_api_key,
       cc.wa_token_env, cc.webhook_verify_token,
       cc.temperature, cc.custom_prompt, cc.error_message,
       cc.knowledge_base_enabled, cc.plugin_enabled, cc.contact_number,
@@ -106,7 +107,19 @@ async function getAllClients() {
     LEFT JOIN packages p ON p.id = cc.package_id
     ORDER BY c.name
   `);
-  return res.rows;
+  // API keys are selected only to derive a presence flag and a masked suffix for
+  // the admin UI. The plaintext value must never leave the server.
+  return res.rows.map((row) => {
+    const { gemini_api_key, freeastro_api_key, ...safe } = row;
+    const mask = (k) => (k ? `••••${String(k).slice(-4)}` : null);
+    return {
+      ...safe,
+      has_gemini_key:      !!gemini_api_key,
+      gemini_key_masked:   mask(gemini_api_key),
+      has_freeastro_key:   !!freeastro_api_key,
+      freeastro_key_masked: mask(freeastro_api_key),
+    };
+  });
 }
 
 /**

@@ -18,6 +18,7 @@ const { chatSessions } = require('../workers/sessionManager');
 const { UPLOADS_DIR } = require('../config/env');
 const { analyzePaymentDocument, buildAnalysisNote } = require('../services/imageAnalysis');
 const { extractFromBuffer } = require('../services/mediaExtractor');
+const { getGeminiKey } = require('../services/clientKeys');
 const { genTraceId, makeLogger } = require('../utils/logger');
 
 /**
@@ -177,7 +178,7 @@ function receiveWebhook(req, res) {
             if (analyzerCheck.rows.length) {
               log.info(`[IMAGE-ANALYZER] Analyzing image`);
               const cfg = await db.getPluginConfig(client.id, 'image_analyzer');
-              const analysis = await analyzePaymentDocument(imgBuffer, imgMimeType, cfg.api_key || null);
+              const analysis = await analyzePaymentDocument(imgBuffer, imgMimeType, cfg.api_key || await getGeminiKey(client.id));
               log.info(`[IMAGE-ANALYZER] Result: type=${analysis.document_type} payment=${analysis.is_payment_related} amount=${analysis.amount}`);
 
               let pendingOrders = [];
@@ -200,7 +201,7 @@ function receiveWebhook(req, res) {
             );
             if (extractorCheck.rows.length) {
               log.info('[MEDIA-EXTRACTOR] Extracting image content via Gemini');
-              const { text: extracted } = await extractFromBuffer(imgBuffer, imgMimeType, 'photo', null);
+              const { text: extracted } = await extractFromBuffer(imgBuffer, imgMimeType, 'photo', null, await getGeminiKey(client.id));
               if (extracted) {
                 imageNote = caption ? `${extracted}\n[Customer also included a caption: "${caption}"]` : extracted;
                 log.info('[MEDIA-EXTRACTOR] Image extraction succeeded');
@@ -307,7 +308,7 @@ function receiveWebhook(req, res) {
               docSession.lastUsed = Date.now();
 
               const cfg = await db.getPluginConfig(client.id, 'image_analyzer');
-              const analysis = await analyzePaymentDocument(docBuffer, docMimeType, cfg.api_key || null);
+              const analysis = await analyzePaymentDocument(docBuffer, docMimeType, cfg.api_key || await getGeminiKey(client.id));
               log.info(`[IMAGE-ANALYZER] PDF result: type=${analysis.document_type} payment=${analysis.is_payment_related} amount=${analysis.amount}`);
 
               let pendingOrders = [];
@@ -369,7 +370,7 @@ function receiveWebhook(req, res) {
                 docSession.lastUsed = Date.now();
 
                 log.info('[MEDIA-EXTRACTOR] Extracting document content via Gemini');
-                const { text: extracted } = await extractFromBuffer(docBuffer, docMimeType, docFileName, null);
+                const { text: extracted } = await extractFromBuffer(docBuffer, docMimeType, docFileName, null, await getGeminiKey(client.id));
                 const docNote = extracted || `[Customer sent a document (${docFileName}). Acknowledge receipt and let them know the team will review it.]`;
                 log.info(`[MEDIA-EXTRACTOR] Document extraction ${extracted ? 'succeeded' : 'returned empty — using fallback note'}`);
 

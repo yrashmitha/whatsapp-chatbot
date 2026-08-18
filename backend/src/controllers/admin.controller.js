@@ -12,6 +12,7 @@ const path    = require('path');
 const crypto  = require('crypto');
 const db      = require('../db');
 const clientRouter = require('../services/clientRouter');
+const { invalidateClientKeys } = require('../services/clientKeys');
 const buildSystemInstruction = require('../services/buildInstruction');
 const { sendWhatsAppMessage } = require('../services/whatsapp');
 const { chatSessions }       = require('../workers/sessionManager');
@@ -342,6 +343,7 @@ async function createClient(req, res) {
           brand_name, brand_color, logo_url, order_id_prefix, product_catalog_enabled,
           order_flow_enabled, admin_password_env, contact_number, knowledge_base_enabled,
           plugin_enabled, ai_enabled, gemini_api_key, use_system_gemini_key,
+          freeastro_api_key, use_system_freeastro_key,
           package_id, bonus_messages, overage_limit, per_message_cost } = req.body;
   if (!id || !name) return res.status(400).json({ error: 'id and name required' });
   try {
@@ -353,8 +355,9 @@ async function createClient(req, res) {
         brand_color, logo_url, order_id_prefix, product_catalog_enabled, order_flow_enabled,
         admin_password_env, contact_number, knowledge_base_enabled, plugin_enabled, ai_enabled,
         gemini_api_key, use_system_gemini_key,
-        package_id, bonus_messages, overage_limit, per_message_cost)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)`,
+        package_id, bonus_messages, overage_limit, per_message_cost,
+        freeastro_api_key, use_system_freeastro_key)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)`,
       [id, phone_number_id || null, wa_token_env || null, wa_token || null,
        use_system_wa_token === true || use_system_wa_token === 'true',
        webhook_verify_token || null,
@@ -373,8 +376,11 @@ async function createClient(req, res) {
        package_id || null,
        Number(bonus_messages) || 0,
        Number(overage_limit) || 0,
-       Number(per_message_cost) || 0]);
+       Number(per_message_cost) || 0,
+       freeastro_api_key || null,
+       use_system_freeastro_key === true || use_system_freeastro_key === 'true']);
     clientRouter.invalidateCache(id);
+    invalidateClientKeys(id);
     res.json({ ok: true, id });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -395,6 +401,7 @@ async function updateClient(req, res) {
           brand_name, brand_color, logo_url, order_id_prefix, product_catalog_enabled,
           order_flow_enabled, admin_password_env, contact_number, knowledge_base_enabled,
           plugin_enabled, ai_enabled, gemini_api_key, use_system_gemini_key,
+          freeastro_api_key, use_system_freeastro_key,
           package_id, bonus_messages, overage_limit, per_message_cost } = req.body;
   try {
     if (name !== undefined || type !== undefined || active !== undefined) {
@@ -429,12 +436,14 @@ async function updateClient(req, res) {
           ai_enabled=COALESCE($20,ai_enabled),
           gemini_api_key=COALESCE($21,gemini_api_key),
           use_system_gemini_key=COALESCE($22,use_system_gemini_key),
-          package_id=COALESCE($23,package_id),
-          bonus_messages=COALESCE($24,bonus_messages),
-          overage_limit=COALESCE($25,overage_limit),
-          per_message_cost=COALESCE($26,per_message_cost),
+          freeastro_api_key=COALESCE($23,freeastro_api_key),
+          use_system_freeastro_key=COALESCE($24,use_system_freeastro_key),
+          package_id=COALESCE($25,package_id),
+          bonus_messages=COALESCE($26,bonus_messages),
+          overage_limit=COALESCE($27,overage_limit),
+          per_message_cost=COALESCE($28,per_message_cost),
           updated_at=NOW()
-        WHERE client_id=$27`,
+        WHERE client_id=$29`,
         [
           phone_number_id !== undefined ? (phone_number_id || null) : null,
           wa_token_env !== undefined ? (wa_token_env || null) : null,
@@ -456,8 +465,12 @@ async function updateClient(req, res) {
           knowledge_base_enabled !== undefined ? (knowledge_base_enabled === true || knowledge_base_enabled === 'true') : null,
           plugin_enabled !== undefined ? (plugin_enabled === true || plugin_enabled === 'true') : null,
           ai_enabled !== undefined ? (ai_enabled !== false && ai_enabled !== 'false') : null,
-          gemini_api_key !== undefined ? (gemini_api_key || null) : null,
+          gemini_api_key ? gemini_api_key : null,
           use_system_gemini_key !== undefined ? (use_system_gemini_key === true || use_system_gemini_key === 'true') : null,
+          // Blank submit leaves a stored key untouched, so an untouched form
+          // (which never receives the real key back) cannot wipe it.
+          freeastro_api_key ? freeastro_api_key : null,
+          use_system_freeastro_key !== undefined ? (use_system_freeastro_key === true || use_system_freeastro_key === 'true') : null,
           package_id !== undefined ? (package_id || null) : null,
           bonus_messages !== undefined ? Number(bonus_messages) : null,
           overage_limit !== undefined ? Number(overage_limit) : null,
@@ -466,6 +479,7 @@ async function updateClient(req, res) {
         ]);
     }
     clientRouter.invalidateCache(clientId);
+    invalidateClientKeys(clientId);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

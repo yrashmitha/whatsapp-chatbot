@@ -9,7 +9,7 @@
 
 const axios  = require('axios');
 const db     = require('../db');
-const { genAI } = require('./gemini');
+const { getFreeAstroKey, getGeminiKey, getGenAI } = require('./clientKeys');
 const { extractPlanetDegreesSum, generateQuantumCode, generateQuantumReading, generateQuantumSections } = require('./quantumCode');
 const { todayContextBlock } = require('./dateContext');
 // Lazy-loaded on first use to avoid crashing the server on startup if the
@@ -842,12 +842,12 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
     if (fastHasConfigSections) {
       fastSectionsData = await generateQuantumSections(
         fastQR, existingHd.aura_analysis,
-        fastConfig.quantum_sections, undefined,
+        fastConfig.quantum_sections, await getGeminiKey(clientId),
         fastConfig.quantum_system_prompt || '',
         existingHd.chart_data?.vimshottari_dasha || null
       );
     } else {
-      fastReading = await generateQuantumReading(fastQR, existingHd.aura_analysis, undefined, fastConfig.quantum_system_prompt || '');
+      fastReading = await generateQuantumReading(fastQR, existingHd.aura_analysis, await getGeminiKey(clientId), fastConfig.quantum_system_prompt || '');
     }
 
     const fastUpdated = {
@@ -868,7 +868,7 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
 
   // 3. Get plugin config
   const config = await db.getPluginConfig(clientId, 'horoscope_reading');
-  const apiKey              = config.api_key || process.env.FREEASTRO_API_KEY;
+  const apiKey              = await getFreeAstroKey(clientId);
   const systemPrompt        = config.system_prompt || '';
   const specialNote         = config.special_note || '';
   const quantumSystemPrompt = config.quantum_system_prompt || '';
@@ -987,7 +987,7 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
           } catch (e) { console.warn('[HOROSCOPE] progress write failed:', e.message); }
         }
       : undefined;
-    const agentResult = await runHoroscopeAgent({ systemPrompt, chartDataJson, sectionDefs, onEvent });
+    const agentResult = await runHoroscopeAgent({ clientId, systemPrompt, chartDataJson, sectionDefs, onEvent });
     Object.assign(sectionsMap, agentResult.sections);
     agentAudit = buildAudit(agentResult);
     console.log(`[HOROSCOPE] Agent finished: status=${agentAudit.status} iterations=${agentAudit.iterations} issues=${agentAudit.totalIssues}`);
@@ -996,7 +996,7 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
     // it and the "do not repeat earlier sections" rule in FIXED_INSTRUCTIONS actually has
     // something to act on. The session is local to this call — it is created per order per
     // report and discarded when the run ends, so no chart data ever crosses orders.
-    const geminiModel = genAI.getGenerativeModel({
+    const geminiModel = (await getGenAI(clientId)).getGenerativeModel({
       model: 'gemini-2.5-flash',
       generationConfig: { temperature: 0.4, topP: 0.8, topK: 40 },
       systemInstruction: baseSystemInstruction,
@@ -1030,7 +1030,7 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
     console.log(`[HORO-SPECIAL] systemInstruction (${specialSystemInstruction.length} chars total, chart data omitted):\n` + systemPrompt);
     console.log('[HORO-SPECIAL] ══════════════════════════════════════════════════');
 
-    const specialModel = genAI.getGenerativeModel({
+    const specialModel = (await getGenAI(clientId)).getGenerativeModel({
       model: 'gemini-2.5-flash',
       generationConfig: { temperature: 0.4, topP: 0.8, topK: 40 },
       systemInstruction: specialSystemInstruction,
@@ -1062,13 +1062,13 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
     if (hasConfigSections) {
       quantumResult._sections_data = await generateQuantumSections(
         quantumResult, savedAuraForQ,
-        config.quantum_sections, undefined,
+        config.quantum_sections, await getGeminiKey(clientId),
         quantumSystemPrompt,
         chartData?.vimshottari_dasha || null
       );
     } else {
       // No UI sections configured — fall back to the legacy single reading
-      quantumResult._reading = await generateQuantumReading(quantumResult, savedAuraForQ, undefined, quantumSystemPrompt);
+      quantumResult._reading = await generateQuantumReading(quantumResult, savedAuraForQ, await getGeminiKey(clientId), quantumSystemPrompt);
     }
   }
 
@@ -1100,7 +1100,7 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
   // 10. Auto-generate WA message if prompt is configured
   if (config.wa_message_prompt && config.wa_message_prompt.trim()) {
     try {
-      await generateWaMessage(orderId, horoscopeData, config.wa_message_prompt);
+      await generateWaMessage(clientId, orderId, horoscopeData, config.wa_message_prompt);
       console.log('[HOROSCOPE] WA message generated for', orderId);
     } catch (e) {
       console.error('[HOROSCOPE] WA message generation failed (non-fatal):', e.message);
@@ -1114,7 +1114,7 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
  * Generate (or regenerate) a WhatsApp message summarising the full report.
  * Saves the result to horoscope_data.wa_message for the given order.
  */
-async function generateWaMessage(orderId, horoscopeData, waMessagePrompt) {
+async function generateWaMessage(clientId, orderId, horoscopeData, waMessagePrompt) {
   const sections         = horoscopeData.sections || {};
   const specialAnswers   = horoscopeData.special_answers || [];
   const quantumData      = horoscopeData.quantum_data || null;
@@ -1148,7 +1148,7 @@ async function generateWaMessage(orderId, horoscopeData, waMessagePrompt) {
 
   const contextText = contextParts.join('\n');
 
-  const model = genAI.getGenerativeModel({
+  const model = (await getGenAI(clientId)).getGenerativeModel({
     model: 'gemini-2.5-flash',
     generationConfig: { temperature: 0.7, topP: 0.9, topK: 40 },
     systemInstruction: waMessagePrompt,
@@ -1172,7 +1172,7 @@ async function generateWaMessage(orderId, horoscopeData, waMessagePrompt) {
  * Regenerate a single horoscope section using saved chart data.
  * Returns the new section text.
  */
-async function regenerateHoroscopeSection({ chartData, systemPrompt, sectionKey, sectionGuide, specialAnswers = [], otherSections = null }) {
+async function regenerateHoroscopeSection({ clientId, chartData, systemPrompt, sectionKey, sectionGuide, specialAnswers = [], otherSections = null }) {
   const chartDataJson = JSON.stringify(chartData, null, 2) + todayContextBlock();
   // Section regeneration uses only the system prompt + chart data — special questions
   // are never injected into sections (they are answered separately).
@@ -1185,7 +1185,7 @@ async function regenerateHoroscopeSection({ chartData, systemPrompt, sectionKey,
   console.log(`[REGEN-SECTION] systemInstruction (${sysInstruction.length} chars total, chart data omitted):\n` + systemPrompt);
   console.log('[REGEN-SECTION] userPrompt:\n' + prompt);
 
-  const model = genAI.getGenerativeModel({
+  const model = (await getGenAI(clientId)).getGenerativeModel({
     model: 'gemini-2.5-flash',
     generationConfig: { temperature: 0.4, topP: 0.8, topK: 40 },
     systemInstruction: sysInstruction,

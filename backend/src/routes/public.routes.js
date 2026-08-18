@@ -20,7 +20,18 @@ const publicLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-router.use(publicLimiter, apiKeyAuth);
+// The public site is unauthenticated, so it cannot resolve a tenant from a JWT —
+// it is pinned to WEB_CLIENT_ID. Refuse to serve at all when that is unset, so
+// traffic and orders can never land in an arbitrary tenant.
+const WEB_CLIENT_ID = process.env.WEB_CLIENT_ID || null;
+function requireWebClient(req, res, next) {
+  if (!WEB_CLIENT_ID) {
+    return res.status(503).json({ error: 'Public endpoints are not configured (WEB_CLIENT_ID unset)' });
+  }
+  next();
+}
+
+router.use(publicLimiter, apiKeyAuth, requireWebClient);
 
 router.post('/chart',  publicChart);
 router.post('/orders', publicCreateOrder);

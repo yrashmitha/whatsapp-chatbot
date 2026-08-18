@@ -19,7 +19,7 @@
  */
 
 const db        = require('../db');
-const { genAI } = require('./gemini');
+const { getGenAI } = require('./clientKeys');
 const { buildSectionsDoc } = require('./horoscope');
 const { todayContextBlock } = require('./dateContext');
 
@@ -106,10 +106,10 @@ function resolveMarriageConfig(config) {
  * Build the Gemini model for a marriage run. The chart data is constant across every
  * section, so it belongs in the systemInstruction and the model is built once per run.
  */
-function buildMarriageModel({ chartData, systemPrompt }) {
+async function buildMarriageModel({ clientId, chartData, systemPrompt }) {
   const chartDataJson  = JSON.stringify(chartData, null, 2) + todayContextBlock();
   const sysInstruction = systemPrompt + '\n\nමෙම කේන්ද්‍ර දත්ත සම්පූර්ණ වාර්තාව සඳහා පදනම වේ:\n\n' + chartDataJson;
-  return genAI.getGenerativeModel({
+  return (await getGenAI(clientId)).getGenerativeModel({
     model: 'gemini-2.5-flash',
     generationConfig: { temperature: 0.4, topP: 0.8, topK: 40 },
     systemInstruction: sysInstruction,
@@ -136,14 +136,14 @@ function historyFromSections(sectionsData, excludeLabel) {
  * omit it and a one-off session is built instead.
  * @returns {Promise<string>} the section text
  */
-async function generateMarriageSectionText({ chartData, systemPrompt, label, guide, chat, history }) {
+async function generateMarriageSectionText({ clientId, chartData, systemPrompt, label, guide, chat, history }) {
   const prompt = buildMarriageSectionPrompt(label, guide);
 
   console.log(`[MARRIAGE] ── REQUEST: "${label}"`);
   console.log('[MARRIAGE] userPrompt:\n' + prompt);
 
   const activeChat = chat
-    || buildMarriageModel({ chartData, systemPrompt }).startChat({ history: history || [] });
+    || (await buildMarriageModel({ clientId, chartData, systemPrompt })).startChat({ history: history || [] });
   const result = await activeChat.sendMessage(prompt);
   const text   = result.response.text();
   const usage  = result.response.usageMetadata;
@@ -180,11 +180,12 @@ async function generateMarriageReading(clientId, orderId) {
   // ONE session for the whole run — every section sees what came before it, which is what
   // makes rule 3 of MARRIAGE_FIXED_INSTRUCTIONS ("do not reuse earlier wording") effective.
   // Scoped to this call: created per order, discarded when the run ends.
-  const chat = buildMarriageModel({ chartData: hd.chart_data, systemPrompt }).startChat({});
+  const chat = (await buildMarriageModel({ clientId, chartData: hd.chart_data, systemPrompt })).startChat({});
 
   const out = [];
   for (const sec of sections) {
     const content = await generateMarriageSectionText({
+      clientId,
       label: sec.label,
       guide: sec.guide || '',
       chat,
@@ -206,7 +207,7 @@ async function generateMarriageReading(clientId, orderId) {
   // Auto-generate the WhatsApp message if a prompt is configured
   if (config.marriage_wa_prompt && config.marriage_wa_prompt.trim()) {
     try {
-      await generateMarriageWaMessage(orderId, out, config.marriage_wa_prompt);
+      await generateMarriageWaMessage(clientId, orderId, out, config.marriage_wa_prompt);
       console.log('[MARRIAGE] WA message generated for', orderId);
     } catch (e) {
       console.error('[MARRIAGE] WA message generation failed (non-fatal):', e.message);
@@ -220,12 +221,12 @@ async function generateMarriageReading(clientId, orderId) {
  * Generate (or regenerate) the WhatsApp summary message for a marriage reading.
  * Saves to horoscope_data.marriage_wa_message.
  */
-async function generateMarriageWaMessage(orderId, sectionsData, waPrompt) {
+async function generateMarriageWaMessage(clientId, orderId, sectionsData, waPrompt) {
   const contextText = ['=== විවාහ පලාපල වාර්තාව ===']
     .concat((sectionsData || []).map(s => `\n--- ${s.label} ---\n${s.content}`))
     .join('\n');
 
-  const model = genAI.getGenerativeModel({
+  const model = (await getGenAI(clientId)).getGenerativeModel({
     model: 'gemini-2.5-flash',
     generationConfig: { temperature: 0.7, topP: 0.9, topK: 40 },
     systemInstruction: waPrompt,

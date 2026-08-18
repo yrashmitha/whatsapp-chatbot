@@ -9,7 +9,7 @@
  */
 
 const db = require('../db');
-const { genAI } = require('./gemini');
+const { getGenAI } = require('./clientKeys');
 
 const DEFAULT_FOLLOWUP_PROMPT = `You are a friendly customer support agent. Based on the conversation history below, write a short, natural follow-up message to re-engage the customer. Reference where the conversation left off, keep it warm and concise (1-3 sentences), and match the language the customer was using. Reply with the message text only — no labels, quotes, or preamble.`;
 
@@ -39,7 +39,7 @@ async function generateFollowUp(clientId, phone) {
 
   const prompt = `${promptTemplate}\n\nConversation history:\n${transcript}`;
 
-  const followUpModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+  const followUpModel = (await getGenAI(clientId)).getGenerativeModel({ model: 'gemini-2.5-flash' });
   const result = await followUpModel.generateContent(prompt);
   return result.response.text().trim();
 }

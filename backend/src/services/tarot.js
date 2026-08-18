@@ -8,7 +8,7 @@
 
 'use strict';
 
-const { genAI } = require('./gemini');
+const { getGenAI } = require('./clientKeys');
 
 let Document, Packer, Paragraph, TextRun, AlignmentType, PageBreak, Footer, PageNumber, NumberFormat;
 function ensureDocx() {
@@ -124,7 +124,7 @@ async function generateTarotReading(clientId, question, customPrompt = null) {
   console.log(`[TAROT] Full prompt sent to Gemini:\n${prompt}`);
 
   // Use systemInstruction to hard-enforce the card constraint with thinking models
-  const model = genAI.getGenerativeModel({
+  const model = (await getGenAI(clientId)).getGenerativeModel({
     model: 'gemini-2.5-flash',
     systemInstruction: `You are a tarot card reader providing a personalised reading.
 STRICT RULES:

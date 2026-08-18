@@ -37,7 +37,8 @@ function _buildPrompt(customPrompt) {
  * @param {string|null} [customPrompt] - Per-client extraction prompt override
  * @returns {Promise<{text:string|null, mediaType:string|null}>}
  */
-async function extractFromBuffer(buffer, mimeType, filename, customPrompt) {
+async function extractFromBuffer(buffer, mimeType, filename, customPrompt, apiKey) {
+  if (!apiKey) throw new Error('No Gemini API key supplied for media extraction');
   const prompt    = _buildPrompt(customPrompt);
   const lower     = (filename || '').toLowerCase();
   const cleanMime = (mimeType || 'application/octet-stream').split(';')[0].trim();
@@ -47,7 +48,7 @@ async function extractFromBuffer(buffer, mimeType, filename, customPrompt) {
     const { value: rawText } = await mammoth.extractRawText({ buffer });
     if (!rawText.trim()) return { text: null, mediaType: 'document' };
 
-    const genai   = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const genai   = new GoogleGenerativeAI(apiKey);
     const model   = genai.getGenerativeModel({ model: 'gemini-2.5-flash' });
     const result  = await model.generateContent([
       prompt + '\n\nThe following is plain text extracted from a Word document:',
@@ -69,7 +70,7 @@ async function extractFromBuffer(buffer, mimeType, filename, customPrompt) {
     : mediaType === 'image' ? 'image or photo'
     : `document (${filename})`;
 
-  const genai   = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  const genai   = new GoogleGenerativeAI(apiKey);
   const model   = genai.getGenerativeModel({ model: 'gemini-2.5-flash' });
   const result  = await model.generateContent([
     prompt,

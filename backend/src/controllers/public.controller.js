@@ -14,9 +14,13 @@ const { generateOrderId } = require('../services/gemini');
 const { calculateVedicChart } = require('../services/vedicChart');
 const { generateTeaserReading } = require('../services/teaserReading');
 const { calculateMatch, matchHash, normalizePerson } = require('../services/matchmaking');
+const { getFreeAstroKey } = require('../services/clientKeys');
 const { generateDeepMatchAnalysis } = require('../services/deepMatchAnalysis');
 
-const WEB_CLIENT_ID = process.env.WEB_CLIENT_ID || 'astrology_001';
+// No default: an unset WEB_CLIENT_ID must fail loudly rather than route the
+// public site's traffic and orders into whichever tenant happened to be first.
+const WEB_CLIENT_ID = process.env.WEB_CLIENT_ID || null;
+if (!WEB_CLIENT_ID) console.warn('[PUBLIC] WEB_CLIENT_ID is not set — public endpoints will return 503');
 
 /**
  * Validate and coerce the shared birth payload used by both endpoints.
@@ -59,11 +63,7 @@ async function publicChart(req, res) {
   try {
     // Use the same freeastroapi key as the working horoscope flow: prefer the
     // plugin config key stored in the DB, fall back to the env var.
-    let apiKey = process.env.FREEASTRO_API_KEY;
-    try {
-      const config = await db.getPluginConfig(WEB_CLIENT_ID, 'horoscope_reading');
-      if (config && config.api_key) apiKey = config.api_key;
-    } catch { /* no plugin config — fall back to env */ }
+    const apiKey = await getFreeAstroKey(WEB_CLIENT_ID);
 
     const { data, cached, hash } = await calculateVedicChart(birth, apiKey);
 
@@ -120,7 +120,7 @@ async function publicCreateOrder(req, res) {
     res.json({ ok: true, order_id: orderId });
   } catch (e) {
     console.error('[PUBLIC-ORDER]', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 }
 
@@ -139,11 +139,7 @@ async function publicMatch(req, res) {
   }
 
   try {
-    let apiKey = process.env.FREEASTRO_API_KEY;
-    try {
-      const config = await db.getPluginConfig(WEB_CLIENT_ID, 'horoscope_reading');
-      if (config && config.api_key) apiKey = config.api_key;
-    } catch { /* no plugin config — fall back to env */ }
+    const apiKey = await getFreeAstroKey(WEB_CLIENT_ID);
 
     const { data, cached } = await calculateMatch(person1, person2, apiKey);
     res.json({ ok: true, cached, data });

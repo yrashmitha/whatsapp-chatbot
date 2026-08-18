@@ -27,7 +27,7 @@
 
 'use strict';
 
-const { genAI } = require('./gemini');
+const { getGenAI } = require('./clientKeys');
 
 // ─── Tunables (balanced profile) ────────────────────────────────────────────────
 /** Maximum critic⇄generator round-trips before we stop and render best-effort. */
@@ -54,12 +54,13 @@ const CRITIC_INPUT_CHAR_LIMIT = 600_000; // ≈150k tokens — well under Gemini
  * @param {Object}   [opts.responseSchema]   - JSON schema (enables JSON mode)
  * @returns {Promise<{text: string, usage: Object}>}
  */
-async function callGemini({ model, systemInstruction, prompt, generationConfig = {}, responseSchema = null }) {
+async function callGemini({ clientId, model, systemInstruction, prompt, generationConfig = {}, responseSchema = null }) {
   const cfg = { temperature: 0.6, topP: 0.9, ...generationConfig };
   if (responseSchema) {
     cfg.responseMimeType = 'application/json';
     cfg.responseSchema = responseSchema;
   }
+  const genAI = await getGenAI(clientId);
   const gm = genAI.getGenerativeModel({ model, systemInstruction, generationConfig: cfg });
 
   let lastErr;
@@ -114,7 +115,7 @@ async function callGemini({ model, systemInstruction, prompt, generationConfig =
 
 /**
  * Build the initial workflow state.
- * @param {Object} input - { systemPrompt, chartDataJson, sectionDefs, maxIterations? }
+ * @param {Object} input - { clientId, systemPrompt, chartDataJson, sectionDefs, maxIterations? }
  * @returns {AgentState}
  */
 function createInitialState(input) {
@@ -202,6 +203,7 @@ async function generatorNode(state) {
         `මනා ව්‍යුහගත කොටසක් ලියන්න. ගැඹුරු, පෞද්ගලික, මානුෂීය හා විශ්වාසනීය ස්වරයකින් ලියන්න. ` +
         `වෙනත් කොටස් වල අන්තර්ගතය නැවත නොකියන්න.`;
       const { text } = await callGemini({
+        clientId: state.input.clientId,
         model: WRITER_MODEL,
         systemInstruction: sys,
         prompt,
@@ -245,6 +247,7 @@ async function generatorNode(state) {
       `සංශෝධිත සම්පූර්ණ කොටස ආපසු ලබා දෙන්න.`;
 
     const { text } = await callGemini({
+      clientId: state.input.clientId,
       model: WRITER_MODEL,
       systemInstruction: sys,
       prompt,
@@ -308,6 +311,7 @@ async function criticNode(state) {
       issues = await criticInBatches(state);
     } else {
       const { text } = await callGemini({
+        clientId: state.input.clientId,
         model: CRITIC_MODEL,
         systemInstruction: CRITIC_SYSTEM,
         prompt:
@@ -355,6 +359,7 @@ async function criticInBatches(state) {
     const body = slice.map(({ key }) => `## ${key}\n\n${state.sections[key] || ''}`).join('\n\n');
     const keys = slice.map(s => s.key).join(', ');
     const { text } = await callGemini({
+      clientId: state.input.clientId,
       model: CRITIC_MODEL,
       systemInstruction: CRITIC_SYSTEM,
       prompt:
@@ -394,7 +399,7 @@ function route(state) {
  *   // result.sections → feed straight into buildHoroscopeDoc({ sections, sectionOrder, ... })
  *   // hd.agent_audit = buildAudit(result)  → persist the critic's issue list for auditing.
  *
- * @param {Object} input - { systemPrompt, chartDataJson, sectionDefs, maxIterations? }
+ * @param {Object} input - { clientId, systemPrompt, chartDataJson, sectionDefs, maxIterations? }
  * @returns {Promise<AgentState>}
  */
 async function runHoroscopeAgent(input) {

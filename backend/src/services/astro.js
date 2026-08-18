@@ -9,7 +9,7 @@
 
 const axios = require('axios');
 const db    = require('../db');
-const { genAI } = require('./gemini');
+const { getFreeAstroKey, getGenAI } = require('./clientKeys');
 
 /**
  * Default Gemini prompt template for the astro chart addon.
@@ -48,7 +48,8 @@ async function generateAstroMessage(clientId, phone, birthData, apiKey) {
 
   const config = await db.getPluginConfig(clientId, 'astro_vedic_chart');
 
-  const resolvedApiKey = apiKey || config.api_key || process.env.FREEASTRO_API_KEY;
+  // Falls back to the client's own configured key; never to the platform key.
+  const resolvedApiKey = apiKey || await getFreeAstroKey(clientId);
 
   const astroPayload = {
     year, month, day, hour, minute,
@@ -80,7 +81,7 @@ async function generateAstroMessage(clientId, phone, birthData, apiKey) {
   const prompt = promptTemplate.replace('{chart_json}', JSON.stringify(chartData, null, 2));
   console.log('[ASTRO] Gemini prompt template:\n', promptTemplate);
 
-  const pluginModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+  const pluginModel = (await getGenAI(clientId)).getGenerativeModel({ model: 'gemini-2.5-flash' });
   const geminiResult = await pluginModel.generateContent(prompt);
   const text = geminiResult.response.text();
   console.log('[ASTRO] Gemini response:', text);

@@ -313,7 +313,7 @@ async function getPluginConfig(req, res) {
     }
 
     res.json(merged);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
 /**
@@ -367,7 +367,7 @@ async function updatePluginConfig(req, res) {
     if (audience_id !== undefined)   update.audience_id   = audience_id;
     await db.upsertPluginConfig(clientId, pluginId, update);
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
 /**
@@ -384,7 +384,7 @@ async function getPluginCustomerData(req, res) {
   try {
     const data = await db.getPluginCustomerData(clientId, phone, pluginId);
     res.json(data);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
 /**
@@ -424,8 +424,7 @@ async function generateAstroChart(req, res) {
   }
 
   try {
-    const config = await db.getPluginConfig(clientId, 'astro_vedic_chart');
-    const apiKey = config.api_key || process.env.FREEASTRO_API_KEY;
+    const apiKey = await getFreeAstroKey(clientId);
 
     const text = await generateAstroMessage(clientId, phone, { year, month, day, hour, minute, lat, lng, birth_place_name }, apiKey);
     res.json({ text });
@@ -473,7 +472,7 @@ async function analyzeAuraImage(req, res) {
     }
 
     const config  = await db.getPluginConfig(clientId, 'horoscope_reading');
-    const apiKey  = config.gemini_api_key || process.env.GEMINI_API_KEY;
+    const apiKey  = await getGeminiKey(clientId);
 
     const auraAnalysis = await analyzeAura(req.file.buffer, req.file.mimetype, apiKey, config.aura_system_prompt || '');
 
@@ -487,7 +486,7 @@ async function analyzeAuraImage(req, res) {
     res.json({ aura_analysis: auraAnalysis, cached: false });
   } catch (e) {
     console.error('[AURA] Error:', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 }
 
@@ -579,7 +578,7 @@ async function horoscopeProgress(req, res) {
       has_sections:   !!(hd.sections && Object.keys(hd.sections).length > 0),
       error:          hd.error || null,
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
 /**
@@ -600,7 +599,7 @@ async function updateHoroscopeSections(req, res) {
     if (special_answers) hd.special_answers = special_answers;
     await db.pgQuery('UPDATE orders SET horoscope_data=$1 WHERE order_id=$2', [JSON.stringify(hd), orderId]);
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
 /**
@@ -645,7 +644,7 @@ async function downloadHoroscope(req, res) {
     const filename = `horoscope-${last4}-${birthday}.docx`;
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buffer);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
 /**
@@ -727,7 +726,7 @@ async function downloadHoroscopePdf(req, res) {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buffer);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
 /**
@@ -747,7 +746,7 @@ async function updateQuantumSections(req, res) {
     if (quantum_sections_data !== undefined) hd.quantum_sections_data = quantum_sections_data;
     await db.pgQuery('UPDATE orders SET horoscope_data=$1 WHERE order_id=$2', [JSON.stringify(hd), orderId]);
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
 /**
@@ -779,7 +778,7 @@ async function downloadQuantumDocx(req, res) {
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     res.setHeader('Content-Disposition', `attachment; filename="quantum-${orderId}.docx"`);
     res.send(buffer);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
 /**
@@ -853,7 +852,7 @@ async function downloadQuantumPdf(req, res) {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buffer);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
 async function regenerateQuantumSections(req, res) {
@@ -895,13 +894,13 @@ async function regenerateQuantumSections(req, res) {
     if (hasConfigSections) {
       sectionsData = await generateQuantumSections(
         hd.quantum_data, hd.aura_analysis,
-        config.quantum_sections, undefined,
+        config.quantum_sections, await getGeminiKey(clientId),
         quantumSystemPrompt,
         hd.chart_data?.vimshottari_dasha || null
       );
     } else {
       reading = await generateQuantumReading(
-        hd.quantum_data, hd.aura_analysis, undefined, quantumSystemPrompt
+        hd.quantum_data, hd.aura_analysis, await getGeminiKey(clientId), quantumSystemPrompt
       );
     }
 
@@ -956,6 +955,7 @@ async function regenerateHoroscopeSectionHandler(req, res) {
     console.log(`[REGEN-HORO-SECTION] order=${orderId} label="${label}"`);
 
     const newContent = await regenerateHoroscopeSection({
+      clientId,
       chartData:     hd.chart_data,
       systemPrompt,
       sectionKey:    label.trim(),
@@ -976,7 +976,7 @@ async function regenerateHoroscopeSectionHandler(req, res) {
     res.json({ ok: true, label: label.trim(), content: newContent });
   } catch (e) {
     console.error('[REGEN-HORO-SECTION] Error:', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 }
 
@@ -1012,7 +1012,7 @@ async function regenerateQuantumSection(req, res) {
       hd.quantum_data,
       hd.aura_analysis,
       [sectionDef],
-      undefined,
+      await getGeminiKey(clientId),
       config.quantum_system_prompt || '',
       hd.chart_data?.vimshottari_dasha || null
     );
@@ -1038,7 +1038,7 @@ async function regenerateQuantumSection(req, res) {
     res.json({ ok: true, label: label.trim(), content: newContent });
   } catch (e) {
     console.error('[REGEN-SECTION] Error:', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 }
 
@@ -1057,7 +1057,7 @@ async function saveWaMessageHandler(req, res) {
     res.json({ ok: true });
   } catch (e) {
     console.error('[WA-MESSAGE-SAVE] Error:', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 }
 
@@ -1077,15 +1077,15 @@ async function generateWaMessageHandler(req, res) {
     const waMessagePrompt = config.wa_message_prompt || '';
     if (!waMessagePrompt.trim()) return res.status(400).json({ error: 'wa_message_prompt not configured in plugin settings' });
 
-    const waMessage = await generateWaMessage(orderId, hd, waMessagePrompt);
+    const waMessage = await generateWaMessage(clientId, orderId, hd, waMessagePrompt);
     res.json({ wa_message: waMessage });
   } catch (e) {
     console.error('[WA-MESSAGE] Error:', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 }
 
-const { genAI } = require('../services/gemini');
+const { getFreeAstroKey, getGeminiKey, getGenAI, MissingClientKeyError } = require('../services/clientKeys');
 
 /**
  * POST /api/plugins/horoscope/ai-prepare/:orderId
@@ -1134,7 +1134,7 @@ async function aiPrepareHoroscope(req, res) {
       .replace(/\{\{items\}\}/g,         JSON.stringify(cf.items || []))
       .replace(/\{\{chat_log\}\}/g,      chatLog || '(no messages found)');
 
-    const geminiModel = genAI.getGenerativeModel({
+    const geminiModel = (await getGenAI(clientId)).getGenerativeModel({
       model: 'gemini-2.5-flash',
       generationConfig: {
         temperature: 0.2,
@@ -1180,7 +1180,7 @@ async function aiPrepareHoroscope(req, res) {
     });
   } catch (e) {
     console.error('[AI-PREPARE]', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 }
 
@@ -1218,8 +1218,7 @@ async function fetchChartData(req, res) {
   const { hour, minute }     = timeInfo;
 
   try {
-    const config = await db.getPluginConfig(clientId, 'horoscope_reading');
-    const apiKey = config.api_key || process.env.FREEASTRO_API_KEY;
+    const apiKey = await getFreeAstroKey(clientId);
 
     const { data: chartData } = await calculateVedicChart(
       { year, month, day, hour, minute, lat: parseFloat(lat), lng: parseFloat(lng) },
@@ -1265,7 +1264,7 @@ async function fetchChartData(req, res) {
     res.json({ ok: true, target: target || null, sign, sign_si: LAGNA_SINHALA[sign] || sign });
   } catch (e) {
     console.error('[FETCH-CHART]', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 }
 
@@ -1290,7 +1289,7 @@ async function generateFollowUpMessage(req, res) {
     res.json({ text });
   } catch (e) {
     console.error('[FOLLOWUP] error:', e.message);
-    res.status(500).json({ error: e.message || 'Failed to generate follow-up' });
+    res.status(e.statusCode || 500).json({ error: e.message || 'Failed to generate follow-up' });
   }
 }
 
@@ -1303,7 +1302,7 @@ async function recentMetaEvents(req, res) {
   try {
     const events = await getRecentEvents(clientId);
     res.json({ events });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
 /**
@@ -1317,7 +1316,7 @@ async function syncMetaAudience(req, res) {
     res.json({ ok: true, ...result });
   } catch (e) {
     console.error('[META-SYNC]', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 }
 
@@ -1333,7 +1332,7 @@ async function createMetaAudience(req, res) {
     res.json({ ok: true, audience_id: audienceId });
   } catch (e) {
     console.error('[META-CREATE-AUDIENCE]', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 }
 
@@ -1434,7 +1433,7 @@ async function generateMarriageHandler(req, res) {
     });
   } catch (e) {
     console.error('[MARRIAGE] Error:', e.message);
-    if (!res.headersSent) res.status(500).json({ error: e.message });
+    if (!res.headersSent) res.status(e.statusCode || 500).json({ error: e.message });
   }
 }
 
@@ -1463,6 +1462,7 @@ async function regenerateMarriageSectionHandler(req, res) {
     // No live session exists any more, so rebuild the conversation from the saved
     // sections (minus this one) — otherwise the regenerated text repeats its neighbours.
     const content = await generateMarriageSectionText({
+      clientId,
       chartData:    order.hd.chart_data,
       systemPrompt,
       label:        sectionDef.label,
@@ -1483,7 +1483,7 @@ async function regenerateMarriageSectionHandler(req, res) {
     res.json({ ok: true, label: label.trim(), content });
   } catch (e) {
     console.error('[MARRIAGE-REGEN-SECTION] Error:', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 }
 
@@ -1504,7 +1504,7 @@ async function updateMarriageSections(req, res) {
       [JSON.stringify(marriage_sections_data), orderId]
     );
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
 /** Build the marriage .docx buffer for an order, or throw a 404-ish error. */
@@ -1594,11 +1594,11 @@ async function generateMarriageWaHandler(req, res) {
       return res.status(400).json({ error: 'marriage_wa_prompt not configured in plugin settings' });
     }
 
-    const message = await generateMarriageWaMessage(orderId, data, waPrompt);
+    const message = await generateMarriageWaMessage(clientId, orderId, data, waPrompt);
     res.json({ wa_message: message });
   } catch (e) {
     console.error('[MARRIAGE-WA] Error:', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 }
 
@@ -1615,7 +1615,7 @@ async function saveMarriageWaHandler(req, res) {
       [JSON.stringify(wa_message), orderId]
     );
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
 // ─── Match Making (ගැළපීම) — couple compatibility report ─────────────────────
@@ -1683,7 +1683,7 @@ async function aiPrepareMatch(req, res) {
       required: ['name', 'birth_date_iso', 'birth_time_24h', 'birth_place_en', 'lat', 'lng'],
     };
 
-    const geminiModel = genAI.getGenerativeModel({
+    const geminiModel = (await getGenAI(clientId)).getGenerativeModel({
       model: 'gemini-2.5-flash',
       generationConfig: {
         temperature: 0.2,
@@ -1734,7 +1734,7 @@ async function aiPrepareMatch(req, res) {
     });
   } catch (e) {
     console.error('[AI-PREPARE-MATCH]', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 }
 
@@ -1766,7 +1766,7 @@ async function saveMatchPeople(req, res) {
     res.json({ ok: true });
   } catch (e) {
     console.error('[MATCH-PEOPLE]', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 }
 
@@ -1809,7 +1809,7 @@ async function generateMatchHandler(req, res) {
     });
   } catch (e) {
     console.error('[MATCH] handler error:', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 }
 
@@ -1840,6 +1840,7 @@ async function regenerateMatchSectionHandler(req, res) {
     // The run's session is long gone, so replay the other sections as history — without
     // it the rewrite has no idea what the rest of the report says.
     const content = await generateMatchSectionText({
+      clientId,
       coupleContext: buildCoupleContext(order.hd),
       systemPrompt,
       label:   sectionDef.label,
@@ -1860,7 +1861,7 @@ async function regenerateMatchSectionHandler(req, res) {
     res.json({ ok: true, label: label.trim(), content });
   } catch (e) {
     console.error('[MATCH-REGEN-SECTION] Error:', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 }
 
@@ -1884,7 +1885,7 @@ async function updateMatchSections(req, res) {
     };
     await db.pgQuery('UPDATE orders SET horoscope_data=$1 WHERE order_id=$2', [JSON.stringify(updated), orderId]);
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
 /** Build the match .docx buffer for an order, or throw a 404-ish error. */

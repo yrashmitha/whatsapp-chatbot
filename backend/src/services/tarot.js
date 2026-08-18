@@ -39,24 +39,6 @@ const SPREAD_POSITIONS = ['Past', 'Present', 'Future'];
  *   {question}   — the customer's question / problem
  *   {spread}     — formatted card spread text
  */
-const DEFAULT_TAROT_PROMPT = `You are a warm, insightful tarot reader. A customer has come to you with the following question or situation:
-
-"{question}"
-
-You have physically drawn exactly these 3 cards for them. You MUST interpret ONLY these cards and no others — do not invent, substitute, or reference any other tarot cards:
-
-{spread}
-
-Please provide a thoughtful, compassionate tarot reading that:
-1. Interprets each of the 3 cards above in the context of its position (Past, Present, Future)
-2. Refers to each card by the name given above — use the Sinhala name if one is provided
-3. Connects the cards to the customer's specific question or situation
-4. Offers guidance and insight based on the overall message of the spread
-5. Ends with an encouraging, supportive closing message
-
-IMPORTANT: Only mention the 3 cards listed above. Do not reference any other tarot cards.
-Respond in the same language the customer used in their question.
-Keep the tone warm, empathetic, and spiritual. Write in a flowing, readable style suitable for WhatsApp.`;
 
 /**
  * Randomly draw N unique cards from the deck, each with a chance of reversal.
@@ -100,6 +82,11 @@ function formatSpread(drawn) {
  * @returns {Promise<{ reading: string, cards: Array }>}
  */
 async function generateTarotReading(clientId, question, customPrompt = null) {
+  if (!(customPrompt || '').trim()) {
+    const err = new Error('No tarot reading prompt configured for this client. Set it in Plugins > Tarot Reading before generating.');
+    err.statusCode = 422;
+    throw err;
+  }
   const drawn = drawCards(3);
   const spreadText = formatSpread(drawn);
 
@@ -108,7 +95,7 @@ async function generateTarotReading(clientId, question, customPrompt = null) {
     console.log(`[TAROT]   ${SPREAD_POSITIONS[i]}: ${card.sinhala_name || card.name} (${card.name}) ${reversed ? '(Reversed)' : '(Upright)'}`);
   });
 
-  const promptTemplate = customPrompt || DEFAULT_TAROT_PROMPT;
+  const promptTemplate = (customPrompt || '').trim();
 
   // Replace {question} and {spread} placeholders
   let prompt = promptTemplate
@@ -241,35 +228,10 @@ const SINHALA_READING_HEADING  = 'ඔබේ කියවීම';
 // ── Constant page content ────────────────────────────────────────────────────
 
 /** Page 1 — What is Tarot? */
-const PAGE1_HEADING = 'ටැරෝ කාඩ්පත් යනු කුමක්ද?';
-const DEFAULT_PAGE1_BODY = [
-  'ටැරෝ කාඩ්පත් යනු සියවස් ගණනාවක් තිස්සේ ආධ්‍යාත්මික මග පෙන්වීම සහ ආත්ම දැනුවත් කිරීම සඳහා භාවිතා කරන කාඩ්පත් 78 කින් සමන්විත ඩෙකයකි.',
-  'ඩෙකය ප්‍රධාන කොටස් දෙකකින් සමන්විත වේ:',
-  '• මේජර් ආර්කෙනා (Major Arcana) — ජීවිතයේ ප්‍රධාන පාඩම් සහ ශක්තීන් නිරූපණය කරන කාඩ්පත් 22 ක්.',
-  '• මයිනර් ආර්කෙනා (Minor Arcana) — දෛනික ජීවිත අත්දැකීම් නිරූපණය කරන කාඩ්පත් 56 ක්, ඒවා Wands, Cups, Swords සහ Pentacles යන කණ්ඩායම් හතරකට බෙදා ඇත.',
-  'ටැරෝ කාඩ්පත් ඔබේ අභ්‍යන්තර ශක්තිය, සිතුවිලි සහ ජීවන ගමන පිළිබඳ අවබෝධය ලබා ගැනීමට ප්‍රබල මාර්ගයකි. එය ඔබට ඔබේ ජීවිතය ගැඹුරින් තේරුම් ගැනීමට සහ ඉදිරි මග සොයා ගැනීමට සහාය වේ.',
-].join('\n');
 
 /** Page 2 — How does Tarot work? */
-const PAGE2_HEADING = 'ටැරෝ කාඩ්පත් ක්‍රියා කරන්නේ කෙසේද?';
-const DEFAULT_PAGE2_BODY = [
-  'ටැරෝ කාඩ්පත් ක්‍රියා කරන්නේ සහජ දැනීම (intuition) සහ සංකේතාත්මක අර්ථකථනය (symbolic interpretation) හරහාය.',
-  'කාඩ්පත් කියවීමේ ක්‍රියාවලිය:',
-  '• කාඩ්පත් කියවන්නා ඔබේ ප්‍රශ්නය හෝ තත්ත්වය කෙරෙහි අවධානය යොමු කරමින් ඩෙකය ගලිකා කරයි.',
-  '• ඉන් පසු නිශ්චිත ප්‍රමාණයක කාඩ්පත් ඇද ගනු ලැබේ — මෙහිදී ඔබ සඳහා කාඩ්පත් 3 ක් ඇද ගන්නා ලදී.',
-  '• එක් එක් කාඩ්පත ඇදගත් ස්ථානය (අතීතය, වර්තමානය, අනාගතය) සහ ඒවායේ ඍජු හෝ ආපසු දිශානතිය අනුව අර්ථකථනය කෙරේ.',
-  'ටැරෝ කාඩ්පත් අනාගතය නිශ්චිතව කියා නොදෙයි. ඒ වෙනුවට, ඒවා ඔබේ ජීවිතයේ ප්‍රවණතා, ශක්තීන් සහ ඉදිරි ගමන සඳහා ප්‍රඥාමය මග පෙන්වීමක් ලබා දේ. අවසාන තීරණය සැමවිටම ඔබ සතුය.',
-].join('\n');
 
 /** Final page — Spiritual disclaimer */
-const PAGE4_HEADING = 'ආධ්‍යාත්මික වගකීම් ප්‍රකාශය';
-const DEFAULT_PAGE4_BODY = [
-  'මෙම ටැරෝ කාඩ්පත් කියවීම ආධ්‍යාත්මික මග පෙන්වීම සහ ආත්ම සංවර්ධනය සඳහා පමණක් සකස් කරන ලද්දකි.',
-  'ටැරෝ කාඩ්පත් කියවීම ජ්‍යෝතිෂ්‍ය, වෛද්‍ය, නෛතික හෝ මූල්‍ය උපදේශනයක් නොවේ. ජීවිතයේ ඕනෑම වැදගත් ක්ෂේත්‍රයකදී නිසි සුදුසුකම් ලත් වෘත්තිකයින්ගේ උපදේශය ලබා ගැනීම නිර්දේශ කෙරේ.',
-  'කාඩ්පත් කියවීමේ ප්‍රතිඵල සංකේතාත්මක අර්ථකථනයන් වන අතර, ඒවා ඔබේ ජීවිතය සම්බන්ධ නිශ්චිත පූර්වකථනයන් ලෙස සැලකිය නොයුතුය.',
-  'ඔබේ ජීවිතයේ ඕනෑම තීරණයක් ගැනීමේදී ඔබේම නුවණ, සාරධර්ම සහ විචාරශීලී චින්තනය යොදා ගැනීම අත්‍යවශ්‍ය වේ.',
-  'ජීවිතයේ සෑම ගමනක්ම ඔබේම ශක්තිය හා සිතිවිලි මත රඳා පවතී. ටැරෝ කාඩ්පත් ඔබේ ගමනේ එළිය වන ආකාරය ගැන දැනුවත් කිරීමට ගෙන ඒ ආලෝකය ලබා ගන්නේ ඔබ ය.',
-].join('\n');
 
 /**
  * Helper: heading paragraph for constant pages.
@@ -295,18 +257,18 @@ function makeBodyParagraphs(text, font) {
   }));
 }
 
-async function buildTarotDoc({ question, reading, cards, page1_body, page2_body, page4_body, brand = DEFAULT_BRAND }) {
+async function buildTarotDoc({ question, reading, cards, page1_body, page2_body, page4_body, brand = DEFAULT_BRAND, page1_heading = '', page2_heading = '', page4_heading = '' }) {
   ensureDocx();
 
   const children = [];
 
   // ── Page 1: ටැරෝ කාඩ්පත් යනු කුමක්ද? ──────────────────────────────────
-  children.push(makeHeading(PAGE1_HEADING, brand.font));
-  children.push(...makeBodyParagraphs(page1_body || DEFAULT_PAGE1_BODY, brand.font));
+  children.push(makeHeading(page1_heading, brand.font));
+  children.push(...makeBodyParagraphs(page1_body || '', brand.font));
 
   // ── Page 2: ටැරෝ කාඩ්පත් ක්‍රියා කරන්නේ කෙසේද? — page break embedded in heading
-  children.push(makeHeading(PAGE2_HEADING, brand.font, true));
-  children.push(...makeBodyParagraphs(page2_body || DEFAULT_PAGE2_BODY, brand.font));
+  children.push(makeHeading(page2_heading, brand.font, true));
+  children.push(...makeBodyParagraphs(page2_body || '', brand.font));
 
   // ── Page 3: Question + Cards drawn — page break embedded in heading
   children.push(new Paragraph({
@@ -361,8 +323,8 @@ async function buildTarotDoc({ question, reading, cards, page1_body, page2_body,
   children.push(...contentToParagraphs(reading, brand.font));
 
   // ── Final page: ආධ්‍යාත්මික වගකීම් ප්‍රකාශය — page break embedded in heading
-  children.push(makeHeading(PAGE4_HEADING, brand.font, true));
-  children.push(...makeBodyParagraphs(page4_body || DEFAULT_PAGE4_BODY, brand.font));
+  children.push(makeHeading(page4_heading, brand.font, true));
+  children.push(...makeBodyParagraphs(page4_body || '', brand.font));
 
   const doc = new Document({
     styles: {
@@ -397,4 +359,4 @@ async function buildTarotDoc({ question, reading, cards, page1_body, page2_body,
   return Packer.toBuffer(doc);
 }
 
-module.exports = { generateTarotReading, buildTarotDoc, DEFAULT_TAROT_PROMPT, DEFAULT_PAGE1_BODY, DEFAULT_PAGE2_BODY, DEFAULT_PAGE4_BODY };
+module.exports = { generateTarotReading, buildTarotDoc };

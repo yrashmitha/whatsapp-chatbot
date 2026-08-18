@@ -9,7 +9,7 @@
  *
  * Config lives under the existing `horoscope_reading` plugin:
  *   marriage_system_prompt  — Gemini system instruction (blank → built-in default)
- *   marriage_sections       — [{ label, guide }]        (blank → DEFAULT_MARRIAGE_SECTIONS)
+ *   marriage_sections       — [{ label, guide }]        (blank → no sections generated)
  *   marriage_special_note   — closing note appended to the document
  *   marriage_wa_prompt      — system prompt for the WhatsApp summary message
  *
@@ -23,61 +23,11 @@ const { getGenAI } = require('./clientKeys');
 const { buildSectionsDoc } = require('./horoscope');
 const { todayContextBlock } = require('./dateContext');
 
-const MARRIAGE_REPORT_TITLE = 'විවාහ ජීවිතය පිළිබඳ විශේෂ ශාස්ත්‍රීය වාර්තාව';
 
-const DEFAULT_MARRIAGE_SYSTEM_PROMPT = `ඔබ වසර 40කට වැඩි පළපුරුද්දක් ඇති, විවාහ පලාපල (Marriage Astrology) පිළිබඳ විශේෂඥ ජ්‍යෝතිර්වේදියෙකි.
 
-ඔබට ලබා දී ඇති කේන්ද්‍ර දත්ත (ලග්න කේන්ද්‍රය, නවාංශකය, සප්තාංශකය සහ විංශෝත්තරී දශා) පදනම් කරගෙන, විවාහය සහ ප්‍රේම සබඳතා පිළිබඳ ගැඹුරු, සෘජු සහ වෘත්තීය විග්‍රහයක් සිංහල භාෂාවෙන් ලබා දෙන්න.
 
-මූලික නීති:
-1. සම්පූර්ණ වාර්තාවම සිංහලෙන් ලියන්න (ජ්‍යෝතිෂ තාක්ෂණික වචන ඉංග්‍රීසියෙන් වරහන් තුළ දැක්වීම සුදුසුයි).
-2. සත්‍යය සඟවන්න එපා. අසුබ පල, දෝෂ සහ බාධක පැහැදිලිව සහ සෘජුව පවසන්න — නමුත් සෑම විටම මනුෂ්‍යවාදීව, ජන්මියාගේ හිත නොකැඩෙන පරිදි සහ ධෛර්යවත් කරන වචන සමඟ.
-3. පොදු, ඕනෑම කෙනෙකුට ගැලපෙන (generic) කථා ලියන්න එපා. සෑම ප්‍රකාශයක්ම මෙම කේන්ද්‍රයේ නිශ්චිත ග්‍රහ පිහිටීම් මත පදනම් විය යුතුය.
-4. හැඳින්වීම් හෝ අනවශ්‍ය පෙරවදන් නොදා සෘජුවම කරුණට පිවිසෙන්න.`;
 
-const DEFAULT_MARRIAGE_SECTIONS = [
-  {
-    label: 'විවාහයක් සැබෑ ලෙසම සිදුවේද නැද්ද යන්න',
-    guide: '7 වන භාවය සහ නවාංශක කේන්ද්‍රය සෘජුව විශ්ලේෂණය කර, ග්‍රහ පිහිටීම් අනුව විවාහයක් සිදුවීම තහවුරු වේද නැතහොත් වළක්වා ඇත්ද යන්න පැහැදිලිව ප්‍රකාශ කරන්න. ශනි, රාහු, කේතු වැනි පාප ග්‍රහයන්ගේ දරුණු බලපෑම් නිසා අවිවාහක යෝග (Celibacy / No-Marriage Yoga) ඇත්දැයි පරීක්ෂා කරන්න. සත්‍ය තත්ත්වය පැණි ගා නොකියා, නමුත් වෘත්තීය ගාම්භීරත්වයකින් යුතුව පැහැදිලිව පවසන්න.',
-  },
-  {
-    label: 'විවාහය සිදුවන නියමිතම වයස සහ කාල වකවානුව',
-    guide: 'වර්තමාන මහ දශාව සහ අන්තර් දශාව අනුව විවාහ මාර්ග විවෘත වන නිශ්චිත වර්ෂය සහ මාස පරාසය හරියටම දක්වන්න. මෙතෙක් විවාහය හෝ ප්‍රේම සබඳතා ප්‍රමාද වීමට හෝ බාධා ඇතිවීමට හේතු වූ අතීත ග්‍රහ බාධක මොනවාද යන්න පැහැදිලිව විස්තර කරන්න.',
-  },
-  {
-    label: 'ලැබෙන සහකරුගේ රැකියාව, නමේ අකුරු සහ දිශාව',
-    guide: 'අනාගත සහකරු/සහකාරියගේ පෞරුෂය, හැසිරීම සහ මූලික ගතිගුණ විස්තර කරන්න. 7 සහ 10 භාව සම්බන්ධතාවය අනුව රැකියාවේ ස්වභාවය (රාජ්‍ය අංශය, ආයතනික විධායක මට්ටම, හෝ මහා පරිමාණ ව්‍යාපාරික) නිශ්චිතව දක්වන්න. සහකරුගේ නමේ සුබ මුල් අකුරු මොනවාද යන්නත්, ජන්මියාගේ උපන් ස්ථානයේ සිට සහකරු හමුවන නිශ්චිත භූගෝලීය දිශාව (උතුර, දකුණ, නැගෙනහිර, බටහිර) කුමක්ද යන්නත් සෘජුව පවසන්න.',
-  },
-  {
-    label: 'සැඟවුණු දරුණු විවාහ දෝෂ හඳුනා ගැනීම',
-    guide: 'දරුණු ජ්‍යෝතිෂ දෝෂ සඳහා තදබල විශ්ලේෂණයක් කරන්න:\n- කුජ (භෞම) දෝෂය: නොගැලපීමකදී ඇතිවිය හැකි ගැටුම්, තර්ක බහුල බව හෝ සෞඛ්‍ය බලපෑම් පැහැදිලි කරන්න.\n- ශනි-මංගල දෝෂය: මානසික ගැලපීම, සැකය සහ කෝපය කෙරෙහි ඇති බලපෑම විස්තර කරන්න.\n- කලත්‍ර නාශක සහ ද්වි-විවාහ යෝග: වෙන්වීම් හෝ විවාහ දෙකක් සිදුවීමේ අවදානම හඳුනාගන්න.\n- වඳ දෝෂ (දරු ප්‍රසූතියට බාධා): 5 වන භාවය පරීක්ෂා කර දරු ලැබීමට බාධා ඇත්දැයි දක්වන්න.\nදෝෂයක් නොමැති නම් එසේ නොමැති බව පැහැදිලිව පවසන්න — නොමැති දෝෂ නිර්මාණය කරන්න එපා.',
-  },
-  {
-    label: 'සහකරු/සහකාරිය මුණගැසීමට කළ යුතු ප්‍රායෝගික ජීවන වෙනස්කම්',
-    guide: 'කේන්ද්‍රය අනුව ප්‍රායෝගික, සැබෑ ලෝකයේ ජීවන රටා වෙනස්කම් ලබා දෙන්න. හමුවීමේ ඉඩකඩ වැඩිම පරිසරයන් හරියටම හඳුනාගන්න (රැකියා ස්ථානය, අධ්‍යාපන ආයතන, විනෝද චාරිකා/සමාජ අවස්ථා, හෝ ස්වේච්ඡා සේවා). ඉතා ක්‍රියාත්මක කළ හැකි උපදෙස් දෙන්න (උදා: "කේන්ද්‍රය අනුව ගමන් බිමන් වලදී අවස්ථා විවෘත වන බැවින්, ඉදිරි දශා කාලය තුළ චාරිකා සහ එළිමහන් සමාජ අවස්ථාවලට ක්‍රියාශීලීව සහභාගී වන්න").',
-  },
-  {
-    label: 'ප්‍රේම සබඳතා බිඳී යාම සහ විවාහ ගැටලු',
-    guide: '5 වන භාවය (ප්‍රේමයේ භාවය) විශ්ලේෂණය කර, අතීතයේ සිදුවූ හදිසි ප්‍රේම බිඳවැටීම්, සබඳතා හදිසියේ නතර වීම් (ghosting) හෝ අසාර්ථක වීම් පිටුපස ඇති සැබෑ ග්‍රහ හේතුව පැහැදිලි කරන්න.',
-  },
-  {
-    label: 'දෝෂ භංග කරන සහ හඳහන් ගැලපීමේ ප්‍රායෝගික පිළියම්',
-    guide: 'සාමාන්‍ය, ස්වයංක්‍රීය පන්සල් ශාන්තිකර්ම ලබා නොදෙන්න. ඉහත 4 වන අංශයේ හඳුනාගත් දරුණු දෝෂ උදාසීන වන (භංග වන) ක්‍රමවේද සහ කොන්දේසි මොනවාද යන්න පැහැදිලි කරන්න. මෙම කේන්ද්‍රයටම ආවේණික වූ, නිවසේදීම කළ හැකි ඉතා ප්‍රායෝගික වත්පිළිවෙත් පමණක් ලබා දෙන්න. සෑම ප්‍රධාන පිළියමක්ම \'###\' සලකුණෙන් ආරම්භ වන අනු-මාතෘකාවක් යටතේ දක්වා, එහි පියවර \'-\' බුලට් ලෙස ලැයිස්තුගත කරන්න.',
-  },
-  {
-    label: 'විවාහයෙන් පසු ධන යෝග සහ පදිංචිය',
-    guide: 'විවාහයෙන් පසුව විශේෂයෙන් ක්‍රියාත්මක වන ධන යෝග විශ්ලේෂණය කරන්න (ආර්ථික ස්ථාවරත්වය, දේපළ රැස්කිරීම සහ සහකරු/සහකාරිය විසින් ගෙන එන වාසනාව). අනාගත පදිංචිය පුරෝකථනය කරන්න: උපන් ගමේම ජීවත් වේද, වෙනත් පළාතකට යාද, නැතහොත් විවාහය හේතුවෙන් විදේශගත වේද යන්න සෘජුව පවසන්න.',
-  },
-];
-
-const MARRIAGE_FIXED_INSTRUCTIONS = `කරුණාකර පහත උපදෙස් දැඩිව පිළිපදින්න:
-1. කතාවක් මෙන් ලියන්න (Narrative Flow): 'ලග්න කේන්ද්‍රය අනුව', 'නවාංශකය අනුව' ලෙස දැඩි මාතෘකා යටතේ කරුණු නොබෙදන්න. සියලු දත්ත එකට මුසු කර, කියවීමට පහසු, ගලාගෙන යන ඡේද කිහිපයක් ලෙස ගැඹුරු විග්‍රහයක් කරන්න.
-2. සෘජුවම කරුණට පිවිසෙන්න. හැඳින්වීම් අනවශ්‍යයි.
-3. අතිශය වැදගත්: මීට පෙර අංශ විස්තර කිරීමේදී භාවිතා කළ වාක්‍ය හෝ අදහස් ඒ ආකාරයෙන්ම නැවත භාවිතා නොකරන්න. අදාළ මාතෘකාවට පමණක් සුවිශේෂී වූ නව කරුණු ඉදිරිපත් කරන්න.
-4. පිළියම් සඳහා වෙන් වූ අංශය හැර වෙනත් කිසිදු අංශයක ශාන්තිකර්ම හෝ පිළියම් ඇතුළත් නොකරන්න. එහිදී කළ යුත්තේ ශාස්ත්‍රීය විග්‍රහය පමණි.
-5. අසුබ පල සඟවන්න එපා, නමුත් මනුෂ්‍යවාදීව පවසන්න: දෝෂ හෝ බාධක ඇත්නම් ඒවා පැහැදිලිව සඳහන් කර, ඒ වහාම කේන්ද්‍රයේ ඇති සුබ ග්‍රහ බලයන් සහ ජන්මියාගේ සහජ වීර්යය පෙන්වා දෙමින් සිත සනසන, ධෛර්යවත් කරන වචන භාවිතා කරන්න.`;
-
-function buildMarriageSectionPrompt(label, guide) {
+function buildMarriageSectionPrompt(label, guide, fixedInstructions) {
   const guideText = guide
     ? `**මෙම අංශය සඳහා අනිවාර්යයෙන්ම ඇතුළත් කළ යුතු කරුණු:** ${guide}\n`
     : '';
@@ -85,7 +35,7 @@ function buildMarriageSectionPrompt(label, guide) {
     `ඔබ දැන් විශ්ලේෂණය කළ යුත්තේ [${label}] යන අංශය පිළිබඳව පමණයි. වෙනත් අංශ ගැන මෙහිදී විස්තර නොකරන්න. ` +
     `වෘත්තීය මට්ටමේ, ගලාගෙන යන ශාස්ත්‍රීය විග්‍රහයක් ලබා දෙන්න.\n\n` +
     `${guideText}\n` +
-    MARRIAGE_FIXED_INSTRUCTIONS
+    (fixedInstructions || '')
   );
 }
 
@@ -93,13 +43,17 @@ function buildMarriageSectionPrompt(label, guide) {
  * Resolve the effective marriage config for a client (falling back to built-in defaults).
  */
 function resolveMarriageConfig(config) {
+  // Client-owned editorial content only: no built-in persona or section list.
   const sections = (Array.isArray(config.marriage_sections) && config.marriage_sections.length > 0)
     ? config.marriage_sections.filter(s => s && s.label)
-    : DEFAULT_MARRIAGE_SECTIONS;
-  const systemPrompt = (config.marriage_system_prompt && config.marriage_system_prompt.trim())
-    ? config.marriage_system_prompt
-    : DEFAULT_MARRIAGE_SYSTEM_PROMPT;
-  return { sections, systemPrompt, specialNote: config.marriage_special_note || '' };
+    : [];
+  return {
+    sections,
+    systemPrompt:      (config.marriage_system_prompt || '').trim(),
+    specialNote:       (config.marriage_special_note || '').trim(),
+    reportTitle:       (config.marriage_report_title || '').trim(),
+    fixedInstructions: (config.marriage_fixed_instructions || '').trim(),
+  };
 }
 
 /**
@@ -136,8 +90,8 @@ function historyFromSections(sectionsData, excludeLabel) {
  * omit it and a one-off session is built instead.
  * @returns {Promise<string>} the section text
  */
-async function generateMarriageSectionText({ clientId, chartData, systemPrompt, label, guide, chat, history }) {
-  const prompt = buildMarriageSectionPrompt(label, guide);
+async function generateMarriageSectionText({ clientId, chartData, systemPrompt, label, guide, chat, history, fixedInstructions }) {
+  const prompt = buildMarriageSectionPrompt(label, guide, fixedInstructions);
 
   console.log(`[MARRIAGE] ── REQUEST: "${label}"`);
   console.log('[MARRIAGE] userPrompt:\n' + prompt);
@@ -172,7 +126,17 @@ async function generateMarriageReading(clientId, orderId) {
   }
 
   const config = await db.getPluginConfig(clientId, 'horoscope_reading');
-  const { sections, systemPrompt } = resolveMarriageConfig(config);
+  const { sections, systemPrompt, fixedInstructions } = resolveMarriageConfig(config);
+  if (!systemPrompt) {
+    const err = new Error('No marriage system prompt configured for this client. Set it in Plugins > Horoscope Reading before generating.');
+    err.statusCode = 422;
+    throw err;
+  }
+  if (!sections.length) {
+    const err = new Error('No marriage sections configured for this client. Define them in Plugins > Horoscope Reading before generating.');
+    err.statusCode = 422;
+    throw err;
+  }
 
   console.log(`[MARRIAGE] Generating ${sections.length} sections for order ${orderId}`);
   console.log(`[MARRIAGE] systemPrompt (${systemPrompt.length} chars):\n` + systemPrompt);
@@ -186,6 +150,7 @@ async function generateMarriageReading(clientId, orderId) {
   for (const sec of sections) {
     const content = await generateMarriageSectionText({
       clientId,
+      fixedInstructions,
       label: sec.label,
       guide: sec.guide || '',
       chat,
@@ -247,7 +212,7 @@ async function generateMarriageWaMessage(clientId, orderId, sectionsData, waProm
 /**
  * Build the marriage Word document.
  */
-async function buildMarriageDoc({ customerName, sections, specialNote, birthDate, birthTime, sectionOrder, brand }) {
+async function buildMarriageDoc({ customerName, sections, specialNote, birthDate, birthTime, sectionOrder, brand, reportTitle }) {
   // Order by plugin config if provided; saved data may predate a reorder.
   let ordered = Array.isArray(sections) ? sections.map(s => ({ ...s })) : [];
   if (Array.isArray(sectionOrder) && sectionOrder.length > 0) {
@@ -261,7 +226,7 @@ async function buildMarriageDoc({ customerName, sections, specialNote, birthDate
   return await buildSectionsDoc({
     brand,
     customerName,
-    reportTitle: MARRIAGE_REPORT_TITLE,
+    reportTitle: reportTitle || '',
     sections:    ordered,
     specialNote,
     birthDate,
@@ -276,7 +241,4 @@ module.exports = {
   generateMarriageWaMessage,
   buildMarriageDoc,
   resolveMarriageConfig,
-  MARRIAGE_REPORT_TITLE,
-  DEFAULT_MARRIAGE_SECTIONS,
-  DEFAULT_MARRIAGE_SYSTEM_PROMPT,
 };

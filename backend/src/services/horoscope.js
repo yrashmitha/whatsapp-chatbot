@@ -67,45 +67,14 @@ function parseSinhalaTime(raw) {
 
 // ─── 10 sections ─────────────────────────────────────────────────────────────
 
-const SECTIONS = [
-  'පෞරුෂය',
-  'අධ්‍යාපනය',
-  'වෘත්තීය ජීවිතය සහ ආර්ථික ශක්තිය',
-  'ප්‍රේමය සහ විවාහ ජීවිතය',
-  'දේපළ, භූමිය, නිවාස සහ වාහන භාග්‍යය',
-  'ශාරීරික සෞඛ්‍යය, මාරක අපල, හදිසි අනතුරු',
-  'දරු පල',
-  'මෙතෙක් දැක්වූ කරුණු අනුව ජීවන ගමනේ සමස්ත සාරාංශය',
-  'වර්තමාන දශාව අනුව පලාපල',
-  'ජීවිතයේ අභියෝග ජයගැනීම සඳහා වූ පොදු ශාස්ත්‍රීය සහ බෞද්ධ පිළියම්',
-];
 
-const QUANTUM_REPORT_TITLE = 'ක්වොන්ටම් ශක්ති කේතය';
 
-const VIP_SECTION = 'විශේෂ VIP උපදේශනය: ග්‍රහ අපල සඳහා වන සුවිශේෂී ස්තෝත්‍රය සහ වත්පිළිවෙත්';
 
-const SECTION_GUIDES = {
-  'පෞරුෂය': 'ජන්මියාගේ සහජ හැකියාවන්, සැඟවුණු දක්ෂතා සහ දුර්වලතා විස්තර කරන්න. සමාජය ඔහුව දකින ආකාරය සහ ඔහුගේ සැබෑ ඇතුළාන්තය අතර ඇති වෙනස, කෝපය පාලනය කරගන්නා ආකාරය, සහ අන් අයව පහසුවෙන් විශ්වාස කිරීමේ පුරුද්දක් ඇත්නම් ඒ ගැන ගැඹුරින් පවසන්න.',
-  'අධ්‍යාපනය': 'ධාරණ ශක්තිය, ඉගෙනීමට ඇති උනන්දුව, තරග විභාග වලින් ජය ලැබීමේ හැකියාව ගැන සඳහන් කරන්න. අධ්‍යාපනයට බාධා ඇතිවන කාල සීමාවන්, ගැළපෙනම විෂය ධාරාවන් සහ උසස් අධ්‍යාපනයට හෝ විදේශ අධ්‍යාපනයට ඇති වාසනාව ගැන පැහැදිලි කරන්න.',
-  'වෘත්තීය ජීවිතය සහ ආර්ථික ශක්තිය': 'වඩාත්ම සාර්ථක විය හැකි වෘත්තීය ක්ෂේත්‍ර, අනුන් යටතේ කරන රැකියාවක් ද නැතිනම් ස්වයං රැකියාවක්/ව්‍යාපාරයක් ද වඩාත් සුදුසු යන්න සෘජුව කියන්න. රැකියා ස්ථානයේ ඇතිවිය හැකි රහස් සතුරු කරදර, ඊර්ෂ්‍යාවන්, විදෙස් රැකියා හෝ විදේශගත වීමේ වාසනාව, ධනය ඉපයීමේ හැකියාව, මුදල් ඉතිරි නොවන ස්වභාවයක් හෝ ණය තුරුස් වීමේ අවදානමක් ඇත්නම් ඒ ගැන පැහැදිලිව පාරිභෝගිකයාව දැනුවත් කරන්න.',
-  'ප්‍රේමය සහ විවාහ ජීවිතය': 'විවාහය ප්‍රමාද වේද නැද්ද යන්න, සහකරුගේ හෝ සහකාරියගේ ස්වභාවය සහ ගතිගුණ ගැන පවසන්න. ප්‍රේම සබඳතා බිඳවැටීමේ අවදානම්, විවාහයෙන් පසු ජීවිතය, පවුල් පසුබිම් ගැටලු සහ අදාළ ග්‍රහ දෝෂ (ඇත්නම් පමණක් බිය නොගන්වා) ගැන විස්තර කරන්න.',
-  'දේපළ, භූමිය, නිවාස සහ වාහන භාග්‍යය': 'ස්වකීය දහදිය මහන්සියෙන් ගෙවල් දොරවල් සෑදීමේ හෝ වාහන මිලදී ගැනීමේ භාග්‍යය ගැන පවසන්න. පාරම්පරික උරුමයන් ලැබේද යන්න සහ දේපළ සම්බන්ධයෙන් පවුලේ අය සමඟ නඩුහබ හෝ බාධා ඇතිවීමේ අවදානමක් ඇත්නම් ඒ ගැන පවසන්න.',
-  'ශාරීරික සෞඛ්‍යය, මාරක අපල, හදිසි අනතුරු': 'පෙළඹිය හැකි ලෙඩ රෝග (උදා: ආමාශ, ස්නායු, අස්ථි සම්බන්ධ රෝග), මානසික පීඩනයන්, සහ හදිසි අනතුරු අවදානම් ගැන කල්තියා අනතුරු අඟවන්න. බිය ගැන්වීමකින් තොරව මනුෂ්‍යයෙකු සේ ජීවිත කාලය පුරාම පරිස්සම් විය යුතු සෞඛ්‍ය පුරුදු ගැන උපදෙස් දෙන්න.',
-  'දරු පල': 'දරු පල ප්‍රමාදවීම් (ඇත්නම් පමණක්) ඉතා සංවේදීව ඉඟි කරන්න. දරුවන්ගේ අනාගත සාර්ථකත්වය, දරුවන්ගෙන් දෙමව්පියන්ට ලැබෙන සතුට සහ දරුවන්ගේ සාමාන්‍ය ස්වභාවය ගැන විස්තර කරන්න.',
-  'මෙතෙක් දැක්වූ කරුණු අනුව ජීවන ගමනේ සමස්ත සාරාංශය': 'ඉහත සියලු කරුණු කැටි කර, විදේශයක ස්ථිර පදිංචියට (PR) ඇති වාසනාව ඇතුළුව, ජීවිතයේ සාර්ථකම සහ ධනය ගලාගෙන එන ස්වර්ණමය කාල සීමාවන් මෙන්ම වඩාත්ම පරිස්සම් විය යුතු අඳුරු කාල සීමාවන් පෙන්වා දෙමින් ජීවන ගමනේ සමස්ත සාරාංශයක් ලබා දෙන්න.',
-  'වර්තමාන දශාව අනුව පලාපල': 'දැනට ගතවන මහ දශාව සහ අන්තර් දශාව අනුව, මේ මොහොතේ (වර්තමාන වර්ෂයේ) සහ ඉදිරි වසර කිහිපය තුළ අපේක්ෂා කළ හැකි සුවිශේෂී වෙනස්කම් මොනවාද යන්න සහ මේ කාලයේදී විශේෂයෙන් පරිස්සම් විය යුතු දේවල් ගැන සෘජු උපදෙස් දෙන්න. දශාව අනුව මෙම ජන්ම හිමියාට තිබිය හැකි මානසික ගැටලු, කායික ගැටලු, විවාහ/ ආදර සම්බන්දතා ගැටලු, රැකියා/ ව්‍යාපාර ගැටලු, සහ මුදල් ගැටලු වැනි ප්‍රධාන අවදානම් සහ අවස්ථා ගැන පැහැදිලිව සඳහන් කරන්න. හොද පැති මෙන්ම නරක පැතිද පවසන්න, නමුත් අනිවාර්යයෙන්ම මනුෂ්‍යවාදීව සහ ධෛර්යවත් කරන වචන භාවිතා කරන්න. අපල සදහා පිලියම් පහලින් දක්වන්න එපා. ඒවා වෙනම කොටසකින් ලබා දෙනු ඇත.',
-  'ජීවිතයේ අභියෝග ජයගැනීම සඳහා වූ පොදු ශාස්ත්‍රීය සහ බෞද්ධ පිළියම්': 'මිථ්‍යා සහ අධික වියදම් යන ශාන්තිකර්ම බැහැර කර, මෙම කේන්ද්‍රයට ආවේණික වූ ප්‍රධානතම ග්‍රහ දෝෂ (අපල) සඳහා නිවසේදීම කළ හැකි ප්‍රායෝගික බෞද්ධ වත්පිළිවෙත්, බෝධි පූජා ක්‍රම, දානමාන සහ ජීවන රටාවේ වෙනස් කරගත යුතු පුරුදු පෙළගස්වන්න.',
-};
 
-const FIXED_INSTRUCTIONS = `කරුණාකර පහත උපදෙස් දැඩිව පිළිපදින්න:
-1. කතාවක් මෙන් ලියන්න (Narrative Flow): 'ලග්න කේන්ද්‍රය අනුව', 'නවාංශකය අනුව', 'සුබ පල', 'අසුබ පල' ලෙස දැඩි මාතෘකා යටතේ කරුණු නොබෙදන්න. ඒ වෙනුවට එම සියලු දත්ත එකට මුසු කර, කියවීමට පහසු, ගලාගෙන යන ඡේද කිහිපයක් ලෙස ගැඹුරු විග්‍රහයක් කරන්න. කේන්ද්‍රයේ ඇති සුබ පල මෙන්ම අසුබ පල (අදාළ මාතෘකාවට අදාල ඒවා පමණක්) කිසිවක් වසන් නොකර සෘජුව සහ පැහැදිලිව සඳහන් කරන්න
-2. කිසිදු ශාන්තිකර්මයක් හෝ පිළියමක් මෙහි ඇතුළත් නොකරන්න (ඒවා වෙනම කොටසකින් ලබා දෙනු ඇත). මෙහිදී කළ යුත්තේ ශාස්ත්‍රීය විග්‍රහය පමණි.
-3. සෘජුවම කරුණට පිවිසෙන්න. හැඳින්වීම් අනවශ්‍යයි.
-4. අතිශය වැදගත්: මීට පෙර අංශ (Sections) විස්තර කිරීමේදී ඔබ භාවිතා කළ වාක්‍ය, වාක්‍ය ඛණ්ඩ හෝ අදහස් ඒ ආකාරයෙන්ම නැවත භාවිතා කිරීමෙන් සම්පූර්ණයෙන්ම වළකින්න. අදාළ මාතෘකාවට පමණක් සුවිශේෂී වූ නව කරුණු පමණක් ඉදිරිපත් කරන්න.
-5. අසුබ පල සඟවන්න එපා, නමුත් මනුෂ්‍යවාදීව පවසන්න (Honest but Empathetic): කේන්ද්‍රයේ පාප, නීච, අස්ත ග්‍රහයන් හෝ 6, 8, 12 ස්ථානවල බලපෑම් ඇත්නම්, එයින් සිදුවිය හැකි විවාහ බාධා, ලෙඩ රෝග, ධන හානි හෝ රැකියා ගැටලු වැනි අසුබ පල අනිවාර්යයෙන්ම පැහැදිලිව සඳහන් කරන්න (අදාළ මාතෘකාවට අදාල ඒවා පමණක්). ඒවා කිසිසේත් වසන් නොකරන්න. **නමුත්**, එම අසුබ පල පැවසූ වහාම, ජන්මියාගේ හිත නොකැඩෙන පරිදි කේන්ද්‍රයේ ඇති වෙනත් සුබ ග්‍රහ බලයන් හෝ ජන්මියාගේ සහජ වීර්යය පෙන්වා දී, 'මෙම අභියෝග සහ පෙර කර්ම බාධක ඔබේ නොපසුබට උත්සාහයෙන්, බුද්ධියෙන් සහ ඉවසීමෙන් සාර්ථකව මඟහරවා ගත හැකියි' යනුවෙන් සිත සනසන සහ ධෛර්යවත් කරන වචන අනිවාර්යයෙන් භාවිතා කරන්න.`;
 
-function buildSectionPrompt(sec, guidesOverride) {
-  const guides = (guidesOverride && typeof guidesOverride === 'object') ? guidesOverride : SECTION_GUIDES;
+function buildSectionPrompt(sec, guidesOverride, fixedInstructions) {
+  // Writing guides are the client's own; there is no built-in set to fall back on.
+  const guides = (guidesOverride && typeof guidesOverride === 'object') ? guidesOverride : {};
   const guide = guides[sec] || '';
   const specificPromptText = guide
     ? `**මෙම අංශය සඳහා අනිවාර්යයෙන්ම ඇතුළත් කළ යුතු කරුණු:** ${guide}\n`
@@ -154,7 +123,7 @@ function buildSectionPrompt(sec, guidesOverride) {
   return (
     `ඔබ දැන් විශ්ලේෂණය කළ යුත්තේ කේන්ද්‍රයේ [${sec}] යන අංශය පිළිබඳව පමනයි, මෙම විස්තර කිරීමෙදී වෙනත් කිසිදු අංශයක් ගැන විස්තර දමන්න එපා (උදා:- විවාහය ගැන කියද්දී දරු පල කියන්න් එපා ). ${limitText}\n\n` +
     `${specificPromptText}\n` +
-    FIXED_INSTRUCTIONS
+    (fixedInstructions || '')
   );
 }
 
@@ -193,6 +162,19 @@ function logoParagraphs(brand) {
     alignment: AlignmentType.CENTER,
     spacing: { after: 240 },
   })];
+}
+
+/**
+ * Substitute a {year} token with the current year.
+ *
+ * Report headings used to hardcode the year, which silently went stale every
+ * January. Clients write "... ({year} onwards)" and it stays correct.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+function renderYear(text) {
+  return (text || '').replace(/\{year\}/g, String(new Date().getFullYear()));
 }
 
 function parseContentToRuns(line, font) {
@@ -263,7 +245,7 @@ function contentToParagraphs(content, font) {
   return paragraphs;
 }
 
-async function buildHoroscopeDoc({ customerName, sections, specialAnswers, specialNote, birthDate, birthTime, sectionOrder, brand = DEFAULT_BRAND }) {
+async function buildHoroscopeDoc({ customerName, sections, specialAnswers, specialNote, birthDate, birthTime, sectionOrder, brand = DEFAULT_BRAND, remediesLabel = '', specialQuestionsTitle = '' }) {
   ensureDocx();
   const children = [];
 
@@ -316,8 +298,10 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
     return allKeys;
   })();
 
-  const REMEDIES_SECTION = 'ජීවිතයේ අභියෝග ජයගැනීම සඳහා වූ පොදු ශාස්ත්‍රීය සහ බෞද්ධ පිළියම්';
-  const splitIdx = currentSections.indexOf(REMEDIES_SECTION);
+  // Which section starts the remedies half of the document. A structural
+  // marker, not decoration: with no match the split is a no-op and every
+  // section renders in one run.
+  const splitIdx = remediesLabel ? currentSections.indexOf(remediesLabel) : -1;
   const beforeRemedies = splitIdx === -1 ? currentSections : currentSections.slice(0, splitIdx);
   const fromRemedies = splitIdx === -1 ? [] : currentSections.slice(splitIdx);
 
@@ -337,7 +321,7 @@ async function buildHoroscopeDoc({ customerName, sections, specialAnswers, speci
   // Special questions (before remedies section)
   if (specialAnswers && specialAnswers.length > 0) {
     children.push(new Paragraph({
-      children: [new PageBreak(), new TextRun({ text: 'විශේෂ උපදේශනය සහ විසඳුම් සේවාව (2026 සිට ඉදිරියට)', bold: true, size: 36, font: brand.font })],
+      children: [new PageBreak(), new TextRun({ text: renderYear(specialQuestionsTitle), bold: true, size: 36, font: brand.font })],
       alignment: AlignmentType.LEFT,
       spacing: { after: 240 },
     }));
@@ -628,7 +612,7 @@ async function buildSectionsDoc({
 
 // ─── Standalone Quantum / Aura document builder ──────────────────────────────
 
-async function buildQuantumDoc({ customerName, quantumData, auraAnalysis, quantumReading, quantumSectionsData, brand = DEFAULT_BRAND }) {
+async function buildQuantumDoc({ customerName, quantumData, auraAnalysis, quantumReading, quantumSectionsData, brand = DEFAULT_BRAND, reportTitle = '' }) {
   ensureDocx();
   if (!quantumData || quantumData.status !== 'Success' || !auraAnalysis) {
     throw new Error('Quantum data or aura analysis not available');
@@ -645,7 +629,7 @@ async function buildQuantumDoc({ customerName, quantumData, auraAnalysis, quantu
     spacing: { after: 280 },
   }));
   children.push(new Paragraph({
-    children: [new TextRun({ text: QUANTUM_REPORT_TITLE, bold: true, size: 56, font: brand.font })],
+    children: [new TextRun({ text: reportTitle, bold: true, size: 56, font: brand.font })],
     alignment: AlignmentType.CENTER,
     spacing: { after: 280 },
   }));
@@ -899,7 +883,13 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
   const config = await db.getPluginConfig(clientId, 'horoscope_reading');
   const apiKey              = await getFreeAstroKey(clientId);
   const systemPrompt        = config.system_prompt || '';
+  const fixedInstructions   = config.fixed_instructions || '';
   const specialNote         = config.special_note || '';
+  if (!systemPrompt.trim()) {
+    const err = new Error('No horoscope system prompt configured for this client. Set it in Plugins > Horoscope Reading before generating.');
+    err.statusCode = 422;
+    throw err;
+  }
   const quantumSystemPrompt = config.quantum_system_prompt || '';
 
   console.log('[HOROSCOPE] config.quantum_system_prompt:', quantumSystemPrompt ? `(${quantumSystemPrompt.length} chars) "${quantumSystemPrompt.slice(0, 120)}${quantumSystemPrompt.length > 120 ? '...' : ''}"` : '(empty — will use built-in default)');
@@ -984,7 +974,10 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
       config.horoscope_sections.map(s => [s.label, s.guide || ''])
     );
   } else {
-    activeSections = isVip ? [...SECTIONS, VIP_SECTION] : [...SECTIONS];
+    // No built-in section list: a client's report structure is their own product
+    // definition, so an unconfigured client generates nothing rather than
+    // inheriting someone else's table of contents.
+    activeSections = [];
     sectionGuidesOverride = config.section_guides || null;
   }
 
@@ -1035,7 +1028,7 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
     for (const sec of activeSections) {
       // Sections are generated purely from the system prompt + chart data.
       // Special questions are NOT injected here — they are answered separately (step 8).
-      const sectionPrompt = buildSectionPrompt(sec, sectionGuidesOverride);
+      const sectionPrompt = buildSectionPrompt(sec, sectionGuidesOverride, fixedInstructions);
       console.log(`\n[HORO-CHAT] ── REQUEST: "${sec}" ${'─'.repeat(Math.max(0, 50 - sec.length))}`);
       console.log('[HORO-CHAT] userPrompt:\n' + sectionPrompt);
       console.log('[HORO-CHAT] ──────────────────────────────────────────────────────');
@@ -1201,14 +1194,14 @@ async function generateWaMessage(clientId, orderId, horoscopeData, waMessageProm
  * Regenerate a single horoscope section using saved chart data.
  * Returns the new section text.
  */
-async function regenerateHoroscopeSection({ clientId, chartData, systemPrompt, sectionKey, sectionGuide, specialAnswers = [], otherSections = null }) {
+async function regenerateHoroscopeSection({ clientId, chartData, systemPrompt, sectionKey, sectionGuide, specialAnswers = [], otherSections = null, fixedInstructions = '' }) {
   const chartDataJson = JSON.stringify(chartData, null, 2) + todayContextBlock();
   // Section regeneration uses only the system prompt + chart data — special questions
   // are never injected into sections (they are answered separately).
   const sysInstruction = systemPrompt + '\n\nමෙම කේන්ද්‍ර දත්ත සම්පූර්ණ වාර්තාව සඳහා පදනම වේ:\n\n' + chartDataJson;
 
   const guidesOverride = sectionGuide ? { [sectionKey]: sectionGuide } : null;
-  const prompt = buildSectionPrompt(sectionKey, guidesOverride);
+  const prompt = buildSectionPrompt(sectionKey, guidesOverride, fixedInstructions);
 
   console.log(`[REGEN-SECTION] key="${sectionKey}"`);
   console.log(`[REGEN-SECTION] systemInstruction (${sysInstruction.length} chars total, chart data omitted):\n` + systemPrompt);
@@ -1251,7 +1244,5 @@ module.exports = {
   generateWaMessage,
   parseSinhalaDate,
   parseSinhalaTime,
-  SECTIONS,
-  QUANTUM_REPORT_TITLE,
-  SECTION_GUIDES,
+  renderYear,
 };

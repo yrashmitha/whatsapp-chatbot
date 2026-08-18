@@ -8,7 +8,7 @@
 
 const db   = require('../db');
 const { generateAstroMessage, DEFAULT_ASTRO_PROMPT } = require('../services/astro');
-const { generateHoroscope, buildHoroscopeDoc, buildQuantumDoc, regenerateHoroscopeSection, generateWaMessage, SECTIONS, SECTION_GUIDES, QUANTUM_REPORT_TITLE, parseSinhalaDate, parseSinhalaTime } = require('../services/horoscope');
+const { generateHoroscope, buildHoroscopeDoc, buildQuantumDoc, regenerateHoroscopeSection, generateWaMessage, renderYear, parseSinhalaDate, parseSinhalaTime } = require('../services/horoscope');
 const { calculateVedicChart } = require('../services/vedicChart');
 const { getFreeAstroKey, getGeminiKey, getGenAI, MissingClientKeyError } = require('../services/clientKeys');
 const { getBrand, DEFAULT_BRAND } = require('../services/branding');
@@ -16,17 +16,13 @@ const { analyzeAura, generateQuantumReading, generateQuantumSections } = require
 const {
   generateMarriageReading, generateMarriageSectionText, generateMarriageWaMessage,
   buildMarriageDoc, resolveMarriageConfig, historyFromSections,
-  MARRIAGE_REPORT_TITLE, DEFAULT_MARRIAGE_SECTIONS, DEFAULT_MARRIAGE_SYSTEM_PROMPT,
 } = require('../services/marriage');
 const {
   generateMatchReading, generateMatchSectionText, buildMatchDoc, buildCoupleContext,
   resolveMatchConfig, historyFromSections: matchHistoryFromSections,
-  MATCH_REPORT_TITLE, DEFAULT_MATCH_SECTIONS, DEFAULT_MATCH_SYSTEM_PROMPT,
-  DEFAULT_MATCH_SPECIAL_NOTE,
 } = require('../services/matchReport');
-const { buildPorondamDoc, PORONDAM_REPORT_TITLE } = require('../services/porondamReport');
+const { buildPorondamDoc } = require('../services/porondamReport');
 
-const { DEFAULT_TAROT_PROMPT } = require('../services/tarot');
 const { generateFollowUp, DEFAULT_FOLLOWUP_PROMPT } = require('../services/followup');
 const { syncAudienceForClient, createAudienceForClient, getRecentEvents } = require('../services/metaConversions');
 const resolveClientId = require('../middleware/resolveClientId');
@@ -272,14 +268,20 @@ async function getPluginConfig(req, res) {
     } else if (pluginId === 'horoscope_reading') {
       defaults = {
         name: 'Horoscope Reading', system_prompt: '', quantum_system_prompt: '', aura_system_prompt: '',
-        horoscope_sections: [], quantum_sections: [], section_guides: SECTION_GUIDES, special_note: '',
+        horoscope_sections: [], quantum_sections: [], section_guides: {}, special_note: '',
+        fixed_instructions: '', vip_section_label: '', remedies_section_label: '',
+        special_questions_title: '', quantum_report_title: '', porondam_report_title: '',
         api_key: '', wa_message_prompt: '', ai_fill_prompt: DEFAULT_AI_FILL_PROMPT, quantum_enabled: true,
-        marriage_system_prompt: DEFAULT_MARRIAGE_SYSTEM_PROMPT,
-        marriage_sections: DEFAULT_MARRIAGE_SECTIONS,
+        // Editorial fields start empty. Seeding them from a built-in default
+        // would put whichever client wrote that text into every other client's
+        // report the moment they forgot to fill a field in.
+        marriage_system_prompt: '', marriage_sections: [],
         marriage_special_note: '', marriage_wa_prompt: '',
-        match_system_prompt: DEFAULT_MATCH_SYSTEM_PROMPT,
-        match_sections: DEFAULT_MATCH_SECTIONS,
-        match_special_note: DEFAULT_MATCH_SPECIAL_NOTE,
+        marriage_report_title: '', marriage_fixed_instructions: '',
+        match_system_prompt: '', match_sections: [],
+        match_special_note: '', match_report_title: '',
+        match_questions_title: '', match_fixed_instructions: '',
+        match_question_instructions: '',
         match_ai_fill_prompt: DEFAULT_MATCH_AI_FILL_PROMPT,
       };
     } else if (pluginId === 'ai_call_answering') {
@@ -294,20 +296,19 @@ async function getPluginConfig(req, res) {
     } else if (pluginId === 'meta_conversions') {
       defaults = { name: 'Meta Conversions', pixel_id: '', api_key: '', ad_account_id: '', audience_id: '' };
     } else if (pluginId === 'tarot_reading') {
-      const { DEFAULT_PAGE1_BODY, DEFAULT_PAGE2_BODY, DEFAULT_PAGE4_BODY } = require('../services/tarot');
-      defaults = { name: 'Tarot Reading', prompt: DEFAULT_TAROT_PROMPT, page1_body: DEFAULT_PAGE1_BODY, page2_body: DEFAULT_PAGE2_BODY, page4_body: DEFAULT_PAGE4_BODY };
+      defaults = {
+        name: 'Tarot Reading', prompt: '',
+        page1_heading: '', page1_body: '',
+        page2_heading: '', page2_body: '',
+        page4_heading: '', page4_body: '',
+      };
     } else {
       defaults = { name: pluginId, prompt: '' };
     }
     const merged = { ...defaults, ...config };
 
-    // An empty saved match_sections array means "unset", which is how resolveMatchConfig
-    // treats it at generation time. Surface the defaults here too, otherwise deleting the
-    // last section leaves the settings editor permanently blank with no way back.
-    if (pluginId === 'horoscope_reading'
-        && Array.isArray(merged.match_sections) && merged.match_sections.length === 0) {
-      merged.match_sections = DEFAULT_MATCH_SECTIONS;
-    }
+    // Empty match_sections now means exactly that: the client has not defined
+    // their compatibility report yet, and generation will refuse until they do.
 
     res.json(merged);
   } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
@@ -327,7 +328,8 @@ async function updatePluginConfig(req, res) {
     return res.status(403).json({ error: 'Forbidden' });
   }
   const { pluginId } = req.params;
-  const { name, prompt, api_key, system_prompt, quantum_system_prompt, aura_system_prompt, horoscope_sections, quantum_sections, section_guides, special_note, wa_message_prompt, ai_fill_prompt, greeting, tts_voice, stt_language, verification_prompt, page1_body, page2_body, page4_body, quantum_enabled, pixel_id, ad_account_id, audience_id, marriage_system_prompt, marriage_sections, marriage_special_note, marriage_wa_prompt, match_system_prompt, match_sections, match_special_note, match_ai_fill_prompt } = req.body;
+  const { name, prompt, api_key, system_prompt, quantum_system_prompt, aura_system_prompt, horoscope_sections, quantum_sections, section_guides, special_note, wa_message_prompt, ai_fill_prompt, greeting, tts_voice, stt_language, verification_prompt, page1_body, page2_body, page4_body, quantum_enabled, pixel_id, ad_account_id, audience_id, marriage_system_prompt, marriage_sections, marriage_special_note, marriage_wa_prompt, match_system_prompt, match_sections, match_special_note, match_ai_fill_prompt,
+    fixed_instructions, vip_section_label, remedies_section_label, special_questions_title, quantum_report_title, porondam_report_title, porondam_special_note, marriage_report_title, marriage_fixed_instructions, match_report_title, match_questions_title, match_fixed_instructions, match_question_instructions, page1_heading, page2_heading, page4_heading } = req.body;
   try {
     const existing = await db.getPluginConfig(clientId, pluginId);
     const update = { ...existing };
@@ -362,6 +364,23 @@ async function updatePluginConfig(req, res) {
     if (pixel_id !== undefined)      update.pixel_id      = pixel_id;
     if (ad_account_id !== undefined) update.ad_account_id = ad_account_id;
     if (audience_id !== undefined)   update.audience_id   = audience_id;
+    // Per-client report titles, section labels and fixed instructions.
+    if (fixed_instructions !== undefined) update.fixed_instructions = fixed_instructions;
+    if (vip_section_label !== undefined) update.vip_section_label = vip_section_label;
+    if (remedies_section_label !== undefined) update.remedies_section_label = remedies_section_label;
+    if (special_questions_title !== undefined) update.special_questions_title = special_questions_title;
+    if (quantum_report_title !== undefined) update.quantum_report_title = quantum_report_title;
+    if (porondam_report_title !== undefined) update.porondam_report_title = porondam_report_title;
+    if (porondam_special_note !== undefined) update.porondam_special_note = porondam_special_note;
+    if (marriage_report_title !== undefined) update.marriage_report_title = marriage_report_title;
+    if (marriage_fixed_instructions !== undefined) update.marriage_fixed_instructions = marriage_fixed_instructions;
+    if (match_report_title !== undefined) update.match_report_title = match_report_title;
+    if (match_questions_title !== undefined) update.match_questions_title = match_questions_title;
+    if (match_fixed_instructions !== undefined) update.match_fixed_instructions = match_fixed_instructions;
+    if (match_question_instructions !== undefined) update.match_question_instructions = match_question_instructions;
+    if (page1_heading !== undefined) update.page1_heading = page1_heading;
+    if (page2_heading !== undefined) update.page2_heading = page2_heading;
+    if (page4_heading !== undefined) update.page4_heading = page4_heading;
     await db.upsertPluginConfig(clientId, pluginId, update);
     res.json({ ok: true });
   } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
@@ -624,6 +643,8 @@ async function downloadHoroscope(req, res) {
       birthTime:      cf.birth_time || '',
       sectionOrder:   config.horoscope_sections || [],
       brand:          await getBrand(clientId),
+      remediesLabel:  config.remedies_section_label || '',
+      specialQuestionsTitle: config.special_questions_title || '',
     });
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
@@ -670,6 +691,8 @@ async function downloadHoroscopePdf(req, res) {
       birthTime:      cf.birth_time || '',
       sectionOrder:   config.horoscope_sections || [],
       brand:          await getBrand(clientId),
+      remediesLabel:  config.remedies_section_label || '',
+      specialQuestionsTitle: config.special_questions_title || '',
     });
 
     const uid  = `${orderId}-${Date.now()}`;
@@ -762,6 +785,7 @@ async function downloadQuantumDocx(req, res) {
       ? JSON.parse(r.rows[0].custom_fields || '{}')
       : (r.rows[0].custom_fields || {});
 
+    const config = clientId ? await db.getPluginConfig(clientId, 'horoscope_reading') : {};
     const buffer = await buildQuantumDoc({
       customerName:        cf.customer_name || '',
       quantumData:         hd.quantum_data,
@@ -769,6 +793,7 @@ async function downloadQuantumDocx(req, res) {
       quantumReading:      hd.quantum_reading      || null,
       quantumSectionsData: hd.quantum_sections_data || null,
       brand:               await getBrand(clientId),
+      reportTitle:         config.quantum_report_title || '',
     });
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
@@ -797,6 +822,7 @@ async function downloadQuantumPdf(req, res) {
       ? JSON.parse(r.rows[0].custom_fields || '{}')
       : (r.rows[0].custom_fields || {});
 
+    const config = clientId ? await db.getPluginConfig(clientId, 'horoscope_reading') : {};
     const docxBuffer = await buildQuantumDoc({
       customerName:        cf.customer_name || '',
       quantumData:         hd.quantum_data,
@@ -804,6 +830,7 @@ async function downloadQuantumPdf(req, res) {
       quantumReading:      hd.quantum_reading      || null,
       quantumSectionsData: hd.quantum_sections_data || null,
       brand:               await getBrand(clientId),
+      reportTitle:         config.quantum_report_title || '',
     });
 
     const uid  = `${orderId}-qc-${Date.now()}`;
@@ -831,11 +858,13 @@ async function downloadQuantumPdf(req, res) {
     const rawPdf = fs.readFileSync(tmpPdf);
     const pdfDoc = await PDFDocument.load(rawPdf);
     const brandQ = await getBrand(clientId);
-    pdfDoc.setTitle(QUANTUM_REPORT_TITLE);
+    const qCfg = await db.getPluginConfig(clientId, 'horoscope_reading');
+    const quantumTitle = qCfg.quantum_report_title || '';
+    pdfDoc.setTitle(quantumTitle);
     pdfDoc.setAuthor(brandQ.pdf.author || '');
     pdfDoc.setCreator(brandQ.pdf.producer || '');
     pdfDoc.setProducer(brandQ.pdf.producer || '');
-    pdfDoc.setSubject(QUANTUM_REPORT_TITLE);
+    pdfDoc.setSubject(quantumTitle);
     pdfDoc.setKeywords([]);
     const buffer = Buffer.from(await pdfDoc.save());
     fs.rm(tmpHome, { recursive: true, force: true }, () => {});
@@ -957,6 +986,7 @@ async function regenerateHoroscopeSectionHandler(req, res) {
       clientId,
       chartData:     hd.chart_data,
       systemPrompt,
+      fixedInstructions: config.fixed_instructions || '',
       sectionKey:    label.trim(),
       sectionGuide,
       specialAnswers: hd.special_answers || [],
@@ -1446,7 +1476,7 @@ async function regenerateMarriageSectionHandler(req, res) {
     if (!order.hd.chart_data) return res.status(400).json({ error: 'No chart data found.' });
 
     const config = await db.getPluginConfig(clientId, 'horoscope_reading');
-    const { sections, systemPrompt } = resolveMarriageConfig(config);
+    const { sections, systemPrompt, fixedInstructions } = resolveMarriageConfig(config);
     const sectionDef = sections.find(s => s.label === label.trim());
     if (!sectionDef) return res.status(404).json({ error: `Section "${label}" not found in config.` });
 
@@ -1456,6 +1486,7 @@ async function regenerateMarriageSectionHandler(req, res) {
     // sections (minus this one) — otherwise the regenerated text repeats its neighbours.
     const content = await generateMarriageSectionText({
       clientId,
+      fixedInstructions,
       chartData:    order.hd.chart_data,
       systemPrompt,
       label:        sectionDef.label,
@@ -1509,9 +1540,10 @@ async function marriageDocxFor(orderId, clientId) {
     const e = new Error('No marriage reading generated yet'); e.status = 404; throw e;
   }
   const config = clientId ? await db.getPluginConfig(clientId, 'horoscope_reading') : {};
-  const { sections, specialNote } = resolveMarriageConfig(config);
+  const { sections, specialNote, reportTitle } = resolveMarriageConfig(config);
 
   const buffer = await buildMarriageDoc({
+    reportTitle,
     customerName: order.cf.customer_name || '',
     sections:     data,
     specialNote,
@@ -1520,7 +1552,7 @@ async function marriageDocxFor(orderId, clientId) {
     sectionOrder: sections,
     brand:        await getBrand(clientId),
   });
-  return { buffer, order };
+  return { buffer, order: { ...order, reportTitle } };
 }
 
 /** Filename stem: <phone>-<birthday>-marriage */
@@ -1554,8 +1586,8 @@ async function downloadMarriagePdf(req, res) {
   try {
     const { buffer: docxBuffer, order } = await marriageDocxFor(orderId, resolveClientId(req));
     const pdf = await docxBufferToPdf(docxBuffer, `marriage-${orderId}-${Date.now()}`, {
-      title:   MARRIAGE_REPORT_TITLE,
-      subject: MARRIAGE_REPORT_TITLE,
+      title:   order.reportTitle,
+      subject: order.reportTitle,
       brand:   await getBrand(resolveClientId(req)),
     });
     res.setHeader('Content-Type', 'application/pdf');
@@ -1824,7 +1856,7 @@ async function regenerateMatchSectionHandler(req, res) {
     }
 
     const config = await db.getPluginConfig(clientId, 'horoscope_reading');
-    const { sections, systemPrompt } = resolveMatchConfig(config);
+    const { sections, systemPrompt, fixedInstructions } = resolveMatchConfig(config);
     const sectionDef = sections.find(s => s.label === label.trim());
     if (!sectionDef) return res.status(404).json({ error: `Section "${label}" not found in config.` });
 
@@ -1834,6 +1866,7 @@ async function regenerateMatchSectionHandler(req, res) {
     // it the rewrite has no idea what the rest of the report says.
     const content = await generateMatchSectionText({
       clientId,
+      fixedInstructions,
       coupleContext: buildCoupleContext(order.hd),
       systemPrompt,
       label:   sectionDef.label,
@@ -1890,9 +1923,11 @@ async function matchDocxFor(orderId, clientId) {
     const e = new Error('No match making reading generated yet'); e.status = 404; throw e;
   }
   const config = clientId ? await db.getPluginConfig(clientId, 'horoscope_reading') : {};
-  const { sections, specialNote } = resolveMatchConfig(config);
+  const { sections, specialNote, reportTitle, questionsTitle } = resolveMatchConfig(config);
 
   const buffer = await buildMatchDoc({
+    reportTitle,
+    questionsTitle,
     hd:             order.hd,
     sections:       data,
     specialNote,
@@ -1900,7 +1935,7 @@ async function matchDocxFor(orderId, clientId) {
     specialAnswers: order.hd.match_special_answers || [],
     brand:          await getBrand(clientId),
   });
-  return { buffer, order };
+  return { buffer, order: { ...order, reportTitle } };
 }
 
 /** Filename stem: <phone>-<boy birthday>-match */
@@ -1935,8 +1970,8 @@ async function downloadMatchPdf(req, res) {
   try {
     const { buffer: docxBuffer, order } = await matchDocxFor(orderId, resolveClientId(req));
     const pdf = await docxBufferToPdf(docxBuffer, `match-${orderId}-${Date.now()}`, {
-      title:   MATCH_REPORT_TITLE,
-      subject: MATCH_REPORT_TITLE,
+      title:   order.reportTitle,
+      subject: order.reportTitle,
       brand:   await getBrand(resolveClientId(req)),
     });
     res.setHeader('Content-Type', 'application/pdf');
@@ -1972,12 +2007,14 @@ async function porondamDocxFor(orderId, clientId) {
   }
 
   const config = clientId ? await db.getPluginConfig(clientId, 'horoscope_reading') : {};
+  const porondamTitle = config?.porondam_report_title || '';
   const buffer = await buildPorondamDoc(
     boy, girl, boy.chart_data, girl.chart_data,
     config?.porondam_special_note || undefined,
     await getBrand(clientId),
+    porondamTitle,
   );
-  return { buffer, order };
+  return { buffer, order: { ...order, reportTitle: porondamTitle } };
 }
 
 /** Filename stem: <phone>-<boy birthday>-porondam */
@@ -2009,8 +2046,8 @@ async function downloadPorondamPdf(req, res) {
   try {
     const { buffer: docxBuffer, order } = await porondamDocxFor(orderId, resolveClientId(req));
     const pdf = await docxBufferToPdf(docxBuffer, `porondam-${orderId}-${Date.now()}`, {
-      title:   PORONDAM_REPORT_TITLE,
-      subject: PORONDAM_REPORT_TITLE,
+      title:   order.reportTitle,
+      subject: order.reportTitle,
       brand:   await getBrand(resolveClientId(req)),
     });
     res.setHeader('Content-Type', 'application/pdf');

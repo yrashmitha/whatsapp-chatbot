@@ -347,6 +347,9 @@ async function downloadTarotDocx(req, res) {
       page1_body: pluginCfg.page1_body || undefined,
       page2_body: pluginCfg.page2_body || undefined,
       page4_body: pluginCfg.page4_body || undefined,
+      page1_heading: pluginCfg.page1_heading || '',
+      page2_heading: pluginCfg.page2_heading || '',
+      page4_heading: pluginCfg.page4_heading || '',
       brand,
     });
     const last4 = (r.rows[0].phone_number || '').replace(/\D/g, '').slice(-4) || '0000';
@@ -408,6 +411,9 @@ async function downloadTarotPdfByOrder(req, res) {
       page1_body: pluginCfg.page1_body || undefined,
       page2_body: pluginCfg.page2_body || undefined,
       page4_body: pluginCfg.page4_body || undefined,
+      page1_heading: pluginCfg.page1_heading || '',
+      page2_heading: pluginCfg.page2_heading || '',
+      page4_heading: pluginCfg.page4_heading || '',
       brand,
     });
     fs.writeFileSync(tmpDocx, docxBuffer);

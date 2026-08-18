@@ -22,7 +22,6 @@ const { buildSectionsDoc } = require('./horoscope');
 const { calculate20Porondam, getNakshatraIndex, getRashiIndex, POROONDAM_DESCRIPTIONS } = require('./porondam');
 const { buildChartTable } = require('./chartTable');
 
-const PORONDAM_REPORT_TITLE = 'විසි පොරොන්දම් සම්පූර්ණ වාර්තාව';
 
 /** Sanskrit rashi names by index — the Sinhala map is keyed on these. */
 const RASHIS_EN = [
@@ -160,7 +159,7 @@ function buildPorondamSections(porondam, boy, girl, boyChart, girlChart) {
  * @param {string} [specialNote]
  * @returns {Promise<Buffer>} docx buffer
  */
-async function buildPorondamDoc(boy, girl, boyChart, girlChart, specialNote, brand) {
+async function buildPorondamDoc(boy, girl, boyChart, girlChart, specialNote, brand, reportTitle) {
   const porondam = computePorondam(boyChart, girlChart);
   const sections = buildPorondamSections(porondam, boy, girl, boyChart, girlChart);
 
@@ -174,7 +173,7 @@ async function buildPorondamDoc(boy, girl, boyChart, girlChart, specialNote, bra
   return buildSectionsDoc({
     brand,
     customerName: [boy && boy.name, girl && girl.name].filter(Boolean).join(' ⚭ ') || 'ගැළපීම',
-    reportTitle: PORONDAM_REPORT_TITLE,
+    reportTitle: reportTitle || '',
     sections,
     specialNote: specialNote || undefined,
     subtitleLines: [personLine(boy, boyChart), '⚭', personLine(girl, girlChart)].filter(Boolean),
@@ -188,5 +187,4 @@ module.exports = {
   buildPorondamDoc,
   lagnaSinhala,
   moonLongitude,
-  PORONDAM_REPORT_TITLE,
 };

@@ -31,30 +31,6 @@ const PYTHAGOREAN_MAP = {
   I: 9, R: 9,
 };
 
-const AURA_PROMPT = `You are a Bio-Energy Image Analysis Expert. Analyze the attached human selfie.
-
-Scoring rules:
-- af_score: 0.1 (critically low energy) to 1.0 (peak energy). Base on eye radiance, skin clarity, posture.
-- primary_chakra: dominant energy center from facial symmetry and tonal patterns.
-- detected_blockages: list of visible stress or tension patterns (empty array if none).
-
-LANGUAGE: All string values must be written in Sinhala (සිංහල). Only af_score is a number.
-
-CRITICAL: You MUST return ONLY a single JSON object with EXACTLY this structure. No markdown fences, no extra text, no missing fields.
-
-{
-  "aura_analysis": {
-    "af_score": 0.82,
-    "dominant_color": "විදුලි නිල්",
-    "energy_level": "ඉහළ / ජීවමාන",
-    "primary_chakra": "කණ්ඨ චක්‍රය / තෙවන නේත්‍රය",
-    "aura_stability": "ස්ථාවර",
-    "detected_blockages": ["හකු ප්‍රදේශයේ සුළු ආතතියක්"],
-    "recommendation_hint": ["නිර්මාණශීලී ප්‍රකාශනය කෙරෙහි අවධානය යොමු කරන්න.", "දිනපතා ජල පානය වැඩි කරන්න."]
-  }
-}
-
-All 7 fields inside aura_analysis are required. af_score must be a number between 0.1 and 1.0.`;
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -117,9 +93,13 @@ async function analyzeAura(imageBuffer, mimeType, apiKey, systemPromptOverride) 
   const key = apiKey;
   if (!key) throw new Error('No Gemini API key supplied for quantum analysis');
 
-  const prompt = (systemPromptOverride && systemPromptOverride.trim())
-    ? systemPromptOverride.trim()
-    : AURA_PROMPT;
+  // Client-owned persona: no built-in fallback.
+  const prompt = (systemPromptOverride || '').trim();
+  if (!prompt) {
+    const err = new Error('No aura analysis prompt configured for this client. Set it in Plugins > Horoscope Reading.');
+    err.statusCode = 422;
+    throw err;
+  }
 
   console.log('[AURA] ── REQUEST ───────────────────────────────────────');
   console.log(`[AURA] model: gemini-2.5-flash  temperature=0.2  maxTokens=1024  mimeType=${mimeType}  imageSize=${imageBuffer.length} bytes`);
@@ -190,23 +170,6 @@ async function analyzeAura(imageBuffer, mimeType, apiKey, systemPromptOverride) 
 
 // ── Quantum Life Architect reading ────────────────────────────────────────────
 
-const QUANTUM_READING_SYSTEM = `ඔබ ජීව ශක්ති විශ්ලේෂණය සහ ක්වොන්ටම් ශක්ති ගවේෂණය ක්ෂේත්‍රයේ ප්‍රවීණ, දයානුකම්පිත විශේෂඥයෙකි.
-
-ඔබ ලබා දෙන පිළිතුර කිසිවිටෙකත් යන්ත්‍රයකින් හෝ මෘදුකාංගයකින් ජනනය කළ එකක් සේ නොපෙනිය යුතුය. ප්‍රවීණ ඇදුරුතුමෙකු ස්වකීය සේවාදායකයාට අසල හිඳගෙන පහදා දෙන ආකාරයේ, ගලාගෙන යන, සන්සුන් කථන ශෛලියකින් ලිවිය යුතුය.
-
-වෘත්තීය නීති:
-- ස්වයං-හැඳින්වීම් සහ 'AI', 'දත්ත', 'පද්ධතිය', 'ගණනය' වැනි යාන්ත්‍රික වචන කිසිසේත් භාවිතා නොකරන්න
-- පාරිභෝගිකයා "ඔබ" ලෙස ඇමතන්න — "දේවීනි", "ගෞරවනීය" ආදී අතිශය භක්තිමත් ආමන්ත්‍රණ එපා
-- ස්තුති කිරීම්, ආශිර්වාද, හෝ හැඳින්වීම් නොමැතිව කෙලින්ම කරුණු විග්‍රහ ආරම්භ කරන්න
-- කටුක කරුණු මනෝවිද්‍යාත්මකව සමනය කර, ධෛර්යවත් කරන ශෛලියෙන් ඉදිරිපත් කරන්න
-- ඔබේ සිතුවිලි, හැඟීම් සහ අභ්‍යන්තර ශක්ති රටා "අවබෝධ කරගත් කෙනෙකු ලෙස" (empathetic observer) ලෙස පවසන්න
-
-ආකෘති නීති (Format — අනිවාර්ය):
-- **සම්පූර්ණයෙන්ම සිංහල භාෂාවෙන් පමණක් ලියන්න — කිසිදු ඉංග්‍රීසි වචනයක් භාවිතා නොකරන්න**
-- ප්‍රධාන අනු-මාතෘකා '###' සලකුණෙන් ආරම්භ කරන්න
-- වැදගත් කරුණු **ද්විතල තරු ලකුණින්** ඉස්මතු කරන්න (උදා: **විශේෂ ශක්ති ගැලපීමක්**)
-- HTML ටැග් (<h3>, <b>) කිසිසේත් නොයොදන්න
-- ජ්‍යෝතිෂ / සාම්ප්‍රදායික ග්‍රහ භාෂාව නොයොදන්න — ජෛව ශක්ති (bio-energetic) ක්ෂේත්‍රයේ සංකල්ප ලෙස ඉදිරිපත් කරන්න`;
 
 /**
  * Build the user-turn message for the Quantum Life Architect call.
@@ -273,9 +236,12 @@ async function generateQuantumReading(quantumData, auraAnalysis, apiKey, systemP
   const key = apiKey;
   if (!key) throw new Error('No Gemini API key supplied for quantum analysis');
 
-  const sysPrompt = (systemPromptOverride && systemPromptOverride.trim())
-    ? systemPromptOverride.trim()
-    : QUANTUM_READING_SYSTEM;
+  const sysPrompt = (systemPromptOverride || '').trim();
+  if (!sysPrompt) {
+    const err = new Error('No quantum reading prompt configured for this client. Set it in Plugins > Horoscope Reading.');
+    err.statusCode = 422;
+    throw err;
+  }
 
   const prompt = buildQuantumReadingPrompt(quantumData, auraAnalysis);
 
@@ -480,9 +446,12 @@ async function generateQuantumSections(quantumData, auraAnalysis, sections, apiK
   if (!key) throw new Error('No Gemini API key supplied for quantum analysis');
   if (!Array.isArray(sections) || sections.length === 0) return [];
 
-  const sysPrompt = (systemPrompt && systemPrompt.trim())
-    ? systemPrompt.trim()
-    : QUANTUM_READING_SYSTEM;
+  const sysPrompt = (systemPrompt || '').trim();
+  if (!sysPrompt) {
+    const err = new Error('No quantum reading prompt configured for this client. Set it in Plugins > Horoscope Reading.');
+    err.statusCode = 422;
+    throw err;
+  }
 
   const quantumContext = buildQuantumProfileContext(quantumData, auraAnalysis);
 
@@ -505,7 +474,7 @@ async function generateQuantumSections(quantumData, auraAnalysis, sections, apiK
 
   console.log('[QS] ══ SESSION START ════════════════════════════════════════════');
   console.log(`[QS] model: gemini-2.5-flash  temperature=0.5  maxTokens=2048  thinkingBudget=512`);
-  console.log(`[QS] systemPrompt: ${systemPrompt ? '(CUSTOM OVERRIDE)' : '(default QUANTUM_READING_SYSTEM)'}`);
+  console.log(`[QS] systemPrompt: ${sysPrompt.length} chars`);
   console.log('[QS] systemPrompt:\n' + sysPrompt);
   console.log(`[QS] sections to generate: ${sections.map(s => s.label).join(', ')}`);
   console.log(`[QS] dashaContext: ${dashaContext ? dashaContext.length + ' chars' : 'none'}`);
@@ -542,4 +511,4 @@ async function generateQuantumSections(quantumData, auraAnalysis, sections, apiK
   return results;
 }
 
-module.exports = { extractPlanetDegreesSum, analyzeAura, generateQuantumCode, generateQuantumReading, generateQuantumSections, QUANTUM_READING_SYSTEM };
+module.exports = { extractPlanetDegreesSum, analyzeAura, generateQuantumCode, generateQuantumReading, generateQuantumSections };

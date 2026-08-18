@@ -11,6 +11,7 @@ const jwtAuth       = require('../middleware/jwtAuth');
 const orderScope    = require('../middleware/orderScope');
 const { uploadMedia } = require('../config/multer');
 const {
+  addonCatalog,
   listAddons,
   toggleAddon,
   getAddonsStatus,
@@ -21,6 +22,10 @@ const {
   downloadTarotPdfByOrder,
   downloadTarotPdf,
 } = require('../controllers/addons.controller');
+
+// Addon catalog (any authenticated user) — GET /api/addons/catalog
+// Declared before /addons so the literal path is not shadowed.
+router.get('/addons/catalog',      jwtAuth, addonCatalog);
 
 // Addon management (superadmin only) — GET /api/addons, PUT /api/addons/:addonId
 router.get('/addons',              jwtAuth, listAddons);

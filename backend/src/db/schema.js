@@ -382,6 +382,21 @@ async function init() {
     await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS report_logo_width  INT NOT NULL DEFAULT 160`);
     await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS report_logo_height INT NOT NULL DEFAULT 160`);
 
+    // ── Backfill addons that replaced hardcoded gating ───────────────────────
+    // match_making and income_summary used to be decided by client ID in code.
+    // Grant them to whichever clients already have the horoscope addon so the
+    // switch to data-driven entitlement is not a feature removal. Idempotent,
+    // and ON CONFLICT DO NOTHING means a later boot cannot re-enable something
+    // an admin has since turned off.
+    await pool.query(`
+      INSERT INTO client_addons (client_id, addon_id, enabled)
+      SELECT ca.client_id, a.addon_id, TRUE
+        FROM client_addons ca
+        CROSS JOIN (VALUES ('match_making'), ('income_summary')) AS a(addon_id)
+       WHERE ca.addon_id = 'horoscope_reading' AND ca.enabled = TRUE
+      ON CONFLICT (client_id, addon_id) DO NOTHING
+    `);
+
     // ── Quick replies ─────────────────────────────────────────────────────────
     await pool.query(`
       CREATE TABLE IF NOT EXISTS quick_replies (

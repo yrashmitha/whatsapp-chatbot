@@ -6,7 +6,7 @@
 
 'use strict';
 
-const { pool, db, IS_PG } = require('./connection');
+const { pool, db, IS_PG, pgQuery } = require('./connection');
 
 /**
  * Retrieve the stored configuration object for a plugin + client pair.
@@ -102,4 +102,23 @@ async function upsertPluginCustomerData(clientId, phone, pluginId, data) {
   }
 }
 
-module.exports = { getPluginConfig, upsertPluginConfig, getPluginCustomerData, upsertPluginCustomerData };
+/**
+ * Whether a client has an addon enabled.
+ *
+ * Single source of the entitlement check, so feature access is decided by data
+ * rather than by client IDs baked into the code.
+ *
+ * @param {string} clientId
+ * @param {string} addonId
+ * @returns {Promise<boolean>}
+ */
+async function hasAddon(clientId, addonId) {
+  if (!clientId || !addonId) return false;
+  const { rows } = await pgQuery(
+    `SELECT 1 FROM client_addons WHERE client_id=$1 AND addon_id=$2 AND enabled=TRUE`,
+    [clientId, addonId]
+  );
+  return rows.length > 0;
+}
+
+module.exports = { getPluginConfig, upsertPluginConfig, getPluginCustomerData, upsertPluginCustomerData, hasAddon };

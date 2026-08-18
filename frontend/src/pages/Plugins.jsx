@@ -5,50 +5,8 @@ import Layout from '../components/Layout';
 import { useToast } from '../components/ui/Toast';
 import api from '../lib/api';
 
-const ALL_PLUGINS = [
-  {
-    id: 'astro_vedic_chart',
-    defaultName: 'Vedic Astro Chart',
-    description: "Generates personalized astrology-based WhatsApp messages using the customer's vedic birth chart.",
-  },
-  {
-    id: 'horoscope_reading',
-    defaultName: 'Horoscope Reading',
-    description: 'Generates full 10-section Vedic horoscope Word documents for payment_received orders.',
-  },
-  {
-    id: 'ai_call_answering',
-    defaultName: 'AI Call Answering',
-    description: 'Answers inbound Twilio phone calls with an AI agent, transcribes the conversation, and logs it in the CRM.',
-  },
-  {
-    id: 'image_analyzer',
-    defaultName: 'Image Analyzer',
-    description: 'Analyzes customer payment slips and PDFs using Gemini Vision. Extracts amount, date, and reference, and flags suspicious slips.',
-  },
-  {
-    id: 'tarot_reading',
-    defaultName: 'Tarot Reading',
-    description: 'Generates a 3-card tarot spread (Past / Present / Future) from the 78-card deck for a customer, interpreted by Gemini.',
-  },
-  {
-    id: 'media_extractor',
-    defaultName: 'Media Extraction',
-    description: 'Customize the Gemini prompt used to extract content from customer-sent images, PDFs, audio, and documents.',
-  },
-  {
-    id: 'follow_up_generator',
-    defaultName: 'Follow-up Generator',
-    description: 'Customize the prompt used to draft follow-up messages based on a customer\'s conversation history.',
-  },
-  {
-    id: 'meta_conversions',
-    defaultName: 'Meta Conversions',
-    description: 'Sends Lead and Purchase events to Meta CAPI when orders and payments are processed. Syncs paid customers to a Meta Custom Audience for lookalike targeting.',
-  },
-];
 
-function PluginCard({ pluginMeta, clientId, superAdmin }) {
+function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
   const toast = useToast();
   const isHoroscope       = pluginMeta.id === 'horoscope_reading';
   const isCallAnswering   = pluginMeta.id === 'ai_call_answering';
@@ -78,8 +36,8 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
   const [matchSections, setMatchSections]               = useState([]);
   const [matchSpecialNote, setMatchSpecialNote]         = useState('');
   const [matchAiFillPrompt, setMatchAiFillPrompt]       = useState('');
-  // Match making is pj-only; the backend enforces the same rule via MATCH_CLIENTS.
-  const showMatch = superAdmin || clientId === 'pj';
+  // Entitlement, not identity: the backend enforces the same addon check.
+  const showMatch = enabledAddons.includes('match_making');
   const [greeting, setGreeting]         = useState('');
   const [ttsVoice, setTtsVoice]                   = useState('');
   const [sttLanguage, setSttLanguage]             = useState('');
@@ -103,7 +61,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
     api.get(`/plugins/${pluginMeta.id}/config`, { params: { client_id: clientId } })
       .then(r => {
         setConfig(r.data);
-        setName(r.data.name || pluginMeta.defaultName);
+        setName(r.data.name || pluginMeta.name);
         setPrompt(r.data.prompt || '');
         setApiKey(r.data.api_key || '');
         setSystemPrompt(r.data.system_prompt || '');
@@ -139,7 +97,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
       })
       .catch(() => {
         setConfig({});
-        setName(pluginMeta.defaultName);
+        setName(pluginMeta.name);
         setPrompt('');
         setApiKey('');
         setSystemPrompt('');
@@ -232,7 +190,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin }) {
   return (
     <div className="p-4 bg-white border border-slate-200 rounded-xl flex flex-col gap-3">
       <div>
-        <div className="text-sm font-semibold text-slate-800 mb-0.5">{name || pluginMeta.defaultName}</div>
+        <div className="text-sm font-semibold text-slate-800 mb-0.5">{name || pluginMeta.name}</div>
         <p className="text-xs text-slate-500">{pluginMeta.description}</p>
         {superAdmin && (
           <p className="text-xs text-slate-400 mt-0.5">Plugin ID: <code className="font-mono">{pluginMeta.id}</code></p>
@@ -969,8 +927,17 @@ export default function Plugins() {
     enabled: !!clientId,
   });
 
+  // The catalog is served by the backend so there is exactly one definition of
+  // what each addon is, rather than a copy here that drifts out of sync.
+  const { data: catalog } = useQuery({
+    queryKey: ['addons-catalog'],
+    queryFn: () => api.get('/addons/catalog').then(r => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+
   const enabledAddons = addonsData?.addons || [];
-  const visiblePlugins = ALL_PLUGINS.filter(p => enabledAddons.includes(p.id));
+  const visiblePlugins = (catalog || [])
+    .filter(p => p.configurable && enabledAddons.includes(p.id));
 
   return (
     <Layout>
@@ -988,7 +955,7 @@ export default function Plugins() {
         {clientId && visiblePlugins.length > 0 && (
           <div className="flex flex-col gap-4">
             {visiblePlugins.map(p => (
-              <PluginCard key={p.id} pluginMeta={p} clientId={clientId} superAdmin={superAdmin} />
+              <PluginCard key={p.id} pluginMeta={p} clientId={clientId} superAdmin={superAdmin} enabledAddons={enabledAddons} />
             ))}
           </div>
         )}

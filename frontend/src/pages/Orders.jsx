@@ -61,9 +61,10 @@ export default function Orders() {
   });
   const showTarot = addonsStatus?.addons?.includes('tarot_reading');
 
-  const showIncome = clientId === 'pj';
-  // Match making is a pj-only report; the backend enforces the same rule (MATCH_CLIENTS).
-  const showMatch  = showHoroscope && (superAdmin || clientId === 'pj');
+  // Feature access comes from the client's enabled addons, never a client ID.
+  // The backend enforces the same entitlement on every matching endpoint.
+  const showIncome = !!addonsStatus?.addons?.includes('income_summary');
+  const showMatch  = showHoroscope && !!addonsStatus?.addons?.includes('match_making');
   const { data: incomeData } = useQuery({
     queryKey: ['orders-income-summary', clientId],
     queryFn: () => api.get('/orders/income-summary', { params: { client_id: clientId } }).then(r => r.data),

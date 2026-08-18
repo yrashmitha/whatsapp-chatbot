@@ -65,7 +65,41 @@ const ADDON_CATALOG = [
     name: 'Meta Conversions',
     description: 'Sends Lead events to Meta CAPI when orders are placed, and Purchase events when payments are confirmed. Also syncs paid customer phones to a Meta Custom Audience for lookalike targeting.',
   },
+  {
+    id: 'match_making',
+    name: 'Match Making Report',
+    description: 'Generates a two-chart compatibility (ගැළපීම) report for a couple, including the 20 Porondam analysis. Requires Horoscope Reading.',
+  },
+  {
+    id: 'income_summary',
+    name: 'Income Summary',
+    description: 'Shows a monthly revenue total on the Orders page, summed from confirmed payments.',
+  },
 ];
+
+/**
+ * Addons that expose a prompt/config editor on the Plugins page.
+ * The frontend renders its editor list from this rather than keeping its own copy.
+ * @type {Set<string>}
+ */
+const CONFIGURABLE_ADDONS = new Set([
+  'astro_vedic_chart', 'horoscope_reading', 'ai_call_answering', 'image_analyzer',
+  'tarot_reading', 'media_extractor', 'follow_up_generator', 'meta_conversions',
+]);
+
+/**
+ * GET /api/addons/catalog — the addon catalog, readable by any authenticated user.
+ *
+ * Separate from listAddons(), which is superadmin-only and also returns per-client
+ * enabled state. This one carries no client data, just the catalog itself.
+ *
+ * @param {import('express').Request}  _req
+ * @param {import('express').Response} res
+ * @returns {void}
+ */
+function addonCatalog(_req, res) {
+  res.json(ADDON_CATALOG.map(a => ({ ...a, configurable: CONFIGURABLE_ADDONS.has(a.id) })));
+}
 
 /**
  * GET /api/addons?client_id=X — list addons with enabled state for a client (superadmin only).
@@ -142,11 +176,8 @@ async function sendMedia(req, res) {
   if (!req.file) return res.status(400).json({ error: 'file required' });
   try {
     // Verify addon is enabled for this client
-    const addonCheck = await db.pgQuery(
-      `SELECT enabled FROM client_addons WHERE client_id=$1 AND addon_id='crm_media_send' AND enabled=TRUE`,
-      [clientId]
-    );
-    if (!addonCheck.rows.length) return res.status(403).json({ error: 'crm_media_send addon not enabled' });
+    const addonCheckOk = await db.hasAddon(clientId, 'crm_media_send');
+    if (!addonCheckOk) return res.status(403).json({ error: 'crm_media_send addon not enabled' });
 
     const client = clientId ? await clientRouter.getClientById(clientId) : null;
     const base = PUBLIC_URL || '';
@@ -206,11 +237,8 @@ async function triggerTarotReading(req, res) {
   if (!question) return res.status(400).json({ error: 'question required' });
 
   try {
-    const addonCheck = await db.pgQuery(
-      `SELECT enabled FROM client_addons WHERE client_id=$1 AND addon_id='tarot_reading' AND enabled=TRUE`,
-      [clientId]
-    );
-    if (!addonCheck.rows.length) {
+    const addonCheckOk = await db.hasAddon(clientId, 'tarot_reading');
+    if (!addonCheckOk) {
       return res.status(403).json({ error: 'tarot_reading addon not enabled' });
     }
 
@@ -521,4 +549,5 @@ async function downloadTarotPdf(req, res) {
   }
 }
 
-module.exports = { ADDON_CATALOG, listAddons, toggleAddon, getAddonsStatus, sendMedia, triggerTarotReading, updateTarotSections, downloadTarotDocx, downloadTarotPdfByOrder, downloadTarotPdf };
+module.exports = {
+  addonCatalog, ADDON_CATALOG, listAddons, toggleAddon, getAddonsStatus, sendMedia, triggerTarotReading, updateTarotSections, downloadTarotDocx, downloadTarotPdfByOrder, downloadTarotPdf };

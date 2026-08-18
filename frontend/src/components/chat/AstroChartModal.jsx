@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import api from '../../lib/api';
+import api, { GEO_USER_AGENT } from '../../lib/api';
 import { useToast } from '../ui/Toast';
 
 const SINHALA_MONTHS = {
@@ -109,7 +109,7 @@ export default function AstroChartModal({ phone, clientId, onClose, onResult }) 
       try {
         const r = await fetch(
           `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5`,
-          { headers: { 'User-Agent': 'pj-crm/1.0' } }
+          { headers: { 'User-Agent': GEO_USER_AGENT } }
         );
         const data = await r.json();
         setGeoSuggestions(data.map(d => ({ name: d.display_name, lat: parseFloat(d.lat), lng: parseFloat(d.lon) })));

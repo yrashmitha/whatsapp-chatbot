@@ -26,11 +26,6 @@ const {
 } = require('../services/matchReport');
 const { buildPorondamDoc, PORONDAM_REPORT_TITLE } = require('../services/porondamReport');
 
-/**
- * Clients allowed to use the match-making report. Comma-separated env override so the
- * rollout can widen without a code change; defaults to Purana Jothirwedaya only.
- */
-const MATCH_CLIENTS = (process.env.MATCHMAKING_CLIENTS || 'pj').split(',').map(s => s.trim()).filter(Boolean);
 const { DEFAULT_TAROT_PROMPT } = require('../services/tarot');
 const { generateFollowUp, DEFAULT_FOLLOWUP_PROMPT } = require('../services/followup');
 const { syncAudienceForClient, createAudienceForClient, getRecentEvents } = require('../services/metaConversions');
@@ -401,11 +396,8 @@ async function generateAstroChart(req, res) {
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
 
   // Check addon enabled
-  const addonCheck = await db.pgQuery(
-    `SELECT enabled FROM client_addons WHERE client_id=$1 AND addon_id='astro_vedic_chart' AND enabled=TRUE`,
-    [clientId]
-  );
-  if (!addonCheck.rows.length) return res.status(403).json({ error: 'astro_vedic_chart addon not enabled' });
+  const addonCheckOk = await db.hasAddon(clientId, 'astro_vedic_chart');
+  if (!addonCheckOk) return res.status(403).json({ error: 'astro_vedic_chart addon not enabled' });
 
   const { phone, birth_date, birth_time, lat, lng, birth_place_name } = req.body;
   if (!phone || !birth_date || !birth_time || lat == null || lng == null) {
@@ -507,11 +499,8 @@ async function generateHoroscopeReading(req, res) {
   if (!order_id || lat == null || lng == null) {
     return res.status(400).json({ error: 'order_id, lat, lng required' });
   }
-  const addonCheck = await db.pgQuery(
-    `SELECT enabled FROM client_addons WHERE client_id=$1 AND addon_id='horoscope_reading' AND enabled=TRUE`,
-    [clientId]
-  );
-  if (!addonCheck.rows.length) return res.status(403).json({ error: 'horoscope_reading addon not enabled' });
+  const addonCheckOk = await db.hasAddon(clientId, 'horoscope_reading');
+  if (!addonCheckOk) return res.status(403).json({ error: 'horoscope_reading addon not enabled' });
 
   // Enforce server-side: ignore include_quantum if the feature is disabled in config
   const pluginCfg = await db.getPluginConfig(clientId, 'horoscope_reading');
@@ -1287,11 +1276,8 @@ async function generateFollowUpMessage(req, res) {
   const { phone } = req.body;
   if (!phone) return res.status(400).json({ error: 'phone required' });
 
-  const addonCheck = await db.pgQuery(
-    `SELECT enabled FROM client_addons WHERE client_id=$1 AND addon_id='follow_up_generator' AND enabled=TRUE`,
-    [clientId]
-  );
-  if (!addonCheck.rows.length) return res.status(403).json({ error: 'follow_up_generator addon not enabled' });
+  const addonCheckOk = await db.hasAddon(clientId, 'follow_up_generator');
+  if (!addonCheckOk) return res.status(403).json({ error: 'follow_up_generator addon not enabled' });
 
   try {
     const text = await generateFollowUp(clientId, phone);
@@ -1412,11 +1398,8 @@ async function generateMarriageHandler(req, res) {
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
   const { orderId } = req.params;
 
-  const addonCheck = await db.pgQuery(
-    `SELECT enabled FROM client_addons WHERE client_id=$1 AND addon_id='horoscope_reading' AND enabled=TRUE`,
-    [clientId]
-  );
-  if (!addonCheck.rows.length) return res.status(403).json({ error: 'horoscope_reading addon not enabled' });
+  const addonCheckOk = await db.hasAddon(clientId, 'horoscope_reading');
+  if (!addonCheckOk) return res.status(403).json({ error: 'horoscope_reading addon not enabled' });
 
   try {
     const order = await loadOrderReport(orderId);
@@ -1640,16 +1623,14 @@ async function saveMarriageWaHandler(req, res) {
 async function guardMatchRequest(req, res) {
   const clientId = resolveClientId(req);
   if (!clientId) { res.status(400).json({ error: 'client_id required' }); return null; }
-  if (!MATCH_CLIENTS.includes(clientId)) {
-    res.status(403).json({ error: 'Match making is not enabled for this client' });
+  // Entitlement lives in client_addons, not in a hardcoded list of client IDs,
+  // so a new client is enabled from the admin UI with no deploy.
+  if (!await db.hasAddon(clientId, 'horoscope_reading')) {
+    res.status(403).json({ error: 'horoscope_reading addon not enabled' });
     return null;
   }
-  const addonCheck = await db.pgQuery(
-    `SELECT enabled FROM client_addons WHERE client_id=$1 AND addon_id='horoscope_reading' AND enabled=TRUE`,
-    [clientId]
-  );
-  if (!addonCheck.rows.length) {
-    res.status(403).json({ error: 'horoscope_reading addon not enabled' });
+  if (!await db.hasAddon(clientId, 'match_making')) {
+    res.status(403).json({ error: 'match_making addon not enabled' });
     return null;
   }
   return clientId;

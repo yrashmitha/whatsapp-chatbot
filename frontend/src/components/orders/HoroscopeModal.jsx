@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import api from '../../lib/api';
+import api, { GEO_USER_AGENT } from '../../lib/api';
 import { useToast } from '../ui/Toast';
 import ChatThread from '../chat/ChatThread';
 import MatchMakingPanel from './MatchMakingPanel';
@@ -118,7 +118,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
       try {
         const r = await fetch(
           `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5`,
-          { headers: { 'User-Agent': 'pj-crm/1.0' } }
+          { headers: { 'User-Agent': GEO_USER_AGENT } }
         );
         const data = await r.json();
         setGeoSuggestions(data.map(d => ({ name: d.display_name, lat: parseFloat(d.lat), lng: parseFloat(d.lon) })));

@@ -1,5 +1,12 @@
 import axios from 'axios';
 
+/**
+ * User-Agent sent to the third-party geocoder, which rejects empty ones.
+ * Brand-neutral: this is the product identifying itself, not any one client.
+ */
+export const GEO_USER_AGENT = 'astro-crm/1.0';
+
+
 const api = axios.create({
   baseURL: '/api',
   headers: { 'Content-Type': 'application/json' },

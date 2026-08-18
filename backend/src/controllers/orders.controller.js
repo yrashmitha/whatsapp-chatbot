@@ -131,6 +131,9 @@ const PAID_STATUSES = ['payment_received', 'paid', 'delivered', 'done', 'complet
 async function incomeSummary(req, res) {
   const clientId = resolveClientId(req);
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  if (!await db.hasAddon(clientId, 'income_summary')) {
+    return res.status(403).json({ error: 'income_summary addon not enabled' });
+  }
   try {
     const r = await db.pgQuery(
       `SELECT

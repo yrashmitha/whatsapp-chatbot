@@ -28,7 +28,7 @@ const { getClientMedia, insertMedia,
         deleteMedia, updateMedia }                  = require('./media.db');
 const { getPluginConfig, upsertPluginConfig,
         getPluginCustomerData,
-        upsertPluginCustomerData }                  = require('./plugins.db');
+        upsertPluginCustomerData, hasAddon }        = require('./plugins.db');
 const { insertCall, appendTranscriptTurn,
         updateCallStatus, updateCallSummary,
         listCalls, getCall }                        = require('./calls.db');
@@ -85,6 +85,7 @@ module.exports = {
   upsertPluginConfig,
   getPluginCustomerData,
   upsertPluginCustomerData,
+  hasAddon,
   // Calls
   insertCall,
   appendTranscriptTurn,

@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import api from '../../lib/api';
+import api, { GEO_USER_AGENT } from '../../lib/api';
 import { useToast } from '../ui/Toast';
 
 const HOURS   = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
@@ -81,7 +81,7 @@ export default function MatchMakingPanel({ order, clientId, existingHd, onClose,
       try {
         const r = await fetch(
           `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5`,
-          { headers: { 'User-Agent': 'pj-crm/1.0' } }
+          { headers: { 'User-Agent': GEO_USER_AGENT } }
         );
         const data = await r.json();
         setSuggestions(s => ({

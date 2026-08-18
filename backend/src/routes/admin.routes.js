@@ -23,6 +23,9 @@ const {
   uploadImage,
   createClient,
   updateClient,
+  getClientBranding,
+  updateClientBranding,
+  listReportFonts,
   listProducts,
   createProduct,
   updateProduct,
@@ -64,6 +67,9 @@ router.get('/clients/:clientId',               adminAuth, getClient);
 router.post('/upload-image',                   adminAuth, upload.single('image'), uploadImage);
 router.post('/clients',                        adminAuth, createClient);
 router.put('/clients/:clientId',               adminAuth, updateClient);
+router.get('/clients/:clientId/branding',      adminAuth, getClientBranding);
+router.put('/clients/:clientId/branding',      adminAuth, updateClientBranding);
+router.get('/report-fonts',                    adminAuth, listReportFonts);
 
 // Products
 router.get('/products',                        adminAuth, listProducts);

@@ -13,6 +13,7 @@ const crypto  = require('crypto');
 const db      = require('../db');
 const clientRouter = require('../services/clientRouter');
 const { invalidateClientKeys } = require('../services/clientKeys');
+const { invalidateBrand, FONT_ALLOWLIST, FALLBACK_FONT } = require('../services/branding');
 const buildSystemInstruction = require('../services/buildInstruction');
 const { sendWhatsAppMessage } = require('../services/whatsapp');
 const { chatSessions }       = require('../workers/sessionManager');
@@ -790,11 +791,113 @@ async function changeClientPackage(req, res) {
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 
+/**
+ * Report-branding columns a superadmin may set, and how to coerce each.
+ * A strict whitelist: the SET clause is built from these keys, never from
+ * request-supplied field names.
+ * @type {Object<string, function(*): *>}
+ */
+const BRANDING_FIELDS = {
+  report_signature:   (v) => (v == null ? null : String(v)),
+  report_footer:      (v) => (v == null ? null : String(v)),
+  report_invocation:  (v) => (v == null ? null : String(v)),
+  report_divider:     (v) => (v == null ? null : String(v)),
+  report_font:        (v) => (v == null ? null : String(v)),
+  report_logo_url:    (v) => (v == null ? null : String(v)),
+  report_logo_width:  (v) => (Number(v) > 0 ? Math.round(Number(v)) : 160),
+  report_logo_height: (v) => (Number(v) > 0 ? Math.round(Number(v)) : 160),
+  pdf_title:          (v) => (v == null ? null : String(v)),
+  pdf_author:         (v) => (v == null ? null : String(v)),
+  pdf_subject:        (v) => (v == null ? null : String(v)),
+  pdf_producer:       (v) => (v == null ? null : String(v)),
+};
+
+/**
+ * GET /admin/report-fonts — typefaces a client may choose for their reports.
+ *
+ * Only bundled fonts are offered: anything else would be silently substituted by
+ * LibreOffice at conversion time and render as broken glyphs in the PDF.
+ *
+ * @param {import('express').Request}  _req
+ * @param {import('express').Response} res
+ * @returns {void}
+ */
+function listReportFonts(_req, res) {
+  res.json({ fonts: FONT_ALLOWLIST, fallback: FALLBACK_FONT });
+}
+
+/**
+ * PUT /admin/clients/:clientId/branding — set a client's report identity.
+ *
+ * Kept separate from updateClient() so adding a branding field does not mean
+ * renumbering a 29-placeholder positional UPDATE. Only supplied keys are
+ * written, so a partial form submit cannot blank untouched fields. An empty
+ * string clears a field deliberately — that is how a client removes their
+ * invocation or divider.
+ *
+ * @param {import('express').Request}  req
+ * @param {import('express').Response} res
+ * @returns {Promise<void>}
+ */
+async function updateClientBranding(req, res) {
+  const { clientId } = req.params;
+  const sets = [];
+  const values = [];
+  for (const [field, coerce] of Object.entries(BRANDING_FIELDS)) {
+    if (req.body[field] === undefined) continue;
+    values.push(coerce(req.body[field]));
+    sets.push(`${field}=$${values.length}`);
+  }
+  if (!sets.length) return res.status(400).json({ error: 'No branding fields supplied' });
+
+  const requestedFont = req.body.report_font;
+  if (requestedFont && !FONT_ALLOWLIST.includes(requestedFont)) {
+    return res.status(400).json({
+      error: `Unsupported font "${requestedFont}". Available: ${FONT_ALLOWLIST.join(', ')}`,
+    });
+  }
+
+  try {
+    values.push(clientId);
+    const { rowCount } = await db.pgQuery(
+      `UPDATE client_configs SET ${sets.join(', ')}, updated_at=NOW() WHERE client_id=$${values.length}`,
+      values
+    );
+    if (!rowCount) return res.status(404).json({ error: 'Client not found' });
+    invalidateBrand(clientId);
+    clientRouter.invalidateCache(clientId);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+/**
+ * GET /admin/clients/:clientId/branding — current report identity for a client.
+ *
+ * @param {import('express').Request}  req
+ * @param {import('express').Response} res
+ * @returns {Promise<void>}
+ */
+async function getClientBranding(req, res) {
+  try {
+    const { rows } = await db.pgQuery(
+      `SELECT ${Object.keys(BRANDING_FIELDS).join(', ')} FROM client_configs WHERE client_id=$1`,
+      [req.params.clientId]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Client not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
 module.exports = {
   listTemplates, listCustomers, getMessages, sendAdminMessage,
   deleteCustomer, deleteMessages, updateOrderStatus,
   proxyMedia, getBuiltinPrompt,
   listClients, getClient, uploadImage, createClient, updateClient,
+  getClientBranding, updateClientBranding, listReportFonts,
   listProducts, createProduct, updateProduct, deleteProduct,
   listAttributes, createAttribute, deleteAttribute, bulkAttributes, bulkProducts,
   listPackages, createPackage, updatePackage, deletePackage, changeClientPackage,

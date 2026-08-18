@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore, isSuperAdmin } from '../stores/auth';
@@ -8,7 +8,9 @@ import Drawer from '../components/ui/Drawer';
 import { useToast } from '../components/ui/Toast';
 
 /* ── Helpers ─────────────────────────────────────────────── */
-const TABS = ['Identity', 'WhatsApp', 'AI', 'Branding', 'Features', 'Order Fields', 'Access'];
+const BRANDING_KEYS = ['report_signature', 'report_footer', 'report_invocation', 'report_divider', 'report_font', 'report_logo_url', 'report_logo_width', 'report_logo_height', 'pdf_title', 'pdf_author', 'pdf_subject', 'pdf_producer'];
+
+const TABS = ['Identity', 'WhatsApp', 'AI', 'Branding', 'Reports', 'Features', 'Order Fields', 'Access'];
 const TYPES = ['general', 'ecommerce', 'restaurant', 'astrology', 'service'];
 const AI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
 
@@ -116,6 +118,7 @@ const EMPTY = {
   system_prompt_mode: 'builtin', custom_prompt: '', error_message: '',
   gemini_api_key: '', use_system_gemini_key: false,
   freeastro_api_key: '', use_system_freeastro_key: false,
+  report_signature: '', report_footer: '', report_invocation: '', report_divider: '', report_font: '', report_logo_url: '', report_logo_width: 160, report_logo_height: 160, pdf_title: '', pdf_author: '', pdf_subject: '', pdf_producer: '',
   brand_name: '', brand_color: '#075e54', logo_url: '', contact_number: '',
   product_catalog_enabled: false, order_flow_enabled: true,
   knowledge_base_enabled: false, plugin_enabled: false,
@@ -197,6 +200,41 @@ export default function Clients() {
   });
   const packages = packagesData || [];
 
+  // Bundled typefaces the Reports tab may offer. Anything else would be silently
+  // substituted by LibreOffice and render as broken glyphs in the PDF.
+  const { data: reportFonts } = useQuery({
+    queryKey: ['report-fonts'],
+    queryFn: () => adminApi.get('/report-fonts').then(r => r.data),
+    staleTime: 60 * 60 * 1000,
+  });
+
+  // Report branding lives in its own endpoint, so it loads only when a client is
+  // open for editing and saves independently of the main client form.
+  const { data: brandingData } = useQuery({
+    queryKey: ['client-branding', editing?.id],
+    queryFn: () => adminApi.get(`/clients/${editing.id}/branding`).then(r => r.data),
+    enabled: !!editing?.id && drawerOpen,
+  });
+
+  useEffect(() => {
+    if (!brandingData) return;
+    setForm(f => ({
+      ...f,
+      report_signature: brandingData.report_signature ?? '',
+      report_footer: brandingData.report_footer ?? '',
+      report_invocation: brandingData.report_invocation ?? '',
+      report_divider: brandingData.report_divider ?? '',
+      report_font: brandingData.report_font ?? '',
+      report_logo_url: brandingData.report_logo_url ?? '',
+      report_logo_width: brandingData.report_logo_width ?? 160,
+      report_logo_height: brandingData.report_logo_height ?? 160,
+      pdf_title: brandingData.pdf_title ?? '',
+      pdf_author: brandingData.pdf_author ?? '',
+      pdf_subject: brandingData.pdf_subject ?? '',
+      pdf_producer: brandingData.pdf_producer ?? '',
+    }));
+  }, [brandingData]);
+
   const saveMutation = useMutation({
     mutationFn: (body) => editing
       ? adminApi.put(`/clients/${editing.id}`, body)
@@ -272,10 +310,24 @@ export default function Clients() {
     setDrawerOpen(true);
   }
 
-  function handleSave() {
+  async function handleSave() {
     const body = { ...form };
     if (editing) delete body.id;
+    // Report branding has its own endpoint; strip those keys from the main body.
+    const branding = {};
+    for (const k of BRANDING_KEYS) { branding[k] = body[k]; delete body[k]; }
+
     saveMutation.mutate(body);
+
+    // Only meaningful for an existing client — a new one has no config row yet.
+    if (editing?.id) {
+      try {
+        await adminApi.put(`/clients/${editing.id}/branding`, branding);
+        qc.invalidateQueries({ queryKey: ['client-branding', editing.id] });
+      } catch (e) {
+        showToast(e?.response?.data?.error || 'Report branding failed to save', 'error');
+      }
+    }
   }
 
   async function handleSetPassword() {
@@ -461,7 +513,66 @@ export default function Clients() {
           </Field>
         </div>
       );
-      case 4: return ( // Features
+      case 4: return ( // Reports
+        <div className="flex flex-col gap-4">
+          <p className="text-xs" style={{ color: 'var(--text-3)' }}>
+            How this client's generated reports identify themselves. Every field is
+            optional and nothing is inherited from another client — leave a field
+            blank and it simply does not appear in the document.
+          </p>
+          <Field label="Signature" hint="Printed at the end of every report">
+            <Input value={form.report_signature} onChange={set('report_signature')} placeholder="Acme Astrology Services" />
+          </Field>
+          <Field label="Page Footer" hint="Use {brand} for the brand name; the page number follows this text">
+            <Input value={form.report_footer} onChange={set('report_footer')} placeholder="{brand} | Page: " />
+          </Field>
+          <Field label="Cover Invocation" hint="Large line at the top of the cover page — blank to omit">
+            <Input value={form.report_invocation} onChange={set('report_invocation')} placeholder="(none)" />
+          </Field>
+          <Field label="Cover Divider" hint="Rule above and below the invocation — blank to omit">
+            <Input value={form.report_divider} onChange={set('report_divider')} placeholder="(none)" />
+          </Field>
+          <Field label="Report Font" hint="Only bundled fonts render correctly in the PDF">
+            <select
+              value={form.report_font || ''}
+              onChange={e => set('report_font')(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border text-sm"
+              style={{ borderColor: 'var(--border)', background: 'var(--bg-card)', color: 'var(--text-1)' }}
+            >
+              <option value="">Default ({reportFonts?.fallback || 'Abhaya Libre'})</option>
+              {(reportFonts?.fonts || []).map(f => <option key={f} value={f}>{f}</option>)}
+            </select>
+          </Field>
+          <Field label="Cover Logo URL" hint="PNG or JPEG. Upload on the Media page, then paste the URL here">
+            <Input value={form.report_logo_url} onChange={set('report_logo_url')} placeholder="https://... or /uploads/logo.png" />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Logo Width (px)">
+              <Input type="number" value={form.report_logo_width} onChange={set('report_logo_width')} placeholder="160" />
+            </Field>
+            <Field label="Logo Height (px)">
+              <Input type="number" value={form.report_logo_height} onChange={set('report_logo_height')} placeholder="160" />
+            </Field>
+          </div>
+          <div className="pt-2 mt-1 border-t" style={{ borderColor: 'var(--border)' }}>
+            <p className="text-xs mb-3" style={{ color: 'var(--text-3)' }}>
+              PDF file properties. Blank falls back to the brand display name.
+            </p>
+            <div className="flex flex-col gap-4">
+              <Field label="PDF Title"><Input value={form.pdf_title} onChange={set('pdf_title')} placeholder="(brand name)" /></Field>
+              <Field label="PDF Author"><Input value={form.pdf_author} onChange={set('pdf_author')} placeholder="(brand name)" /></Field>
+              <Field label="PDF Producer"><Input value={form.pdf_producer} onChange={set('pdf_producer')} placeholder="(brand name)" /></Field>
+              <Field label="PDF Subject"><Input value={form.pdf_subject} onChange={set('pdf_subject')} placeholder="(none)" /></Field>
+            </div>
+          </div>
+          {!editing && (
+            <p className="text-xs" style={{ color: 'var(--warn, #b45309)' }}>
+              Report branding is saved once the client exists. Create the client first, then reopen it here.
+            </p>
+          )}
+        </div>
+      );
+      case 5: return ( // Features
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-3 p-3 rounded-lg border" style={{ borderColor: 'var(--border)' }}>
             <Toggle checked={form.order_flow_enabled} onChange={set('order_flow_enabled')} label="Order Flow" />
@@ -525,7 +636,7 @@ export default function Clients() {
           </div>
         </div>
       );
-      case 5: return ( // Order Fields
+      case 6: return ( // Order Fields
         <div className="flex flex-col gap-3">
           <Field label="Order ID Prefix" hint="e.g. ACM → order IDs will be ACM-0001">
             <Input value={form.order_id_prefix} onChange={set('order_id_prefix')} placeholder="ACM" />
@@ -546,7 +657,7 @@ export default function Clients() {
           ))}
         </div>
       );
-      case 6: return ( // Access
+      case 7: return ( // Access
         <div className="flex flex-col gap-4">
           {editing && (
             <>

@@ -6,3 +6,6 @@ data/
 
 # pj white-label migration checklist (client content, not product code)
 pj-migration-values.md
+
+# stray local test asset
+backend/src/assets/test.jpeg

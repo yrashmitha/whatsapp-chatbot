@@ -17,7 +17,7 @@ const { upsertCustomer, getAllCustomers,
 const { insertOrder, getOrdersByPhone, getLatestOrder,
         updateLatestOrderStatus, updateOrderStatusById,
         updateOrderAISummary, updateOrderCustomFields,
-        countOrdersByYear }                         = require('./orders.db');
+        countOrdersByYear, getOrderForClient }      = require('./orders.db');
 const { searchProducts, vectorSearchProducts,
         saveProductEmbedding, getAttributeSchema }  = require('./products.db');
 const { insertKnowledgeChunks, vectorSearchKnowledge,
@@ -61,6 +61,7 @@ module.exports = {
   updateOrderAISummary,
   updateOrderCustomFields,
   countOrdersByYear,
+  getOrderForClient,
   // Products
   searchProducts,
   vectorSearchProducts,

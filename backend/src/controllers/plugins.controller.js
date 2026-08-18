@@ -964,9 +964,12 @@ async function regenerateHoroscopeSectionHandler(req, res) {
       otherSections:  hd.sections || null,
     });
 
+    // Section labels are client-authored free text; interpolating one into the
+    // jsonb path literal breaks on any '}' or ',' it contains. Pass it as a
+    // parameterised text[] path instead.
     await db.pgQuery(
-      `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), '{sections,${label.trim()}}', $1::jsonb) WHERE order_id=$2`,
-      [JSON.stringify(newContent), orderId]
+      `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), ARRAY['sections', $1], $2::jsonb) WHERE order_id=$3`,
+      [label.trim(), JSON.stringify(newContent), orderId]
     );
 
     console.log(`[REGEN-HORO-SECTION] Done order=${orderId} label="${label}"`);

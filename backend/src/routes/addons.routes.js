@@ -8,6 +8,7 @@
 
 const router        = require('express').Router();
 const jwtAuth       = require('../middleware/jwtAuth');
+const orderScope    = require('../middleware/orderScope');
 const { uploadMedia } = require('../config/multer');
 const {
   listAddons,
@@ -32,14 +33,14 @@ router.get('/crm/addons-status',   jwtAuth, getAddonsStatus);
 router.post('/crm/send-media',     jwtAuth, uploadMedia.single('file'), sendMedia);
 
 // Tarot reading — POST /api/crm/tarot-reading (trigger; background when order_id present)
-router.post('/crm/tarot-reading',                        jwtAuth, triggerTarotReading);
+router.post('/crm/tarot-reading',                        jwtAuth, orderScope, triggerTarotReading);
 // Update reading text/cards — PATCH /api/crm/tarot-reading/sections/:orderId
-router.patch('/crm/tarot-reading/sections/:orderId',     jwtAuth, updateTarotSections);
+router.patch('/crm/tarot-reading/sections/:orderId',     jwtAuth, orderScope, updateTarotSections);
 // Download DOCX — GET /api/crm/tarot-reading/download/:orderId
-router.get('/crm/tarot-reading/download/:orderId',       jwtAuth, downloadTarotDocx);
+router.get('/crm/tarot-reading/download/:orderId',       jwtAuth, orderScope, downloadTarotDocx);
 // Download PDF  — GET /api/crm/tarot-reading/download-pdf/:orderId
-router.get('/crm/tarot-reading/download-pdf/:orderId',   jwtAuth, downloadTarotPdfByOrder);
+router.get('/crm/tarot-reading/download-pdf/:orderId',   jwtAuth, orderScope, downloadTarotPdfByOrder);
 // Legacy POST PDF (used by chat TarotModal)
-router.post('/crm/tarot-reading/pdf',                    jwtAuth, downloadTarotPdf);
+router.post('/crm/tarot-reading/pdf',                    jwtAuth, orderScope, downloadTarotPdf);
 
 module.exports = router;

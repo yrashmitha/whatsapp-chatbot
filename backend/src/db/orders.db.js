@@ -176,6 +176,38 @@ async function countOrdersByYear(pattern, clientId) {
   }
 }
 
+/**
+ * Fetch a single order, scoped to a client when one is given.
+ *
+ * Passing a null/undefined clientId performs an unscoped lookup and is only
+ * valid for superadmins who did not select a client. Any other caller must
+ * pass a clientId so one tenant cannot reach another tenant's orders.
+ *
+ * The two SQL variants are written out in full rather than using a
+ * `($2 IS NULL OR client_id = $2)` predicate: the SQLite shim in
+ * db/connection.js rewrites `$n` to `?` positionally, so a placeholder
+ * referenced twice would mis-bind.
+ *
+ * @param {string}      orderId  - Order ID to look up
+ * @param {string|null} clientId - Owning client ID, or null for an unscoped lookup
+ * @param {string}      [columns='*'] - Column list. Code-supplied literals only,
+ *                                      never a request-controlled value.
+ * @returns {Promise<Object|null>} The order row, or null when absent or not owned by clientId
+ */
+async function getOrderForClient(orderId, clientId, columns = '*') {
+  if (IS_PG) {
+    const res = clientId
+      ? await pool.query(`SELECT ${columns} FROM orders WHERE order_id = $1 AND client_id = $2`, [orderId, clientId])
+      : await pool.query(`SELECT ${columns} FROM orders WHERE order_id = $1`, [orderId]);
+    return res.rows[0] || null;
+  } else {
+    const row = clientId
+      ? db.prepare(`SELECT ${columns} FROM orders WHERE order_id = ? AND client_id = ?`).get(orderId, clientId)
+      : db.prepare(`SELECT ${columns} FROM orders WHERE order_id = ?`).get(orderId);
+    return row || null;
+  }
+}
+
 module.exports = {
   insertOrder,
   getOrdersByPhone,
@@ -185,4 +217,5 @@ module.exports = {
   updateOrderAISummary,
   updateOrderCustomFields,
   countOrdersByYear,
+  getOrderForClient,
 };

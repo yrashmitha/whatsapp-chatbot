@@ -7,6 +7,7 @@
 
 const router  = require('express').Router();
 const jwtAuth = require('../middleware/jwtAuth');
+const orderScope = require('../middleware/orderScope');
 const {
   listOrders,
   exportOrders,
@@ -21,8 +22,8 @@ router.get('/',               jwtAuth, listOrders);
 router.post('/',              jwtAuth, createOrder);
 router.get('/export',         jwtAuth, exportOrders);
 router.get('/income-summary', jwtAuth, incomeSummary);
-router.patch('/:id/status',  jwtAuth, updateStatus);
-router.patch('/:id/fields',  jwtAuth, updateFields);
-router.patch('/:id/notes',   jwtAuth, updateNotes);
+router.patch('/:id/status',  jwtAuth, orderScope, updateStatus);
+router.patch('/:id/fields',  jwtAuth, orderScope, updateFields);
+router.patch('/:id/notes',   jwtAuth, orderScope, updateNotes);
 
 module.exports = router;

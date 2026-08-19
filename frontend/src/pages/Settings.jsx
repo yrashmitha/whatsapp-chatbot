@@ -66,6 +66,10 @@ export default function Settings() {
   const [tokenSaving, setTokenSaving]   = useState(false);
   const [waTokenSet, setWaTokenSet]     = useState(false);
   const [geminiKeySet, setGeminiKeySet] = useState(false);
+  const [freeAstroKey, setFreeAstroKey]       = useState('');
+  const [freeAstroKeySet, setFreeAstroKeySet] = useState(false);
+  const [useSystemGemini, setUseSystemGemini]       = useState(false);
+  const [useSystemFreeAstro, setUseSystemFreeAstro] = useState(false);
 
   // ── Consultation config (superadmin only) ─────────────────────────────────
   const [consultPrompt, setConsultPrompt]     = useState('');
@@ -135,6 +139,9 @@ export default function Settings() {
       setOrderFields(settingsData.order_fields || []);
       setWaTokenSet(!!settingsData.wa_token_set);
       setGeminiKeySet(!!settingsData.gemini_api_key_set);
+      setFreeAstroKeySet(!!settingsData.freeastro_api_key_set);
+      setUseSystemGemini(!!settingsData.use_system_gemini_key);
+      setUseSystemFreeAstro(!!settingsData.use_system_freeastro_key);
     }
   }, [settingsData]);
 
@@ -193,12 +200,13 @@ export default function Settings() {
   const handleSaveTokens = async (e) => {
     e.preventDefault();
     if (!clientId) { toast.error('Select a client first'); return; }
-    if (!waToken.trim() && !geminiKey.trim()) { toast.error('Enter at least one token to update'); return; }
+    if (!waToken.trim() && !geminiKey.trim() && !freeAstroKey.trim()) { toast.error('Enter at least one key to update'); return; }
     setTokenSaving(true);
     try {
       const body = {};
       if (waToken.trim())    body.wa_token = waToken.trim();
       if (geminiKey.trim())  body.gemini_api_key = geminiKey.trim();
+      if (freeAstroKey.trim()) body.freeastro_api_key = freeAstroKey.trim();
       await api.put('/settings/tokens', body, { params });
       qc.invalidateQueries({ queryKey: ['settings', clientId] });
       toast.success('API keys saved');
@@ -433,7 +441,10 @@ export default function Settings() {
           {activeTab === 'API Keys' && (
             <div className="bg-white border border-slate-200 rounded-xl p-6">
               <h2 className="text-sm font-semibold text-slate-700 mb-1">API Keys</h2>
-              <p className="text-xs text-slate-400 mb-4">Update your WhatsApp access token or Gemini API key. Leave a field blank to keep the existing value.</p>
+              <p className="text-xs text-slate-400 mb-4">
+                Your own provider keys. Reports and AI replies are billed to whichever key is set here,
+                so usage lands on your account. Leave a field blank to keep the existing value.
+              </p>
               {!clientId ? (
                 <p className="text-sm text-slate-400">Select a client from the top bar to edit their API keys.</p>
               ) : (
@@ -448,10 +459,37 @@ export default function Settings() {
                   <div>
                     <div className="flex items-center gap-2 mb-1.5">
                       <label className="block text-xs font-medium text-slate-600">Gemini API Key</label>
-                      {geminiKeySet && <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">✓ Set</span>}
+                      {geminiKeySet
+                        ? <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">✓ Set</span>
+                        : useSystemGemini
+                          ? <span className="text-xs font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">Using provider's key</span>
+                          : <span className="text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full">Not set</span>}
                     </div>
+                    <p className="text-xs text-slate-400 mb-1.5">
+                      Powers AI replies and every generated report. Create one at Google AI Studio.
+                    </p>
                     <TokenInput value={geminiKey} onChange={setGeminiKey} placeholder={geminiKeySet ? '(leave blank to keep current)' : 'AIzaSy...'} />
                   </div>
+                  <div>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <label className="block text-xs font-medium text-slate-600">freeastroapi Key</label>
+                      {freeAstroKeySet
+                        ? <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">✓ Set</span>
+                        : useSystemFreeAstro
+                          ? <span className="text-xs font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">Using provider's key</span>
+                          : <span className="text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full">Not set</span>}
+                    </div>
+                    <p className="text-xs text-slate-400 mb-1.5">
+                      Used for birth-chart and compatibility lookups from freeastroapi.com.
+                    </p>
+                    <TokenInput value={freeAstroKey} onChange={setFreeAstroKey} placeholder={freeAstroKeySet ? '(leave blank to keep current)' : 'your freeastroapi key'} />
+                  </div>
+                  {(useSystemGemini || useSystemFreeAstro) && (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      Some usage is currently billed to your provider's shared key. Adding your own key
+                      above moves that usage onto your account. Switching back is an administrator action.
+                    </p>
+                  )}
                   <div className="mt-1"><Button type="submit" disabled={tokenSaving}>{tokenSaving ? 'Saving…' : 'Save API Keys'}</Button></div>
                 </form>
               )}

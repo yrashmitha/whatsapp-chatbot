@@ -31,7 +31,8 @@ async function getSettings(req, res) {
               owner_phone,
               (wa_token IS NOT NULL AND wa_token <> '') AS wa_token_set,
               (gemini_api_key IS NOT NULL AND gemini_api_key <> '') AS gemini_api_key_set,
-              use_system_wa_token, use_system_gemini_key
+              (freeastro_api_key IS NOT NULL AND freeastro_api_key <> '') AS freeastro_api_key_set,
+              use_system_wa_token, use_system_gemini_key, use_system_freeastro_key
        FROM client_configs WHERE client_id=$1`,
       [clientId]
     );
@@ -115,24 +116,38 @@ async function changePassword(req, res) {
 }
 
 /**
- * PUT /api/settings/tokens — update WA token and/or Gemini API key for a client.
+ * PUT /api/settings/tokens — update a client's own WA token, Gemini key or
+ * freeastroapi key. Blank fields are ignored rather than clearing the stored value.
  *
  * @param {import('express').Request}  req
  * @param {import('express').Response} res
  * @returns {Promise<void>}
  */
 async function updateTokens(req, res) {
+  // resolveClientId pins a non-superadmin to their own client, so a client can
+  // only ever write their own keys.
   const clientId = resolveClientId(req);
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
-  const { wa_token, gemini_api_key } = req.body;
-  if (wa_token === undefined && gemini_api_key === undefined) {
-    return res.status(400).json({ error: 'wa_token or gemini_api_key required' });
+
+  // use_system_*_key decides whose account the usage is billed to, so it stays a
+  // superadmin decision on the Clients page and is deliberately not accepted here.
+  if (req.body.use_system_gemini_key !== undefined || req.body.use_system_freeastro_key !== undefined) {
+    return res.status(403).json({ error: 'Billing to the system key can only be changed by an administrator' });
+  }
+
+  const { wa_token, gemini_api_key, freeastro_api_key } = req.body;
+  // Only non-empty values are written: the form never receives the stored key
+  // back, so treating a blank field as "clear it" would let an untouched save
+  // silently wipe a live key and take the client offline.
+  const provided = { wa_token, gemini_api_key, freeastro_api_key };
+  const writable = Object.entries(provided).filter(([, v]) => typeof v === 'string' && v.trim() !== '');
+  if (!writable.length) {
+    return res.status(400).json({ error: 'Provide at least one of wa_token, gemini_api_key, freeastro_api_key' });
   }
   try {
     const sets = [];
     const vals = [];
-    if (wa_token !== undefined) { sets.push(`wa_token=$${vals.push(wa_token || null)}`); }
-    if (gemini_api_key !== undefined) { sets.push(`gemini_api_key=$${vals.push(gemini_api_key || null)}`); }
+    for (const [col, v] of writable) sets.push(`${col}=$${vals.push(v.trim())}`);
     vals.push(clientId);
     await db.pgQuery(
       `UPDATE client_configs SET ${sets.join(', ')}, updated_at=NOW() WHERE client_id=$${vals.length}`,

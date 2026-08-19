@@ -92,20 +92,28 @@ Assign a package, bonus messages and overage limit.
 
 ## Restoring an existing client after the white-label refactor
 
-The values that used to be compiled in are captured in `pj-migration-values.md`
-at the repo root (gitignored — it is client content, not product code). Paste
-each one into the matching field above. It is regenerable at any time:
+Already done for `pj` — its branding, report labels, match-making config and
+tarot headings were seeded straight into the database on 2026-08-19, verified
+byte-identical to the pre-refactor values. Nothing needs retyping.
+
+To do the same for another client, put their values in a JSON file and run:
 
 ```
-python <scratchpad>/extract_pj.py     # reads a snapshot of the pre-refactor sources
+node backend/scripts/seed-client-config.js <clientId> <values.json>          # dry run
+node backend/scripts/seed-client-config.js <clientId> <values.json> --apply
 ```
 
-or straight from git history:
+The script is non-destructive: a field that already has a value is reported as
+`kept` and never overwritten, so re-running is safe. It also adds the branding
+columns if the deploy has not yet migrated the schema, copies a legacy
+freeastroapi key out of `plugin_configs`, and records an explicit system-key
+opt-in for a client that has no key of their own — without that the resolver
+fails closed and would take them offline.
 
-```
-git show 3f8ecf1~1:backend/src/services/matchReport.js
-```
+The values file is never committed: a client's personas and disclaimers are
+their content, which is the whole point of this migration.
 
-Do this immediately after deploying. Until it is done, that client's report
-generation fails loudly rather than producing an unbranded document — a visible
-error is recoverable in minutes; an unbranded PDF already sent over WhatsApp is not.
+`remedies_section_label` is special. Set it to the literal
+`"__FROM_CLIENT_SECTIONS__"` and the script resolves it from that client's own
+stored `horoscope_sections`, because the label drives the document's page split
+and a single mistyped character would silently mis-render the report.

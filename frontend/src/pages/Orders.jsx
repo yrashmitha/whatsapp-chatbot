@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore, isSuperAdmin } from '../stores/auth';
 import Layout from '../components/Layout';
+import { useFeatureGate, LockBadge } from '../components/FeatureLock';
 import Pagination from '../components/ui/Pagination';
 import Spinner from '../components/ui/Spinner';
 import Drawer from '../components/ui/Drawer';
@@ -27,7 +28,9 @@ function parseCustomFields(raw) {
 export default function Orders() {
   const { user, selectedClientId } = useAuthStore();
   const superAdmin = isSuperAdmin(user);
-  const showHoroscope = superAdmin || !!user?.horoscope_enabled;
+  // Always rendered so the product's flagship feature is discoverable; the
+  // buttons themselves are gated on the horoscope_reading addon below.
+  const showHoroscope = true;
 
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -54,21 +57,18 @@ export default function Orders() {
 
   const clientId = superAdmin ? (selectedClientId || null) : user?.clientId;
 
-  const { data: addonsStatus } = useQuery({
-    queryKey: ['addons-status', clientId],
-    queryFn: () => api.get('/crm/addons-status', { params: clientId ? { client_id: clientId } : {} }).then(r => r.data),
-    enabled: !!clientId,
-  });
-  const showTarot = addonsStatus?.addons?.includes('tarot_reading');
+  // Everything in the catalogue is shown to everyone. `isEnabled` controls what
+  // happens on click, not whether the control exists — a feature nobody can see
+  // is a feature nobody asks for. The backend still enforces entitlement.
+  const { isEnabled, guard, showLocked, lockModal } = useFeatureGate(clientId, superAdmin);
+  const showTarot = true;
 
-  // Feature access comes from the client's enabled addons, never a client ID.
-  // The backend enforces the same entitlement on every matching endpoint.
-  const showIncome = !!addonsStatus?.addons?.includes('income_summary');
-  const showMatch  = showHoroscope && !!addonsStatus?.addons?.includes('match_making');
+  const showIncome = true;
+  const showMatch  = showHoroscope;
   const { data: incomeData } = useQuery({
     queryKey: ['orders-income-summary', clientId],
     queryFn: () => api.get('/orders/income-summary', { params: { client_id: clientId } }).then(r => r.data),
-    enabled: showIncome,
+    enabled: isEnabled('income_summary'),
   });
 
   const params = {
@@ -175,16 +175,25 @@ export default function Orders() {
 
   return (
     <Layout>
+      {lockModal}
       <div className="flex flex-col h-full">
         <div className="px-6 py-4 border-b border-slate-200 bg-white flex items-center gap-3 flex-wrap shrink-0">
           <h1 className="text-lg font-semibold text-slate-800 mr-2">Orders</h1>
-          {showIncome && incomeData && (
+          {isEnabled('income_summary') ? (incomeData && (
             <div
               className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200"
               title={`${incomeData.order_count} paid order${incomeData.order_count === 1 ? '' : 's'} this month`}
             >
               💰 This month: LKR {incomeData.total.toLocaleString()}
             </div>
+          )) : (
+            <button
+              onClick={() => showLocked('income_summary')}
+              title="Income Summary — see what this does"
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-slate-50 text-slate-400 border border-slate-200 border-dashed cursor-pointer hover:bg-slate-100"
+            >
+              💰 This month: LKR ••••• <LockBadge />
+            </button>
           )}
           <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
             placeholder="Search…" className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-violet-400 w-40" />
@@ -305,17 +314,23 @@ export default function Orders() {
                                   <>
                                     <span title={horoscopeError} className="text-xs px-1.5 py-0.5 rounded border-0 bg-red-100 text-red-600 cursor-default">⚠ Error</span>
                                     <button
-                                      onClick={() => setHoroscopeOrder(o)}
+                                      onClick={guard('horoscope_reading', () => setHoroscopeOrder(o))}
                                       title="Retry generation"
                                       className="text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 bg-violet-100 text-violet-700 hover:bg-violet-200"
                                     >🔮</button>
                                   </>
                                 ) : (
                                   <button
-                                    onClick={() => setHoroscopeOrder(o)}
-                                    title="Generate horoscope reading"
-                                    className="text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 bg-violet-100 text-violet-700 hover:bg-violet-200"
-                                  >🔮</button>
+                                    onClick={guard('horoscope_reading', () => setHoroscopeOrder(o))}
+                                    title={isEnabled('horoscope_reading')
+                                      ? 'Generate horoscope reading'
+                                      : 'Horoscope Reading — see what this does'}
+                                    className={`text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 ${
+                                      isEnabled('horoscope_reading')
+                                        ? 'bg-violet-100 text-violet-700 hover:bg-violet-200'
+                                        : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                                    }`}
+                                  >{isEnabled('horoscope_reading') ? '🔮' : '🔮 🔒'}</button>
                                 )}
                                 {horoscopeDone && (
                                   <button
@@ -377,13 +392,16 @@ export default function Orders() {
                                         <span title={matchError} className="text-xs px-1.5 py-0.5 rounded border-0 bg-red-100 text-red-600 cursor-default">⚠</span>
                                       )}
                                       <button
-                                        onClick={() => (matchDone ? setMatchOrder(o) : setMatchModalOrder(o))}
-                                        title={matchDone ? 'View/edit match making report' : 'Match making — enter both charts'}
+                                        onClick={guard('match_making', () => (matchDone ? setMatchOrder(o) : setMatchModalOrder(o)))}
+                                        title={!isEnabled('match_making')
+                                          ? 'Match Making — see what this does'
+                                          : (matchDone ? 'View/edit match making report' : 'Match making — enter both charts')}
                                         className={`text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 ${
-                                          matchDone ? 'bg-teal-200 text-teal-800 hover:bg-teal-300'
-                                                    : 'bg-teal-100 text-teal-700 hover:bg-teal-200'
+                                          !isEnabled('match_making') ? 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                                            : matchDone ? 'bg-teal-200 text-teal-800 hover:bg-teal-300'
+                                                        : 'bg-teal-100 text-teal-700 hover:bg-teal-200'
                                         }`}
-                                      >{matchDone ? '💑 ✏' : '💑'}</button>
+                                      >{!isEnabled('match_making') ? '💑 🔒' : (matchDone ? '💑 ✏' : '💑')}</button>
                                     </>
                                   )
                                 )}
@@ -400,17 +418,23 @@ export default function Orders() {
                                   <>
                                     <span title={tarotError} className="text-xs px-1.5 py-0.5 rounded border-0 bg-red-100 text-red-600 cursor-default">⚠ Error</span>
                                     <button
-                                      onClick={() => setTarotOrder(o)}
+                                      onClick={guard('tarot_reading', () => setTarotOrder(o))}
                                       title="Retry tarot generation"
                                       className="text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 bg-purple-100 text-purple-700 hover:bg-purple-200"
                                     >🃏</button>
                                   </>
                                 ) : (
                                   <button
-                                    onClick={() => setTarotOrder(o)}
-                                    title={tarotDone ? 'Regenerate tarot reading' : 'Generate tarot reading'}
-                                    className="text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 bg-purple-100 text-purple-700 hover:bg-purple-200"
-                                  >🃏</button>
+                                    onClick={guard('tarot_reading', () => setTarotOrder(o))}
+                                    title={!isEnabled('tarot_reading')
+                                      ? 'Tarot Reading — see what this does'
+                                      : (tarotDone ? 'Regenerate tarot reading' : 'Generate tarot reading')}
+                                    className={`text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 ${
+                                      isEnabled('tarot_reading')
+                                        ? 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                                        : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                                    }`}
+                                  >{isEnabled('tarot_reading') ? '🃏' : '🃏 🔒'}</button>
                                 )}
                                 {tarotDone && (
                                   <button

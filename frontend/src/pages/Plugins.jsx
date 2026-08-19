@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore, isSuperAdmin } from '../stores/auth';
 import Layout from '../components/Layout';
+import { useFeatureGate, LockBadge } from '../components/FeatureLock';
 import { useToast } from '../components/ui/Toast';
 import api from '../lib/api';
 
@@ -1007,32 +1008,51 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
   );
 }
 
+
+/**
+ * Placeholder card for a plugin the client has not bought.
+ *
+ * Deliberately shows the real name and description rather than an empty slot:
+ * the point is for the client to want it, then ask for it.
+ */
+function LockedPluginCard({ pluginMeta, onOpen }) {
+  return (
+    <button
+      onClick={() => onOpen(pluginMeta.id)}
+      className="text-left w-full bg-white border border-dashed border-slate-300 rounded-2xl p-4 cursor-pointer hover:border-violet-300 hover:bg-violet-50/30 transition-colors"
+    >
+      <div className="flex items-center gap-2 mb-0.5">
+        <span className="text-sm font-semibold text-slate-500">{pluginMeta.name}</span>
+        <LockBadge />
+      </div>
+      <p className="text-xs text-slate-400 leading-relaxed">{pluginMeta.description}</p>
+      <span className="inline-block mt-2 text-xs font-medium text-violet-500">
+        Learn more &rarr;
+      </span>
+    </button>
+  );
+}
+
 export default function Plugins() {
   const { user, selectedClientId } = useAuthStore();
   const superAdmin = isSuperAdmin(user);
   const clientId = superAdmin ? selectedClientId : user?.clientId;
 
-  // Fetch enabled addons to filter which plugin cards to show
-  const { data: addonsData } = useQuery({
-    queryKey: ['addons-status', clientId],
-    queryFn: () => api.get('/crm/addons-status', { params: clientId ? { client_id: clientId } : {} }).then(r => r.data),
-    enabled: !!clientId,
-  });
+  // The catalog comes from the backend so there is one definition of what each
+  // addon is, rather than a copy here that drifts out of sync.
+  const { isEnabled, showLocked, catalog, enabledAddons, lockModal } = useFeatureGate(clientId, superAdmin);
 
-  // The catalog is served by the backend so there is exactly one definition of
-  // what each addon is, rather than a copy here that drifts out of sync.
-  const { data: catalog } = useQuery({
-    queryKey: ['addons-catalog'],
-    queryFn: () => api.get('/addons/catalog').then(r => r.data),
-    staleTime: 5 * 60 * 1000,
-  });
-
-  const enabledAddons = addonsData?.addons || [];
-  const visiblePlugins = (catalog || [])
-    .filter(p => p.configurable && enabledAddons.includes(p.id));
+  // Every configurable plugin is listed. Ones the client has not bought render
+  // as a teaser rather than being hidden, so they can discover and ask for them.
+  // Only configurable addons get an editor card, but *every* addon the client
+  // lacks is advertised — including ones with no settings of their own, which
+  // would otherwise be invisible and so never asked for.
+  const unlocked = (catalog || []).filter(p => p.configurable && isEnabled(p.id));
+  const locked   = (catalog || []).filter(p => !isEnabled(p.id));
 
   return (
     <Layout>
+      {lockModal}
       <div className="p-6 overflow-y-auto h-full">
         <h1 className="text-lg font-bold text-slate-800 mb-1">Plugins</h1>
         <p className="text-sm text-slate-500 mb-6">
@@ -1040,15 +1060,27 @@ export default function Plugins() {
           {!clientId && <span className="text-amber-600 font-medium"> Select a client from the sidebar first.</span>}
         </p>
 
-        {clientId && visiblePlugins.length === 0 && (
-          <div className="text-sm text-slate-400">No plugins are enabled for this client. Enable them from the Addons page.</div>
-        )}
-
-        {clientId && visiblePlugins.length > 0 && (
+        {clientId && unlocked.length > 0 && (
           <div className="flex flex-col gap-4">
-            {visiblePlugins.map(p => (
+            {unlocked.map(p => (
               <PluginCard key={p.id} pluginMeta={p} clientId={clientId} superAdmin={superAdmin} enabledAddons={enabledAddons} />
             ))}
+          </div>
+        )}
+
+        {clientId && locked.length > 0 && (
+          <div className="mt-8">
+            <h2 className="text-sm font-semibold text-slate-600 mb-1">Available add-ons</h2>
+            <p className="text-xs text-slate-400 mb-3">
+              {superAdmin
+                ? 'Not enabled for this client. Turn them on from the Addons page.'
+                : 'Not enabled on your account yet \u2014 tap one to see what it does.'}
+            </p>
+            <div className="flex flex-col gap-3">
+              {locked.map(p => (
+                <LockedPluginCard key={p.id} pluginMeta={p} onOpen={showLocked} />
+              ))}
+            </div>
           </div>
         )}
       </div>

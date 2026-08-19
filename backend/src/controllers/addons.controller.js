@@ -17,63 +17,69 @@ const { getBrand } = require('../services/branding');
 
 /**
  * Catalog of available addons with their metadata.
+ *
+ * This copy is customer-facing: it is what a client reads on the Plugins page
+ * and in the locked-feature dialog. It describes what the service delivers, in
+ * the client's own terms, and deliberately names no vendors or internal
+ * machinery — that is an implementation detail, not a selling point.
+ *
  * @type {Array<{id: string, name: string, description: string}>}
  */
 const ADDON_CATALOG = [
   {
     id: 'crm_media_send',
-    name: 'CRM Media Send',
-    description: 'Allows CRM agents to send images, PDFs, and audio messages to WhatsApp customers directly from the chat interface.',
+    name: 'Media Sending',
+    description: 'Send images, PDFs and voice notes straight to a customer on WhatsApp from the chat screen, without leaving the CRM.',
   },
   {
     id: 'astro_vedic_chart',
-    name: 'Vedic Astro Chart',
-    description: 'Generates personalized astrology-based WhatsApp messages for customers using their vedic birth chart, to help recover pending orders.',
+    name: 'Personalised Chart Messages',
+    description: 'Turn a customer\u2019s birth chart into a personal WhatsApp message written for them, so pending orders get a warm, relevant nudge instead of a reminder.',
   },
   {
     id: 'horoscope_reading',
-    name: 'Horoscope Reading',
-    description: 'Generates full 10-section Vedic horoscope Word documents for payment_received orders.',
+    name: 'Full Horoscope Report',
+    description: 'A complete written horoscope, section by section, delivered as a ready-to-send Word document and PDF in your own branding \u2014 prepared in minutes instead of days.',
   },
   {
     id: 'ai_call_answering',
-    name: 'AI Call Answering',
-    description: 'Answers inbound Twilio phone calls with an AI agent, transcribes the conversation, and logs it in the CRM.',
+    name: 'Call Answering',
+    description: 'Answers your inbound phone calls when you cannot, holds the conversation, and files a full written transcript against the customer in the CRM.',
   },
   {
     id: 'image_analyzer',
-    name: 'Image Analyzer',
-    description: 'Analyzes customer payment slips and documents (images and PDFs) using Gemini Vision — extracts amount, date, and reference, and flags suspicious slips.',
+    name: 'Payment Slip Checking',
+    description: 'Reads bank slips and receipts the moment a customer sends them, pulls out the amount, date and reference, matches them to the right order, and flags anything that looks wrong.',
   },
   {
     id: 'tarot_reading',
     name: 'Tarot Reading',
-    description: 'Generates a personalised 3-card tarot reading (Past / Present / Future) for a customer based on their question, interpreted by Gemini.',
+    description: 'A personal three-card reading \u2014 past, present and future \u2014 written around the customer\u2019s own question and delivered as a finished document.',
   },
   {
     id: 'media_extractor',
-    name: 'Media Extraction',
-    description: 'Uses Gemini Vision to read and summarise images, PDFs, audio, and documents sent by customers — extracts text, credentials, and key details so the AI can respond contextually.',
+    name: 'Attachment Reading',
+    description: 'Reads whatever a customer sends \u2014 photos, PDFs, voice notes, documents \u2014 and pulls out the details, so nothing is missed and replies stay on point.',
   },
   {
     id: 'follow_up_generator',
-    name: 'Follow-up Generator',
-    description: 'Generates a short, personalised follow-up message for a customer based on their conversation history, ready for a CRM agent to review and send.',
+    name: 'Follow-up Messages',
+    description: 'Drafts a short, personal follow-up based on what the customer has already said, ready for your agent to read over and send.',
   },
   {
     id: 'meta_conversions',
-    name: 'Meta Conversions',
-    description: 'Sends Lead events to Meta CAPI when orders are placed, and Purchase events when payments are confirmed. Also syncs paid customer phones to a Meta Custom Audience for lookalike targeting.',
+    name: 'Meta Ads Tracking',
+    description: 'Reports orders and confirmed payments back to Meta so your ad spend is measured against real sales, and builds an audience of paying customers to find more like them.',
   },
   {
     id: 'match_making',
-    name: 'Match Making Report',
-    description: 'Generates a two-chart compatibility (ගැළපීම) report for a couple, including the 20 Porondam analysis. Requires Horoscope Reading.',
+    name: 'Compatibility Report',
+    description: 'A full two-chart compatibility (\u0d9c\u0dd0\u0dc5\u0db4\u0dd3\u0db8) report for a couple, including the twenty Porondam. Requires the Full Horoscope Report.',
   },
   {
     id: 'income_summary',
-    name: 'Income Summary',
-    description: 'Shows a monthly revenue total on the Orders page, summed from confirmed payments.',
+    name: 'Monthly Income',
+    description: 'See this month\u2019s takings at a glance on the Orders page, totalled from confirmed payments.',
   },
 ];
 

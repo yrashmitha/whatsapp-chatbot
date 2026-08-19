@@ -151,9 +151,9 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
         setMatchSpecialNote(r.data.match_special_note || '');
         setMatchAiFillPrompt(r.data.match_ai_fill_prompt || '');
         setGreeting(r.data.greeting || '');
-        const GEMINI_VOICES = ['achernar','achird','algenib','algieba','alnilam','aoede','autonoe','callirrhoe','charon','despina','enceladus','erinome','fenrir','gacrux','iapetus','kore','laomedeia','leda','orus','puck','pulcherrima','rasalgethi','sadachbia','sadaltager','schedar','sulafat','umbriel','vindemiatrix','zephyr','zubenelgenubi'];
+        const TTS_VOICES = ['achernar','achird','algenib','algieba','alnilam','aoede','autonoe','callirrhoe','charon','despina','enceladus','erinome','fenrir','gacrux','iapetus','kore','laomedeia','leda','orus','puck','pulcherrima','rasalgethi','sadachbia','sadaltager','schedar','sulafat','umbriel','vindemiatrix','zephyr','zubenelgenubi'];
         const savedVoice = (r.data.tts_voice || '').toLowerCase();
-        setTtsVoice(GEMINI_VOICES.includes(savedVoice) ? r.data.tts_voice : 'Kore');
+        setTtsVoice(TTS_VOICES.includes(savedVoice) ? r.data.tts_voice : 'Kore');
         setSttLanguage(r.data.stt_language || 'en-US');
         setVerificationPrompt(r.data.verification_prompt || '');
         setPage1Body(r.data.page1_body || '');
@@ -299,7 +299,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
         <>
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">Greeting</label>
-            <p className="text-xs text-slate-400 mb-1.5">First thing the AI says when it answers the call.</p>
+            <p className="text-xs text-slate-400 mb-1.5">First thing said when the call is answered.</p>
             <input
               type="text"
               value={greeting}
@@ -310,18 +310,18 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
           </div>
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">System Prompt</label>
-            <p className="text-xs text-slate-400 mb-1.5">AI personality and instructions for handling calls.</p>
+            <p className="text-xs text-slate-400 mb-1.5">Personality and instructions for handling calls.</p>
             <textarea
               value={systemPrompt}
               onChange={e => setSystemPrompt(e.target.value)}
               rows={6}
-              placeholder="You are a helpful AI phone receptionist. Keep responses short and conversational..."
+              placeholder="You are a helpful phone receptionist. Keep responses short and conversational..."
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y"
             />
           </div>
           <div>
-            <label className="text-xs font-medium text-slate-500 block mb-1">TTS Voice (Gemini)</label>
-            <p className="text-xs text-slate-400 mb-1.5">Gemini prebuilt voice. Supports Sinhala and 100+ languages automatically.</p>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Voice</label>
+            <p className="text-xs text-slate-400 mb-1.5">Choose the speaking voice. Supports Sinhala and 100+ languages automatically.</p>
             <select
               value={ttsVoice}
               onChange={e => setTtsVoice(e.target.value)}
@@ -355,7 +355,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
         <div>
           <label className="text-xs font-medium text-slate-500 block mb-1">Verification Instructions</label>
           <p className="text-xs text-slate-400 mb-1.5">
-            How the AI should handle payment slips: when to confirm, when to flag mismatches, and how to respond to customers.
+            How payment slips should be handled: when to confirm, when to flag mismatches, and how to respond to customers.
           </p>
           <textarea
             value={verificationPrompt}
@@ -364,13 +364,13 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
             placeholder="When a customer sends a payment slip, check if the amount matches their pending order..."
             className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y"
           />
-          <p className="text-xs text-slate-400 mt-1">Uses your Gemini API key. Supports images (JPG, PNG) and PDFs.</p>
+          <p className="text-xs text-slate-400 mt-1">Supports images (JPG, PNG) and PDFs.</p>
         </div>
       )}
 
       {!isHoroscope && !isCallAnswering && !isImageAnalyzer && !isTarot && !isMetaConversions && (
         <div>
-          <label className="text-xs font-medium text-slate-500 block mb-1">Gemini Prompt</label>
+          <label className="text-xs font-medium text-slate-500 block mb-1">Reading Instructions</label>
           {pluginMeta.id === 'astro_vedic_chart' && (
             <p className="text-xs text-slate-400 mb-1.5">
               Use <code className="font-mono bg-slate-100 px-1 rounded">{'{chart_json}'}</code> where chart data will be inserted.
@@ -378,7 +378,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
           )}
           {pluginMeta.id === 'media_extractor' && (
             <p className="text-xs text-slate-400 mb-1.5">
-              Instructions for Gemini when reading customer-sent media. Leave blank to use the built-in default (extracts name, contact, skills, credentials, or transcribes audio).
+              Instructions used when reading customer-sent media — what to pull out and how to summarise it.
             </p>
           )}
           {pluginMeta.id === 'follow_up_generator' && (
@@ -403,7 +403,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">Reading Prompt</label>
             <p className="text-xs text-slate-400 mb-1.5">
-              Customize how Gemini interprets the cards. Available placeholders:{' '}
+              How the cards should be interpreted. Available placeholders:{' '}
               <code className="font-mono bg-slate-100 px-1 rounded">{'{question}'}</code> (customer's situation) and{' '}
               <code className="font-mono bg-slate-100 px-1 rounded">{'{spread}'}</code> (the 3 drawn cards with meanings).
             </p>
@@ -603,7 +603,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
           <div className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-slate-50">
             <div>
               <p className="text-sm font-medium text-slate-700">Aura &amp; Quantum Feature</p>
-              <p className="text-xs text-slate-400 mt-0.5">When off, the Rs. 3490 package option is hidden and no Aura/Quantum AI calls are made.</p>
+              <p className="text-xs text-slate-400 mt-0.5">When off, the Rs. 3490 package option is hidden and no Aura/Quantum analysis is run.</p>
             </div>
             <button
               type="button"
@@ -616,7 +616,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">System Prompt</label>
             <p className="text-xs text-slate-400 mb-1.5">
-              This becomes the Gemini system instruction for all 10 sections. Include your astrologer persona, language guidelines, etc.
+              The house style for every section — your astrologer persona, tone and language guidelines.
             </p>
             <textarea
               value={systemPrompt}
@@ -629,7 +629,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">Quantum Reading System Prompt</label>
             <p className="text-xs text-slate-400 mb-1.5">
-              Gemini system instruction used when generating the Quantum Code reading (Aura + numerology section). Leave blank to use the built-in default Sinhala prompt.
+              House style for the Quantum Code reading (Aura + numerology section).
             </p>
             <textarea
               value={quantumSystemPrompt}
@@ -642,7 +642,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">Aura Analysis Prompt</label>
             <p className="text-xs text-slate-400 mb-1.5">
-              The prompt sent to Gemini Vision when analyzing aura selfies. Leave blank to use the built-in default (7-field JSON output in Sinhala).
+              How aura selfies should be read and what to report back.
             </p>
             <textarea
               value={auraSystemPrompt}
@@ -655,7 +655,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">WhatsApp Message Prompt</label>
             <p className="text-xs text-slate-400 mb-1.5">
-              After the horoscope (and quantum, if applicable) is generated, Gemini will be called with this as the system prompt and the full report as context to produce a WhatsApp message. Leave blank to disable auto-generation.
+              Once the report is ready, this decides how the accompanying WhatsApp message is written. Leave blank to skip it.
             </p>
             <textarea
               value={waMessagePrompt}
@@ -666,9 +666,9 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
             />
           </div>
           <div>
-            <label className="text-xs font-medium text-slate-500 block mb-1">AI Fill Prompt</label>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Auto Fill Instructions</label>
             <p className="text-xs text-slate-400 mb-1.5">
-              Sent to Gemini when the admin clicks <strong>AI Fill</strong> on an order — it reads the customer's chat and order details to extract birth date/time/place, coordinates, and special questions. Available placeholders, substituted at runtime:{' '}
+              Used when an agent clicks <strong>Auto Fill</strong> on an order — it reads the customer's chat and order details to extract birth date/time/place, coordinates, and special questions. Available placeholders, substituted at runtime:{' '}
               <code className="font-mono">{'{{customer_name}}'}</code>, <code className="font-mono">{'{{birth_date}}'}</code>, <code className="font-mono">{'{{birth_time}}'}</code>, <code className="font-mono">{'{{birth_place}}'}</code>, <code className="font-mono">{'{{lagna}}'}</code>, <code className="font-mono">{'{{problems}}'}</code>, <code className="font-mono">{'{{items}}'}</code>, <code className="font-mono">{'{{chat_log}}'}</code>. Clear the box to restore the built-in default.
             </p>
             <textarea
@@ -682,7 +682,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">Quantum Sections</label>
             <p className="text-xs text-slate-400 mb-1.5">
-              Each section triggers a separate Gemini call using the Quantum Reading system prompt. Full horoscope context is included. Leave empty to use the built-in 4-section reading.
+              Each section is written separately using the Quantum Reading house style, with the full horoscope as context.
             </p>
             {quantumSections.map((sec, i) => (
               <div key={i} className="flex gap-2 mb-2 items-start">
@@ -708,7 +708,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
                 <textarea
                   value={sec.guide}
                   onChange={e => { const u = [...quantumSections]; u[i] = { ...u[i], guide: e.target.value }; setQuantumSections(u); }}
-                  placeholder="Guide instructions for Gemini…"
+                  placeholder="Writing guide for this section…"
                   rows={3}
                   className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
                 />
@@ -726,7 +726,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">Horoscope Sections</label>
             <p className="text-xs text-slate-400 mb-1.5">
-              Define which sections to generate and in what order. Each section has a label (the heading) and guide text (instructions for Gemini). Leave empty to use built-in default 10 sections.
+              Which sections the report contains, and in what order. Each has a heading and a writing guide.
             </p>
             {horoscopeSections.map((sec, i) => (
               <div key={i} className="flex gap-2 mb-2 items-start">
@@ -752,7 +752,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
                 <textarea
                   value={sec.guide}
                   onChange={e => { const u = [...horoscopeSections]; u[i] = { ...u[i], guide: e.target.value }; setHoroscopeSections(u); }}
-                  placeholder="Guide instructions for Gemini…"
+                  placeholder="Writing guide for this section…"
                   rows={3}
                   className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
                 />
@@ -817,7 +817,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">Marriage System Prompt</label>
             <p className="text-xs text-slate-400 mb-1.5">
-              Gemini system instruction for every marriage section (the chart data is appended automatically). Leave blank to use the built-in default.
+              House style for every marriage section. The chart data is added automatically.
             </p>
             <textarea
               value={marriageSystemPrompt}
@@ -830,7 +830,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">Marriage Sections</label>
             <p className="text-xs text-slate-400 mb-1.5">
-              Each section is one Gemini call and one heading in the marriage PDF, in this order. Leave empty to use the built-in 8 sections.
+              Each entry is one heading in the marriage report, in this order.
             </p>
             {marriageSections.map((sec, i) => (
               <div key={i} className="flex gap-2 mb-2 items-start">
@@ -856,7 +856,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
                 <textarea
                   value={sec.guide}
                   onChange={e => { const u = [...marriageSections]; u[i] = { ...u[i], guide: e.target.value }; setMarriageSections(u); }}
-                  placeholder="Guide instructions for Gemini…"
+                  placeholder="Writing guide for this section…"
                   rows={3}
                   className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-pink-400 focus:ring-2 focus:ring-pink-100 resize-y font-mono"
                 />
@@ -904,13 +904,13 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
           <div className="mt-2 pt-4 border-t border-slate-200">
             <p className="text-sm font-semibold text-slate-800">💑 Match Making (ගැළපීම)</p>
             <p className="text-xs text-slate-400 mt-0.5">
-              A couple compatibility report built from TWO charts. Admins run it from the 💑 button on an order — the Match Making tab collects both partners&apos; birth details and a &ldquo;Check Sign&rdquo; per person. It has its own system prompt, sections, AI Fill prompt and PDF.
+              A couple compatibility report built from TWO charts. Admins run it from the 💑 button on an order — the Match Making tab collects both partners&apos; birth details and a &ldquo;Check Sign&rdquo; per person. It has its own house style, sections, Auto Fill instructions and PDF.
             </p>
           </div>
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">Match Making System Prompt</label>
             <p className="text-xs text-slate-400 mb-1.5">
-              Gemini system instruction for every section (both charts are appended automatically, each labelled පිරිමි / ගැහැනු). Leave blank to use the built-in default.
+              House style for every section. Both charts are added automatically, each labelled පිරිමි / ගැහැනු.
             </p>
             <textarea
               value={matchSystemPrompt}
@@ -923,7 +923,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">Match Making Sections</label>
             <p className="text-xs text-slate-400 mb-1.5">
-              Each section is one Gemini call and one heading in the match making PDF, in this order. Leave empty to use the built-in 12 sections.
+              Each entry is one heading in the compatibility report, in this order.
             </p>
             {matchSections.map((sec, i) => (
               <div key={i} className="flex gap-2 mb-2 items-start">
@@ -949,7 +949,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
                 <textarea
                   value={sec.guide}
                   onChange={e => { const u = [...matchSections]; u[i] = { ...u[i], guide: e.target.value }; setMatchSections(u); }}
-                  placeholder="Guide instructions for Gemini…"
+                  placeholder="Writing guide for this section…"
                   rows={3}
                   className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 resize-y font-mono"
                 />
@@ -965,9 +965,9 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
             >+ Add Section</button>
           </div>
           <div>
-            <label className="text-xs font-medium text-slate-500 block mb-1">Match Making AI Fill Prompt</label>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Match Making Auto Fill Instructions</label>
             <p className="text-xs text-slate-400 mb-1.5">
-              Separate from the horoscope AI Fill because a match making chat contains TWO people. Must tell Gemini how to decide which details belong to the boy and which to the girl. Placeholder: <code className="text-teal-600">{'{{chat_log}}'}</code>
+              Separate from the horoscope Auto Fill because a compatibility chat contains TWO people. It must say how to decide which details belong to the boy and which to the girl. Placeholder: <code className="text-teal-600">{'{{chat_log}}'}</code>
             </p>
             <textarea
               value={matchAiFillPrompt}

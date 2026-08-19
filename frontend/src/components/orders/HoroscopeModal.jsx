@@ -136,7 +136,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
   const [specialQuestions, setSpecialQuestions] = useState(
     (existingHd.special_answers || []).map(qa => ({
       question: qa.question,
-      prompt:   qa.prompt || qa.question,   // detailed Gemini-only input
+      prompt:   qa.prompt || qa.question,   // detailed internal input
       sections: Array.isArray(qa.sections) ? qa.sections : [],
     })).filter(qa => qa.question)
   );
@@ -144,7 +144,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
   const [newQuestionSections, setNewQuestionSections] = useState([]);
   const [editingQIdx, setEditingQIdx]           = useState(null);
   const [editingQText, setEditingQText]         = useState('');
-  const [expandedQIdx, setExpandedQIdx]         = useState(null);  // which AI prompt editor is open
+  const [expandedQIdx, setExpandedQIdx]         = useState(null);  // which internal prompt is being editedor is open
   const [configSections, setConfigSections]     = useState([]);
   const [selectedSections, setSelectedSections] = useState([]);
   const [quantumFeatureEnabled, setQuantumFeatureEnabled] = useState(true);
@@ -183,7 +183,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
   const addQuestion = () => {
     const q = (newQuestionRef.current?.value ?? newQuestion).trim();
     if (!q) return;
-    // Manual add: seed the Gemini prompt with the display text — admin can refine it via the AI-prompt editor.
+    // Manual add: seed the internal prompt with the display text — the agent can refine it below.
     setSpecialQuestions(prev => [...prev, { question: q, prompt: q, sections: newQuestionSections }]);
     setNewQuestion('');
     setNewQuestionSections([]);
@@ -442,7 +442,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
                 </div>
                 {order?.ai_summary && (
                   <div className="bg-violet-50 border border-violet-200 rounded-lg px-3 py-2 text-xs text-slate-700 leading-relaxed whitespace-pre-wrap mt-1">
-                    <span className="text-violet-600 font-semibold block mb-1">✨ AI Summary</span>
+                    <span className="text-violet-600 font-semibold block mb-1">✨ Summary</span>
                     {order.ai_summary}
                   </div>
                 )}
@@ -500,7 +500,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
             );
           })()}
 
-          {/* AI Fill */}
+          {/* Auto Fill */}
           <button
             type="button"
             disabled={aiPreparing}
@@ -527,9 +527,9 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
                 if (Array.isArray(special_questions) && special_questions.length) {
                   setSpecialQuestions(special_questions);
                 }
-                toast.success('AI filled all fields — review and generate');
+                toast.success('Auto Fill completed — review and generate');
               } catch (e) {
-                toast.error(e?.response?.data?.error || 'AI prepare failed');
+                toast.error(e?.response?.data?.error || 'Auto Fill failed');
               } finally {
                 setAiPreparing(false);
               }
@@ -538,8 +538,8 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
             style={{ background: aiPreparing ? '#f3f0ff' : 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: aiPreparing ? '#7c3aed' : '#fff' }}
           >
             {aiPreparing
-              ? <><span className="w-4 h-4 border-2 border-violet-300 border-t-violet-600 rounded-full animate-spin block" />Gemini is thinking…</>
-              : '✨ AI Fill — Read Chat & Prepare'}
+              ? <><span className="w-4 h-4 border-2 border-violet-300 border-t-violet-600 rounded-full animate-spin block" />Preparing…</>
+              : '✨ Auto Fill — Read Chat & Prepare'}
           </button>
 
           {/* Customer name */}
@@ -911,12 +911,12 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
                           onBlur={() => saveEdit(i)}
                         />
                       ) : (
-                        /* Display question — hover reveals the detailed Gemini-only prompt in a popover */
+                        /* Display question — hover reveals the detailed internal prompt in a popover */
                         <span className="relative flex-1 group">
                           <span className="cursor-pointer hover:text-violet-700" onClick={() => startEdit(i)} title="Click to edit the customer-facing question">{i + 1}. {qObj.question}</span>
                           <span className="pointer-events-none absolute left-0 top-full z-30 mt-1 hidden w-full group-hover:block">
                             <span className="block rounded-lg bg-slate-800 text-slate-50 text-sm leading-relaxed px-3 py-2.5 shadow-xl whitespace-pre-wrap break-words">
-                              <span className="block text-[11px] uppercase tracking-wide text-violet-300 mb-1">AI prompt — Gemini only</span>
+                              <span className="block text-[11px] uppercase tracking-wide text-violet-300 mb-1">Internal instruction</span>
                               {qObj.prompt || qObj.question}
                             </span>
                           </span>
@@ -926,21 +926,21 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
                         type="button"
                         onClick={() => setExpandedQIdx(expandedQIdx === i ? null : i)}
                         className={`shrink-0 bg-transparent border-0 cursor-pointer leading-none px-1 ${expandedQIdx === i ? 'text-violet-600' : 'text-slate-400 hover:text-violet-600'}`}
-                        title="Edit the detailed AI prompt (Gemini only)"
-                      >{expandedQIdx === i ? '⌃' : '⌄'} AI</button>
+                        title="Edit the detailed internal instruction"
+                      >{expandedQIdx === i ? '⌃' : '⌄'} edit</button>
                       <button type="button" onClick={() => removeQuestion(i)} className="text-slate-400 hover:text-red-500 bg-transparent border-0 cursor-pointer leading-none shrink-0">×</button>
                     </div>
-                    {/* Expanded AI-prompt editor (Gemini-only, never shown to the customer) */}
+                    {/* Expanded internal-instruction editor (never shown to the customer) */}
                     {expandedQIdx === i && (
                       <div className="mb-2">
-                        <p className="text-[11px] text-slate-400 mb-1">Detailed prompt sent to Gemini (the customer never sees this):</p>
+                        <p className="text-[11px] text-slate-400 mb-1">Detailed instruction used when writing this answer (the customer never sees it):</p>
                         <textarea
                           autoFocus
                           value={qObj.prompt || ''}
                           onChange={e => updateQuestionPrompt(i, e.target.value)}
                           rows={5}
                           className="w-full text-sm leading-relaxed border border-violet-300 rounded-lg px-2 py-1.5 outline-none bg-white resize-y focus:ring-2 focus:ring-violet-100"
-                          placeholder="Describe in detail what Gemini should analyse and answer…"
+                          placeholder="Describe in detail what should be analysed and answered…"
                         />
                       </div>
                     )}

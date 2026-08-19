@@ -6,8 +6,8 @@ import Button from '../components/ui/Button';
 import { useToast } from '../components/ui/Toast';
 import api, { authApi } from '../lib/api';
 
-const TABS = ['AI Details', 'API Keys', 'Password', 'Quick Replies'];
-const ADMIN_TABS = ['AI Details', 'API Keys', 'Password', 'Quick Replies', 'Consultation'];
+const TABS = ['Assistant', 'API Keys', 'Password', 'Quick Replies'];
+const ADMIN_TABS = ['Assistant', 'API Keys', 'Password', 'Quick Replies', 'Consultation'];
 
 function TokenInput({ value, onChange, placeholder }) {
   const [show, setShow] = useState(false);
@@ -38,7 +38,7 @@ export default function Settings() {
   const clientId = superAdmin ? selectedClientId : user?.clientId;
   const params   = clientId ? { client_id: clientId } : {};
 
-  const [activeTab, setActiveTab] = useState('AI Details');
+  const [activeTab, setActiveTab] = useState('Assistant');
 
   // ── Password ──────────────────────────────────────────────────────────────
   const [pwd, setPwd]             = useState({ current: '', newPwd: '', confirm: '' });
@@ -288,34 +288,34 @@ export default function Settings() {
 
         <div className="max-w-2xl flex flex-col gap-6">
 
-          {/* ── AI Details tab ── */}
-          {activeTab === 'AI Details' && (
+          {/* ── Assistant tab ── */}
+          {activeTab === 'Assistant' && (
             <div className="bg-white border border-slate-200 rounded-xl p-6">
               <h2 className="text-sm font-semibold text-slate-700 mb-4">
-                {superAdmin ? `AI System Prompt${clientId ? `: ${clientId}` : ''}` : 'AI System Prompt'}
+                {superAdmin ? `Assistant Instructions${clientId ? `: ${clientId}` : ''}` : 'Assistant Instructions'}
               </h2>
               {superAdmin && !clientId ? (
                 <p className="text-sm text-slate-400">Select a client from the top bar to edit their settings.</p>
               ) : (
                 <form onSubmit={handleSavePrompt} className="flex flex-col gap-3">
-                  <p className="text-xs text-slate-500">This prompt customizes the AI assistant's behavior for this client.</p>
+                  <p className="text-xs text-slate-500">These instructions shape how your assistant replies to customers.</p>
                   <textarea rows={8} value={prompt} onChange={e => setPrompt(e.target.value)}
                     placeholder="You are a helpful assistant for [business name]…"
                     className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono" />
 
                   <div className="border-t border-slate-100 pt-3 mt-1">
-                    <label className="block text-xs font-medium text-slate-600 mb-1.5">AI Unavailable Message</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Service Unavailable Message</label>
                     <textarea rows={3} value={errorMsg} onChange={e => setErrorMsg(e.target.value)}
                       placeholder="We're experiencing a short technical issue…"
                       className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y" />
-                    <p className="text-xs text-slate-400 mt-1">Sent when the AI is temporarily down. Leave blank to use the default.</p>
+                    <p className="text-xs text-slate-400 mt-1">Sent when the assistant is temporarily unavailable. Leave blank to use the default.</p>
                   </div>
 
                   <div className="border-t border-slate-100 pt-3 mt-1">
                     <label className="block text-xs font-medium text-slate-600 mb-1.5">Emergency Contact Number</label>
                     <input type="text" value={contactNumber} onChange={e => setContactNumber(e.target.value)}
                       placeholder="e.g. +94771234567" className={inpCls} />
-                    <p className="text-xs text-slate-400 mt-1">When the AI cannot answer, it will share this number. Leave blank to disable.</p>
+                    <p className="text-xs text-slate-400 mt-1">When the assistant cannot answer, it will share this number. Leave blank to disable.</p>
                   </div>
 
                   <div className="border-t border-slate-100 pt-3 mt-1">
@@ -330,14 +330,14 @@ export default function Settings() {
                       <input type="checkbox" checked={productCatalogEnabled} onChange={e => setProductCatalogEnabled(e.target.checked)} className="w-4 h-4 accent-violet-600" />
                       <div>
                         <p className="text-xs font-medium text-slate-600">Enable Product Catalog</p>
-                        <p className="text-xs text-slate-400">Let the AI search and recommend products from your catalog.</p>
+                        <p className="text-xs text-slate-400">Let your assistant search and recommend products from your catalog.</p>
                       </div>
                     </label>
                     <label className="flex items-center gap-3 cursor-pointer">
                       <input type="checkbox" checked={knowledgeBaseEnabled} onChange={e => setKnowledgeBaseEnabled(e.target.checked)} className="w-4 h-4 accent-violet-600" />
                       <div>
                         <p className="text-xs font-medium text-slate-600">Enable Knowledge Base</p>
-                        <p className="text-xs text-slate-400">Let the AI search your knowledge base to answer questions.</p>
+                        <p className="text-xs text-slate-400">Let your assistant search your knowledge base to answer questions.</p>
                       </div>
                     </label>
                     <div className="flex items-center gap-3">
@@ -356,7 +356,7 @@ export default function Settings() {
 
                   <div className="border-t border-slate-100 pt-3 mt-1">
                     <p className="text-xs font-medium text-slate-600 mb-1">Order Fields</p>
-                    <p className="text-xs text-slate-400 mb-3">Define what data the AI must collect before confirming an order.</p>
+                    <p className="text-xs text-slate-400 mb-3">Define what your assistant must collect before confirming an order.</p>
                     {orderFields.length > 0 && (
                       <div className="flex flex-col gap-2 mb-3">
                         {orderFields.map(f => (
@@ -377,7 +377,7 @@ export default function Settings() {
                                 type="text"
                                 value={editingFieldData.description}
                                 onChange={e => setEditingFieldData(p => ({ ...p, description: e.target.value }))}
-                                placeholder="Description / hint for AI (optional)"
+                                placeholder="Description / hint (optional)"
                                 className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-violet-400"
                               />
                               <div className="flex items-center justify-between">
@@ -418,7 +418,7 @@ export default function Settings() {
                           onChange={e => setNewField(p => ({ ...p, key: e.target.value.toLowerCase().replace(/\s/g, '_') }))}
                           className="w-28 text-sm border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-violet-400 font-mono" />
                       </div>
-                      <input type="text" placeholder="Description / hint for AI (optional)" value={newField.description}
+                      <input type="text" placeholder="Description / hint (optional)" value={newField.description}
                         onChange={e => setNewField(p => ({ ...p, description: e.target.value }))}
                         className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-violet-400" />
                       <div className="flex items-center justify-between">
@@ -442,7 +442,7 @@ export default function Settings() {
             <div className="bg-white border border-slate-200 rounded-xl p-6">
               <h2 className="text-sm font-semibold text-slate-700 mb-1">API Keys</h2>
               <p className="text-xs text-slate-400 mb-4">
-                Your own provider keys. Reports and AI replies are billed to whichever key is set here,
+                Your own service keys. Reports and customer replies are billed to whichever key is set here,
                 so usage lands on your account. Leave a field blank to keep the existing value.
               </p>
               {!clientId ? (
@@ -466,7 +466,7 @@ export default function Settings() {
                           : <span className="text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full">Not set</span>}
                     </div>
                     <p className="text-xs text-slate-400 mb-1.5">
-                      Powers AI replies and every generated report. Create one at Google AI Studio.
+                      Powers customer replies and report writing. Create a key at aistudio.google.com.
                     </p>
                     <TokenInput value={geminiKey} onChange={setGeminiKey} placeholder={geminiKeySet ? '(leave blank to keep current)' : 'AIzaSy...'} />
                   </div>
@@ -642,7 +642,7 @@ export default function Settings() {
                     placeholder="Leave blank to use the default CENTS framework prompt…"
                     className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
                   />
-                  <p className="text-xs text-slate-400 mt-1">The AI persona and instructions for the business consultant. Leave blank to use the default built-in prompt.</p>
+                  <p className="text-xs text-slate-400 mt-1">The persona and instructions for the business consultant. Leave blank to use the default built-in prompt.</p>
                 </div>
 
                 <div className="mt-1"><Button type="submit" disabled={consultSaving}>{consultSaving ? 'Saving…' : 'Save'}</Button></div>

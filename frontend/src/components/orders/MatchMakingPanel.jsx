@@ -114,7 +114,7 @@ export default function MatchMakingPanel({ order, clientId, existingHd, onClose,
     setSuggestions(s => ({ ...s, [side]: [] }));
   };
 
-  // ── AI Fill — one pass over the chat, both people ──────────────────────────
+  // ── Auto Fill — one pass over the chat, both people ──────────────────────────
   const handleAiFill = async () => {
     setAiPreparing(true);
     try {
@@ -150,14 +150,14 @@ export default function MatchMakingPanel({ order, clientId, existingHd, onClose,
       // null rather than guessing, and a silently blank column is easy to miss.
       const missing = [!gotBoy && 'පිරිමි (boy)', !gotGirl && 'ගැහැනු (girl)'].filter(Boolean);
       if (missing.length === 2) {
-        toast.error('AI could not identify either person from the chat — fill both sides manually');
+        toast.error('Could not identify either person from the chat — fill both sides manually');
       } else if (missing.length === 1) {
-        toast.error(`AI could not identify the ${missing[0]} details — fill that side manually`);
+        toast.error(`Could not identify the ${missing[0]} details — fill that side manually`);
       } else {
-        toast.success('AI filled both charts — check the boy/girl split before generating');
+        toast.success('Filled both charts — check the boy/girl split before generating');
       }
     } catch (e) {
-      toast.error(e?.response?.data?.error || 'AI prepare failed');
+      toast.error(e?.response?.data?.error || 'Auto Fill failed');
     } finally {
       setAiPreparing(false);
     }
@@ -363,7 +363,7 @@ export default function MatchMakingPanel({ order, clientId, existingHd, onClose,
           </div>
         )}
 
-        {/* AI Fill */}
+        {/* Auto Fill */}
         <button
           type="button"
           disabled={aiPreparing}
@@ -375,8 +375,8 @@ export default function MatchMakingPanel({ order, clientId, existingHd, onClose,
           }}
         >
           {aiPreparing
-            ? <><span className="w-4 h-4 border-2 border-teal-300 border-t-teal-600 rounded-full animate-spin block" />Gemini is reading the chat…</>
-            : '✨ AI Fill — Read Chat & Prepare Couple'}
+            ? <><span className="w-4 h-4 border-2 border-teal-300 border-t-teal-600 rounded-full animate-spin block" />Reading the chat…</>
+            : '✨ Auto Fill — Read Chat & Prepare Couple'}
         </button>
         <p className="text-xs text-slate-400 -mt-2">
           Reads both people out of one conversation. If it can&apos;t tell who is who it leaves that side blank rather than guessing — always check the split.
@@ -420,10 +420,10 @@ export default function MatchMakingPanel({ order, clientId, existingHd, onClose,
                   <button
                     type="button"
                     onClick={() => setExpandedQIdx(expandedQIdx === i ? null : i)}
-                    title="Edit the detailed Gemini instruction"
+                    title="Edit the detailed internal instruction"
                     className="px-2 py-1 text-xs text-teal-600 bg-white border border-teal-200 rounded-lg cursor-pointer hover:bg-teal-50"
                   >
-                    {expandedQIdx === i ? '▲' : '✎ AI'}
+                    {expandedQIdx === i ? '▲' : '✎ edit'}
                   </button>
                   <button
                     type="button"
@@ -438,7 +438,7 @@ export default function MatchMakingPanel({ order, clientId, existingHd, onClose,
                     rows={4}
                     value={q.prompt}
                     onChange={e => setQuestions(qs => qs.map((x, j) => (j === i ? { ...x, prompt: e.target.value } : x)))}
-                    placeholder="Detailed Sinhala instruction for Gemini (the customer never sees this)…"
+                    placeholder="Detailed Sinhala instruction (the customer never sees this)…"
                     className="w-full px-3 py-2 text-xs border-0 border-t border-slate-200 outline-none resize-y font-mono"
                   />
                 )}

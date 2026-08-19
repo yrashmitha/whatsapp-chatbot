@@ -287,7 +287,7 @@ export default function Orders() {
                             {paymentIdentified && o.status !== 'payment_received' && (
                               <div
                                 className="flex items-center gap-1 px-1.5 py-0.5 bg-amber-50 border border-amber-300 rounded text-amber-700 text-xs font-medium w-fit"
-                                title={`AI detected payment. Amount: ${paymentIdentified.amount || '?'} | Date: ${paymentIdentified.date || '?'} | Bank: ${paymentIdentified.bank || '?'} | Ref: ${paymentIdentified.ref || '?'}`}
+                                title={`Payment detected. Amount: ${paymentIdentified.amount || '?'} | Date: ${paymentIdentified.date || '?'} | Bank: ${paymentIdentified.bank || '?'} | Ref: ${paymentIdentified.ref || '?'}`}
                               >
                                 💳 Payment detected
                               </div>
@@ -452,10 +452,10 @@ export default function Orders() {
                       {isExpanded && (
                         <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
                           <td colSpan={colCount} className="px-6 py-3">
-                            {/* AI Summary section */}
+                            {/* Conversation summary section */}
                             {o.ai_summary && (
                               <div className="mb-3 p-3 rounded" style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)' }}>
-                                <div className="text-xs font-semibold mb-1" style={{ color: 'var(--accent)' }}>AI Summary</div>
+                                <div className="text-xs font-semibold mb-1" style={{ color: 'var(--accent)' }}>Conversation Summary</div>
                                 <div className="text-xs whitespace-pre-wrap" style={{ color: 'var(--text-2)' }}>{o.ai_summary}</div>
                               </div>
                             )}

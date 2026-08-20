@@ -306,9 +306,14 @@ export default function Orders() {
                             {showHoroscope && (
                               <>
                                 {isGenerating ? (
-                                  <span className="flex items-center gap-1 text-xs text-violet-600 font-medium">
+                                  <span
+                                    className="flex items-center gap-1 text-xs text-violet-600 font-medium"
+                                    title={hd?.progress?.phase
+                                      ? `${hd.progress.done}/${hd.progress.total} — ${hd.progress.phase}`
+                                      : 'Starting…'}
+                                  >
                                     <span className="w-3 h-3 border-2 border-violet-300 border-t-violet-600 rounded-full animate-spin inline-block" />
-                                    Generating…
+                                    Generating{hd?.progress?.percent != null ? ` ${hd.progress.percent}%` : '…'}
                                   </span>
                                 ) : horoscopeError ? (
                                   <>
@@ -382,9 +387,14 @@ export default function Orders() {
                                 )}
                                 {showMatch && (
                                   matchGenerating ? (
-                                    <span className="flex items-center gap-1 text-xs text-teal-600 font-medium">
+                                    <span
+                                      className="flex items-center gap-1 text-xs text-teal-600 font-medium"
+                                      title={hd?.match_progress?.phase
+                                        ? `${hd.match_progress.done}/${hd.match_progress.total} — ${hd.match_progress.phase}`
+                                        : 'Starting…'}
+                                    >
                                       <span className="w-3 h-3 border-2 border-teal-300 border-t-teal-600 rounded-full animate-spin inline-block" />
-                                      💑 Generating…
+                                      💑 Generating{hd?.match_progress?.percent != null ? ` ${hd.match_progress.percent}%` : '…'}
                                     </span>
                                   ) : (
                                     <>

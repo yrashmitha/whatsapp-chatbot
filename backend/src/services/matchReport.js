@@ -170,6 +170,29 @@ async function generateMatchSectionText({ clientId, coupleContext, systemPrompt,
  * @param {string} orderId
  * @returns {Promise<Array<{label: string, content: string}>>}
  */
+
+/**
+ * Live progress for the match-making run. Same rationale as the horoscope
+ * version: the run takes minutes and a bare spinner cannot be told from a stall.
+ *
+ * @param {string} orderId
+ * @param {number} done
+ * @param {number} total
+ * @param {string} phase
+ * @returns {Promise<void>}
+ */
+async function publishMatchProgress(orderId, done, total, phase) {
+  if (!total) return;
+  try {
+    await db.pgQuery(
+      `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), '{match_progress}', $1::jsonb, true) WHERE order_id=$2`,
+      [JSON.stringify({ done, total, percent: Math.min(99, Math.round((done / total) * 100)), phase, at: new Date().toISOString() }), orderId]
+    );
+  } catch (e) {
+    console.warn(`[PROGRESS] ${orderId} match write failed:`, e.message);
+  }
+}
+
 async function generateMatchReading(clientId, orderId) {
   const r = await db.pgQuery('SELECT horoscope_data FROM orders WHERE order_id=$1', [orderId]);
   if (!r.rows.length) throw new Error('Order not found');
@@ -209,6 +232,8 @@ async function generateMatchReading(clientId, orderId) {
   // ONE session for the whole run (see module docstring).
   const chat = (await buildMatchModel({ clientId, coupleContext, systemPrompt })).startChat({});
 
+  const totalSteps = sections.length + (Array.isArray(hd.match_special_questions) ? hd.match_special_questions.length : 0);
+  let doneSteps = 0;
   const out = [];
   for (const sec of sections) {
     const content = await generateMatchSectionText({
@@ -219,6 +244,7 @@ async function generateMatchReading(clientId, orderId) {
       chat,
     });
     out.push({ label: sec.label, content });
+    await publishMatchProgress(orderId, ++doneSteps, totalSteps, sec.label);
   }
 
   // The couple's own questions, answered in the same session so answers do not
@@ -244,10 +270,12 @@ async function generateMatchReading(clientId, orderId) {
       console.error(`[MATCH-Q] !! UNANSWERED: "${q.question || questionText}" — ${entry.error}`);
     }
     answers.push(entry);
+    await publishMatchProgress(orderId, ++doneSteps, totalSteps, `Question: ${q.question || questionText}`);
   }
 
   const updated = {
     ...hd,
+    match_progress:        null,
     match_sections_data:   out,
     match_special_answers: answers,
     match_generated_at:    new Date().toISOString(),

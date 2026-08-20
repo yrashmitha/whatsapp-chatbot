@@ -246,6 +246,45 @@ function contentToParagraphs(content, font) {
   return paragraphs;
 }
 
+
+/**
+ * Publish how far a generation has got, so the CRM can show a percentage
+ * instead of an indefinite spinner.
+ *
+ * Written after each step rather than only at the end, because the run takes
+ * minutes and an agent watching a bare "Generating…" has no way to tell
+ * progress from a stall. Best-effort: a failed progress write must never
+ * abort the report itself.
+ *
+ * @param {string} orderId
+ * @param {string} key     - horoscope_data key to write, e.g. 'progress'
+ * @param {number} done    - Steps finished
+ * @param {number} total   - Steps expected
+ * @param {string} phase   - What is happening now, shown as a tooltip
+ * @returns {Promise<void>}
+ */
+async function publishProgress(orderId, key, done, total, phase) {
+  if (!total) return;
+  try {
+    await db.pgQuery(
+      `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), $1::text[], $2::jsonb, true) WHERE order_id=$3`,
+      [
+        [key],
+        JSON.stringify({
+          done,
+          total,
+          percent: Math.min(99, Math.round((done / total) * 100)),
+          phase,
+          at: new Date().toISOString(),
+        }),
+        orderId,
+      ]
+    );
+  } catch (e) {
+    console.warn(`[PROGRESS] ${orderId} ${key} write failed:`, e.message);
+  }
+}
+
 async function buildHoroscopeDoc({ customerName, sections, specialAnswers, specialNote, birthDate, birthTime, sectionOrder, brand = DEFAULT_BRAND, remediesLabel = '', specialQuestionsTitle = '' }) {
   ensureDocx();
   const children = [];
@@ -991,6 +1030,10 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
 
   const sectionsMap = {};
   let agentAudit = null;
+  // Sections plus special questions — the two phases an agent waits through.
+  const totalSteps = activeSections.length + (Array.isArray(specialQuestions) ? specialQuestions.length : 0);
+  let doneSteps = 0;
+  await publishProgress(orderId, 'progress', 0, totalSteps, 'Starting');
   if (useAgent) {
     // ── Agentic path: Generator⇄Critic reflection loop (opt-in via UI button) ──
     const { runHoroscopeAgent, buildAudit } = require('./horoscopeAgent');
@@ -1012,6 +1055,8 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
       : undefined;
     const agentResult = await runHoroscopeAgent({ clientId, systemPrompt, chartDataJson, sectionDefs, onEvent });
     Object.assign(sectionsMap, agentResult.sections);
+    doneSteps = activeSections.length;
+    await publishProgress(orderId, 'progress', doneSteps, totalSteps, 'Sections complete');
     agentAudit = buildAudit(agentResult);
     console.log(`[HOROSCOPE] Agent finished: status=${agentAudit.status} iterations=${agentAudit.iterations} issues=${agentAudit.totalIssues}`);
   } else {
@@ -1035,6 +1080,7 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
       console.log('[HORO-CHAT] ──────────────────────────────────────────────────────');
       const sectionText = await sendRequired(chat, sectionPrompt, sec);
       const usage = undefined;
+      await publishProgress(orderId, 'progress', ++doneSteps, totalSteps, sec);
       console.log(`[HORO-CHAT] ── RESPONSE: "${sec}" ${'─'.repeat(Math.max(0, 49 - sec.length))}`);
       console.log(sectionText);
       console.log(`[HORO-CHAT] tokens in=${usage?.promptTokenCount ?? '?'}  out=${usage?.candidatesTokenCount ?? '?'}  chars=${sectionText.length}`);
@@ -1079,6 +1125,7 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
         console.error(`[HORO-SPECIAL] !! UNANSWERED: "${question}" — ${qEntry.error}`);
       }
       specialAnswers.push(qEntry);
+      await publishProgress(orderId, 'progress', ++doneSteps, totalSteps, `Question: ${question}`);
     }
   }
 
@@ -1107,6 +1154,7 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
     chart_data:       chartData,
     sections:         sectionsMap,
     special_answers:  specialAnswers,
+    progress:         null,
     ...(agentAudit && { agent_audit: agentAudit }),
     generated_at:     new Date().toISOString(),
     birth_place_name: birth_place_name || '',

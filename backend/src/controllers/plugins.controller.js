@@ -532,7 +532,7 @@ async function generateHoroscopeReading(req, res) {
   // Mark as generating immediately so the frontend can show progress
   if (db.IS_PG) {
     await db.pgQuery(
-      `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), '{generating}', 'true'::jsonb) WHERE order_id=$1`,
+      `UPDATE orders SET horoscope_data = jsonb_set(jsonb_set(COALESCE(horoscope_data,'{}'), '{generating}', 'true'::jsonb), '{generating_at}', to_jsonb(NOW()::text)) WHERE order_id=$1`,
       [order_id]
     ).catch(() => {});
   }
@@ -583,6 +583,7 @@ async function horoscopeProgress(req, res) {
       : (r.rows[0].horoscope_data || {});
     res.json({
       generating:     hd.generating === true,
+      progress:       hd.progress || null,
       agent_progress: hd.agent_progress || null,
       agent_audit:    hd.agent_audit || null,
       has_sections:   !!(hd.sections && Object.keys(hd.sections).length > 0),
@@ -903,7 +904,7 @@ async function regenerateQuantumSections(req, res) {
 
     // Mark quantum as generating so the drawer can reflect this even if reopened
     await db.pgQuery(
-      `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), '{quantum_generating}', 'true'::jsonb) WHERE order_id=$1`,
+      `UPDATE orders SET horoscope_data = jsonb_set(jsonb_set(COALESCE(horoscope_data,'{}'), '{quantum_generating}', 'true'::jsonb), '{quantum_generating_at}', to_jsonb(NOW()::text)) WHERE order_id=$1`,
       [orderId]
     );
 
@@ -1441,7 +1442,7 @@ async function generateMarriageHandler(req, res) {
     }
 
     await db.pgQuery(
-      `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}') - 'marriage_error', '{marriage_generating}', 'true'::jsonb) WHERE order_id=$1`,
+      `UPDATE orders SET horoscope_data = jsonb_set(jsonb_set(COALESCE(horoscope_data,'{}') - 'marriage_error', '{marriage_generating}', 'true'::jsonb), '{marriage_generating_at}', to_jsonb(NOW()::text)) WHERE order_id=$1`,
       [orderId]
     );
 
@@ -1819,7 +1820,7 @@ async function generateMatchHandler(req, res) {
     }
 
     await db.pgQuery(
-      `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}') - 'match_error', '{match_generating}', 'true'::jsonb) WHERE order_id=$1`,
+      `UPDATE orders SET horoscope_data = jsonb_set(jsonb_set(COALESCE(horoscope_data,'{}') - 'match_error', '{match_generating}', 'true'::jsonb), '{match_generating_at}', to_jsonb(NOW()::text)) WHERE order_id=$1`,
       [orderId]
     );
 

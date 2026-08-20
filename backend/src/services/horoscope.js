@@ -10,6 +10,7 @@
 const axios  = require('axios');
 const db     = require('../db');
 const { getFreeAstroKey, getGeminiKey, getGenAI } = require('./clientKeys');
+const { sendChecked, sendRequired } = require('./aiRetry');
 const { DEFAULT_BRAND, footerText } = require('./branding');
 const { extractPlanetDegreesSum, generateQuantumCode, generateQuantumReading, generateQuantumSections } = require('./quantumCode');
 const { todayContextBlock } = require('./dateContext');
@@ -1032,9 +1033,8 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
       console.log(`\n[HORO-CHAT] ── REQUEST: "${sec}" ${'─'.repeat(Math.max(0, 50 - sec.length))}`);
       console.log('[HORO-CHAT] userPrompt:\n' + sectionPrompt);
       console.log('[HORO-CHAT] ──────────────────────────────────────────────────────');
-      const result = await chat.sendMessage(sectionPrompt);
-      const sectionText = result.response.text();
-      const usage = result.response.usageMetadata;
+      const sectionText = await sendRequired(chat, sectionPrompt, sec);
+      const usage = undefined;
       console.log(`[HORO-CHAT] ── RESPONSE: "${sec}" ${'─'.repeat(Math.max(0, 49 - sec.length))}`);
       console.log(sectionText);
       console.log(`[HORO-CHAT] tokens in=${usage?.promptTokenCount ?? '?'}  out=${usage?.candidatesTokenCount ?? '?'}  chars=${sectionText.length}`);
@@ -1065,14 +1065,20 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
       console.log(`\n[HORO-SPECIAL] ── REQUEST (display): "${question}"`);
       console.log('[HORO-SPECIAL] userPrompt (AI):\n' + qPrompt);
       console.log('[HORO-SPECIAL] ─────────────────────────────────────────────────');
-      const qResult = await specialChat.sendMessage(qPrompt);
-      const qText = qResult.response.text();
-      const qUsage = qResult.response.usageMetadata;
+      const { text: qText, finishReason: qReason } = await sendChecked(specialChat, qPrompt, `question: ${question}`);
+      const qUsage = undefined;
       console.log(`[HORO-SPECIAL] ── RESPONSE: "${question}"`);
       console.log(qText);
       console.log(`[HORO-SPECIAL] tokens in=${qUsage?.promptTokenCount ?? '?'}  out=${qUsage?.candidatesTokenCount ?? '?'}  chars=${qText.length}`);
       console.log('[HORO-SPECIAL] ─────────────────────────────────────────────────');
-      specialAnswers.push({ question, prompt: aiPrompt, sections: qObj.sections || [], answer: qText });
+      const qEntry = { question, prompt: aiPrompt, sections: qObj.sections || [], answer: qText };
+      if (!qText) {
+        qEntry.error = qReason === 'SAFETY'
+          ? 'Declined on safety grounds — try rewording this question.'
+          : `No answer returned (${qReason || 'unknown reason'}) — regenerate this question.`;
+        console.error(`[HORO-SPECIAL] !! UNANSWERED: "${question}" — ${qEntry.error}`);
+      }
+      specialAnswers.push(qEntry);
     }
   }
 
@@ -1177,8 +1183,7 @@ async function generateWaMessage(clientId, orderId, horoscopeData, waMessageProm
   });
 
   const chat = model.startChat({});
-  const result = await chat.sendMessage(contextText);
-  const waMessage = result.response.text();
+  const waMessage = await sendRequired(chat, contextText, 'WhatsApp message');
   const usage = result.response.usageMetadata;
   console.log(`[WA-MESSAGE] order=${orderId} tokens in=${usage?.promptTokenCount ?? '?'} out=${usage?.candidatesTokenCount ?? '?'} chars=${waMessage.length}`);
 
@@ -1228,10 +1233,8 @@ async function regenerateHoroscopeSection({ clientId, chartData, systemPrompt, s
   if (history.length) console.log(`[REGEN-SECTION] replaying ${history.length / 2} earlier section(s) as history`);
 
   const chat = model.startChat({ history });
-  const result = await chat.sendMessage(prompt);
-  const text = result.response.text();
-  const usage = result.response.usageMetadata;
-  console.log(`[REGEN-SECTION] tokens in=${usage?.promptTokenCount ?? '?'}  out=${usage?.candidatesTokenCount ?? '?'}  chars=${text.length}`);
+  const text = await sendRequired(chat, prompt, sectionKey);
+  console.log(`[REGEN-SECTION] chars=${text.length}`);
   return text;
 }
 

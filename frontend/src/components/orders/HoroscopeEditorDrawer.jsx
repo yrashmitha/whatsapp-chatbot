@@ -351,6 +351,14 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
                         }}
                         placeholder="Question text…"
                       />
+                      {/* Generation left this one blank. Surfaced so the report is
+                          not downloaded with a question silently unanswered. */}
+                      {specialAnswers[activeTabData.key]?.error
+                        && !(specialAnswers[activeTabData.key]?.answer || '').trim() && (
+                        <p style={{ margin: '0 0 6px', fontSize: 12, fontWeight: 600, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: '6px 8px' }}>
+                          ⚠ Not answered — {specialAnswers[activeTabData.key].error}
+                        </p>
+                      )}
                       <p style={{ margin: '0 0 4px 0', fontSize: 11, color: '#64748b', fontWeight: 600 }}>Answer:</p>
                       <textarea
                         key={activeTabData.id}

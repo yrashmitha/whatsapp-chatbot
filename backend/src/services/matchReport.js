@@ -29,6 +29,7 @@
 
 const db        = require('../db');
 const { getGenAI } = require('./clientKeys');
+const { sendChecked, sendRequired } = require('./aiRetry');
 const { buildSectionsDoc } = require('./horoscope');
 const { todayContextBlock } = require('./dateContext');
 
@@ -154,9 +155,8 @@ async function generateMatchSectionText({ clientId, coupleContext, systemPrompt,
 
   const activeChat = chat
     || (await buildMatchModel({ clientId, coupleContext, systemPrompt })).startChat({ history: history || [] });
-  const result = await activeChat.sendMessage(prompt);
-  const text   = result.response.text();
-  const usage  = result.response.usageMetadata;
+  const text = await sendRequired(activeChat, prompt, label);
+  const usage = undefined;
   console.log(`[MATCH] ── RESPONSE: "${label}" tokens in=${usage?.promptTokenCount ?? '?'} out=${usage?.candidatesTokenCount ?? '?'} chars=${text.length}`);
   return text;
 }
@@ -229,10 +229,21 @@ async function generateMatchReading(clientId, orderId) {
     const questionText = (q.prompt && q.prompt.trim()) ? q.prompt : (q.question || '');
     if (!questionText.trim()) continue;
     console.log(`[MATCH-Q] ── REQUEST: "${q.question || questionText}"`);
-    const result = await chat.sendMessage(buildMatchQuestionPrompt(questionText, questionInstructions));
-    const answer = result.response.text();
+    const label = `question: ${q.question || questionText}`;
+    const { text: answer, finishReason } = await sendChecked(
+      chat, buildMatchQuestionPrompt(questionText, questionInstructions), label);
     console.log(`[MATCH-Q] ── RESPONSE: chars=${answer.length}`);
-    answers.push({ question: q.question || questionText, prompt: q.prompt || '', answer });
+    const entry = { question: q.question || questionText, prompt: q.prompt || '', answer };
+    if (!answer) {
+      // Saved rather than thrown: losing every generated section over one
+      // unanswered question is the worse outcome. The flag makes it visible
+      // so the report is not sent out with a silent gap.
+      entry.error = finishReason === 'SAFETY'
+        ? 'Declined on safety grounds — try rewording this question.'
+        : `No answer returned (${finishReason || 'unknown reason'}) — regenerate this question.`;
+      console.error(`[MATCH-Q] !! UNANSWERED: "${q.question || questionText}" — ${entry.error}`);
+    }
+    answers.push(entry);
   }
 
   const updated = {

@@ -20,6 +20,7 @@
 
 const db        = require('../db');
 const { getGenAI } = require('./clientKeys');
+const { sendRequired } = require('./aiRetry');
 const { buildSectionsDoc } = require('./horoscope');
 const { todayContextBlock } = require('./dateContext');
 
@@ -98,8 +99,7 @@ async function generateMarriageSectionText({ clientId, chartData, systemPrompt, 
 
   const activeChat = chat
     || (await buildMarriageModel({ clientId, chartData, systemPrompt })).startChat({ history: history || [] });
-  const result = await activeChat.sendMessage(prompt);
-  const text   = result.response.text();
+  const text = await sendRequired(activeChat, prompt, label);
   const usage  = result.response.usageMetadata;
   console.log(`[MARRIAGE] ── RESPONSE: "${label}" tokens in=${usage?.promptTokenCount ?? '?'} out=${usage?.candidatesTokenCount ?? '?'} chars=${text.length}`);
   return text;
@@ -196,11 +196,9 @@ async function generateMarriageWaMessage(clientId, orderId, sectionsData, waProm
     generationConfig: { temperature: 0.7, topP: 0.9, topK: 40 },
     systemInstruction: waPrompt,
   });
-  const chat   = model.startChat({});
-  const result = await chat.sendMessage(contextText);
-  const message = result.response.text();
-  const usage   = result.response.usageMetadata;
-  console.log(`[MARRIAGE-WA] order=${orderId} tokens in=${usage?.promptTokenCount ?? '?'} out=${usage?.candidatesTokenCount ?? '?'} chars=${message.length}`);
+  const chat = model.startChat({});
+  const message = await sendRequired(chat, contextText, 'marriage WhatsApp message');
+  console.log(`[MARRIAGE-WA] order=${orderId} chars=${message.length}`);
 
   await db.pgQuery(
     `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), '{marriage_wa_message}', $1::jsonb) WHERE order_id=$2`,

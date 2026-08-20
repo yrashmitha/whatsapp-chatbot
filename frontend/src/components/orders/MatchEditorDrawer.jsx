@@ -260,6 +260,13 @@ export default function MatchEditorDrawer({ order, clientId, open, onClose }) {
                       <p style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 700, color: ACCENT }}>
                         {i + 1}. {qa.question}
                       </p>
+                      {/* Generation left this one blank. Surfaced here so the report
+                          is not downloaded with a question silently unanswered. */}
+                      {qa.error && !(qa.answer || '').trim() && (
+                        <p style={{ margin: '0 0 6px', fontSize: 12, fontWeight: 600, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: '6px 8px' }}>
+                          ⚠ Not answered — {qa.error}
+                        </p>
+                      )}
                       <textarea
                         style={{ width: '100%', padding: '10px 12px', fontSize: 13, fontFamily: 'monospace', border: '1px solid #cbd5e1', borderRadius: 8, outline: 'none', background: '#ffffff', color: '#1e293b', resize: 'vertical', lineHeight: 1.6, boxSizing: 'border-box' }}
                         value={qa.answer || ''}

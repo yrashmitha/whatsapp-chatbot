@@ -379,6 +379,9 @@ async function init() {
     ]) {
       await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS ${col}`);
     }
+    // Draft system prompt, applied to Test Chat sessions only so a prompt can
+    // be tried against real behaviour without changing what customers get.
+    await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS test_system_prompt TEXT`);
     await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS report_logo_width  INT NOT NULL DEFAULT 160`);
     await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS report_logo_height INT NOT NULL DEFAULT 160`);
 
@@ -689,6 +692,7 @@ async function init() {
       'report_signature TEXT', 'report_footer TEXT', 'report_invocation TEXT',
       'report_divider TEXT', 'report_font TEXT', 'report_logo_url TEXT',
       'pdf_title TEXT', 'pdf_author TEXT', 'pdf_subject TEXT', 'pdf_producer TEXT',
+      'test_system_prompt TEXT',
       'report_logo_width INTEGER NOT NULL DEFAULT 160',
       'report_logo_height INTEGER NOT NULL DEFAULT 160',
     ]) {

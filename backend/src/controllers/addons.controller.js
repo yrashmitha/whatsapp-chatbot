@@ -77,6 +77,11 @@ const ADDON_CATALOG = [
     description: 'A full two-chart compatibility (\u0d9c\u0dd0\u0dc5\u0db4\u0dd3\u0db8) report for a couple, including the twenty Porondam. Requires the Full Horoscope Report.',
   },
   {
+    id: 'horoscope_followup_qa',
+    name: 'Follow-up Answers',
+    description: 'When a customer asks something after their report is delivered, drafts a reply in your own words — written as a chat message, not a report extract — using what their reading already says.',
+  },
+  {
     id: 'income_summary',
     name: 'Monthly Income',
     description: 'See this month\u2019s takings at a glance on the Orders page, totalled from confirmed payments.',

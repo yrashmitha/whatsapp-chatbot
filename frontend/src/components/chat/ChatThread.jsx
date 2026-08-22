@@ -4,6 +4,7 @@ import api from '../../lib/api';
 import MessageBubble from './MessageBubble';
 import MessageInput from './MessageInput';
 import AstroChartModal from './AstroChartModal';
+import HoroscopeQaPanel from './HoroscopeQaPanel';
 import TarotModal from './TarotModal';
 import CreateOrderDrawer from './CreateOrderDrawer';
 import Spinner from '../ui/Spinner';
@@ -16,6 +17,7 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
   const [ordersOpen, setOrdersOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [astroModalOpen, setAstroModalOpen]   = useState(false);
+  const [horoscopeQaOpen, setHoroscopeQaOpen] = useState(false);
   const [tarotModalOpen, setTarotModalOpen]   = useState(false);
   const [createOrderOpen, setCreateOrderOpen] = useState(false);
   const [messagePrefill, setMessagePrefill] = useState('');
@@ -241,6 +243,15 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
                 🔮 Tarot
               </button>
             )}
+            {addonsData?.addons?.includes('horoscope_followup_qa') && (
+              <button
+                onClick={() => setHoroscopeQaOpen(true)}
+                className="text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-violet-100 text-violet-700 hover:bg-violet-200"
+                title="Draft a reply to a question about this customer's delivered report"
+              >
+                💬 Follow-up
+              </button>
+            )}
             <button
               onClick={() => setCreateOrderOpen(true)}
               className="text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
@@ -288,6 +299,14 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
               className="shrink-0 text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-purple-100 text-purple-700 hover:bg-purple-200"
             >
               🔮 Tarot
+            </button>
+          )}
+          {addonsData?.addons?.includes('horoscope_followup_qa') && (
+            <button
+              onClick={() => setHoroscopeQaOpen(true)}
+              className="shrink-0 text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-violet-100 text-violet-700 hover:bg-violet-200"
+            >
+              💬 Follow-up
             </button>
           )}
           <button
@@ -371,6 +390,15 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
         onClose={() => setCreateOrderOpen(false)}
         customer={{ phone, name }}
         clientId={clientId}
+      />
+
+      {/* Follow-up Q&A on an already-delivered report */}
+      <HoroscopeQaPanel
+        open={horoscopeQaOpen}
+        onClose={() => setHoroscopeQaOpen(false)}
+        phone={phone}
+        clientId={clientId}
+        onDraft={(text) => setMessagePrefill(text)}
       />
 
       {/* Astro Chart Modal */}

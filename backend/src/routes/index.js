@@ -22,6 +22,8 @@ const mediaRoutes      = require('./media.routes');
 const addonRoutes      = require('./addons.routes');      // mounted at /api — owns /api/addons, /api/crm
 const pluginRoutes     = require('./plugins.routes');
 const settingsRoutes   = require('./settings.routes');
+const horoscopeQaRoutes = require('./horoscopeQa.routes');
+const testChatRoutes    = require('./testChat.routes');
 const summaryRoutes      = require('./summary.routes');
 const adminRoutes        = require('./admin.routes');
 const quickRepliesRoutes = require('./quickReplies.routes');
@@ -69,6 +71,8 @@ const webhookLimiter = rateLimit({
  *   /api/media         → mediaRoutes
  *   /api/plugins       → pluginRoutes
  *   /api/settings      → settingsRoutes
+ *   /api/horoscope-qa  → horoscopeQaRoutes
+ *   /api/test-chat     → testChatRoutes
  *   /admin             → adminRoutes
  *
  * @param {import('express').Application} app - The Express application instance.
@@ -98,6 +102,8 @@ function mountRoutes(app) {
   app.use('/api/media',        mediaRoutes);
   app.use('/api/plugins',      pluginRoutes);
   app.use('/api/settings',     settingsRoutes);
+  app.use('/api/horoscope-qa', horoscopeQaRoutes);
+  app.use('/api/test-chat',    testChatRoutes);
   app.use('/api/summary',        summaryRoutes);
   app.use('/api/quick-replies',  quickRepliesRoutes);
   app.use('/api/calls',          callsRoutes);

@@ -13,6 +13,7 @@ import Clients from './pages/Clients';
 import Packages from './pages/Packages';
 import Addons from './pages/Addons';
 import Plugins from './pages/Plugins';
+import TestChat from './pages/TestChat';
 import Summary from './pages/Summary';
 import Calls from './pages/Calls';
 import VoiceClips from './pages/VoiceClips';
@@ -40,6 +41,7 @@ const router = createBrowserRouter([
   { path: '/packages', element: <ProtectedRoute><Packages /></ProtectedRoute> },
   { path: '/addons', element: <ProtectedRoute><Addons /></ProtectedRoute> },
   { path: '/plugins', element: <ProtectedRoute><Plugins /></ProtectedRoute> },
+  { path: '/test-chat', element: <ProtectedRoute><TestChat /></ProtectedRoute> },
   { path: '/calls',        element: <ProtectedRoute><Calls /></ProtectedRoute> },
   { path: '/voice-clips',  element: <ProtectedRoute><VoiceClips /></ProtectedRoute> },
   { path: '/', element: <Landing /> },

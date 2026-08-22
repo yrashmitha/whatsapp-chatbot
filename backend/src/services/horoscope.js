@@ -1232,8 +1232,7 @@ async function generateWaMessage(clientId, orderId, horoscopeData, waMessageProm
 
   const chat = model.startChat({});
   const waMessage = await sendRequired(chat, contextText, 'WhatsApp message');
-  const usage = result.response.usageMetadata;
-  console.log(`[WA-MESSAGE] order=${orderId} tokens in=${usage?.promptTokenCount ?? '?'} out=${usage?.candidatesTokenCount ?? '?'} chars=${waMessage.length}`);
+  console.log(`[WA-MESSAGE] order=${orderId} chars=${waMessage.length}`);
 
   await db.pgQuery(
     `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), '{wa_message}', $1::jsonb) WHERE order_id=$2`,

@@ -12,6 +12,7 @@ const path    = require('path');
 const crypto  = require('crypto');
 const db      = require('../db');
 const clientRouter = require('../services/clientRouter');
+const resolveClientId = require('../middleware/resolveClientId');
 const { invalidateClientKeys } = require('../services/clientKeys');
 const { invalidateBrand, FONT_ALLOWLIST, FALLBACK_FONT } = require('../services/branding');
 const buildSystemInstruction = require('../services/buildInstruction');

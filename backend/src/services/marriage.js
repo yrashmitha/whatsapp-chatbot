@@ -100,8 +100,7 @@ async function generateMarriageSectionText({ clientId, chartData, systemPrompt, 
   const activeChat = chat
     || (await buildMarriageModel({ clientId, chartData, systemPrompt })).startChat({ history: history || [] });
   const text = await sendRequired(activeChat, prompt, label);
-  const usage  = result.response.usageMetadata;
-  console.log(`[MARRIAGE] ── RESPONSE: "${label}" tokens in=${usage?.promptTokenCount ?? '?'} out=${usage?.candidatesTokenCount ?? '?'} chars=${text.length}`);
+  console.log(`[MARRIAGE] ── RESPONSE: "${label}" chars=${text.length}`);
   return text;
 }
 

@@ -18,6 +18,7 @@
  * Usage:
  *   node backend/scripts/seed-client-config.js <clientId> <values.json>
  *   node backend/scripts/seed-client-config.js <clientId> <values.json> --apply
+ *   node backend/scripts/seed-client-config.js <clientId> <values.json> --apply --enable-addons
  *
  * Expected JSON shape:
  *   {
@@ -69,9 +70,12 @@ function preview(v) {
 async function main() {
   const [clientId, valuesPath] = process.argv.slice(2);
   const apply = process.argv.includes('--apply');
+  // A row that exists but is disabled was almost certainly turned off on
+  // purpose, so switching it back on has to be asked for explicitly.
+  const enableAddons = process.argv.includes('--enable-addons');
 
   if (!clientId || !valuesPath) {
-    console.error('Usage: node backend/scripts/seed-client-config.js <clientId> <values.json> [--apply]');
+    console.error('Usage: node backend/scripts/seed-client-config.js <clientId> <values.json> [--apply] [--enable-addons]');
     process.exit(1);
   }
   if (!IS_PG) {
@@ -223,15 +227,21 @@ async function main() {
     for (const addonId of values.addons) {
       const { rows } = await pgQuery(
         'SELECT enabled FROM client_addons WHERE client_id=$1 AND addon_id=$2', [clientId, addonId]);
-      if (rows.length) {
-        console.log(`  kept  ${addonId.padEnd(20)} (already ${rows[0].enabled ? 'enabled' : 'disabled'})`);
+
+      if (rows.length && rows[0].enabled) {
+        console.log(`  kept  ${addonId.padEnd(22)} (already enabled)`);
         continue;
       }
-      console.log(`  set   ${addonId.padEnd(20)} enabled`);
+      if (rows.length && !enableAddons) {
+        console.log(`  kept  ${addonId.padEnd(22)} (disabled — pass --enable-addons to switch it on)`);
+        continue;
+      }
+
+      console.log(`  ${rows.length ? 'ENABLE' : 'set   '} ${addonId.padEnd(22)} enabled`);
       if (apply) {
         await pgQuery(
           `INSERT INTO client_addons (client_id, addon_id, enabled) VALUES ($1,$2,TRUE)
-           ON CONFLICT (client_id, addon_id) DO NOTHING`, [clientId, addonId]);
+           ON CONFLICT (client_id, addon_id) DO UPDATE SET enabled = TRUE`, [clientId, addonId]);
       }
     }
   }

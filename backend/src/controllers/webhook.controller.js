@@ -13,7 +13,7 @@ const path   = require('path');
 const db     = require('../db');
 const clientRouter = require('../services/clientRouter');
 const { buildChatSession, handleMessage } = require('../services/gemini');
-const { sendWhatsAppMessage, sendWhatsAppImage, sendWhatsAppAudio, sendBotReply, sendWhatsAppInteractiveList, waToken, waPhoneId, markMessageRead } = require('../services/whatsapp');
+const { sendWhatsAppMessage, sendWhatsAppImage, sendWhatsAppAudio, sendBotReply, sendWhatsAppInteractiveList, sendWhatsAppReplyButtons, waToken, waPhoneId, markMessageRead } = require('../services/whatsapp');
 const { chatSessions } = require('../workers/sessionManager');
 const { UPLOADS_DIR } = require('../config/env');
 const { analyzePaymentDocument, buildAnalysisNote } = require('../services/imageAnalysis');
@@ -87,8 +87,30 @@ function receiveWebhook(req, res) {
       const value = req.body?.entry?.[0]?.changes?.[0]?.value;
       console.log(`[WEBHOOK-POST] Received payload, has messages: ${!!value?.messages?.length}`);
 
+      // Delivery receipts arrive as their own event with no messages array.
+      // Record them before the early return, or a report that never reached the
+      // customer is indistinguishable from one they read.
+      if (value?.statuses?.length) {
+        for (const st of value.statuses) {
+          try {
+            const e = st.errors?.[0];
+            const matched = await db.updateMessageStatus(st.id, st.status, {
+              code: e?.code, message: e?.title || e?.message,
+            });
+            if (st.status === 'failed') {
+              console.warn(`[WA-STATUS] FAILED to ${st.recipient_id}: ${e?.code || '?'} ${e?.title || e?.message || 'unknown'} (wamid=${st.id})`);
+            } else if (matched) {
+              console.log(`[WA-STATUS] ${st.status} — ${st.recipient_id}`);
+            }
+          } catch (err) {
+            console.warn('[WA-STATUS] Failed to record status:', err.message);
+          }
+        }
+        return;
+      }
+
       if (!value?.messages?.length) {
-        console.log(`[WEBHOOK-POST] No messages in payload (status update or other event) — skipping`);
+        console.log(`[WEBHOOK-POST] No messages in payload (other event) — skipping`);
         return;
       }
 
@@ -515,6 +537,16 @@ function receiveWebhook(req, res) {
         botReply = botReply.replace(/\[\[LIST:[a-z0-9_]+\]\]/gi, '').replace(/\n{3,}/g, '\n\n').trim();
       }
 
+      // [[BUTTONS:menu_id]] — up to three inline choices, for a decision too
+      // small to be worth opening a list for.
+      const buttonIds = [];
+      let bMatch;
+      const buttonTokenRegex = /\[\[BUTTONS:([a-z0-9_]+)\]\]/gi;
+      while ((bMatch = buttonTokenRegex.exec(botReply)) !== null) buttonIds.push(bMatch[1].toLowerCase());
+      if (buttonIds.length > 0) {
+        botReply = botReply.replace(/\[\[BUTTONS:[a-z0-9_]+\]\]/gi, '').replace(/\n{3,}/g, '\n\n').trim();
+      }
+
       if (isFallback) {
         log.warn(`[WEBHOOK] Fallback triggered — suppressing reply to customer`);
         db.pgQuery(
@@ -561,7 +593,9 @@ function receiveWebhook(req, res) {
       } else if (!botReply.trim()) {
         log.warn(`[WEBHOOK] Empty botReply from Gemini — skipping send`);
       } else {
-        await sendBotReply(from, botReply, client);
+        const wamids = await sendBotReply(from, botReply, client);
+        await db.attachWamidToLatestBotMessage(from, client.id, wamids[wamids.length - 1])
+          .catch(e => log.warn('[WA-STATUS] Could not attach wamid:', e.message));
       }
 
       // Send any tappable menus the assistant asked for, after the words that
@@ -579,6 +613,23 @@ function receiveWebhook(req, res) {
           }
         } catch (e) {
           log.warn(`[WA-LIST] Failed to send menu "${menuId}":`, e.message);
+        }
+      }
+
+      // Send any inline button choices the assistant asked for.
+      for (const menuId of buttonIds) {
+        try {
+          const menu = (client.interactive_menus || {})[menuId];
+          if (!menu) {
+            log.warn(`[WA-BTN] No menu "${menuId}" configured for client ${client.id}`);
+            continue;
+          }
+          const wamid = await sendWhatsAppReplyButtons(from, menu, client);
+          if (wamid) {
+            await db.insertMessage(from, `[Buttons: ${menu.body || menuId}]`, 'bot', null, client?.id ?? null, null, null, wamid);
+          }
+        } catch (e) {
+          log.warn(`[WA-BTN] Failed to send buttons "${menuId}":`, e.message);
         }
       }
 

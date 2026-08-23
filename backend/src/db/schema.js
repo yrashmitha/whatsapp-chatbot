@@ -257,6 +257,15 @@ async function init() {
     await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_type TEXT`);
     await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_url  TEXT`);
     await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS wamid TEXT`);
+    // Delivery receipts. Without these, a report that never arrived looks
+    // exactly like one that did.
+    await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS delivery_status TEXT`);
+    await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ`);
+    await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ`);
+    await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS error_code INT`);
+    await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS error_message TEXT`);
+    // Every status callback looks a message up by wamid, several per message.
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_messages_wamid ON messages(wamid) WHERE wamid IS NOT NULL`);
     await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT FALSE`);
 
     // ── CRM auth tables ──────────────────────────────────────────────────────
@@ -601,6 +610,11 @@ async function init() {
     try { db.exec(`ALTER TABLE messages ADD COLUMN media_type TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE messages ADD COLUMN media_url TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE messages ADD COLUMN wamid TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE messages ADD COLUMN delivery_status TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE messages ADD COLUMN delivered_at TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE messages ADD COLUMN read_at TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE messages ADD COLUMN error_code INTEGER`); } catch (_) {}
+    try { db.exec(`ALTER TABLE messages ADD COLUMN error_message TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE messages ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
     // NOTE: SQLite cannot DROP columns — horoscope_received and receipt_received are ignored if present
     try { db.exec(`ALTER TABLE orders ADD COLUMN notes TEXT`); } catch (_) {}

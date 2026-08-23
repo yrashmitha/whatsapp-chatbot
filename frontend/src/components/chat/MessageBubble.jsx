@@ -1,5 +1,46 @@
 import { formatMessageTime } from '../../lib/utils';
 
+/**
+ * Delivery state of an outbound message, drawn the way WhatsApp draws it so it
+ * reads without a legend: one tick sent, two delivered, two blue read.
+ *
+ * Absent for anything sent before receipts were recorded, and for messages the
+ * CRM sent outside the bot path — no ticks means unknown, never "not delivered".
+ */
+function DeliveryTicks({ status, errorCode, errorMessage }) {
+  if (!status) return null;
+
+  if (status === 'failed') {
+    return (
+      <span
+        className="ml-1.5 inline-flex items-center gap-0.5 text-red-200"
+        title={`Not delivered${errorCode ? ` (${errorCode})` : ''}${errorMessage ? `: ${errorMessage}` : ''}`}
+      >
+        <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.5}>
+          <circle cx="12" cy="12" r="9" />
+          <path strokeLinecap="round" d="M12 7v6M12 16.5v.5" />
+        </svg>
+        <span className="text-[10px] font-medium">failed</span>
+      </span>
+    );
+  }
+
+  const double = status === 'delivered' || status === 'read';
+  const label  = status === 'read' ? 'Read' : status === 'delivered' ? 'Delivered' : 'Sent';
+
+  return (
+    <span
+      className={`ml-1.5 inline-block align-middle ${status === 'read' ? 'text-sky-300' : ''}`}
+      title={label}
+    >
+      <svg viewBox="0 0 20 14" className="w-4 h-3.5 inline-block" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M1 7.5 L5 11.5 L12 3.5" />
+        {double && <path d="M8 7.5 L11.5 11.5 L18.5 3.5" />}
+      </svg>
+    </span>
+  );
+}
+
 // In production frontend+backend share the same origin so relative /uploads/ paths work as-is.
 // In dev, set VITE_BACKEND_URL=https://your-app.railway.app in frontend/.env.local to load
 // media files from the production Railway volume.
@@ -119,6 +160,13 @@ export default function MessageBubble({ msg, onDelete }) {
           {formatMessageTime(msg.created_at)}
           {!isUser && !isAdmin && msg.cost_usd && parseFloat(msg.cost_usd) > 0 && (
             <span className="ml-1.5">${parseFloat(msg.cost_usd).toFixed(6)}</span>
+          )}
+          {!isUser && (
+            <DeliveryTicks
+              status={msg.delivery_status}
+              errorCode={msg.error_code}
+              errorMessage={msg.error_message}
+            />
           )}
         </div>
       </div>

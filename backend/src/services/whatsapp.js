@@ -368,10 +368,13 @@ async function sendWhatsAppInteractiveList(to, menu, client) {
 
 async function sendBotReply(to, botReply, client) {
   const parts = botReply.split('[[MSG_BREAK]]').map(p => p.trim()).filter(Boolean);
+  const wamids = [];
   for (let i = 0; i < parts.length; i++) {
-    await sendWhatsAppMessage(to, parts[i], client);
+    const id = await sendWhatsAppMessage(to, parts[i], client);
+    if (id) wamids.push(id);
     if (i < parts.length - 1) await new Promise(r => setTimeout(r, 800));
   }
+  return wamids;
 }
 
 /**

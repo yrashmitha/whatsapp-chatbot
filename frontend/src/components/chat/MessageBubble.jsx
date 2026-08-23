@@ -41,36 +41,73 @@ function formatWhatsApp(text) {
  * Absent for anything sent before receipts were recorded, and for messages the
  * CRM sent outside the bot path — no ticks means unknown, never "not delivered".
  */
-function DeliveryTicks({ status, errorCode, errorMessage }) {
+function DeliveryTicks({ status, errorCode, errorMessage, deliveredAt, readAt, sentAt }) {
   if (!status) return null;
 
-  if (status === 'failed') {
-    return (
-      <span
-        className="ml-1.5 inline-flex items-center gap-0.5 text-red-200"
-        title={`Not delivered${errorCode ? ` (${errorCode})` : ''}${errorMessage ? `: ${errorMessage}` : ''}`}
-      >
-        <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.5}>
-          <circle cx="12" cy="12" r="9" />
-          <path strokeLinecap="round" d="M12 7v6M12 16.5v.5" />
-        </svg>
-        <span className="text-[10px] font-medium">failed</span>
-      </span>
-    );
-  }
+  const when = (t) => {
+    if (!t) return null;
+    const d = new Date(t);
+    return Number.isNaN(d.getTime()) ? null : d.toLocaleString([], {
+      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+    });
+  };
 
-  const double = status === 'delivered' || status === 'read';
-  const label  = status === 'read' ? 'Read' : status === 'delivered' ? 'Delivered' : 'Sent';
+  const failed = status === 'failed';
+  const read = status === 'read';
+  const double = read || status === 'delivered';
+
+  const rows = failed
+    ? [['Not delivered', [errorCode, errorMessage].filter(Boolean).join(' \u00b7 ') || 'WhatsApp rejected it']]
+    : [
+        ['Sent', when(sentAt)],
+        ['Delivered', when(deliveredAt)],
+        ['Read', when(readAt)],
+      ].filter(([label, value]) => value || label.toLowerCase() === status);
 
   return (
+    // Focusable so the detail is reachable by tap as well as hover; a phone
+    // has no hover, and this CRM is meant to be worked from one.
     <span
-      className={`ml-1.5 inline-block align-middle ${status === 'read' ? 'text-sky-300' : ''}`}
-      title={label}
+      tabIndex={0}
+      aria-label={`Message ${status}`}
+      className="relative inline-flex items-center align-middle ml-1.5 group/tick outline-none cursor-default"
     >
-      <svg viewBox="0 0 20 14" className="w-4 h-3.5 inline-block" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-        <path d="M1 7.5 L5 11.5 L12 3.5" />
-        {double && <path d="M8 7.5 L11.5 11.5 L18.5 3.5" />}
-      </svg>
+      {failed ? (
+        <span className="inline-flex items-center gap-1 rounded-full bg-red-500/90 text-white px-1.5 py-[1px]">
+          <svg viewBox="0 0 24 24" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={3}>
+            <path strokeLinecap="round" d="M18 6 L6 18 M6 6 L18 18" />
+          </svg>
+          <span className="text-[10px] font-semibold leading-none">failed</span>
+        </span>
+      ) : (
+        <svg
+          viewBox="0 0 22 14"
+          className="w-[19px] h-[13px] shrink-0"
+          fill="none"
+          strokeWidth={2.4}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          stroke={read ? '#53bdeb' : 'rgba(255,255,255,0.65)'}
+        >
+          <path d="M1 7.6 L4.8 11.4 L11.4 3.4" />
+          {double && <path d="M9.4 7.6 L13.2 11.4 L20.4 3.4" />}
+        </svg>
+      )}
+
+      {/* Hover detail. pointer-events-none so it can never block the bubble. */}
+      <span
+        className="pointer-events-none absolute bottom-full right-0 mb-1.5 hidden group-hover/tick:flex group-focus/tick:flex flex-col
+                   whitespace-nowrap rounded-lg bg-slate-900 text-white shadow-lg px-2.5 py-1.5 z-30"
+      >
+        {rows.map(([label, value]) => (
+          <span key={label} className="flex items-center gap-2 text-[11px] leading-snug">
+            <span className={`font-semibold ${label.toLowerCase() === status ? 'text-sky-300' : 'text-slate-400'}`}>
+              {label}
+            </span>
+            <span className="text-slate-300">{value || '\u2014'}</span>
+          </span>
+        ))}
+      </span>
     </span>
   );
 }
@@ -258,6 +295,9 @@ export default function MessageBubble({ msg, onDelete }) {
               status={msg.delivery_status}
               errorCode={msg.error_code}
               errorMessage={msg.error_message}
+              sentAt={msg.created_at}
+              deliveredAt={msg.delivered_at}
+              readAt={msg.read_at}
             />
           )}
         </div>

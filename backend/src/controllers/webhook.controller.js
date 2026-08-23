@@ -610,7 +610,7 @@ function receiveWebhook(req, res) {
           const sent = await sendWhatsAppInteractiveList(from, menu, client);
           if (sent) {
             await db.insertMessage(from, menu.body || '', 'bot', null, client?.id ?? null,
-              null, null, null, { kind: 'list', id: menuId, ...menu });
+              null, null, typeof sent === 'string' ? sent : null, { kind: 'list', id: menuId, ...menu });
           }
         } catch (e) {
           log.warn(`[WA-LIST] Failed to send menu "${menuId}":`, e.message);

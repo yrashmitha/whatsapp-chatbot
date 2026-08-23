@@ -363,7 +363,9 @@ async function sendWhatsAppInteractiveList(to, menu, client) {
 
   const wamid = await postInteractive(to, interactive, client, '[WA-LIST]');
   if (wamid) console.log(`[WA-LIST] Sent a ${totalRows}-row list to ${to}`);
-  return !!wamid;
+  // Returns the id rather than a boolean so the delivery receipt can be matched
+  // to it. Still truthy on success, so existing `if (sent)` callers are fine.
+  return wamid;
 }
 
 async function sendBotReply(to, botReply, client) {

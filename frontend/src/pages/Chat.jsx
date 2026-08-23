@@ -33,7 +33,7 @@ export default function Chat() {
   };
 
   return (
-    <Layout>
+    <Layout hideNavOnMobile={showThread}>
       <div className="flex h-full overflow-hidden">
         {/* Left panel — full screen on mobile when thread not open */}
         <div className={`bg-white border-r border-slate-200 flex flex-col shrink-0 overflow-hidden

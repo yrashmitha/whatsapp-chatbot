@@ -15,6 +15,7 @@ import { STATUS_OPTIONS, STATUS_COLORS } from '../../lib/utils';
 export default function ChatThread({ customer, clientId, onBack, onCustomerDeleted }) {
   const { phone, name } = customer;
   const [ordersOpen, setOrdersOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [astroModalOpen, setAstroModalOpen]   = useState(false);
   const [horoscopeQaOpen, setHoroscopeQaOpen] = useState(false);
@@ -206,7 +207,7 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
       {/* Header */}
       <div className="border-b border-slate-200 bg-white shrink-0">
         {/* Top row: back + name + AI toggle */}
-        <div className="flex items-center gap-2 px-3 py-2.5">
+        <div className="flex items-center gap-2 px-2 py-1.5 md:px-3 md:py-2.5">
           {/* Back button — mobile only */}
           <button
             onClick={onBack}
@@ -221,7 +222,7 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
           <div className="flex-1 min-w-0">
             <div className="text-sm font-semibold text-slate-800 truncate">{name || phone}</div>
             {name && <div className="text-xs text-slate-400">{phone}</div>}
-            {totalCost > 0 && <div className="text-xs text-slate-400">${totalCost.toFixed(6)}</div>}
+            {totalCost > 0 && <div className="hidden md:block text-xs text-slate-400">${totalCost.toFixed(6)}</div>}
           </div>
           {/* Action buttons: inline on desktop, only AI toggle visible on mobile */}
           <div className="hidden md:flex gap-2 items-center shrink-0">
@@ -281,10 +282,19 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
             >
               AI {aiEnabled ? 'ON' : 'OFF'}
             </button>
+            <button
+              onClick={() => setActionsOpen(o => !o)}
+              aria-label="More actions"
+              className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 border-0 bg-transparent cursor-pointer"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <circle cx="12" cy="5" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="12" cy="19" r="1.6" />
+              </svg>
+            </button>
           </div>
         </div>
-        {/* Mobile action row — scrollable */}
-        <div className="md:hidden flex gap-1.5 items-center overflow-x-auto px-3 pb-2 scrollbar-none">
+        {/* Mobile action row — behind the overflow menu, so the thread keeps the screen */}
+        <div className={`md:hidden ${actionsOpen ? 'flex' : 'hidden'} flex-wrap gap-1.5 items-center px-2 pb-2`}>
           {addonsData?.addons?.includes('astro_vedic_chart') && customerOrders.some(o => o.status === 'pending') && (
             <button
               onClick={() => setAstroModalOpen(true)}
@@ -356,7 +366,7 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
       )}
 
       {/* Messages */}
-      <div ref={threadRef} className="flex-1 overflow-y-auto px-4 py-3 bg-slate-50">
+      <div ref={threadRef} className="flex-1 min-h-0 overflow-y-auto px-2 md:px-4 py-2 md:py-3 bg-slate-50">
         {/* Top sentinel for infinite scroll */}
         <div ref={topRef} className="h-1" />
         {(isLoading || isFetchingNextPage) && (

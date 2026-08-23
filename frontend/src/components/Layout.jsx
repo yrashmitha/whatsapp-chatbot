@@ -51,7 +51,7 @@ const ALL_NAV = [
   { to: '/consult-admin', label: 'Consult',  icon: icons.consult, adminOnly: true },
 ];
 
-export default function Layout({ children }) {
+export default function Layout({ children, hideNavOnMobile = false }) {
   const { user, logout, selectedClientId, setSelectedClientId } = useAuthStore();
   const { theme, toggle } = useThemeStore();
   const superAdmin = isSuperAdmin(user);
@@ -100,7 +100,7 @@ export default function Layout({ children }) {
 
       {/* ── Top nav bar ── */}
       <header
-        className="flex items-center px-3 gap-2 shrink-0"
+        className={`items-center px-3 gap-2 shrink-0 ${hideNavOnMobile ? 'hidden md:flex' : 'flex'}`}
         style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)', height: '48px' }}
       >
         {/* Brand */}

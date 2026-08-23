@@ -34,6 +34,23 @@
 /* ── Base ───────────────────────────────────────────────────── */
 * { box-sizing: border-box; }
 
+/* The app owns the viewport: nothing outside it scrolls, so a pinned header and
+   composer stay pinned instead of sliding away with the page. */
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+/* Full visible height. 100vh on a phone includes the space behind the
+   collapsing address bar, which pushes the composer below the fold; 100dvh is
+   the height actually on screen and follows the bar as it hides. The vh line
+   stays first as a fallback for browsers without dvh. */
+.h-app {
+  height: 100vh;
+  height: 100dvh;
+}
+
 body {
   margin: 0;
   font-family: 'Space Grotesk', system-ui, sans-serif;

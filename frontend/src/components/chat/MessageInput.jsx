@@ -204,7 +204,7 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, followU
   };
 
   return (
-    <div className="relative">
+    <div className="relative shrink-0">
       <input
         ref={fileRef}
         type="file"

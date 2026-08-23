@@ -221,7 +221,7 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
         </div>
       )}
       {/* Header */}
-      <div className="border-b border-slate-200 bg-white shrink-0">
+      <div className="border-b border-slate-200 bg-white shrink-0 z-10">
         {/* Top row: back + name + AI toggle */}
         <div className="flex items-center gap-2 px-2 py-1.5 md:px-3 md:py-2.5">
           {/* Back button — mobile only */}

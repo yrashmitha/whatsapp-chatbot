@@ -96,7 +96,7 @@ export default function Layout({ children, hideNavOnMobile = false }) {
   );
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden" style={{ background: 'var(--bg-base)' }}>
+    <div className="flex flex-col h-app overflow-hidden" style={{ background: 'var(--bg-base)' }}>
 
       {/* ── Top nav bar ── */}
       <header

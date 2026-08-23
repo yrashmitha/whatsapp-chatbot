@@ -15,6 +15,7 @@
 
 const db = require('../db');
 const { getGenAI } = require('./clientKeys');
+const { computePorondam } = require('./porondamReport');
 
 const SYSTEM_INSTRUCTION = `You are replying to a customer directly on WhatsApp, continuing a conversation with someone who already received their horoscope/porondam reading. This is a casual, warm, one-on-one WhatsApp text message — NOT a formal report. Do not use headers, bullet points, numbered lists, or long structured sections. Write the way a real astrologer would text a client back: a few natural, flowing sentences, like two people texting.
 
@@ -28,6 +29,42 @@ Match the language and tone the customer has been using in the conversation. Rep
  */
 function formatSections(sections) {
   return (sections || []).map(s => `## ${s.label}\n${s.content}`).join('\n\n');
+}
+
+/**
+ * The twenty-porondam scores for a couple.
+ *
+ * Computed here from both charts rather than read from storage: the report
+ * only ever persists its written sections, and the scores are derived at
+ * download time. Recomputing means the numbers are available for every past
+ * order too, and can never drift from the charts they came from.
+ *
+ * Asked "how many porondam matched?", a model given only prose will produce a
+ * number that sounds right — which for a paid reading is worse than refusing.
+ *
+ * @param {Object} boy  - Normalised person with chartData
+ * @param {Object} girl
+ * @returns {string} Empty when either chart is missing or unusable.
+ */
+function porondamBlock(boy, girl) {
+  if (!boy?.chartData || !girl?.chartData) return '';
+  try {
+    const p = computePorondam(boy.chartData, girl.chartData);
+    const lines = (p.factors || []).map(f =>
+      `${f.id}. ${f.name_si} (${f.name_en}): ${f.score}/${f.max_score}`
+      + `${f.matched ? ' — matched' : ' — not matched'}`
+      + `${f.critical_dosha ? ' [CRITICAL DOSHA]' : ''}`
+      + `${f.explanation ? ` — ${f.explanation}` : ''}`);
+    return `TWENTY PORONDAM SCORES (authoritative — use these exact numbers, never estimate):\n`
+      + `Total: ${p.total_score}/${p.max_score} (${p.compatibility_percent}%)\n`
+      + `${p.critical_dosha?.length ? `Critical dosha: ${p.critical_dosha.join(', ')}\n` : ''}`
+      + lines.join('\n');
+  } catch (e) {
+    // A chart without a usable Moon position cannot yield porondam. Better to
+    // omit the block than to fail the whole answer.
+    console.warn('[HOROSCOPE-QA] porondam unavailable:', e.message);
+    return '';
+  }
 }
 
 /**
@@ -49,6 +86,16 @@ function formatHoroscopeContext(record) {
     ? `${label} BIRTH CHART (JSON):\n${JSON.stringify(chartData)}`
     : '');
 
+  // What the customer was already told, so a follow-up builds on the report
+  // rather than contradicting it.
+  const answersBlock = (answers) => {
+    const asked = (answers || []).filter(a => (a.answer || '').trim());
+    if (!asked.length) return '';
+    return 'QUESTIONS THIS CUSTOMER ALREADY ASKED, AND THE ANSWERS THEY WERE GIVEN '
+      + '(do not contradict these):\n'
+      + asked.map(a => `Q: ${a.question}\nA: ${a.answer}`).join('\n\n');
+  };
+
   if (record.type === 'match') {
     const { boy, girl } = record.match || {};
     const line = (label, p) => (p
@@ -58,9 +105,11 @@ function formatHoroscopeContext(record) {
     return [
       'COUPLE COMPATIBILITY (PORONDAM) DATA:\n'
         + [line('Person A', boy), line('Person B', girl)].filter(Boolean).join('\n'),
+      porondamBlock(boy, girl),
       chartBlock('PERSON A', boy?.chartData),
       chartBlock('PERSON B', girl?.chartData),
       formatSections(record.match?.sections),
+      answersBlock(record.match?.answers),
     ].filter(Boolean).join('\n\n');
   }
 
@@ -71,6 +120,7 @@ function formatHoroscopeContext(record) {
     `HOROSCOPE DATA:\n${header}`,
     chartBlock('CUSTOMER', p.chartData),
     formatSections(p.sections),
+    answersBlock(p.answers),
   ].filter(Boolean).join('\n\n');
 }
 

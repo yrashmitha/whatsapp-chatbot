@@ -92,7 +92,15 @@ function normalizeOrderRow(row) {
       orderId:   row.order_id,
       fetchedAt: new Date().toISOString(),
       type:      'match',
-      match: { boy: person(hd.match_boy), girl: person(hd.match_girl), sections },
+      match: {
+        boy:  person(hd.match_boy),
+        girl: person(hd.match_girl),
+        sections,
+        // Questions the couple already asked and had answered in the report.
+        // Without these a follow-up on the same topic can contradict what they
+        // are holding in their hands.
+        answers: Array.isArray(hd.match_special_answers) ? hd.match_special_answers : [],
+      },
     };
   }
 
@@ -106,7 +114,12 @@ function normalizeOrderRow(row) {
     orderId:   row.order_id,
     fetchedAt: new Date().toISOString(),
     type:      'single',
-    single:    { ...personFromCustomFields(cf), sections, chartData: hd.chart_data || null },
+    single: {
+      ...personFromCustomFields(cf),
+      sections,
+      chartData: hd.chart_data || null,
+      answers:   Array.isArray(hd.special_answers) ? hd.special_answers : [],
+    },
   };
 }
 

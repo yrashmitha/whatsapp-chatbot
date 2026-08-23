@@ -4,6 +4,20 @@ import api from '../../lib/api';
 import { useToast } from '../ui/Toast';
 
 /**
+ * The events an operator logs most often, one tap each.
+ *
+ * Ordered roughly by how a chase actually goes, so the one you want is usually
+ * near where you last looked. These are operational labels rather than anything
+ * client-specific, so the same list suits every tenant.
+ */
+const QUICK_REMARKS = [
+  'Called', 'No Answer', '2nd Call', '3rd Call',
+  'Messaged', 'Reminder Sent',
+  'Payment Notified', 'Payment Received',
+  'Confirmed', 'Rescheduled', 'Cancelled',
+];
+
+/**
  * The running log an operator keeps against an order.
  *
  * Deliberately separate from `notes`, which holds the AI's own summary and is
@@ -28,8 +42,8 @@ export default function OrderRemarks({ orderId, remarks, clientId }) {
   const refresh = () => qc.invalidateQueries({ queryKey: ['orders'] });
 
   const add = useMutation({
-    mutationFn: () => api.post(`/orders/${orderId}/remarks`, { text: text.trim() }, { params }),
-    onSuccess: () => { setText(''); refresh(); },
+    mutationFn: (body) => api.post(`/orders/${orderId}/remarks`, { text: body ?? text.trim() }, { params }),
+    onSuccess: (_d, body) => { if (!body) setText(''); refresh(); },
     onError: (e) => toast.error(e?.response?.data?.error || 'Could not add the remark'),
   });
 
@@ -57,6 +71,19 @@ export default function OrderRemarks({ orderId, remarks, clientId }) {
         Remarks{list.length ? ` (${list.length})` : ''}
       </div>
 
+      <div className="flex flex-wrap gap-1.5 mb-2">
+        {QUICK_REMARKS.map(chip => (
+          <button
+            key={chip}
+            onClick={() => add.mutate(chip)}
+            disabled={add.isPending}
+            className="text-xs px-2.5 py-0.5 rounded-full border border-slate-200 bg-slate-50 text-slate-600
+                       hover:bg-violet-50 hover:border-violet-400 hover:text-violet-700
+                       transition-colors cursor-pointer disabled:opacity-40"
+          >{chip}</button>
+        ))}
+      </div>
+
       {list.length > 0 && (
         <div className="flex flex-col gap-1.5 mb-2">
           {list.map((r, i) => (
@@ -76,6 +103,10 @@ export default function OrderRemarks({ orderId, remarks, clientId }) {
             </div>
           ))}
         </div>
+      )}
+
+      {list.length === 0 && (
+        <div className="text-xs italic text-slate-400 mb-2">No remarks yet</div>
       )}
 
       <form onSubmit={submit} className="flex gap-2">

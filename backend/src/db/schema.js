@@ -259,6 +259,9 @@ async function init() {
     await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS wamid TEXT`);
     // Delivery receipts. Without these, a report that never arrived looks
     // exactly like one that did.
+    // An operator's running log against an order, kept apart from `notes`,
+    // which holds the AI summary and gets rewritten.
+    await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS remarks JSONB NOT NULL DEFAULT '[]'::jsonb`);
     await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS delivery_status TEXT`);
     // The list or buttons that were sent, so the CRM can draw the real thing.
     await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS interactive JSONB`);

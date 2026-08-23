@@ -251,4 +251,97 @@ async function createOrder(req, res) {
   } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
-module.exports = { listOrders, exportOrders, incomeSummary, updateStatus, updateFields, updateNotes, createOrder };
+
+/**
+ * DELETE /api/orders/:id — remove an order permanently.
+ *
+ * @param {import('express').Request}  req
+ * @param {import('express').Response} res
+ * @returns {Promise<void>}
+ */
+async function deleteOrder(req, res) {
+  const clientId = resolveClientId(req);
+  try {
+    // Scoped here as well as by orderScope: one guard failing should not be
+    // enough to delete another tenant's order.
+    const r = clientId
+      ? await db.pgQuery('DELETE FROM orders WHERE order_id=$1 AND client_id=$2', [req.params.id, clientId])
+      : await db.pgQuery('DELETE FROM orders WHERE order_id=$1', [req.params.id]);
+    if (r.rowCount === 0) return res.status(404).json({ error: 'Order not found' });
+    console.log(`[ORDER] Deleted ${req.params.id} (client=${clientId || 'superadmin'})`);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[ORDER] delete failed:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+}
+
+/**
+ * POST /api/orders/:id/remarks — append a remark.
+ *
+ * @param {import('express').Request}  req
+ * @param {import('express').Response} res
+ * @returns {Promise<void>}
+ */
+async function addRemark(req, res) {
+  const clientId = resolveClientId(req);
+  const text = String(req.body?.text || '').trim();
+  if (!text) return res.status(400).json({ error: 'text required' });
+  if (text.length > 2000) return res.status(400).json({ error: 'Remark is too long (2000 characters max)' });
+
+  const entry = JSON.stringify([{ text, ts: new Date().toISOString(), by: req.user?.username || null }]);
+  try {
+    const r = clientId
+      ? await db.pgQuery(
+          `UPDATE orders SET remarks = COALESCE(remarks, '[]'::jsonb) || $1::jsonb
+            WHERE order_id=$2 AND client_id=$3 RETURNING remarks`,
+          [entry, req.params.id, clientId])
+      : await db.pgQuery(
+          `UPDATE orders SET remarks = COALESCE(remarks, '[]'::jsonb) || $1::jsonb
+            WHERE order_id=$2 RETURNING remarks`,
+          [entry, req.params.id]);
+    if (r.rowCount === 0) return res.status(404).json({ error: 'Order not found' });
+    res.json({ ok: true, remarks: r.rows[0].remarks });
+  } catch (e) {
+    console.error('[ORDER] addRemark failed:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+}
+
+/**
+ * DELETE /api/orders/:id/remarks/:index — remove one remark by position.
+ *
+ * Read then write rather than a jsonb path delete, so an index that no longer
+ * exists is reported instead of silently removing nothing.
+ *
+ * @param {import('express').Request}  req
+ * @param {import('express').Response} res
+ * @returns {Promise<void>}
+ */
+async function deleteRemark(req, res) {
+  const clientId = resolveClientId(req);
+  const idx = parseInt(req.params.index, 10);
+  if (!Number.isInteger(idx) || idx < 0) return res.status(400).json({ error: 'invalid index' });
+  try {
+    const sel = clientId
+      ? await db.pgQuery('SELECT remarks FROM orders WHERE order_id=$1 AND client_id=$2', [req.params.id, clientId])
+      : await db.pgQuery('SELECT remarks FROM orders WHERE order_id=$1', [req.params.id]);
+    if (sel.rowCount === 0) return res.status(404).json({ error: 'Order not found' });
+
+    let remarks = sel.rows[0].remarks || [];
+    if (typeof remarks === 'string') { try { remarks = JSON.parse(remarks); } catch { remarks = []; } }
+    if (idx >= remarks.length) return res.status(400).json({ error: 'That remark is already gone' });
+
+    remarks.splice(idx, 1);
+    const upd = clientId
+      ? await db.pgQuery('UPDATE orders SET remarks=$1 WHERE order_id=$2 AND client_id=$3', [JSON.stringify(remarks), req.params.id, clientId])
+      : await db.pgQuery('UPDATE orders SET remarks=$1 WHERE order_id=$2', [JSON.stringify(remarks), req.params.id]);
+    if (upd.rowCount === 0) return res.status(404).json({ error: 'Order not found' });
+    res.json({ ok: true, remarks });
+  } catch (e) {
+    console.error('[ORDER] deleteRemark failed:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+}
+
+module.exports = { listOrders, exportOrders, incomeSummary, updateStatus, updateFields, updateNotes, createOrder, deleteOrder, addRemark, deleteRemark };

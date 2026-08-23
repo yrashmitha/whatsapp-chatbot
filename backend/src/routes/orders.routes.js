@@ -16,6 +16,9 @@ const {
   updateFields,
   updateNotes,
   createOrder,
+  deleteOrder,
+  addRemark,
+  deleteRemark,
 } = require('../controllers/orders.controller');
 
 router.get('/',               jwtAuth, listOrders);
@@ -25,5 +28,8 @@ router.get('/income-summary', jwtAuth, incomeSummary);
 router.patch('/:id/status',  jwtAuth, orderScope, updateStatus);
 router.patch('/:id/fields',  jwtAuth, orderScope, updateFields);
 router.patch('/:id/notes',   jwtAuth, orderScope, updateNotes);
+router.post('/:id/remarks',            jwtAuth, orderScope, addRemark);
+router.delete('/:id/remarks/:index',   jwtAuth, orderScope, deleteRemark);
+router.delete('/:id',                  jwtAuth, orderScope, deleteOrder);
 
 module.exports = router;

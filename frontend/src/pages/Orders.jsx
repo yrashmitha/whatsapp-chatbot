@@ -13,6 +13,7 @@ import ChatThread from '../components/chat/ChatThread';
 import CreateOrderDrawer from '../components/chat/CreateOrderDrawer';
 import HoroscopeModal from '../components/orders/HoroscopeModal';
 import HoroscopeEditorDrawer from '../components/orders/HoroscopeEditorDrawer';
+import OrderRemarks from '../components/orders/OrderRemarks';
 import WaMessageModal from '../components/orders/WaMessageModal';
 import TarotGenerateModal from '../components/orders/TarotGenerateModal';
 import TarotEditorDrawer from '../components/orders/TarotEditorDrawer';
@@ -129,6 +130,19 @@ export default function Orders() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['orders'] }); setEditingOrder(null); toast.success('Order updated'); },
     onError: () => toast.error('Failed to update order'),
   });
+
+  const deleteOrder = useMutation({
+    mutationFn: (orderId) => api.delete(`/orders/${orderId}`, { params: clientId ? { client_id: clientId } : {} }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['orders'] }); toast.success('Order deleted'); },
+    onError: (e) => toast.error(e?.response?.data?.error || 'Failed to delete order'),
+  });
+
+  const confirmDelete = (o) => {
+    const who = o.customer_name || o.phone || o.phone_number || '';
+    if (window.confirm(`Delete order ${o.order_id}${who ? ` for ${who}` : ''}?\n\nThis cannot be undone. The conversation is kept.`)) {
+      deleteOrder.mutate(o.order_id);
+    }
+  };
 
   const updateNotes = useMutation({
     mutationFn: ({ orderId, notes }) => api.patch(`/orders/${orderId}/notes`, { notes }),
@@ -303,6 +317,18 @@ export default function Orders() {
                             >
                               {isExpanded ? 'Hide' : (hasDetails || hasNotes ? 'View' : 'Notes')}
                             </button>
+                            <button
+                              onClick={() => {
+                                setExpandedOrder(o.id);
+                                setEditingOrder({ id: o.id, orderId: o.order_id, fields: { ...cf } });
+                              }}
+                              className="text-xs underline cursor-pointer bg-transparent border-0 text-violet-600 hover:text-violet-800"
+                            >Edit</button>
+                            <button
+                              onClick={() => confirmDelete(o)}
+                              disabled={deleteOrder.isPending}
+                              className="text-xs underline cursor-pointer bg-transparent border-0 text-red-500 hover:text-red-600 disabled:opacity-50"
+                            >Delete</button>
                             {showHoroscope && (
                               <>
                                 {isGenerating ? (
@@ -469,6 +495,11 @@ export default function Orders() {
                                 <div className="text-xs whitespace-pre-wrap" style={{ color: 'var(--text-2)' }}>{o.ai_summary}</div>
                               </div>
                             )}
+
+                            {/* Remarks — the operator's running log */}
+                            <div className="mb-3">
+                              <OrderRemarks orderId={o.order_id} remarks={o.remarks} clientId={clientId} />
+                            </div>
 
                             {/* Notes section */}
                             <div className="mb-3">

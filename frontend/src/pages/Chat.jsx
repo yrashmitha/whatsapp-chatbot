@@ -34,11 +34,11 @@ export default function Chat() {
 
   return (
     <Layout hideNavOnMobile={showThread}>
-      <div className="flex h-full overflow-hidden">
+      <div className="relative flex h-full overflow-hidden">
         {/* Left panel — full screen on mobile when thread not open */}
         <div className={`bg-white border-r border-slate-200 flex flex-col shrink-0 overflow-hidden
           w-full md:w-80
-          ${showThread ? 'hidden md:flex' : 'flex'}
+          ${showThread ? 'absolute inset-0 md:static md:flex' : 'flex'}
         `}>
           <CustomerList
             clientId={clientId}
@@ -49,7 +49,7 @@ export default function Chat() {
 
         {/* Right panel — full screen on mobile when thread open */}
         <div className={`flex-1 overflow-hidden flex flex-col
-          ${showThread ? 'flex' : 'hidden md:flex'}
+          ${showThread ? 'flex relative z-10' : 'hidden md:flex'}
         `}>
           {selectedCustomer ? (
             <ChatThread

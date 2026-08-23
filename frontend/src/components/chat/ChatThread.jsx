@@ -11,6 +11,7 @@ import Spinner from '../ui/Spinner';
 import Button from '../ui/Button';
 import { useToast } from '../ui/Toast';
 import { STATUS_OPTIONS, STATUS_COLORS } from '../../lib/utils';
+import useSwipeBack from '../../lib/useSwipeBack';
 
 export default function ChatThread({ customer, clientId, onBack, onCustomerDeleted }) {
   const { phone, name } = customer;
@@ -28,6 +29,10 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
   const bottomRef = useRef();
   const threadRef = useRef();
   const prevScrollHeight = useRef(0);
+
+  // Swipe right to go back, as on a phone. Only bound when there is somewhere
+  // to go back to.
+  const swipe = useSwipeBack(onBack, !!onBack);
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
     queryKey: ['messages', phone, clientId],
@@ -203,7 +208,9 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
 
   return (
     <div
-      className="relative flex flex-col h-full"
+      className={`relative flex flex-col h-full bg-white ${swipe.dragging ? 'shadow-2xl' : ''}`}
+      style={swipe.style}
+      {...swipe.handlers}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}

@@ -73,11 +73,23 @@ function DeliveryTicks({ status, errorCode, errorMessage, deliveredAt, readAt, s
       className="relative inline-flex items-center align-middle ml-1.5 group/tick outline-none cursor-default"
     >
       {failed ? (
-        <span className="inline-flex items-center gap-1 rounded-full bg-red-500/90 text-white px-1.5 py-[1px]">
+        <span className="inline-flex items-center gap-1 rounded-full bg-red-500 text-white px-1.5 py-[1px] shadow-sm">
           <svg viewBox="0 0 24 24" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={3}>
             <path strokeLinecap="round" d="M18 6 L6 18 M6 6 L18 18" />
           </svg>
-          <span className="text-[10px] font-semibold leading-none">failed</span>
+          <span className="text-[10px] font-bold leading-none tracking-wide">FAILED</span>
+        </span>
+      ) : read ? (
+        // A filled chip, not a colour change. On a green bubble a blue tick is
+        // barely distinguishable from a white one, and this is the state the
+        // person replying most needs to see.
+        <span className="inline-flex items-center gap-1 rounded-full bg-sky-400 text-slate-900 px-1.5 py-[1px] shadow-sm">
+          <svg viewBox="0 0 22 14" className="w-[15px] h-[10px]" fill="none" stroke="currentColor"
+               strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M1 7.6 L4.8 11.4 L11.4 3.4" />
+            <path d="M9.4 7.6 L13.2 11.4 L20.4 3.4" />
+          </svg>
+          <span className="text-[10px] font-bold leading-none tracking-wide">READ</span>
         </span>
       ) : (
         <svg
@@ -87,7 +99,7 @@ function DeliveryTicks({ status, errorCode, errorMessage, deliveredAt, readAt, s
           strokeWidth={2.4}
           strokeLinecap="round"
           strokeLinejoin="round"
-          stroke={read ? '#53bdeb' : 'rgba(255,255,255,0.65)'}
+          stroke="rgba(255,255,255,0.7)"
         >
           <path d="M1 7.6 L4.8 11.4 L11.4 3.4" />
           {double && <path d="M9.4 7.6 L13.2 11.4 L20.4 3.4" />}

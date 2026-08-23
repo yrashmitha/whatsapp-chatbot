@@ -13,7 +13,7 @@ const path   = require('path');
 const db     = require('../db');
 const clientRouter = require('../services/clientRouter');
 const { buildChatSession, handleMessage } = require('../services/gemini');
-const { sendWhatsAppMessage, sendWhatsAppImage, sendWhatsAppAudio, sendBotReply, waToken, waPhoneId, markMessageRead } = require('../services/whatsapp');
+const { sendWhatsAppMessage, sendWhatsAppImage, sendWhatsAppAudio, sendBotReply, sendWhatsAppInteractiveList, waToken, waPhoneId, markMessageRead } = require('../services/whatsapp');
 const { chatSessions } = require('../workers/sessionManager');
 const { UPLOADS_DIR } = require('../config/env');
 const { analyzePaymentDocument, buildAnalysisNote } = require('../services/imageAnalysis');
@@ -394,8 +394,20 @@ function receiveWebhook(req, res) {
         return;
       }
 
+      // ── Interactive replies (list row or button tap) ────────────────────────
+      // The customer chose rather than typed. Feed the row's title through as
+      // the message so the assistant reads it exactly as if they had written it,
+      // and nothing downstream needs to know the difference.
+      if (msg.type === 'interactive') {
+        const choice = msg.interactive?.list_reply || msg.interactive?.button_reply;
+        if (choice) {
+          userMessage = choice.title || choice.id;
+          log.info(`[WEBHOOK] Interactive reply: id="${choice.id}" title="${choice.title || ''}"`);
+        }
+      }
+
       // ── Text messages ───────────────────────────────────────────────────────
-      userMessage = msg.text?.body;
+      userMessage = userMessage || msg.text?.body;
       if (!userMessage) {
         log.warn(`[WEBHOOK] Unsupported message type "${msg.type}" — skipping`);
         return;
@@ -492,6 +504,17 @@ function receiveWebhook(req, res) {
         botReply = rawBotReply.replace(/\[\[VOICE:[a-z0-9_]+\]\]/gi, '').replace(/\s{2,}/g, ' ').trim();
       }
 
+      // Extract [[LIST:menu_id]] — a tappable menu instead of asking the
+      // customer to type a number back. Same shape as the voice marker: pull
+      // the ids out, strip them from the text, send after the words.
+      const listIds = [];
+      let lMatch;
+      const listTokenRegex = /\[\[LIST:([a-z0-9_]+)\]\]/gi;
+      while ((lMatch = listTokenRegex.exec(botReply)) !== null) listIds.push(lMatch[1].toLowerCase());
+      if (listIds.length > 0) {
+        botReply = botReply.replace(/\[\[LIST:[a-z0-9_]+\]\]/gi, '').replace(/\n{3,}/g, '\n\n').trim();
+      }
+
       if (isFallback) {
         log.warn(`[WEBHOOK] Fallback triggered — suppressing reply to customer`);
         db.pgQuery(
@@ -539,6 +562,24 @@ function receiveWebhook(req, res) {
         log.warn(`[WEBHOOK] Empty botReply from Gemini — skipping send`);
       } else {
         await sendBotReply(from, botReply, client);
+      }
+
+      // Send any tappable menus the assistant asked for, after the words that
+      // introduce them.
+      for (const menuId of listIds) {
+        try {
+          const menu = (client.interactive_menus || {})[menuId];
+          if (!menu) {
+            log.warn(`[WA-LIST] No menu "${menuId}" configured for client ${client.id}`);
+            continue;
+          }
+          const sent = await sendWhatsAppInteractiveList(from, menu, client);
+          if (sent) {
+            await db.insertMessage(from, `[Menu: ${menu.body || menuId}]`, 'bot', null, client?.id ?? null);
+          }
+        } catch (e) {
+          log.warn(`[WA-LIST] Failed to send menu "${menuId}":`, e.message);
+        }
       }
 
       // Send voice clips referenced by the AI

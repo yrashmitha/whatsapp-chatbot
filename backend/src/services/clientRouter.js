@@ -23,6 +23,7 @@ const CLIENT_SELECT = `
     cc.catalog_search_mode, cc.order_flow_enabled, cc.admin_password_env, cc.order_fields, cc.contact_number,
     cc.plugin_enabled, cc.ai_enabled, cc.gemini_api_key, cc.use_system_gemini_key,
     cc.interactive_menus,
+    cc.thinking_budget,
     cc.owner_phone,
     cc.package_id, cc.bonus_messages, cc.overage_limit, cc.per_message_cost AS client_per_message_cost,
     p.message_limit AS package_message_limit, p.name AS package_name, p.per_message_cost AS package_per_message_cost

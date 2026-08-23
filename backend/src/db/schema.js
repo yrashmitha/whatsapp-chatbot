@@ -384,6 +384,9 @@ async function init() {
     await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS test_system_prompt TEXT`);
     // Named interactive-list menus the bot can send with [[LIST:<id>]].
     await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS interactive_menus JSONB`);
+    // NULL means 'use the platform default'. 0 means reasoning off, which is
+    // the right setting for a prompt that already scripts the whole flow.
+    await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS thinking_budget INT`);
     await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS report_logo_width  INT NOT NULL DEFAULT 160`);
     await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS report_logo_height INT NOT NULL DEFAULT 160`);
 
@@ -696,6 +699,7 @@ async function init() {
       'pdf_title TEXT', 'pdf_author TEXT', 'pdf_subject TEXT', 'pdf_producer TEXT',
       'test_system_prompt TEXT',
       'interactive_menus TEXT',
+      'thinking_budget INTEGER',
       'report_logo_width INTEGER NOT NULL DEFAULT 160',
       'report_logo_height INTEGER NOT NULL DEFAULT 160',
     ]) {

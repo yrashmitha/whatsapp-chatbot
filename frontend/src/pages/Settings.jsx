@@ -51,6 +51,7 @@ export default function Settings() {
   const [errorMsg, setErrorMsg]                       = useState('');
   const [contactNumber, setContactNumber]             = useState('');
   const [ownerPhone, setOwnerPhone]                   = useState('');
+  const [thinkingBudget, setThinkingBudget]           = useState('');
   const [knowledgeBaseEnabled, setKnowledgeBaseEnabled] = useState(false);
   const [productCatalogEnabled, setProductCatalogEnabled] = useState(false);
   const [pluginEnabled, setPluginEnabled]             = useState(false);
@@ -133,6 +134,7 @@ export default function Settings() {
       setErrorMsg(settingsData.error_message || '');
       setContactNumber(settingsData.contact_number || '');
       setOwnerPhone(settingsData.owner_phone || '');
+      setThinkingBudget(settingsData.thinking_budget ?? '');
       setKnowledgeBaseEnabled(!!settingsData.knowledge_base_enabled);
       setProductCatalogEnabled(!!settingsData.product_catalog_enabled);
       setPluginEnabled(!!settingsData.plugin_enabled);
@@ -189,7 +191,7 @@ export default function Settings() {
     if (!clientId) { toast.error('Select a client first'); return; }
     setPromptLoading(true);
     try {
-      await api.put('/settings/prompt', { prompt, error_message: errorMsg, contact_number: contactNumber, owner_phone: ownerPhone, knowledge_base_enabled: knowledgeBaseEnabled, product_catalog_enabled: productCatalogEnabled, order_fields: orderFields, plugin_enabled: pluginEnabled }, { params });
+      await api.put('/settings/prompt', { prompt, error_message: errorMsg, contact_number: contactNumber, owner_phone: ownerPhone, thinking_budget: thinkingBudget, knowledge_base_enabled: knowledgeBaseEnabled, product_catalog_enabled: productCatalogEnabled, order_fields: orderFields, plugin_enabled: pluginEnabled }, { params });
       qc.invalidateQueries({ queryKey: ['settings', clientId] });
       toast.success('Settings saved');
     } catch { toast.error('Failed to save settings'); }
@@ -323,6 +325,25 @@ export default function Settings() {
                     <input type="text" value={ownerPhone} onChange={e => setOwnerPhone(e.target.value)}
                       placeholder="e.g. +94771234567" className={inpCls} />
                     <p className="text-xs text-slate-400 mt-1">When the bot falls back to the generic error reply, you will get a WhatsApp alert at this number. Leave blank to disable.</p>
+                  </div>
+
+                  <div className="border-t border-slate-100 pt-3 mt-1">
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">Reply Planning</label>
+                    <select
+                      value={thinkingBudget === '' ? '' : String(thinkingBudget)}
+                      onChange={e => setThinkingBudget(e.target.value)}
+                      className={inpCls}
+                    >
+                      <option value="">Standard — let the assistant plan its reply</option>
+                      <option value="0">Off — follow the prompt exactly (recommended)</option>
+                      <option value="2048">Light</option>
+                      <option value="8192">Deep — for open-ended conversations</option>
+                    </select>
+                    <p className="text-xs text-slate-400 mt-1">
+                      When your prompt already spells out what to say at each step, turning planning
+                      off makes replies faster, cheaper, and keeps the assistant on script. Choose a
+                      higher setting only if it has to work things out on its own.
+                    </p>
                   </div>
 
                   <div className="border-t border-slate-100 pt-3 mt-1 flex flex-col gap-3">

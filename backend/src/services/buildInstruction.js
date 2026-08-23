@@ -7,6 +7,7 @@
 
 'use strict';
 
+const { CLEAN_OUTPUT_RULE } = require('./agentRules');
 const fs   = require('fs');
 const path = require('path');
 
@@ -121,11 +122,11 @@ function buildSystemInstructionForClient(client) {
     const languageRule = isMultilingual
       ? `LANGUAGE RULE — HIGHEST PRIORITY:\nThe customer's current message is always wrapped between [CURRENT_MESSAGE_START] and [CURRENT_MESSAGE_END] markers. Detect the language of the text inside those markers and reply accordingly:\n- If the message is in English → reply in English\n- If the message is in Sinhala script (Unicode) → reply in Sinhala script\n- If the message is in Singlish (Sinhala written using Latin/English letters) → reply in proper Sinhala script (Unicode), NOT in Singlish. Singlish uses common Sinhala words romanized, such as: mama, mata, eka, denna, ganna, kohomada, api, oya, danne, inne, hadanna, puluwan, kiyanna, karana, thibba, awilla, yanna, wage, wenna, karanna, wisthara, hari, nehe, ow, mokakda, kawda, koheda, kiyala, danna, gatta, aawa, giyaa, hitiye, hitiye, pennanna, oyata, oyage\n- For any other language → reply in that same language\nIgnore the language of all previous messages in the conversation history.\n\n`
       : '';
-    return languageRule + prompt + '\n' + SILENCE_RULE;
+    return languageRule + prompt + '\n' + SILENCE_RULE + '\n' + CLEAN_OUTPUT_RULE;
   }
   // No prompt in DB yet — fall back to hardcoded astrology prompt
   console.warn(`[buildInstruction] No custom_prompt set for client ${client?.id} — using hardcoded fallback`);
-  return buildSystemInstruction();
+  return buildSystemInstruction() + '\n' + CLEAN_OUTPUT_RULE;
 }
 
 /**

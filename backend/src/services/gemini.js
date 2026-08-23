@@ -193,7 +193,7 @@ async function buildChatSession(phoneNumber, client) {
         topP: 0.95,
         topK: 64,
         maxOutputTokens: 3000,
-        thinkingConfig: { thinkingBudget: 8192 },
+        thinkingConfig: { thinkingBudget: client.thinking_budget ?? 8192 },
       },
     });
     console.log(`[SESSION] Built client model for ${client.id} | mode=${client.system_prompt_mode} | orderFields=${client.order_fields?.length || 0} | contactNumber=${client.contact_number || 'none'} | instructionLen=${fullInstruction.length}`);
@@ -308,7 +308,9 @@ async function buildChatSession(phoneNumber, client) {
   const registeredTools = tools.flatMap(t => t.functionDeclarations?.map(d => d.name) || []);
   console.log(`[SESSION] Tools registered for this session: [${registeredTools.join(', ')}]`);
 
-  return chatModel.startChat({ history: fullHistory, tools });
+  const session = chatModel.startChat({ history: fullHistory, tools });
+  session._chatModel = chatModel;
+  return session;
 }
 
 /**
@@ -326,6 +328,84 @@ async function buildChatSession(phoneNumber, client) {
  *   callCostUSD: number, inputTokens: number, outputTokens: number,
  *   imagesToSend: string[], productImagesToSend: Array<{url: string, caption: string}>}>}
  */
+
+/**
+ * Remove thought parts from chat history so leaked reasoning is never replayed.
+ *
+ * The SDK appends every model turn to _history, including each round trip of the
+ * function-calling loop. Leaving reasoning in there teaches the model that
+ * reasoning is an acceptable thing to emit as an answer, so one leak becomes a
+ * habit for the rest of the conversation.
+ *
+ * Parts carrying a thoughtSignature are kept — signatures are the supported way
+ * to carry reasoning context across function calls, and dropping them degrades
+ * tool use. A turn left with no parts gets a single space, because the API
+ * rejects an empty parts array.
+ *
+ * @param {Array<{role: string, parts: Array}>} history - mutated in place
+ * @param {{info: Function}} log
+ */
+function stripThoughtsFromHistory(history, log) {
+  if (!Array.isArray(history)) return;
+  let stripped = 0;
+  for (const turn of history) {
+    if (turn?.role !== 'model' || !Array.isArray(turn.parts)) continue;
+    const before = turn.parts.length;
+    turn.parts = turn.parts.filter(p => !p.thought || p.thoughtSignature);
+    stripped += before - turn.parts.length;
+    if (turn.parts.length === 0) turn.parts = [{ text: ' ' }];
+  }
+  if (stripped > 0) log.info(`[THOUGHT_STRIP] Removed ${stripped} thought part(s) across ${history.length} history turns`);
+}
+
+/**
+ * Detect chain-of-thought that arrived as an ordinary answer.
+ *
+ * The part-level `p.thought` filter handles reasoning the model labels as such.
+ * The damaging case is the one it does not label: planning prose emitted as a
+ * normal text part, which no structural flag distinguishes from a real reply.
+ * This looks at the text itself instead.
+ *
+ * Deliberately conservative — a genuine reply speaks to the customer as "you"
+ * and never cites its own instructions, so these patterns do not appear in one:
+ *   - any strong internal-reference marker, OR
+ *   - third-person customer reference plus a first-person planning verb, OR
+ *   - an explicit first-message planning preamble.
+ *
+ * @param {string} text - the final customer-facing reply
+ * @returns {boolean} true when the reply looks like leaked reasoning
+ */
+function looksLikeReasoningLeak(text) {
+  if (!text || typeof text !== 'string') return false;
+  const t = text.trim();
+  if (t.length < 40) return false; // short replies are never reasoning dumps
+
+  // Markers a genuine customer reply never contains.
+  const STRONG = [
+    /\bfirst (response|message) rule\b/i,
+    /\bknowledge base (clearly )?(states|says|mentions|might not have)\b/i,
+    /\bthe system prompt\b/i,
+    /\bCORE FACTS\b/,
+    /\bGLOBAL LAW\b/i,
+    /\bHARD RULES\b/,
+    /\bPHASE \d\b/,
+    /\bthe `?\w+`? tool (did not|does not|returned)\b/i,
+    /default_api|tool_code|functionCall|search_knowledge\(|search_products\(|print\(/,
+    /```/,
+  ];
+  if (STRONG.some(re => re.test(t))) return true;
+
+  // Third-person customer reference plus a first-person planning verb.
+  const thirdPerson = /\b(the user|the customer)('?s)?\b/i.test(t);
+  const planning    = /\bI (should|need to|have to|must|will|am going to)\b/i.test(t);
+  if (thirdPerson && planning) return true;
+
+  // Explicit first-message planning preamble.
+  if (/\b(since|because|as) this (is|appears to be) (the|their) first (message|response)\b/i.test(t)) return true;
+
+  return false;
+}
+
 async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserInsert = false, client = null, retryNote = null, traceId = '?' } = {}) {
   const log = makeLogger(traceId, client?.id, phoneNumber);
   log.info(`[IN] "${userMessage.substring(0, 100)}"`);
@@ -511,6 +591,8 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     candidate = result.response;
   }
 
+  stripThoughtsFromHistory(chatSession._history, log);
+
   // Filter out thought parts so they never reach the customer.
   // Use candidates[0].content.parts and skip any part with thought:true.
   // Fall back to candidate.text() (with think-block stripping) when no non-thought text
@@ -594,6 +676,56 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     log.warn('[GEMINI] Still empty after nudge — using fallback message');
     botReply = client?.error_message || "Sorry, I didn't get that. Could you please try again? 🙏";
     isFallback = true;
+  }
+
+  // ── Reasoning-leak backstop ────────────────────────────────────────────────
+  // Last line of defence for reasoning that arrived unflagged as a normal answer.
+  // Regenerate once from clean history; if that leaks too, send nothing and flag
+  // the chat, because a customer seeing internal monologue is worse than silence.
+  if (botReply && !isFallback && looksLikeReasoningLeak(botReply)) {
+    log.warn(`[LEAK_GUARD] Reasoning leak detected — regenerating. Head: "${botReply.slice(0, 120)}"`);
+    let regen = '';
+    try {
+      const cleanHistory = (chatSession._history || [])
+        .filter(turn => !turn.parts?.some(p => p.functionCall || p.functionResponse));
+      while (cleanHistory.length > 0 && cleanHistory[0].role !== 'user') cleanHistory.shift();
+      const r = await chatSession._chatModel.generateContent({
+        contents: cleanHistory,
+        generationConfig: { maxOutputTokens: 2048, thinkingConfig: { thinkingBudget: 0 } },
+      });
+      const rParts = r.response.candidates?.[0]?.content?.parts || [];
+      regen = rParts.filter(p => !p.thought && typeof p.text === 'string').map(p => p.text).join('').trim();
+    } catch (e) {
+      log.error('[LEAK_GUARD] Regenerate failed:', e.message);
+    }
+
+    if (regen && !looksLikeReasoningLeak(regen)) {
+      log.info(`[LEAK_GUARD] Regeneration clean — using it. Head: "${regen.slice(0, 80)}"`);
+      botReply = regen;
+      // Overwrite the leaked text in live history too, or it re-enters context
+      // on the next turn and the model learns from it.
+      for (let i = (chatSession._history?.length || 0) - 1; i >= 0; i--) {
+        if (chatSession._history[i].role !== 'model') continue;
+        const parts = chatSession._history[i].parts || [];
+        const idx = parts.findIndex(p => typeof p.text === 'string' && !p.thought);
+        if (idx >= 0) parts[idx].text = botReply;
+        break;
+      }
+    } else {
+      log.warn('[LEAK_GUARD] Regeneration still leaked or empty — suppressing reply, flagging for review');
+      try {
+        await db.pgQuery(
+          `UPDATE customers SET needs_attention=TRUE WHERE phone_number=$1 AND client_id=$2`,
+          [phoneNumber, client?.id ?? null]
+        );
+      } catch (_) { /* flagging is best-effort; suppression is the guarantee */ }
+      // Usage is tallied further down, past this early return — compute it here
+      // so a suppressed turn is still billed and counted like any other.
+      const leakUsage  = result.response.usageMetadata || {};
+      const leakIn     = leakUsage.promptTokenCount     || leakUsage.inputTokenCount  || 0;
+      const leakOut    = leakUsage.candidatesTokenCount || leakUsage.outputTokenCount || 0;
+      return { botReply: '', orderId: null, paymentReceived: false, callCostUSD: calcCost(leakIn, leakOut), inputTokens: leakIn, outputTokens: leakOut, imagesToSend: [], productImagesToSend: [], isFallback: false, toolCalls };
+    }
   }
 
   // Extract [[SEND_IMAGE:filename]] markers

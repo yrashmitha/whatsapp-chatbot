@@ -22,6 +22,7 @@ const mediaRoutes      = require('./media.routes');
 const addonRoutes      = require('./addons.routes');      // mounted at /api — owns /api/addons, /api/crm
 const pluginRoutes     = require('./plugins.routes');
 const settingsRoutes   = require('./settings.routes');
+const menusRoutes      = require('./menus.routes');
 const horoscopeQaRoutes = require('./horoscopeQa.routes');
 const testChatRoutes    = require('./testChat.routes');
 const summaryRoutes      = require('./summary.routes');
@@ -71,6 +72,7 @@ const webhookLimiter = rateLimit({
  *   /api/media         → mediaRoutes
  *   /api/plugins       → pluginRoutes
  *   /api/settings      → settingsRoutes
+ *   /api/menus         → menusRoutes
  *   /api/horoscope-qa  → horoscopeQaRoutes
  *   /api/test-chat     → testChatRoutes
  *   /admin             → adminRoutes
@@ -102,6 +104,7 @@ function mountRoutes(app) {
   app.use('/api/media',        mediaRoutes);
   app.use('/api/plugins',      pluginRoutes);
   app.use('/api/settings',     settingsRoutes);
+  app.use('/api/menus',        menusRoutes);
   app.use('/api/horoscope-qa', horoscopeQaRoutes);
   app.use('/api/test-chat',    testChatRoutes);
   app.use('/api/summary',        summaryRoutes);

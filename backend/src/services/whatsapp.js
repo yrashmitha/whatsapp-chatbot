@@ -167,6 +167,134 @@ const LIST_LIMITS = {
 };
 
 /**
+ * Limits for reply buttons and CTA-URL buttons. Same rejection rule as lists:
+ * one over-long field and Meta drops the whole message.
+ */
+const BUTTON_LIMITS = { header: 60, body: 1024, footer: 60, title: 20, id: 256, buttons: 3 };
+const CTA_LIMITS    = { header: 60, body: 1024, footer: 60, displayText: 20 };
+
+/**
+ * POST a built interactive payload. Shared by all three interactive senders so
+ * the URL, auth and error shape stay identical between them.
+ *
+ * @param {string} to
+ * @param {Object} interactive
+ * @param {Object} client
+ * @param {string} tag - Log prefix
+ * @returns {Promise<string|null>} wamid on success, null on failure
+ */
+async function postInteractive(to, interactive, client, tag) {
+  try {
+    const resp = await axios.post(
+      `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
+      { messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'interactive', interactive },
+      { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
+    );
+    return resp.data?.messages?.[0]?.id || null;
+  } catch (err) {
+    console.error(`${tag} Send failed:`, err?.response?.data ?? err.message);
+    return null;
+  }
+}
+
+/**
+ * Attach the optional header and footer both buttons and CTAs accept.
+ *
+ * @param {Object} interactive - Mutated in place
+ * @param {Object} menu
+ * @param {Object} limits
+ */
+function addHeaderFooter(interactive, menu, limits) {
+  if (menu.header) interactive.header = { type: 'text', text: fit(menu.header, limits.header, 'header') };
+  if (menu.footer) interactive.footer = { text: fit(menu.footer, limits.footer, 'footer') };
+}
+
+/**
+ * Send up to three reply buttons — tapped inline, with no sheet to open.
+ *
+ * The right shape for a two or three way decision ("shall we start?"), where a
+ * list would make the customer open a menu to pick one of two things. Above
+ * three options, use a list instead.
+ *
+ * The tapped button comes back through the same webhook branch as a list row,
+ * carrying its title as the message text.
+ *
+ * @param {string} to     - Recipient in E.164
+ * @param {Object} menu   - { header?, body, footer?, buttons: [{ id, title }] }
+ * @param {Object} client - Client row, for its own token and phone number
+ * @returns {Promise<string|null>} wamid, or null if nothing was sent
+ */
+async function sendWhatsAppReplyButtons(to, menu, client) {
+  const source = Array.isArray(menu?.buttons) ? menu.buttons : [];
+  const buttons = source.slice(0, BUTTON_LIMITS.buttons).map(b => ({
+    type: 'reply',
+    reply: {
+      id:    fit(b.id || b.title, BUTTON_LIMITS.id, 'button id'),
+      title: fit(b.title, BUTTON_LIMITS.title, `button title "${b.title}"`),
+    },
+  })).filter(b => b.reply.title.trim());
+
+  if (!buttons.length) {
+    console.warn('[WA-BTN] No buttons in menu — nothing sent');
+    return null;
+  }
+  if (source.length > BUTTON_LIMITS.buttons) {
+    console.warn(`[WA-BTN] ${source.length} buttons given, WhatsApp allows ${BUTTON_LIMITS.buttons} — the rest are dropped`);
+  }
+
+  const interactive = {
+    type: 'button',
+    body: { text: fit(menu.body || ' ', BUTTON_LIMITS.body, 'body') },
+    action: { buttons },
+  };
+  addHeaderFooter(interactive, menu, BUTTON_LIMITS);
+
+  const wamid = await postInteractive(to, interactive, client, '[WA-BTN]');
+  if (wamid) console.log(`[WA-BTN] Sent ${buttons.length} reply buttons to ${to}`);
+  return wamid;
+}
+
+/**
+ * Send a call-to-action button that opens a URL.
+ *
+ * A bare link in message text is easy to miss and easy to mistype; this renders
+ * as a real button. Unlike reply buttons nothing comes back through the
+ * webhook when it is tapped — the customer leaves for the browser — so use it
+ * for payment pages and bank details, not for anything the bot must react to.
+ *
+ * @param {string} to     - Recipient in E.164
+ * @param {Object} cta    - { header?, body, footer?, display_text, url }
+ * @param {Object} client - Client row, for its own token and phone number
+ * @returns {Promise<string|null>} wamid, or null if nothing was sent
+ */
+async function sendWhatsAppCtaUrl(to, cta, client) {
+  const url = String(cta?.url || '').trim();
+  // Meta accepts only http(s) here, and a rejected message is silent from the
+  // customer's side, so refuse early and say why.
+  if (!/^https?:\/\//i.test(url)) {
+    console.warn(`[WA-CTA] "${url || '(empty)'}" is not an http(s) URL — nothing sent`);
+    return null;
+  }
+
+  const interactive = {
+    type: 'cta_url',
+    body: { text: fit(cta.body || ' ', CTA_LIMITS.body, 'body') },
+    action: {
+      name: 'cta_url',
+      parameters: {
+        display_text: fit(cta.display_text || 'Open', CTA_LIMITS.displayText, 'CTA label'),
+        url,
+      },
+    },
+  };
+  addHeaderFooter(interactive, cta, CTA_LIMITS);
+
+  const wamid = await postInteractive(to, interactive, client, '[WA-CTA]');
+  if (wamid) console.log(`[WA-CTA] Sent a CTA button to ${to} → ${url}`);
+  return wamid;
+}
+
+/**
  * Trim a string to a limit, warning when it actually had to cut.
  *
  * @param {string} v
@@ -177,7 +305,7 @@ const LIST_LIMITS = {
 function fit(v, max, label) {
   const s = String(v == null ? '' : v);
   if (s.length <= max) return s;
-  console.warn(`[WA-LIST] ${label} is ${s.length} chars, over the ${max} limit — trimmed`);
+  console.warn(`[WA-INT] ${label} is ${s.length} chars, over the ${max} limit — trimmed`);
   return s.slice(0, max);
 }
 
@@ -233,18 +361,9 @@ async function sendWhatsAppInteractiveList(to, menu, client) {
   if (menu.header) interactive.header = { type: 'text', text: fit(menu.header, LIST_LIMITS.header, 'header') };
   if (menu.footer) interactive.footer = { text: fit(menu.footer, LIST_LIMITS.footer, 'footer') };
 
-  try {
-    await axios.post(
-      `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
-      { messaging_product: 'whatsapp', to, type: 'interactive', interactive },
-      { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
-    );
-    console.log(`[WA-LIST] Sent a ${totalRows}-row list to ${to}`);
-    return true;
-  } catch (err) {
-    console.error('[WA-LIST] Send failed:', err?.response?.data ?? err.message);
-    return false;
-  }
+  const wamid = await postInteractive(to, interactive, client, '[WA-LIST]');
+  if (wamid) console.log(`[WA-LIST] Sent a ${totalRows}-row list to ${to}`);
+  return !!wamid;
 }
 
 async function sendBotReply(to, botReply, client) {
@@ -329,6 +448,8 @@ async function sendWhatsAppAudio(to, audioUrl, client) {
 
 module.exports = {
   sendWhatsAppInteractiveList,
+  sendWhatsAppReplyButtons,
+  sendWhatsAppCtaUrl,
   waToken,
   waPhoneId,
   uploadTemplateImages,

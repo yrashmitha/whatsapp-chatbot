@@ -40,19 +40,38 @@ function formatSections(sections) {
 function formatHoroscopeContext(record) {
   if (!record) return '';
 
+  // The birth chart matters as much as the written report. A follow-up is
+  // frequently about something the report never covered, and prose alone leaves
+  // nothing to reason from — the model can only paraphrase what is already
+  // there. With the chart it answers from positions and dasha periods, which is
+  // what the report generator itself works from.
+  const chartBlock = (label, chartData) => (chartData
+    ? `${label} BIRTH CHART (JSON):\n${JSON.stringify(chartData)}`
+    : '');
+
   if (record.type === 'match') {
     const { boy, girl } = record.match || {};
     const line = (label, p) => (p
-      ? `${label}: ${p.name || 'unknown'} — born ${p.birthDate || '?'} ${p.birthTime || ''} — lagna: ${p.lagna || 'unknown'}`
+      ? `${label}: ${p.name || 'unknown'} — born ${p.birthDate || '?'} ${p.birthTime || ''}`
+        + `${p.birthPlace ? ` in ${p.birthPlace}` : ''} — lagna: ${p.lagna || 'unknown'}`
       : null);
-    const lines = [line('Person A', boy), line('Person B', girl)].filter(Boolean);
-    return `COUPLE COMPATIBILITY (PORONDAM) DATA:\n${lines.join('\n')}\n\n${formatSections(record.match?.sections)}`;
+    return [
+      'COUPLE COMPATIBILITY (PORONDAM) DATA:\n'
+        + [line('Person A', boy), line('Person B', girl)].filter(Boolean).join('\n'),
+      chartBlock('PERSON A', boy?.chartData),
+      chartBlock('PERSON B', girl?.chartData),
+      formatSections(record.match?.sections),
+    ].filter(Boolean).join('\n\n');
   }
 
   const p = record.single || {};
   const header = `Name: ${p.name || 'unknown'} — born ${p.birthDate || '?'} ${p.birthTime || ''} `
     + `${p.birthPlace ? `in ${p.birthPlace}` : ''} — lagna: ${p.lagna || 'unknown'}`;
-  return `HOROSCOPE DATA:\n${header}\n\n${formatSections(p.sections)}`;
+  return [
+    `HOROSCOPE DATA:\n${header}`,
+    chartBlock('CUSTOMER', p.chartData),
+    formatSections(p.sections),
+  ].filter(Boolean).join('\n\n');
 }
 
 /**

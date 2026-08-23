@@ -84,7 +84,9 @@ function normalizeOrderRow(row) {
       name:      p.name || null,
       birthDate: p.birth_date || null,
       birthTime: p.birth_time || null,
+      birthPlace: p.birth_place_name || null,
       lagna:     p.lagna || null,
+      chartData: p.chart_data || null,
     } : null);
     return {
       orderId:   row.order_id,
@@ -104,7 +106,7 @@ function normalizeOrderRow(row) {
     orderId:   row.order_id,
     fetchedAt: new Date().toISOString(),
     type:      'single',
-    single:    { ...personFromCustomFields(cf), sections },
+    single:    { ...personFromCustomFields(cf), sections, chartData: hd.chart_data || null },
   };
 }
 

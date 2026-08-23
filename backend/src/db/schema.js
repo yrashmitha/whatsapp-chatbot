@@ -260,6 +260,8 @@ async function init() {
     // Delivery receipts. Without these, a report that never arrived looks
     // exactly like one that did.
     await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS delivery_status TEXT`);
+    // The list or buttons that were sent, so the CRM can draw the real thing.
+    await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS interactive JSONB`);
     await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ`);
     await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ`);
     await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS error_code INT`);
@@ -611,6 +613,7 @@ async function init() {
     try { db.exec(`ALTER TABLE messages ADD COLUMN media_url TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE messages ADD COLUMN wamid TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE messages ADD COLUMN delivery_status TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE messages ADD COLUMN interactive TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE messages ADD COLUMN delivered_at TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE messages ADD COLUMN read_at TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE messages ADD COLUMN error_code INTEGER`); } catch (_) {}

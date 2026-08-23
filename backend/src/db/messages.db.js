@@ -21,11 +21,11 @@ const { pool, db, IS_PG } = require('./connection');
  * @param {string|null} [wamid]     - WhatsApp message ID (for sent messages)
  * @returns {Promise<void>}
  */
-async function insertMessage(phoneNumber, text, senderType, costUsd = null, clientId = null, mediaType = null, mediaUrl = null, wamid = null) {
+async function insertMessage(phoneNumber, text, senderType, costUsd = null, clientId = null, mediaType = null, mediaUrl = null, wamid = null, interactive = null) {
   if (IS_PG) {
     await pool.query(
-      'INSERT INTO messages (phone_number, message_text, sender_type, cost_usd, client_id, media_type, media_url, wamid) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-      [phoneNumber, text, senderType, costUsd, clientId, mediaType, mediaUrl, wamid]
+      'INSERT INTO messages (phone_number, message_text, sender_type, cost_usd, client_id, media_type, media_url, wamid, interactive) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
+      [phoneNumber, text, senderType, costUsd, clientId, mediaType, mediaUrl, wamid, interactive ? JSON.stringify(interactive) : null]
     );
     if (senderType === 'user') {
       await pool.query(

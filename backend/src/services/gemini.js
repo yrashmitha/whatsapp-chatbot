@@ -265,6 +265,38 @@ async function buildChatSession(phoneNumber, client) {
   } else {
     tools = [{ functionDeclarations: [sendImageDecl] }];
   }
+
+  // Recording an order used to depend on the model emitting a [[ORDER_COMPLETE:{…}]]
+  // marker with valid JSON inside it. When the JSON was malformed the order was
+  // dropped with only a log line, and a customer who had confirmed everything
+  // simply never appeared in the CRM. A tool call is schema-checked by the API,
+  // so it either arrives correctly or not at all.
+  const orderFieldDefs = client?.order_fields || [];
+  if (orderFieldDefs.length > 0) {
+    const properties = {};
+    for (const f of orderFieldDefs) {
+      if (!f?.key) continue;
+      properties[f.key] = {
+        type: 'STRING',
+        description: `${f.label || f.key}${f.description ? ` — ${f.description}` : ''}${f.required ? ' (required)' : ' (optional)'}`,
+      };
+    }
+    properties.summary = {
+      type: 'STRING',
+      description: 'A short internal note for the team: what the customer wants, which package, anything unusual. Never shown to the customer.',
+    };
+    const placeOrderDecl = {
+      name: 'place_order',
+      description: 'Record the customer\'s order. Call this the moment the customer has confirmed their details are correct, and only then. Call it exactly once per customer. Pass every detail you collected. The customer sees nothing when you call it, so continue the conversation normally afterwards.',
+      parameters: {
+        type: 'OBJECT',
+        properties,
+        required: orderFieldDefs.filter(f => f?.required && f.key).map(f => f.key),
+      },
+    };
+    tools[0].functionDeclarations.push(placeOrderDecl);
+    console.log(`[SESSION] place_order tool enabled for ${client.id} (${Object.keys(properties).length - 1} fields)`);
+  }
   // Plugin hook: extra tools
   const _pluginForTools = pluginLoader.loadPlugin(client?.id, client?.plugin_enabled);
   if (_pluginForTools?.getExtraTools) {
@@ -487,6 +519,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   // ── Function calling loop ──────────────────────────────────────────────────
   let fcLoopCount = 0;
   const productImagesToSend = []; // track images to send after text reply
+  let toolOrderId = null;           // set when the model calls place_order
   // Every tool the model invoked this turn, for the Test Chat debug panel.
   const toolCalls = [];
   const initialFcCalls = candidate.functionCalls();
@@ -562,6 +595,30 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
           log.warn('[RAG] Knowledge search failed:', e.message);
         }
         functionResponses.push({ functionResponse: { name: 'search_knowledge', response: { result: resultText } } });
+        anyHandled = true;
+
+      } else if (fc.name === 'place_order') {
+        if (toolOrderId) {
+          // Already recorded this turn; acknowledging without creating a second
+          // order is safer than letting a retry duplicate it.
+          log.warn('[ORDER] place_order called again in the same turn — ignoring');
+          functionResponses.push({ functionResponse: { name: 'place_order', response: { ok: true, order_id: toolOrderId, note: 'already recorded' } } });
+        } else {
+          try {
+            const details = { ...fc.args };
+            toolOrderId = await generateOrderId(client);
+            await db.insertOrder(toolOrderId, phoneNumber, client?.id ?? null, details);
+            log.info(`[ORDER] place_order created ${toolOrderId}`);
+            require('./metaConversions').fireCAPIEvent(client?.id, 'Lead', phoneNumber, { order_id: toolOrderId }).catch(() => {});
+            if (details.summary) await db.updateOrderAISummary(toolOrderId, details.summary);
+            const name = details.customer_name || details.b || details.name;
+            if (name) await db.upsertCustomer(phoneNumber, name, client?.id);
+            functionResponses.push({ functionResponse: { name: 'place_order', response: { ok: true, order_id: toolOrderId } } });
+          } catch (e) {
+            log.error('[ORDER] place_order failed:', e.message);
+            functionResponses.push({ functionResponse: { name: 'place_order', response: { ok: false, error: 'Could not record the order' } } });
+          }
+        }
         anyHandled = true;
 
       } else if (fc.name === 'send_image') {
@@ -745,9 +802,10 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   const callCostUSD  = calcCost(inputTokens, outputTokens);
   log.info(`[OUT] "${botReply.substring(0, 120)}" | tokens in=${inputTokens} out=${outputTokens} cost=$${callCostUSD.toFixed(6)}`);
 
-  let orderId = null;
+  let orderId = toolOrderId;
+  if (orderId) botReply += `\n\n✅ *ඔබේ Order ID: ${orderId}*`;
   const orderMatch = botReply.match(ORDER_MARKER_REGEX);
-  if (orderMatch) {
+  if (orderMatch && !orderId) {
     log.info(`[ORDER] ORDER_COMPLETE marker detected`);
     botReply = botReply.replace(ORDER_MARKER_REGEX, '').trim();
 
@@ -778,6 +836,10 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
       log.warn(`[ORDER] ORDER_COMPLETE marker found but JSON parse failed`);
     }
   }
+
+  // A marker emitted as well as the tool call still has to be removed, or the
+  // customer reads the raw JSON.
+  if (orderMatch && toolOrderId) botReply = botReply.replace(ORDER_MARKER_REGEX, '').trim();
 
   const updateMatch = botReply.match(ORDER_UPDATE_REGEX);
   if (updateMatch) {
@@ -862,7 +924,16 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   }
 
   // Strip [[MSG_BREAK]] markers before saving to DB (clean single text for history)
-  const botReplyForDb = botReply.replace(/\[\[MSG_BREAK\]\]/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  // Strip the markers that tell the sender what to do; they are not part of
+  // what the customer read, and seeing them in the CRM makes it impossible to
+  // tell at a glance what was actually sent. MSG_BREAK survives so the CRM can
+  // draw the parts as the separate messages they were.
+  const botReplyForDb = botReply
+    .replace(/\[\[(?:LIST|BUTTONS|CTA):[a-z0-9_]+\]\]/gi, '')
+    .replace(/\[\[VOICE:[a-z0-9_]+\]\]/gi, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
   await db.insertMessage(phoneNumber, botReplyForDb, 'bot', callCostUSD, client?.id ?? null);
   log.info(`[DB] Saved bot reply cost=$${callCostUSD.toFixed(6)}`);
 

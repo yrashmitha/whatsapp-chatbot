@@ -609,7 +609,8 @@ function receiveWebhook(req, res) {
           }
           const sent = await sendWhatsAppInteractiveList(from, menu, client);
           if (sent) {
-            await db.insertMessage(from, `[Menu: ${menu.body || menuId}]`, 'bot', null, client?.id ?? null);
+            await db.insertMessage(from, menu.body || '', 'bot', null, client?.id ?? null,
+              null, null, null, { kind: 'list', id: menuId, ...menu });
           }
         } catch (e) {
           log.warn(`[WA-LIST] Failed to send menu "${menuId}":`, e.message);
@@ -626,7 +627,8 @@ function receiveWebhook(req, res) {
           }
           const wamid = await sendWhatsAppReplyButtons(from, menu, client);
           if (wamid) {
-            await db.insertMessage(from, `[Buttons: ${menu.body || menuId}]`, 'bot', null, client?.id ?? null, null, null, wamid);
+            await db.insertMessage(from, menu.body || '', 'bot', null, client?.id ?? null,
+              null, null, wamid, { kind: 'buttons', id: menuId, ...menu });
           }
         } catch (e) {
           log.warn(`[WA-BTN] Failed to send buttons "${menuId}":`, e.message);

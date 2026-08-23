@@ -52,11 +52,67 @@ function resolveMediaUrl(url) {
   return `${BACKEND_URL}${url}`;
 }
 
+
+/**
+ * The list or buttons that were sent, drawn as the customer saw them.
+ *
+ * Previously this was recorded as a line of text, which made it impossible to
+ * tell from the CRM what options someone was actually offered.
+ */
+function InteractiveMenu({ menu }) {
+  const rows = menu.kind === 'list'
+    ? (menu.sections || []).flatMap(sec => (sec.rows || []).map(r => ({ ...r, section: sec.title })))
+    : [];
+
+  return (
+    <div className="mt-1.5 rounded-lg border border-white/30 bg-white/10 overflow-hidden">
+      {menu.header && (
+        <div className="px-2.5 py-1.5 text-xs font-semibold border-b border-white/20">{menu.header}</div>
+      )}
+      {menu.footer && (
+        <div className="px-2.5 pt-1.5 text-[11px] opacity-70">{menu.footer}</div>
+      )}
+
+      {menu.kind === 'buttons' ? (
+        <div className="p-1.5 flex flex-col gap-1">
+          {(menu.buttons || []).map((b, i) => (
+            <div key={i} className="text-center text-xs font-medium rounded-md border border-white/40 px-2 py-1.5">
+              {b.title}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <>
+          <div className="px-2.5 py-1.5 text-xs font-medium border-b border-white/20 flex items-center gap-1.5">
+            <span>☰</span>{menu.button || 'Menu'}
+          </div>
+          <div className="p-1.5 flex flex-col gap-1">
+            {rows.map((r, i) => (
+              <div key={i} className="rounded-md bg-white/10 px-2 py-1.5">
+                <div className="text-xs font-medium">{r.title}</div>
+                {r.description && <div className="text-[11px] opacity-70 mt-0.5">{r.description}</div>}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function MessageBubble({ msg, onDelete }) {
   const senderType = msg.sender_type || msg.role;
   const isUser = senderType === 'user';
   const isAdmin = senderType === 'admin';
-  const text = msg.message_text || msg.content || '';
+  const rawText = msg.message_text || msg.content || '';
+  const parts = rawText.split('[[MSG_BREAK]]').map(t => t.trim()).filter(Boolean);
+  const text = parts[0] || '';
+  const extraParts = parts.slice(1);
+
+  let interactive = msg.interactive || null;
+  if (typeof interactive === 'string') {
+    try { interactive = JSON.parse(interactive); } catch { interactive = null; }
+  }
 
   // Deleted message placeholder
   if (msg.is_deleted) {
@@ -74,7 +130,7 @@ export default function MessageBubble({ msg, onDelete }) {
   const hasAudio = msg.media_type === 'audio' && msg.media_url;
   const mediaUrl = resolveMediaUrl(msg.media_url);
 
-  return (
+  const bubble = (
     <div className={`group flex ${isUser ? 'justify-start' : 'justify-end'} items-end gap-1 mb-2`}>
       {/* Delete button — left of bubble for outbound, visible on hover */}
       {!isUser && onDelete && (
@@ -156,6 +212,8 @@ export default function MessageBubble({ msg, onDelete }) {
                && !(hasAudio && /^\[Audio:[^\]]*\]$/.test(text.trim())) && (
           <div className="whitespace-pre-wrap break-words">{text}</div>
         )}
+        {interactive && <InteractiveMenu menu={interactive} />}
+
         <div className={`text-xs mt-1 ${isUser ? 'text-slate-400' : 'opacity-60'} text-right`}>
           {formatMessageTime(msg.created_at)}
           {!isUser && !isAdmin && msg.cost_usd && parseFloat(msg.cost_usd) > 0 && (
@@ -171,5 +229,27 @@ export default function MessageBubble({ msg, onDelete }) {
         </div>
       </div>
     </div>
+  );
+
+  if (!extraParts.length) return bubble;
+
+  return (
+    <>
+      {bubble}
+      {extraParts.map((part, i) => (
+        <div key={i} className={`flex ${isUser ? 'justify-start' : 'justify-end'} items-end gap-1 mb-2`}>
+          <div
+            className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-sm whitespace-pre-wrap break-words
+              ${isUser
+                ? 'bg-white border border-slate-200 text-slate-800'
+                : isAdmin
+                ? 'bg-violet-600 text-white'
+                : 'bg-emerald-600 text-white'}`}
+          >
+            {part}
+          </div>
+        </div>
+      ))}
+    </>
   );
 }

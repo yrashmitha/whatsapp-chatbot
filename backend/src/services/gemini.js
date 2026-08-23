@@ -846,6 +846,12 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     botReply = botReply.replace(ORDER_UPDATE_REGEX, '').trim();
     try {
       const { order_id, updates } = JSON.parse(updateMatch[1]);
+      if (!order_id || !updates || typeof updates !== 'object') {
+        // A prompt asking for the wrong shape used to fail here in silence, so
+        // a client could believe payments were being recorded for months while
+        // nothing happened. Say so loudly instead.
+        log.warn(`[ORDER] ORDER_UPDATE ignored — expected {"order_id":"…","updates":{…}}, got: ${updateMatch[1].slice(0, 120)}`);
+      }
       if (order_id && updates && typeof updates === 'object') {
         const existing = await db.getOrdersByPhone(phoneNumber, client?.id);
         const order = existing.find(o => o.order_id === order_id);

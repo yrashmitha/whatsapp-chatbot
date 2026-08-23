@@ -67,7 +67,8 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
     queryKey: ['customers', params],
     queryFn: () => api.get('/customers', { params }).then(r => r.data),
     keepPreviousData: true,
-    refetchInterval: 60_000,
+    // A minute is a long time to wait to notice someone replied.
+    refetchInterval: 20_000,
   });
 
   const customers = data?.customers || [];

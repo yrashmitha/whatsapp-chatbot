@@ -38,6 +38,12 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
     getNextPageParam: (lastPage) =>
       lastPage.hasMore ? lastPage.messages[0]?.created_at : undefined,
     initialPageParam: null,
+    // There is no push channel, so an open conversation has to ask. Eight
+    // seconds is close enough to feel live when someone is replying for a
+    // living; the interval stops while the tab is hidden so an idle CRM in a
+    // background tab costs nothing.
+    refetchInterval: 8_000,
+    refetchIntervalInBackground: false,
   });
 
   // Flatten pages: reverse page order so oldest page first, newest page last → oldest msg at top, newest at bottom
@@ -45,12 +51,22 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
 
   // Scroll to bottom on initial load and new messages, but not when loading older pages
   const prevPageCount = useRef(0);
+  const prevMsgCount = useRef(0);
   useEffect(() => {
     const curPageCount = data?.pages.length ?? 0;
     const addedOlderPage = curPageCount > prevPageCount.current && prevPageCount.current > 0;
     prevPageCount.current = curPageCount;
-    if (!addedOlderPage) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+
+    const first = prevMsgCount.current === 0;
+    prevMsgCount.current = allMessages.length;
+    if (addedOlderPage) return;
+
+    // Follow the conversation only when already at the bottom. Someone reading
+    // back through history should not be dragged away by an arriving message.
+    const el = threadRef.current;
+    const nearBottom = !el || el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (first || nearBottom) {
+      bottomRef.current?.scrollIntoView({ behavior: first ? 'auto' : 'smooth' });
     }
   }, [allMessages.length, data?.pages.length]);
 

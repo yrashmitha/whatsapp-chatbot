@@ -258,9 +258,9 @@ function receiveWebhook(req, res) {
           const imgCaption = filename.toLowerCase().startsWith('horoscope')
             ? 'ලග්න කොටු 12 සහ නවාංශ කොටු 12 දෙකම පෙනෙන ලෙස photo send කරන්න 🙏'
             : 'මේවා මම ඉක්මනින්ම හොයාගත්ත කීප දෙනෙකුගේ screenshots 🙏';
-          await sendWhatsAppImage(from, filename, imgCaption, client);
+          const imgW = await sendWhatsAppImage(from, filename, imgCaption, client);
           const isPdf = filename.toLowerCase().endsWith('.pdf');
-          await db.insertMessage(from, isPdf ? `[PDF: ${filename}]` : `[Image: ${filename}]`, 'bot', null, client?.id ?? null, isPdf ? 'pdf' : 'image', `/templates/${encodeURIComponent(filename)}`);
+          await db.insertMessage(from, isPdf ? `[PDF: ${filename}]` : `[Image: ${filename}]`, 'bot', null, client?.id ?? null, isPdf ? 'pdf' : 'image', `/templates/${encodeURIComponent(filename)}`, imgW);
         }
         for (const { url, caption: pc } of (imgProductImages || [])) {
           try {
@@ -655,9 +655,9 @@ function receiveWebhook(req, res) {
         const caption = filename.toLowerCase().startsWith('horoscope')
           ? 'ලග්න කොටු 12 සහ නවාංශ කොටු 12 දෙකම පෙනෙන ලෙස photo send කරන්න 🙏'
           : 'මේවා මම ඉක්මනින්ම හොයාගත්ත කීප දෙනෙකුගේ screenshots 🙏';
-        await sendWhatsAppImage(from, filename, caption, client);
+        const imgWamid = await sendWhatsAppImage(from, filename, caption, client);
         const isPdf = filename.toLowerCase().endsWith('.pdf');
-        await db.insertMessage(from, isPdf ? `[PDF: ${filename}]` : `[Image: ${filename}]`, 'bot', null, client?.id ?? null, isPdf ? 'pdf' : 'image', `/templates/${encodeURIComponent(filename)}`);
+        await db.insertMessage(from, isPdf ? `[PDF: ${filename}]` : `[Image: ${filename}]`, 'bot', null, client?.id ?? null, isPdf ? 'pdf' : 'image', `/templates/${encodeURIComponent(filename)}`, imgWamid);
       }
 
       // Send product images / PDFs from RAG search or send_image tool
@@ -667,12 +667,13 @@ function receiveWebhook(req, res) {
           ? { messaging_product: 'whatsapp', to: from, type: 'document', document: { link: url, filename: caption || 'document.pdf', caption } }
           : { messaging_product: 'whatsapp', to: from, type: 'image',    image:    { link: url, caption } };
         try {
-          await axios.post(
+          const mediaResp = await axios.post(
             `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
             waBody,
             { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
           );
-          await db.insertMessage(from, isPdf ? `[PDF: ${caption}]` : `[Image: ${caption}]`, 'bot', null, client?.id ?? null, isPdf ? 'pdf' : 'image', url);
+          await db.insertMessage(from, isPdf ? `[PDF: ${caption}]` : `[Image: ${caption}]`, 'bot', null, client?.id ?? null, isPdf ? 'pdf' : 'image', url,
+            mediaResp.data?.messages?.[0]?.id || null);
           log.info(`[WA-MEDIA] Sent ${isPdf ? 'PDF' : 'image'}: ${caption}`);
         } catch (e) {
           log.warn(`[WA-MEDIA] Failed to send "${caption}":`, e?.response?.data ?? e.message);

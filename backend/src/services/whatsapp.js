@@ -91,7 +91,8 @@ async function uploadTemplateImages() {
  * @param {string}      filename - Template filename (must exist in /public/templates/)
  * @param {string}      caption  - Caption shown under the image/document
  * @param {Object|null} client   - Client config object
- * @returns {Promise<void>}
+ * @returns {Promise<string|null>} WhatsApp message ID, so a delivery receipt
+ *   can be matched to it, or null when the send failed
  */
 async function sendWhatsAppImage(to, filename, caption, client) {
   const isPdf  = filename.toLowerCase().endsWith('.pdf');
@@ -100,24 +101,19 @@ async function sendWhatsAppImage(to, filename, caption, client) {
 
   console.log(`[WA-IMG] Sending "${filename}" (${isPdf ? 'pdf' : 'image'}) to ${to} via ${mediaId ? 'media_id' : 'link'}`);
   try {
-    if (isPdf) {
-      const document = mediaId ? { id: mediaId, filename, caption } : { link: fileUrl, filename, caption };
-      await axios.post(
-        `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
-        { messaging_product: 'whatsapp', to, type: 'document', document },
-        { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
-      );
-    } else {
-      const image = mediaId ? { id: mediaId, caption } : { link: fileUrl, caption };
-      await axios.post(
-        `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
-        { messaging_product: 'whatsapp', to, type: 'image', image },
-        { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
-      );
-    }
+    const body = isPdf
+      ? { messaging_product: 'whatsapp', to, type: 'document', document: mediaId ? { id: mediaId, filename, caption } : { link: fileUrl, filename, caption } }
+      : { messaging_product: 'whatsapp', to, type: 'image',    image:    mediaId ? { id: mediaId, caption } : { link: fileUrl, caption } };
+    const resp = await axios.post(
+      `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
+      body,
+      { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
+    );
     console.log(`[WA-IMG] Sent successfully to ${to}`);
+    return resp.data?.messages?.[0]?.id || null;
   } catch (err) {
     console.error(`[WA-IMG] Send failed to ${to}:`, err?.response?.data ?? err.message);
+    return null;
   }
 }
 

@@ -225,33 +225,6 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, followU
       )}
 
       <div className="p-3 border-t border-slate-200 bg-white flex items-end gap-2">
-        {followUpEnabled && (
-          <div className="shrink-0 flex items-center gap-1">
-            {['1', '2'].map(variant => (
-              <button
-                key={variant}
-                type="button"
-                onClick={() => draftFollowUp(variant)}
-                disabled={!!drafting}
-                title={variant === '1'
-                  ? 'Draft a follow-up — message 1'
-                  : 'Draft a follow-up — message 2'}
-                className="relative w-9 h-9 border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-violet-500 hover:border-violet-300 transition-colors disabled:opacity-50 bg-white cursor-pointer"
-              >
-                {drafting === variant ? (
-                  <span className="w-4 h-4 border-2 border-violet-200 border-t-violet-500 rounded-full animate-spin block" />
-                ) : (
-                  <>
-                    <span className="text-base leading-none">✨</span>
-                    <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-violet-100 text-violet-600 text-[9px] font-bold flex items-center justify-center leading-none">
-                      {variant}
-                    </span>
-                  </>
-                )}
-              </button>
-            ))}
-          </div>
-        )}
         {crmMediaEnabled && (
           <>
             <input
@@ -282,6 +255,35 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, followU
               </svg>
             </button>
           </>
+        )}
+        {followUpEnabled && (
+          <div className="shrink-0 flex items-center gap-1">
+            {['1', '2'].map(variant => (
+              <button
+                key={variant}
+                type="button"
+                onClick={() => draftFollowUp(variant)}
+                disabled={!!drafting}
+                title={variant === '1'
+                  ? 'Draft a follow-up — message 1'
+                  : 'Draft a follow-up — message 2'}
+                className="relative w-9 h-9 border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-violet-500 hover:border-violet-300 transition-colors disabled:opacity-50 bg-white cursor-pointer"
+              >
+                {drafting === variant ? (
+                  <span className="w-4 h-4 border-2 border-violet-200 border-t-violet-500 rounded-full animate-spin block" />
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z" />
+                    </svg>
+                    <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-violet-100 text-violet-600 text-[9px] font-bold flex items-center justify-center leading-none">
+                      {variant}
+                    </span>
+                  </>
+                )}
+              </button>
+            ))}
+          </div>
         )}
         <textarea
           ref={textareaRef}

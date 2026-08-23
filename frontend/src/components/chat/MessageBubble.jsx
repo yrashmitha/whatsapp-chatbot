@@ -1,5 +1,39 @@
 import { formatMessageTime } from '../../lib/utils';
 
+
+/**
+ * WhatsApp's inline formatting: *bold*, _italic_, ~strike~, `mono`.
+ *
+ * Returns React elements, never HTML — the text comes from customers and must
+ * not be interpreted as markup. A marker only counts when it wraps at least one
+ * non-space character, which is what stops a lone asterisk in ordinary prose
+ * from swallowing the rest of the line.
+ */
+const WA_TOKEN = /(\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~|`[^`\n]+`)/g;
+
+function formatWhatsApp(text) {
+  if (!text) return text;
+  const out = [];
+  let key = 0;
+  for (const piece of text.split(WA_TOKEN)) {
+    if (!piece) continue;
+    const inner = piece.slice(1, -1);
+    const wrapped = piece.length > 2 && inner.trim();
+    if (wrapped && piece[0] === '*' && piece.endsWith('*')) {
+      out.push(<strong key={key++}>{inner}</strong>);
+    } else if (wrapped && piece[0] === '_' && piece.endsWith('_')) {
+      out.push(<em key={key++}>{inner}</em>);
+    } else if (wrapped && piece[0] === '~' && piece.endsWith('~')) {
+      out.push(<s key={key++}>{inner}</s>);
+    } else if (wrapped && piece[0] === '`' && piece.endsWith('`')) {
+      out.push(<code key={key++} className="font-mono text-[0.9em]">{inner}</code>);
+    } else {
+      out.push(piece);
+    }
+  }
+  return out;
+}
+
 /**
  * Delivery state of an outbound message, drawn the way WhatsApp draws it so it
  * reads without a legend: one tick sent, two delivered, two blue read.
@@ -210,7 +244,7 @@ export default function MessageBubble({ msg, onDelete }) {
         {text && !(hasImage && /^\[Image:[^\]]*\]$/.test(text.trim()))
                && !(hasPdf   && /^\[PDF:[^\]]*\]$/.test(text.trim()))
                && !(hasAudio && /^\[Audio:[^\]]*\]$/.test(text.trim())) && (
-          <div className="whitespace-pre-wrap break-words">{text}</div>
+          <div className="whitespace-pre-wrap break-words">{formatWhatsApp(text)}</div>
         )}
         {interactive && <InteractiveMenu menu={interactive} />}
 
@@ -246,7 +280,7 @@ export default function MessageBubble({ msg, onDelete }) {
                 ? 'bg-violet-600 text-white'
                 : 'bg-emerald-600 text-white'}`}
           >
-            {part}
+            {formatWhatsApp(part)}
           </div>
         </div>
       ))}

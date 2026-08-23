@@ -407,10 +407,13 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   // ── Function calling loop ──────────────────────────────────────────────────
   let fcLoopCount = 0;
   const productImagesToSend = []; // track images to send after text reply
+  // Every tool the model invoked this turn, for the Test Chat debug panel.
+  const toolCalls = [];
   const initialFcCalls = candidate.functionCalls();
   log.info(`[FC] Gemini initial response has ${initialFcCalls?.length || 0} function call(s): [${(initialFcCalls || []).map(f => f.name).join(', ')}]`);
   while (candidate.functionCalls()?.length > 0 && fcLoopCount++ < 8) {
     const calls = candidate.functionCalls();
+    for (const c of calls) toolCalls.push({ name: c.name, args: c.args });
     const functionResponses = [];
     let anyHandled = false;
 
@@ -548,7 +551,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     const inputTokens  = usage.promptTokenCount     || usage.inputTokenCount  || 0;
     const outputTokens = usage.candidatesTokenCount || usage.outputTokenCount || 0;
     const callCostUSD  = calcCost(inputTokens, outputTokens);
-    return { botReply: '', orderId: null, paymentReceived: false, callCostUSD, inputTokens, outputTokens, imagesToSend: [], productImagesToSend: [], isFallback: false };
+    return { botReply: '', orderId: null, paymentReceived: false, callCostUSD, inputTokens, outputTokens, imagesToSend: [], productImagesToSend: [], isFallback: false, toolCalls };
   }
 
   // If still empty, recover based on the finish reason.
@@ -751,7 +754,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     }
   }
 
-  return { botReply, orderId, paymentReceived, callCostUSD, inputTokens, outputTokens, imagesToSend, productImagesToSend, isFallback };
+  return { botReply, orderId, paymentReceived, callCostUSD, inputTokens, outputTokens, imagesToSend, productImagesToSend, isFallback, toolCalls };
 }
 
 module.exports = {

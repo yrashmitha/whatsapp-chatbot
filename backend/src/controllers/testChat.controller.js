@@ -114,12 +114,33 @@ async function sendTestMessage(req, res) {
       traceId: sessionId,
     });
 
+    // Everything the debug panel needs about the turn that just ran.
+    const order = await db.pgQuery(
+      `SELECT order_id, status, custom_fields FROM orders
+        WHERE phone_number=$1 AND client_id=$2 ORDER BY created_at DESC LIMIT 1`,
+      [phoneKey, clientId]
+    ).then(r => r.rows[0] || null).catch(() => null);
+
     res.json({
       reply:    result.botReply || '',
       fallback: !!result.isFallback,
       images:   result.imagesToSend || [],
       messages: await recentMessages(phoneKey, clientId),
-      draftPromptActive: !!testPrompt,
+      debug: {
+        draftPromptActive: !!testPrompt,
+        promptChars:       (effectiveClient.custom_prompt || '').length,
+        model:             effectiveClient.ai_model || 'gemini-2.5-flash',
+        toolCalls:         result.toolCalls || [],
+        inputTokens:       result.inputTokens ?? null,
+        outputTokens:      result.outputTokens ?? null,
+        costUSD:           result.callCostUSD ?? null,
+        fallback:          !!result.isFallback,
+        order: order && {
+          orderId: order.order_id,
+          status:  order.status,
+          fields:  order.custom_fields || {},
+        },
+      },
     });
   } catch (e) {
     console.error('[TEST-CHAT] send error:', e.message);

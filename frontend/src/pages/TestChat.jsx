@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore, isSuperAdmin } from '../stores/auth';
 import Layout from '../components/Layout';
 import TestChatPanel from '../components/TestChatPanel';
@@ -20,12 +20,13 @@ function newSessionId() {
 export default function TestChat() {
   const { user, selectedClientId } = useAuthStore();
   const toast = useToast();
+  const qc = useQueryClient();
   const superAdmin = isSuperAdmin(user);
   const clientId = superAdmin ? (selectedClientId || null) : user?.clientId;
 
   const [tab, setTab] = useState('chat');
   const [sessionId, setSessionId] = useState(newSessionId);
-  const [promptDraft, setPromptDraft] = useState('');
+  const [draftEdit, setDraftEdit] = useState(null);
   const params = clientId ? { client_id: clientId } : {};
 
   const { data: config } = useQuery({
@@ -34,19 +35,18 @@ export default function TestChat() {
     enabled: !!clientId,
   });
 
-  useEffect(() => {
-    if (config) setPromptDraft(config.test_system_prompt || '');
-  }, [config]);
-
   const saveMutation = useMutation({
     mutationFn: (system_prompt) => api.post('/test-chat/config', { system_prompt }, { params }).then(r => r.data),
     onSuccess: (d) => {
       toast.success(d.active ? 'Draft prompt applied to test sessions' : 'Draft prompt cleared');
+      setDraftEdit(null);
+      qc.invalidateQueries({ queryKey: ['test-chat-config', clientId] });
       setSessionId(newSessionId());
     },
     onError: (err) => toast.error(err?.response?.data?.error || 'Failed to save'),
   });
 
+  const promptDraft = draftEdit ?? (config?.test_system_prompt || '');
   const active = !!(config?.test_system_prompt || '').trim();
 
   return (
@@ -76,8 +76,8 @@ export default function TestChat() {
             </div>
 
             {tab === 'chat' && (
-              <div className="flex flex-col gap-4">
-                <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <div className="flex flex-col xl:flex-row gap-4 xl:h-[calc(100vh-14rem)]">
+                <div className="bg-white border border-slate-200 rounded-xl p-4 xl:w-[26rem] xl:shrink-0 xl:overflow-y-auto">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-sm font-semibold text-slate-700">Draft system prompt</span>
                     {active && (
@@ -93,8 +93,8 @@ export default function TestChat() {
                   </p>
                   <textarea
                     value={promptDraft}
-                    onChange={e => setPromptDraft(e.target.value)}
-                    rows={8}
+                    onChange={e => setDraftEdit(e.target.value)}
+                    rows={14}
                     placeholder="Leave blank to use the client's live prompt…"
                     className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 resize-y font-mono"
                   />
@@ -105,18 +105,20 @@ export default function TestChat() {
                     {active && (
                       <Button
                         variant="ghost"
-                        onClick={() => { setPromptDraft(''); saveMutation.mutate(''); }}
+                        onClick={() => { setDraftEdit(''); saveMutation.mutate(''); }}
                         disabled={saveMutation.isPending}
                       >Clear</Button>
                     )}
                   </div>
                 </div>
 
-                <TestChatPanel
-                  clientId={clientId}
-                  sessionId={sessionId}
-                  onSessionReset={() => setSessionId(newSessionId())}
-                />
+                <div className="flex-1 min-w-0 h-[65vh] xl:h-full">
+                  <TestChatPanel
+                    clientId={clientId}
+                    sessionId={sessionId}
+                    onSessionReset={() => setSessionId(newSessionId())}
+                  />
+                </div>
               </div>
             )}
 

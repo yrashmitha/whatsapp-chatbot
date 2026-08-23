@@ -292,7 +292,7 @@ async function getPluginConfig(req, res) {
         verification_prompt: 'When a customer sends a payment slip:\n1. The amount and date must match one of their pending orders. Do NOT check the payer name — payments may be made by someone else on behalf of the customer.\n2. If the amount and date look correct and no fraud flags are raised, tell the customer their payment is received and being verified by the team. Then output: [[PAYMENT_IDENTIFIED:{"order_id":"ORDER_ID_HERE","amount":"AMOUNT","date":"DATE","bank":"BANK","ref":"REF"}]]\n3. If there are FRAUD CHECK flags (suspicious date etc.), politely ask the customer to clarify — do not accuse them. Output: [[UPDATE_SUMMARY:⚠️ SUSPICIOUS PAYMENT — Team review needed. Describe what was suspicious.]]\n4. If the amount does not match any pending order, politely ask the customer to check and clarify.\n5. Always mention the extracted amount and date so the customer can confirm.',
       };
     } else if (pluginId === 'follow_up_generator') {
-      defaults = { name: 'Follow-up Generator', prompt: DEFAULT_FOLLOWUP_PROMPT };
+      defaults = { name: 'Follow-up Generator', prompt: DEFAULT_FOLLOWUP_PROMPT, prompt2: '' };
     } else if (pluginId === 'meta_conversions') {
       defaults = { name: 'Meta Conversions', pixel_id: '', api_key: '', ad_account_id: '', audience_id: '' };
     } else if (pluginId === 'tarot_reading') {
@@ -328,13 +328,14 @@ async function updatePluginConfig(req, res) {
     return res.status(403).json({ error: 'Forbidden' });
   }
   const { pluginId } = req.params;
-  const { name, prompt, api_key, system_prompt, quantum_system_prompt, aura_system_prompt, horoscope_sections, quantum_sections, section_guides, special_note, wa_message_prompt, ai_fill_prompt, greeting, tts_voice, stt_language, verification_prompt, page1_body, page2_body, page4_body, quantum_enabled, pixel_id, ad_account_id, audience_id, marriage_system_prompt, marriage_sections, marriage_special_note, marriage_wa_prompt, match_system_prompt, match_sections, match_special_note, match_ai_fill_prompt,
+  const { name, prompt, prompt2, api_key, system_prompt, quantum_system_prompt, aura_system_prompt, horoscope_sections, quantum_sections, section_guides, special_note, wa_message_prompt, ai_fill_prompt, greeting, tts_voice, stt_language, verification_prompt, page1_body, page2_body, page4_body, quantum_enabled, pixel_id, ad_account_id, audience_id, marriage_system_prompt, marriage_sections, marriage_special_note, marriage_wa_prompt, match_system_prompt, match_sections, match_special_note, match_ai_fill_prompt,
     fixed_instructions, vip_section_label, remedies_section_label, special_questions_title, quantum_report_title, porondam_report_title, porondam_special_note, marriage_report_title, marriage_fixed_instructions, match_report_title, match_questions_title, match_fixed_instructions, match_question_instructions, page1_heading, page2_heading, page4_heading } = req.body;
   try {
     const existing = await db.getPluginConfig(clientId, pluginId);
     const update = { ...existing };
     if (name !== undefined)          update.name          = name;
     if (prompt !== undefined)        update.prompt        = prompt;
+    if (prompt2 !== undefined)       update.prompt2       = prompt2;
     if (api_key !== undefined)       update.api_key       = api_key;
     if (system_prompt !== undefined)         update.system_prompt         = system_prompt;
     if (quantum_system_prompt !== undefined) update.quantum_system_prompt = quantum_system_prompt;
@@ -1304,14 +1305,14 @@ async function generateFollowUpMessage(req, res) {
   const clientId = resolveClientId(req);
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
 
-  const { phone } = req.body;
+  const { phone, variant } = req.body;
   if (!phone) return res.status(400).json({ error: 'phone required' });
 
   const addonCheckOk = await db.hasAddon(clientId, 'follow_up_generator');
   if (!addonCheckOk) return res.status(403).json({ error: 'follow_up_generator addon not enabled' });
 
   try {
-    const text = await generateFollowUp(clientId, phone);
+    const text = await generateFollowUp(clientId, phone, variant === '2' ? '2' : '1');
     res.json({ text });
   } catch (e) {
     console.error('[FOLLOWUP] error:', e.message);

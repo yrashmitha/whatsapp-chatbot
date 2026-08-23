@@ -81,6 +81,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
   const [config, setConfig] = useState(null);
   const [name, setName] = useState('');
   const [prompt, setPrompt] = useState('');
+  const [prompt2, setPrompt2] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [systemPrompt, setSystemPrompt]               = useState('');
   const [quantumSystemPrompt, setQuantumSystemPrompt] = useState('');
@@ -130,6 +131,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
         setConfig(r.data);
         setName(r.data.name || pluginMeta.name);
         setPrompt(r.data.prompt || '');
+        setPrompt2(r.data.prompt2 || '');
         setApiKey(r.data.api_key || '');
         setSystemPrompt(r.data.system_prompt || '');
         setQuantumSystemPrompt(r.data.quantum_system_prompt || '');
@@ -243,6 +245,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
         body.audience_id   = audienceId;
       } else {
         body.prompt = prompt; // covers astro_vedic_chart and any generic plugin
+        if (pluginMeta.id === 'follow_up_generator') body.prompt2 = prompt2;
       }
       await api.put(`/plugins/${pluginMeta.id}/config`, body);
       toast.success('Plugin config saved');
@@ -383,7 +386,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
           )}
           {pluginMeta.id === 'follow_up_generator' && (
             <p className="text-xs text-slate-400 mb-1.5">
-              Instructions for drafting follow-up messages. The conversation transcript is appended automatically. Leave blank to use the built-in default.
+              Message 1 — the ✨1 button in the chat. The conversation transcript is appended automatically.
             </p>
           )}
           <textarea
@@ -392,6 +395,22 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
             rows={8}
             className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
           />
+          {pluginMeta.id === 'follow_up_generator' && (
+            <div className="mt-4">
+              <label className="text-xs font-medium text-slate-500 block mb-1">Second Follow-up</label>
+              <p className="text-xs text-slate-400 mb-1.5">
+                Message 2 — the ✨2 button, for a different angle on the same conversation
+                (an offer, say). Leave blank and that button reuses message 1.
+              </p>
+              <textarea
+                value={prompt2}
+                onChange={e => setPrompt2(e.target.value)}
+                rows={8}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
+                placeholder="(not set — the ✨2 button will reuse message 1)"
+              />
+            </div>
+          )}
         </div>
       )}
 

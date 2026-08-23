@@ -27,9 +27,14 @@ function buildTranscript(messages) {
  * @param {string} phone    - Customer phone number
  * @returns {Promise<string>} Generated follow-up message text
  */
-async function generateFollowUp(clientId, phone) {
+async function generateFollowUp(clientId, phone, variant = '1') {
   const config = await db.getPluginConfig(clientId, 'follow_up_generator');
-  const promptTemplate = config.prompt || DEFAULT_FOLLOWUP_PROMPT;
+  // Two configured angles for the same conversation — typically a plain nudge
+  // and an offer. Variant 2 falls back to the first prompt when unset, so the
+  // second button still works before anyone has written one.
+  const promptTemplate = (variant === '2' ? config.prompt2 : config.prompt)
+    || config.prompt
+    || DEFAULT_FOLLOWUP_PROMPT;
 
   const messages = await db.getMessagesByPhone(phone, clientId);
   const transcript = buildTranscript(messages);

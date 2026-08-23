@@ -72,8 +72,10 @@ function VoiceClipPickerModal({ open, onClose, phone, clientId, onSent }) {
   );
 }
 
-export default function MessageInput({ phone, clientId, crmMediaEnabled, prefill, onPrefillConsumed, onSent }) {
+export default function MessageInput({ phone, clientId, crmMediaEnabled, followUpEnabled, prefill, onPrefillConsumed, onSent }) {
   const [text, setText] = useState('');
+  // Which follow-up variant is currently drafting ('1' | '2' | null).
+  const [drafting, setDrafting] = useState(null);
   const [sending, setSending] = useState(false);
   const [showVoicePicker, setShowVoicePicker] = useState(false);
   const toast = useToast();
@@ -94,6 +96,26 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, prefill
   const filtered = quickReplies.filter(r =>
     !qrFilter || r.title.toLowerCase().includes(qrFilter) || r.text.toLowerCase().includes(qrFilter)
   );
+
+  /**
+   * Draft a follow-up from the conversation so far and drop it into the box
+   * for the agent to edit, rather than sending anything on its own.
+   */
+  const draftFollowUp = async (variant) => {
+    if (drafting) return;
+    setDrafting(variant);
+    try {
+      const params = clientId ? { client_id: clientId } : {};
+      const r = await api.post('/plugins/follow-up',
+        { phone, variant, ...(clientId && { client_id: clientId }) }, { params });
+      setText(r.data.text || '');
+      textareaRef.current?.focus();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Failed to draft a follow-up');
+    } finally {
+      setDrafting(null);
+    }
+  };
 
   const selectReply = (r) => {
     setText(r.text);
@@ -203,6 +225,33 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, prefill
       )}
 
       <div className="p-3 border-t border-slate-200 bg-white flex items-end gap-2">
+        {followUpEnabled && (
+          <div className="shrink-0 flex items-center gap-1">
+            {['1', '2'].map(variant => (
+              <button
+                key={variant}
+                type="button"
+                onClick={() => draftFollowUp(variant)}
+                disabled={!!drafting}
+                title={variant === '1'
+                  ? 'Draft a follow-up — message 1'
+                  : 'Draft a follow-up — message 2'}
+                className="relative w-9 h-9 border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-violet-500 hover:border-violet-300 transition-colors disabled:opacity-50 bg-white cursor-pointer"
+              >
+                {drafting === variant ? (
+                  <span className="w-4 h-4 border-2 border-violet-200 border-t-violet-500 rounded-full animate-spin block" />
+                ) : (
+                  <>
+                    <span className="text-base leading-none">✨</span>
+                    <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-violet-100 text-violet-600 text-[9px] font-bold flex items-center justify-center leading-none">
+                      {variant}
+                    </span>
+                  </>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
         {crmMediaEnabled && (
           <>
             <input

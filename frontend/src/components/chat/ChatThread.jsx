@@ -247,9 +247,9 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
               <button
                 onClick={() => setHoroscopeQaOpen(true)}
                 className="text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-violet-100 text-violet-700 hover:bg-violet-200"
-                title="Draft a reply to a question about this customer's delivered report"
+                title="Answer a question about this customer's delivered report"
               >
-                💬 Follow-up
+                🔮 Report Q&A
               </button>
             )}
             <button
@@ -306,7 +306,7 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
               onClick={() => setHoroscopeQaOpen(true)}
               className="shrink-0 text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-violet-100 text-violet-700 hover:bg-violet-200"
             >
-              💬 Follow-up
+              🔮 Report Q&A
             </button>
           )}
           <button
@@ -379,6 +379,7 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
         phone={phone}
         clientId={clientId}
         crmMediaEnabled={crmMediaEnabled}
+        followUpEnabled={addonsData?.addons?.includes('follow_up_generator') ?? false}
         prefill={messagePrefill}
         onPrefillConsumed={() => setMessagePrefill('')}
         onSent={() => qc.invalidateQueries({ queryKey: ['messages', phone] })}

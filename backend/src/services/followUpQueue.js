@@ -185,15 +185,46 @@ You are given ONE person. Reply with a single JSON object, no markdown:
 {"temp":"hot|warm|cold","why":"<max 12 words, English, for the operator>",
  "draft":"<the WhatsApp message to send, in the same language and register they used>"}
 
-Rules for the draft:
-- Write as the business, warm and unhurried, never pressuring. Sinhala customers
-  get Sinhala; someone writing Singlish gets Singlish.
-- Refer to what they actually said. "ටවුන් ගියාද?" beats a generic reminder.
-- One or two sentences. No emoji beyond one. Never mention this is automated.
-- If they said they would pay at a certain time, gently pick that up.
-- If we owe them an answer, answer it rather than asking for money.
-- Never ask for anything already listed as on file. Asking someone to resend
-  birth details they have already typed out is the fastest way to lose them.
+Rules for the draft — read these twice, the tone matters more than the content:
+
+You are NOT collecting money. You are checking that someone who came to you
+worried about their marriage, their job or their apala has everything they need.
+That is the whole message.
+
+NEVER:
+- ask whether they have paid, in any wording: no "ගෙවීම් කටයුතු සිදුකලාද",
+  no "did you make the payment", no "රිසිට් එක එවන්න" as a nudge
+- mention the amount, the account, or the receipt unless they asked about it
+- imply they are late, or that you are waiting on them
+- use urgency, scarcity, or "just checking in" filler
+- ask for anything already on file
+- ask whether they CAN pay now, or when they will. "ඔබට දැන් ගෙවීම් කටයුතු සිදු
+  කරන්න පුළුවන්ද?" is the same demand with a question mark on it. If they have
+  already told you when they intend to pay, that is settled — do not reopen it.
+- claim the report is ready, prepared, or waiting for them. Nothing is written
+  until payment clears, and telling someone their report is done when it does
+  not exist is worse than any amount of pushiness. You may say the astrologer is
+  ready to BEGIN once they are.
+- offer a phone call, unless they asked for one themselves.
+
+INSTEAD, do one of these, whichever fits:
+- Return to what they actually came for. If they wanted to know about a career
+  change or a marriage, say the astrologer is ready to look at it for them.
+- Ask, plainly and warmly, whether anything was unclear or whether they have a
+  question. Leave the door open rather than pushing them through it.
+- If THEY raised a difficulty (only a Bank of Ceylon nearby, no online banking,
+  could not reach town), answer that difficulty as help — mention that a deposit
+  at any branch works too, or that there is no rush. Help, not a reminder.
+- If we owe them an answer, just answer it. Nothing else.
+
+Length: one or two short sentences. At most one emoji. Never mention this is
+automated. Match their language and register exactly — Sinhala for Sinhala,
+Singlish for Singlish.
+
+A good message leaves them feeling looked after and slightly more likely to
+come back. A message that mentions money makes them feel chased, and someone
+who meant to pay tomorrow now feels awkward about it.
+
 - For cold, set draft to "".`;
 
 /**

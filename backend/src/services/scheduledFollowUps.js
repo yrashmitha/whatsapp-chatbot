@@ -34,6 +34,15 @@ const WINDOW_HOURS = 24;
 const WINDOW_MARGIN_MIN = 15;
 
 /**
+ * How late a message may be and still be worth sending.
+ *
+ * A reminder timed for nine in the morning so they could reach a bank is a
+ * different message at three in the afternoon. Past this it stands down and
+ * goes back to the queue for a person to judge.
+ */
+const MAX_LATE_MIN = 120;
+
+/**
  * What the wall clock reads in a timezone, for a given instant.
  *
  * @param {Date}   date
@@ -218,10 +227,25 @@ async function listPending(clientId) {
  * @returns {Promise<{sent: number, cancelled: number}>}
  */
 async function runDue() {
+  // A crash between claiming a row and resolving it would strand that row in
+  // 'sending' for ever: never sent, and invisible to the operator because the
+  // pending list does not show it. Anything claimed and left is handed back,
+  // where the lateness check below will judge whether it is still worth sending.
+  await db.pgQuery(
+    `UPDATE scheduled_follow_ups SET status='pending'
+      WHERE status='sending' AND send_at < NOW() - INTERVAL '5 minutes'`);
+
+  // Claim before sending. The tick is not awaited between runs and fifty sends
+  // take longer than the sixty seconds between them, so an unclaimed select
+  // would let a second tick pick up the same rows and send them twice.
   const { rows: due } = await db.pgQuery(
-    `SELECT * FROM scheduled_follow_ups
-      WHERE status='pending' AND send_at <= NOW()
-      ORDER BY send_at ASC LIMIT 50`);
+    `UPDATE scheduled_follow_ups SET status='sending'
+      WHERE id IN (
+        SELECT id FROM scheduled_follow_ups
+         WHERE status='pending' AND send_at <= NOW()
+         ORDER BY send_at ASC LIMIT 50
+         FOR UPDATE SKIP LOCKED)
+      RETURNING *`);
   if (!due.length) return { sent: 0, cancelled: 0 };
 
   let sent = 0, cancelled = 0;
@@ -235,6 +259,13 @@ async function runDue() {
     };
 
     try {
+      // Too late to be the message that was approved.
+      const lateBy = (Date.now() - new Date(job.send_at).getTime()) / 60000;
+      if (lateBy > MAX_LATE_MIN) {
+        await stop(`missed its slot by ${Math.round(lateBy / 60)}h — needs a fresh look`);
+        continue;
+      }
+
       const { rows } = await db.pgQuery(
         `SELECT o.status, c.last_customer_message_at
            FROM orders o LEFT JOIN customers c

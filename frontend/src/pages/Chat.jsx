@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore, isSuperAdmin } from '../stores/auth';
 import Layout from '../components/Layout';
@@ -9,8 +10,14 @@ import api from '../lib/api';
 export default function Chat() {
   const { user, selectedClientId } = useAuthStore();
   const superAdmin = isSuperAdmin(user);
-  const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const [showThread, setShowThread] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Arriving from the follow-up queue with a specific person to answer. The
+  // name fills in from the list once it loads; the phone is all the thread needs.
+  const deepLinked = searchParams.get('phone');
+  const [selectedCustomer, setSelectedCustomer] = useState(
+    deepLinked ? { phone: deepLinked, name: null } : null);
+  const [showThread, setShowThread] = useState(!!deepLinked);
   const qc = useQueryClient();
 
   const clientId = superAdmin ? (selectedClientId || null) : user?.clientId;
@@ -30,6 +37,8 @@ export default function Chat() {
 
   const handleBack = () => {
     setShowThread(false);
+    // Drop the deep link, or going back and forth keeps reopening the same chat.
+    if (searchParams.get('phone')) setSearchParams({}, { replace: true });
   };
 
   return (

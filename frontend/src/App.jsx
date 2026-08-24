@@ -5,6 +5,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Chat from './pages/Chat';
 import Orders from './pages/Orders';
+import FollowUps from './pages/FollowUps';
 import Products from './pages/Products';
 import KnowledgeBase from './pages/KnowledgeBase';
 import Media from './pages/Media';
@@ -33,6 +34,7 @@ const router = createBrowserRouter([
   { path: '/summary', element: <ProtectedRoute><Summary /></ProtectedRoute> },
   { path: '/chat', element: <ProtectedRoute><Chat /></ProtectedRoute> },
   { path: '/orders', element: <ProtectedRoute><Orders /></ProtectedRoute> },
+  { path: '/follow-ups', element: <ProtectedRoute><FollowUps /></ProtectedRoute> },
   { path: '/products', element: <ProtectedRoute><Products /></ProtectedRoute> },
   { path: '/knowledge', element: <ProtectedRoute><KnowledgeBase /></ProtectedRoute> },
   { path: '/media', element: <ProtectedRoute><Media /></ProtectedRoute> },

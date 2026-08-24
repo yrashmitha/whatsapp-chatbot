@@ -36,6 +36,7 @@ const icons = {
 const ALL_NAV = [
   { to: '/summary',   label: 'Summary',   icon: icons.summary   },
   { to: '/chat',      label: 'Chats',     icon: icons.chat      },
+  { to: '/follow-ups', label: 'Follow-ups', icon: icons.chat     },
   { to: '/orders',    label: 'Orders',    icon: icons.orders    },
   { to: '/products',  label: 'Products',  icon: icons.products,  key: 'product_catalog_enabled' },
   { to: '/knowledge', label: 'Knowledge', icon: icons.knowledge, key: 'knowledge_base_enabled'  },

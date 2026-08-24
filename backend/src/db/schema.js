@@ -283,6 +283,25 @@ async function init() {
     // when the conversation does. Keyed on a fingerprint of exactly that, so an
     // unchanged conversation is never judged twice.
     await pool.query(`
+      CREATE TABLE IF NOT EXISTS scheduled_follow_ups (
+        id           SERIAL PRIMARY KEY,
+        client_id    TEXT NOT NULL,
+        order_id     TEXT NOT NULL,
+        phone_number TEXT NOT NULL,
+        message      TEXT NOT NULL,
+        angle        TEXT,
+        temp         TEXT,
+        send_at      TIMESTAMPTZ NOT NULL,
+        status       TEXT NOT NULL DEFAULT 'pending',
+        outcome      TEXT,
+        approved_by  TEXT,
+        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        resolved_at  TIMESTAMPTZ
+      )`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_sched_due ON scheduled_follow_ups (status, send_at)`);
+    // Customers are read in their own local time, not the server's.
+    await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS timezone TEXT`);
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS follow_up_judgements (
         client_id   TEXT NOT NULL,
         order_id    TEXT NOT NULL,

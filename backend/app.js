@@ -22,6 +22,7 @@ const { PORT, UPLOADS_DIR } = require('./src/config/env');
 const { mountRoutes }    = require('./src/routes');
 const { uploadTemplateImages } = require('./src/services/whatsapp');
 const { startRetryWorker }     = require('./src/workers/retryWorker');
+const { startScheduledFollowUpWorker } = require('./src/workers/scheduledFollowUpWorker');
 const { startEviction }        = require('./src/workers/sessionManager');
 const { embedText, productToText } = require('./src/services/embedder');
 
@@ -131,6 +132,7 @@ db.init()
 
     // Start message retry worker (polls every 2 minutes)
     startRetryWorker();
+    startScheduledFollowUpWorker();
 
     // Backfill missing product embeddings (non-blocking)
     if (db.IS_PG) {

@@ -26,6 +26,7 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const db = require('../db');
 const { getGeminiKey } = require('./clientKeys');
+const { formatLocal, windowClosesAt, timezoneFor, localToUtc } = require('./scheduledFollowUps');
 
 /** WhatsApp's free-form reply window. */
 const WINDOW_HOURS = 24;
@@ -40,7 +41,17 @@ const CLOSING_SOON_HOURS = 4;
 const CONCURRENCY = 4;
 
 /**
- * What a judgement depends on: what they last said, and whether they are due.
+ * Bumped whenever the instructions below change.
+ *
+ * A stored judgement is only reusable if it was made under the same rules. The
+ * first time this was missed, a prompt change reached nobody: every fingerprint
+ * still matched, so the whole queue kept serving answers from the old prompt.
+ */
+const JUDGEMENT_VERSION = 2;
+
+/**
+ * What a judgement depends on: the rules in force, what they last said, and
+ * whether they are due.
  *
  * Not the hours left in the window — that changes continuously, and the drafts
  * lean on what the person said rather than on the clock, so including it would
@@ -50,7 +61,7 @@ const CONCURRENCY = 4;
  * @returns {string}
  */
 function fingerprint(f) {
-  return `${f.due ? 'due' : 'quiet'}|${f.theySpokeLast ? 'ours' : 'theirs'}|${f.lastFromThem.slice(0, 120)}`;
+  return `v${JUDGEMENT_VERSION}|${f.due ? 'due' : 'quiet'}|${f.theySpokeLast ? 'ours' : 'theirs'}|${f.lastFromThem.slice(0, 120)}`;
 }
 
 /**
@@ -148,6 +159,7 @@ function factsFor(row) {
     // Due once they have been quiet a while and nobody has chased since.
     due: minutesQuiet >= QUIET_MINUTES && Number(row.chased_since || 0) === 0,
     closingSoon: hoursLeft <= CLOSING_SOON_HOURS,
+    lastInAt: row.last_in_at || null,
   };
 }
 
@@ -172,6 +184,10 @@ function describe(f) {
       : `  we have sent ${f.chasedSince} message(s) since they last spoke`,
   ];
   if (f.remarks.length) lines.push(`  operator notes: ${f.remarks.join(' | ')}`);
+  if (f.nowLocal) {
+    lines.push(`  the time where they are is ${f.nowLocal}`);
+    lines.push(`  we can send a free message until ${f.windowClosesLocal}, and not after`);
+  }
   return lines.join('\n');
 }
 
@@ -223,9 +239,28 @@ Length: one or two sentences, WhatsApp register. At most one emoji. Match their
 language exactly — Sinhala for Sinhala, Singlish for Singlish, English for
 English. Never reveal that this is automated.
 
+WHEN TO SEND IT
+You also choose the moment. Someone who said they would pay tomorrow should hear
+from us tomorrow morning, not in an hour — a reminder that arrives before they
+could possibly have acted is just nagging. Someone who said "දවල්" should hear
+from us early afternoon. Someone who simply went quiet mid-conversation can hear
+back sooner.
+
+Give the time as "YYYY-MM-DD HH:MM" on their local clock, which is stated in the
+facts. It must be at least thirty minutes from now and comfortably before the
+window shuts — a message that arrives after it closes is never delivered at all,
+so when in doubt go earlier. Prefer waking hours: nothing before 07:30 or after
+21:00 unless they named a time themselves.
+
+TONE
+This is a friendly, helpful note from a business that is holding their place —
+the sort a good shop assistant sends. Not a sales push, not a collection notice.
+They should finish reading it feeling looked after.
+
 You are given ONE person. Reply with a single JSON object, no markdown:
 {"temp":"hot|warm|cold","why":"<max 12 words, English, what is going on for them>",
- "draft":"<the message>","angle":"<max 6 words, English, the lever you chose>"}
+ "draft":"<the message>","angle":"<max 6 words, English, the lever you chose>",
+ "send_at":"YYYY-MM-DD HH:MM","when_why":"<max 8 words, English, why that moment>"}
 
 - For cold, set draft to "".`;
 
@@ -267,6 +302,8 @@ async function classifyOne(facts, apiKey) {
       why: String(parsed.why || '').slice(0, 120),
       angle: String(parsed.angle || '').slice(0, 60),
       draft: String(parsed.draft || '').slice(0, 900),
+      sendAt: String(parsed.send_at || '').slice(0, 20),
+      whenWhy: String(parsed.when_why || '').slice(0, 80),
     };
   } catch (e) {
     // One failure must not empty the queue: the facts still stand, and an
@@ -306,7 +343,15 @@ const TEMP_RANK = { hot: 0, warm: 1, cold: 2 };
  */
 async function buildQueue(clientId) {
   const rows = await loadCandidates(clientId);
+  const tz = await timezoneFor(clientId);
   const facts = rows.map(factsFor);
+  for (const f of facts) {
+    const closes = windowClosesAt(f.lastInAt);
+    f.nowLocal = formatLocal(new Date(), tz);
+    f.windowClosesLocal = closes ? formatLocal(closes, tz) : 'unknown';
+    f.windowClosesAt = closes ? closes.toISOString() : null;
+    f.timezone = tz;
+  }
 
   // Only spend a model call where the conversation has actually moved.
   const saved = new Map();
@@ -354,12 +399,26 @@ async function buildQueue(clientId) {
   const items = facts.map((f) => {
     const j = f._judgement;
     delete f._judgement;
+
+    // A suggested time is only useful if it is actually sendable: far enough
+    // ahead to be worth scheduling, and safely inside the window.
+    let suggested = '';
+    if (j?.sendAt) {
+      const at = localToUtc(j.sendAt, tz);
+      const closes = f.windowClosesAt ? new Date(f.windowClosesAt) : null;
+      const okSoon = at && at.getTime() > Date.now() + 15 * 60_000;
+      const okWindow = !closes || (at && at.getTime() < closes.getTime() - 15 * 60_000);
+      if (okSoon && okWindow) suggested = j.sendAt;
+    }
+    f.suggestedSendAt = suggested;
     return {
       ...f,
       temp: j?.temp || (f.theySpokeLast ? 'hot' : 'warm'),
       why: j?.why || (f.theySpokeLast ? 'They spoke last and we never replied' : 'Awaiting payment'),
       angle: j?.angle || '',
       draft: j?.draft || '',
+      suggestedSendAt: f.suggestedSendAt || '',
+      whenWhy: j?.whenWhy || '',
       classified: !!j,
     };
   });

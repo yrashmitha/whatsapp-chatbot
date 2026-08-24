@@ -8,10 +8,14 @@
 const router  = require('express').Router();
 const jwtAuth = require('../middleware/jwtAuth');
 const orderScope = require('../middleware/orderScope');
-const { listFollowUps, sendFollowUp, followUpStats } = require('../controllers/followUps.controller');
+const { listFollowUps, sendFollowUp, followUpStats,
+        scheduleFollowUp, listScheduled, cancelScheduled } = require('../controllers/followUps.controller');
 
 router.get('/',                  jwtAuth, listFollowUps);
 router.get('/stats',             jwtAuth, followUpStats);
-router.post('/:orderId/send',    jwtAuth, orderScope, sendFollowUp);
+router.get('/scheduled',          jwtAuth, listScheduled);
+router.delete('/scheduled/:id',   jwtAuth, cancelScheduled);
+router.post('/:orderId/send',     jwtAuth, orderScope, sendFollowUp);
+router.post('/:orderId/schedule', jwtAuth, orderScope, scheduleFollowUp);
 
 module.exports = router;

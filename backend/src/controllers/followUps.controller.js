@@ -10,6 +10,7 @@ const clientRouter = require('../services/clientRouter');
 const resolveClientId = require('../middleware/resolveClientId');
 const { sendWhatsAppMessage } = require('../services/whatsapp');
 const { buildQueue } = require('../services/followUpQueue');
+const scheduled = require('../services/scheduledFollowUps');
 
 /**
  * GET /api/follow-ups — who to message now, and what to say.
@@ -126,4 +127,66 @@ async function followUpStats(req, res) {
   }
 }
 
-module.exports = { listFollowUps, sendFollowUp, followUpStats };
+/**
+ * POST /api/follow-ups/:orderId/schedule — approve a follow-up for later.
+ *
+ * @param {import('express').Request}  req
+ * @param {import('express').Response} res
+ * @returns {Promise<void>}
+ */
+async function scheduleFollowUp(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    const row = await scheduled.schedule({
+      clientId,
+      orderId: req.params.orderId,
+      message: req.body?.message,
+      sendAtLocal: req.body?.send_at,
+      angle: req.body?.angle,
+      temp: req.body?.temp,
+      approvedBy: req.user?.username || null,
+    });
+    res.json({ ok: true, scheduled: row });
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
+}
+
+/**
+ * GET /api/follow-ups/scheduled — what is queued to go out.
+ *
+ * @param {import('express').Request}  req
+ * @param {import('express').Response} res
+ * @returns {Promise<void>}
+ */
+async function listScheduled(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    res.json({ items: await scheduled.listPending(clientId) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
+
+/**
+ * DELETE /api/follow-ups/scheduled/:id — call one back before it goes.
+ *
+ * @param {import('express').Request}  req
+ * @param {import('express').Response} res
+ * @returns {Promise<void>}
+ */
+async function cancelScheduled(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    const ok = await scheduled.cancel(clientId, parseInt(req.params.id, 10));
+    if (!ok) return res.status(404).json({ error: 'Not found, or it has already gone' });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
+
+module.exports = { listFollowUps, sendFollowUp, followUpStats, scheduleFollowUp, listScheduled, cancelScheduled };

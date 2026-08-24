@@ -262,6 +262,22 @@ async function init() {
     // An operator's running log against an order, kept apart from `notes`,
     // which holds the AI summary and gets rewritten.
     await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS remarks JSONB NOT NULL DEFAULT '[]'::jsonb`);
+
+    // Which follow-up was sent, so replies and payments afterwards can be
+    // attributed to the approach that earned them.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS follow_up_sends (
+        id           SERIAL PRIMARY KEY,
+        client_id    TEXT NOT NULL,
+        order_id     TEXT NOT NULL,
+        phone_number TEXT NOT NULL,
+        angle        TEXT,
+        temp         TEXT,
+        message      TEXT NOT NULL,
+        edited       BOOLEAN NOT NULL DEFAULT FALSE,
+        sent_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_follow_up_sends_client ON follow_up_sends (client_id, sent_at DESC)`);
     await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS delivery_status TEXT`);
     // The list or buttons that were sent, so the CRM can draw the real thing.
     await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS interactive JSONB`);

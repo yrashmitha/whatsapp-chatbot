@@ -136,8 +136,16 @@ export default function FollowUps() {
     staleTime: 60_000,
   });
 
+  const { data: stats } = useQuery({
+    queryKey: ['follow-up-stats', clientId],
+    queryFn: () => api.get('/follow-ups/stats', { params: clientId ? { client_id: clientId } : {} }).then(r => r.data),
+    enabled: !!clientId,
+    staleTime: 5 * 60_000,
+  });
+
   const items = (data?.items || []).filter(i => !onlyDue || i.due);
   const c = data?.counts;
+  const pct = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '—');
 
   return (
     <Layout>
@@ -181,6 +189,47 @@ export default function FollowUps() {
         {data && items.length === 0 && (
           <div className="text-sm text-slate-400 py-8 text-center">
             {onlyDue ? 'Nothing due right now.' : 'Nobody is waiting. Everyone who ordered has either paid or fallen outside the window.'}
+          </div>
+        )}
+
+        {stats?.totals?.sent > 0 && (
+          <div className="mb-4 bg-white border border-slate-200 rounded-xl p-3">
+            <div className="text-xs font-semibold text-slate-600 mb-2">
+              What each approach earns · last {stats.days} days
+            </div>
+            <div className="overflow-x-auto">
+              <table className="text-xs w-full">
+                <thead>
+                  <tr className="text-slate-400 text-left">
+                    <th className="pb-1 pr-4 font-medium">approach</th>
+                    <th className="pb-1 pr-4 font-medium">sent</th>
+                    <th className="pb-1 pr-4 font-medium">replied</th>
+                    <th className="pb-1 font-medium">paid after</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stats.angles.map(a => (
+                    <tr key={a.angle} className="border-t border-slate-100">
+                      <td className="py-1 pr-4 text-slate-700">{a.angle}</td>
+                      <td className="py-1 pr-4 text-slate-500">{a.sent}</td>
+                      <td className="py-1 pr-4 font-medium text-slate-700">{pct(a.replied, a.sent)}</td>
+                      <td className="py-1 font-medium text-emerald-700">{pct(a.paid, a.sent)}</td>
+                    </tr>
+                  ))}
+                  <tr className="border-t border-slate-200 font-semibold text-slate-700">
+                    <td className="py-1 pr-4">all</td>
+                    <td className="py-1 pr-4">{stats.totals.sent}</td>
+                    <td className="py-1 pr-4">{pct(stats.totals.replied, stats.totals.sent)}</td>
+                    <td className="py-1 text-emerald-700">{pct(stats.totals.paid, stats.totals.sent)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            {stats.totals.sent < 30 && (
+              <p className="text-[11px] text-slate-400 mt-2">
+                Too few sent to compare approaches yet — treat these as a running tally, not a verdict.
+              </p>
+            )}
           </div>
         )}
 

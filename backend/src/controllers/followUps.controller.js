@@ -9,7 +9,7 @@ const db = require('../db');
 const clientRouter = require('../services/clientRouter');
 const resolveClientId = require('../middleware/resolveClientId');
 const { sendWhatsAppMessage } = require('../services/whatsapp');
-const { buildQueue } = require('../services/followUpQueue');
+const { buildQueue, DEFAULT_SYSTEM } = require('../services/followUpQueue');
 const scheduled = require('../services/scheduledFollowUps');
 
 /**
@@ -189,4 +189,44 @@ async function cancelScheduled(req, res) {
   }
 }
 
-module.exports = { listFollowUps, sendFollowUp, followUpStats, scheduleFollowUp, listScheduled, cancelScheduled };
+/**
+ * GET /api/follow-ups/prompt — the instructions used to judge and draft.
+ *
+ * @param {import('express').Request}  req
+ * @param {import('express').Response} res
+ * @returns {Promise<void>}
+ */
+async function getPrompt(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    const cfg = await db.getPluginConfig(clientId, 'follow_up_queue');
+    res.json({ prompt: cfg?.prompt || '', default_prompt: DEFAULT_SYSTEM, using_default: !(cfg?.prompt || '').trim() });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
+
+/**
+ * PUT /api/follow-ups/prompt — replace them, or clear to go back to the default.
+ *
+ * @param {import('express').Request}  req
+ * @param {import('express').Response} res
+ * @returns {Promise<void>}
+ */
+async function savePrompt(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  const prompt = String(req.body?.prompt ?? '').trim();
+  try {
+    const existing = await db.getPluginConfig(clientId, 'follow_up_queue');
+    await db.upsertPluginConfig(clientId, 'follow_up_queue', { ...existing, prompt });
+    // Every stored judgement was made under the old instructions.
+    await db.pgQuery('DELETE FROM follow_up_judgements WHERE client_id=$1', [clientId]).catch(() => {});
+    res.json({ ok: true, using_default: !prompt });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
+
+module.exports = { listFollowUps, sendFollowUp, followUpStats, scheduleFollowUp, listScheduled, cancelScheduled, getPrompt, savePrompt };

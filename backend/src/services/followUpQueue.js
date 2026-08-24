@@ -47,7 +47,7 @@ const CONCURRENCY = 4;
  * first time this was missed, a prompt change reached nobody: every fingerprint
  * still matched, so the whole queue kept serving answers from the old prompt.
  */
-const JUDGEMENT_VERSION = 4;
+const JUDGEMENT_VERSION = 5;
 
 /**
  * What a judgement depends on: the rules in force, what they last said, and
@@ -60,8 +60,33 @@ const JUDGEMENT_VERSION = 4;
  * @param {Object} f
  * @returns {string}
  */
-function fingerprint(f) {
-  return `v${JUDGEMENT_VERSION}|${f.due ? 'due' : 'quiet'}|${f.theySpokeLast ? 'ours' : 'theirs'}|${f.lastFromThem.slice(0, 120)}`;
+function fingerprint(f, promptStamp = '') {
+  const tail = (f.recent || []).map(m => `${m.who}:${String(m.text).slice(0, 60)}`).join('~');
+  return `v${JUDGEMENT_VERSION}${promptStamp}|${f.due ? 'due' : 'quiet'}|${f.theySpokeLast ? 'ours' : 'theirs'}|${tail || f.lastFromThem.slice(0, 120)}`;
+}
+
+/**
+ * The client's own follow-up instructions, if they have written any.
+ *
+ * The stamp goes into the fingerprint so that editing the instructions forces
+ * every stored judgement to be made again — otherwise a change would reach
+ * nobody, because the conversations themselves would not have moved.
+ *
+ * @param {string} clientId
+ * @returns {Promise<{prompt: string|null, stamp: string}>}
+ */
+async function loadPromptConfig(clientId) {
+  try {
+    const cfg = await db.getPluginConfig(clientId, 'follow_up_queue');
+    const prompt = (cfg?.prompt || '').trim();
+    if (!prompt) return { prompt: null, stamp: '' };
+    // Length plus a cheap checksum: enough to notice any edit, and short.
+    let sum = 0;
+    for (let i = 0; i < prompt.length; i++) sum = (sum * 31 + prompt.charCodeAt(i)) % 1e9;
+    return { prompt, stamp: `-p${prompt.length}.${sum.toString(36)}` };
+  } catch {
+    return { prompt: null, stamp: '' };
+  }
 }
 
 /**
@@ -93,6 +118,7 @@ async function loadCandidates(clientId) {
        (SELECT COUNT(*) FROM messages m
          WHERE m.phone_number = c.phone_number AND m.client_id = c.client_id
            AND m.sender_type = 'user')::int AS total_in,
+       recent.lines AS recent_lines,
        fu.sent_at   AS followed_up_at,
        fu.angle     AS followed_up_angle,
        sch.send_at  AS scheduled_for
@@ -111,6 +137,17 @@ async function loadCandidates(clientId) {
           AND m.sender_type = 'bot'
         ORDER BY m.id DESC LIMIT 1
      ) lout ON TRUE
+     -- The last few turns, both sides. A bare "ok" or "👍" is the most common
+     -- last message there is and says nothing; what came before it usually does.
+     LEFT JOIN LATERAL (
+       SELECT json_agg(json_build_object('who', t.sender_type, 'text', LEFT(t.message_text, 320))
+                       ORDER BY t.id) AS lines
+         FROM (SELECT id, sender_type, message_text FROM messages m
+                WHERE m.phone_number = o.phone_number AND m.client_id = o.client_id
+                  AND m.is_deleted IS NOT TRUE
+                ORDER BY m.id DESC LIMIT 8) t
+     ) recent ON TRUE
+
      -- Only follow-ups sent since they last spoke count as answered: an older
      -- one belongs to a conversation that has moved on.
      LEFT JOIN LATERAL (
@@ -166,6 +203,7 @@ function factsFor(row) {
     chasedSince: Number(row.chased_since || 0),
     totalMessagesFromThem: Number(row.total_in || 0),
     lastFromThem: (row.last_in_text || '').slice(0, 400),
+    recent: Array.isArray(row.recent_lines) ? row.recent_lines : [],
     lastFromUs: (row.last_out_text || '').slice(0, 300),
     lastFromUsStatus: row.last_out_status || 'unknown',
     readOurLast,
@@ -196,12 +234,19 @@ function describe(f) {
     `  birth details on file: ${f.detailsGiven.length ? f.detailsGiven.join(', ') : 'none'}`,
     `  messages they have sent in total: ${f.totalMessagesFromThem}`,
     `  last thing THEY said: "${f.lastFromThem || '(nothing)'}"`,
-    `  last thing WE said: "${f.lastFromUs || '(nothing)'}"`,
     `  they ${f.readOurLast ? 'HAVE read' : `have NOT read (status: ${f.lastFromUsStatus})`} our last message`,
     f.theySpokeLast
       ? '  THEY SPOKE LAST and we never replied'
       : `  we have sent ${f.chasedSince} message(s) since they last spoke`,
   ];
+  if (f.recent.length) {
+    lines.push('  how the conversation ended, oldest first:');
+    for (const m of f.recent) {
+      lines.push(`    ${m.who === 'user' ? 'THEM' : 'US  '}: ${String(m.text).replace(/\s+/g, ' ').slice(0, 200)}`);
+    }
+    lines.push('  Read all of it. The last line is often just an acknowledgement;');
+    lines.push('  what they said before it is usually what matters.');
+  }
   if (f.remarks.length) lines.push(`  operator notes: ${f.remarks.join(' | ')}`);
   if (f.nowLocal) {
     lines.push(`  the time where they are is ${f.nowLocal}`);
@@ -210,7 +255,7 @@ function describe(f) {
   return lines.join('\n');
 }
 
-const SYSTEM = `You are a behavioural marketer working for a Sri Lankan astrology
+const DEFAULT_SYSTEM = `You are a behavioural marketer working for a Sri Lankan astrology
 business, and you are unusually good at understanding why someone who wanted
 something stopped short of getting it.
 
@@ -310,10 +355,10 @@ You are given ONE person. Reply with a single JSON object, no markdown:
  * @param {string} apiKey
  * @returns {Promise<Object|null>} { temp, why, draft }, or null if it failed
  */
-async function classifyOne(facts, apiKey) {
+async function classifyOne(facts, apiKey, systemInstruction) {
   const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({
     model: 'gemini-2.5-flash',
-    systemInstruction: SYSTEM,
+    systemInstruction: systemInstruction || DEFAULT_SYSTEM,
     generationConfig: {
       temperature: 0.4,
       // Reasoning is billed against the same output budget, and it was
@@ -355,12 +400,12 @@ async function classifyOne(facts, apiKey) {
  * @param {string} apiKey
  * @returns {Promise<Array<Object|null>>} aligned with the input order
  */
-async function classifyAll(list, apiKey) {
+async function classifyAll(list, apiKey, systemInstruction) {
   const out = new Array(list.length).fill(null);
   let next = 0;
   const worker = async () => {
     for (let i = next++; i < list.length; i = next++) {
-      out[i] = await classifyOne(list[i], apiKey);
+      out[i] = await classifyOne(list[i], apiKey, systemInstruction);
     }
   };
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, list.length) }, worker));
@@ -377,6 +422,7 @@ const TEMP_RANK = { hot: 0, warm: 1, cold: 2 };
  * @returns {Promise<{items: Array<Object>, counts: Object, generatedAt: string}>}
  */
 async function buildQueue(clientId) {
+  const cfg = await loadPromptConfig(clientId);
   const rows = await loadCandidates(clientId);
   const tz = await timezoneFor(clientId);
   const facts = rows.map(factsFor);
@@ -401,7 +447,7 @@ async function buildQueue(clientId) {
 
   const stale = [];
   for (const f of facts) {
-    const fp = fingerprint(f);
+    const fp = fingerprint(f, cfg.stamp);
     const hit = saved.get(f.orderId);
     if (hit && hit.fingerprint === fp) {
       f._judgement = {
@@ -415,7 +461,7 @@ async function buildQueue(clientId) {
 
   if (stale.length) {
     const apiKey = await getGeminiKey(clientId);
-    const judged = await classifyAll(stale.map(s => s.f), apiKey);
+    const judged = await classifyAll(stale.map(s => s.f), apiKey, cfg.prompt);
     await Promise.all(stale.map(async (s, n) => {
       const j = judged[n] || null;
       s.f._judgement = j;
@@ -517,4 +563,4 @@ async function buildQueue(clientId) {
   return { items, counts, generatedAt: new Date().toISOString() };
 }
 
-module.exports = { buildQueue, WINDOW_HOURS, QUIET_MINUTES, CLOSING_SOON_HOURS };
+module.exports = { buildQueue, DEFAULT_SYSTEM, WINDOW_HOURS, QUIET_MINUTES, CLOSING_SOON_HOURS };

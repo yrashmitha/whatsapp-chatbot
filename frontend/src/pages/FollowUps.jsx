@@ -15,6 +15,94 @@ import api from '../lib/api';
  * something you cannot act on.
  */
 
+/**
+ * The instructions behind the queue, editable in place.
+ *
+ * Every change of tone so far came from reading a draft that felt wrong. That
+ * should not need a deploy — the business knows how it wants to speak to its
+ * customers better than the code does.
+ */
+function PromptEditor({ clientId, onSaved }) {
+  const toast = useToast();
+  const params = clientId ? { client_id: clientId } : {};
+  const [open, setOpen] = useState(false);
+  const [edited, setEdited] = useState(null);
+
+  const { data } = useQuery({
+    queryKey: ['follow-up-prompt', clientId],
+    queryFn: () => api.get('/follow-ups/prompt', { params }).then(r => r.data),
+    enabled: !!clientId && open,
+  });
+
+  // Blank means "use the built-in", so the box is seeded with the built-in text
+  // rather than leaving someone staring at an empty field.
+  const value = edited ?? (data ? (data.prompt || data.default_prompt) : '');
+
+  const save = useMutation({
+    mutationFn: (text) => api.put('/follow-ups/prompt', { prompt: text }, { params }).then(r => r.data),
+    onSuccess: (d) => {
+      setEdited(null);
+      toast.success(d.using_default ? 'Back to the built-in instructions' : 'Saved — the queue is being re-read');
+      onSaved?.();
+    },
+    onError: (e) => toast.error(e?.response?.data?.error || 'Could not save'),
+  });
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 cursor-pointer hover:border-violet-300"
+      >Edit instructions</button>
+    );
+  }
+
+  return (
+    <div className="mb-4 bg-white border border-slate-200 rounded-xl p-3">
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <div className="text-xs font-semibold text-slate-600">
+          How the queue judges and writes
+          {data && !data.using_default && (
+            <span className="ml-2 text-[10px] font-medium text-violet-700 bg-violet-100 px-1.5 py-0.5 rounded-full">edited</span>
+          )}
+        </div>
+        <button
+          onClick={() => { setOpen(false); setEdited(null); }}
+          className="text-xs text-slate-400 hover:text-slate-600 bg-transparent border-0 cursor-pointer"
+        >Close</button>
+      </div>
+      <p className="text-xs text-slate-400 mb-2">
+        These decide who counts as hot, what each message says, and when it is sent. Changing them
+        re-reads every conversation in the queue, which costs a moment and a fraction of a cent.
+      </p>
+      <textarea
+        value={value}
+        onChange={e => setEdited(e.target.value)}
+        rows={16}
+        className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:border-violet-400 resize-y font-mono"
+      />
+      <div className="flex gap-2 mt-2">
+        <button
+          onClick={() => save.mutate(value)}
+          disabled={save.isPending}
+          className="text-xs px-3 py-1.5 rounded-lg border-0 bg-violet-600 text-white cursor-pointer disabled:opacity-40"
+        >{save.isPending ? 'Saving…' : 'Save'}</button>
+        <button
+          onClick={() => setEdited(data?.default_prompt || '')}
+          className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 cursor-pointer"
+        >Restore the built-in</button>
+        {data && !data.using_default && (
+          <button
+            onClick={() => save.mutate('')}
+            className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 cursor-pointer"
+            title="Clear the saved copy and go back to the built-in"
+          >Use built-in</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** "2h ago" — precise enough to judge whether it is worth chasing again. */
 function ago(iso) {
   if (!iso) return '';
@@ -287,11 +375,14 @@ export default function FollowUps() {
       <div className="p-4 md:p-6 overflow-y-auto h-full">
         <div className="flex items-start justify-between gap-3 mb-1">
           <h1 className="text-lg font-bold text-slate-800">Follow-ups</h1>
-          <button
-            onClick={() => refetch()}
-            disabled={isFetching}
-            className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 cursor-pointer disabled:opacity-50"
-          >{isFetching ? 'Checking…' : 'Refresh'}</button>
+          <div className="flex gap-2">
+            <PromptEditor clientId={clientId} onSaved={() => refetch()} />
+            <button
+              onClick={() => refetch()}
+              disabled={isFetching}
+              className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 cursor-pointer disabled:opacity-50"
+            >{isFetching ? 'Checking…' : 'Refresh'}</button>
+          </div>
         </div>
         <p className="text-sm text-slate-500 mb-4">
           People who ordered but have not paid, and can still be messaged without a template.

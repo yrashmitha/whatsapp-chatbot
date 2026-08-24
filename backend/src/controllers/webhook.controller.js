@@ -200,7 +200,12 @@ function receiveWebhook(req, res) {
             if (analyzerCheck.rows.length) {
               log.info(`[IMAGE-ANALYZER] Analyzing image`);
               const cfg = await db.getPluginConfig(client.id, 'image_analyzer');
-              const analysis = await analyzePaymentDocument(imgBuffer, imgMimeType, cfg.api_key || await getGeminiKey(client.id));
+              const analysis = await analyzePaymentDocument(imgBuffer, imgMimeType, cfg.api_key || await getGeminiKey(client.id), {
+                account: cfg.expected_account || null,
+                bank:    cfg.expected_bank    || null,
+                names:   cfg.expected_names   || null,
+                prompt:  cfg.extraction_prompt || null,
+              });
               log.info(`[IMAGE-ANALYZER] Result: type=${analysis.document_type} payment=${analysis.is_payment_related} amount=${analysis.amount}`);
 
               let pendingOrders = [];
@@ -336,7 +341,12 @@ function receiveWebhook(req, res) {
               docSession.lastUsed = Date.now();
 
               const cfg = await db.getPluginConfig(client.id, 'image_analyzer');
-              const analysis = await analyzePaymentDocument(docBuffer, docMimeType, cfg.api_key || await getGeminiKey(client.id));
+              const analysis = await analyzePaymentDocument(docBuffer, docMimeType, cfg.api_key || await getGeminiKey(client.id), {
+                account: cfg.expected_account || null,
+                bank:    cfg.expected_bank    || null,
+                names:   cfg.expected_names   || null,
+                prompt:  cfg.extraction_prompt || null,
+              });
               log.info(`[IMAGE-ANALYZER] PDF result: type=${analysis.document_type} payment=${analysis.is_payment_related} amount=${analysis.amount}`);
 
               let pendingOrders = [];

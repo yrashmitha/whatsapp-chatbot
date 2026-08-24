@@ -328,12 +328,16 @@ async function updatePluginConfig(req, res) {
     return res.status(403).json({ error: 'Forbidden' });
   }
   const { pluginId } = req.params;
-  const { name, prompt, prompt2, api_key, system_prompt, quantum_system_prompt, aura_system_prompt, horoscope_sections, quantum_sections, section_guides, special_note, wa_message_prompt, ai_fill_prompt, greeting, tts_voice, stt_language, verification_prompt, page1_body, page2_body, page4_body, quantum_enabled, pixel_id, ad_account_id, audience_id, marriage_system_prompt, marriage_sections, marriage_special_note, marriage_wa_prompt, match_system_prompt, match_sections, match_special_note, match_ai_fill_prompt,
+  const { name, prompt, prompt2, api_key, system_prompt, quantum_system_prompt, aura_system_prompt, horoscope_sections, quantum_sections, section_guides, special_note, wa_message_prompt, ai_fill_prompt, greeting, tts_voice, stt_language, verification_prompt, extraction_prompt, expected_account, expected_bank, expected_names, page1_body, page2_body, page4_body, quantum_enabled, pixel_id, ad_account_id, audience_id, marriage_system_prompt, marriage_sections, marriage_special_note, marriage_wa_prompt, match_system_prompt, match_sections, match_special_note, match_ai_fill_prompt,
     fixed_instructions, vip_section_label, remedies_section_label, special_questions_title, quantum_report_title, porondam_report_title, porondam_special_note, marriage_report_title, marriage_fixed_instructions, match_report_title, match_questions_title, match_fixed_instructions, match_question_instructions, page1_heading, page2_heading, page4_heading } = req.body;
   try {
     const existing = await db.getPluginConfig(clientId, pluginId);
     const update = { ...existing };
     if (name !== undefined)          update.name          = name;
+    if (extraction_prompt !== undefined) update.extraction_prompt = extraction_prompt;
+    if (expected_account !== undefined)  update.expected_account  = expected_account;
+    if (expected_bank !== undefined)     update.expected_bank     = expected_bank;
+    if (expected_names !== undefined)    update.expected_names    = expected_names;
     if (prompt !== undefined)        update.prompt        = prompt;
     if (prompt2 !== undefined)       update.prompt2       = prompt2;
     if (api_key !== undefined)       update.api_key       = api_key;

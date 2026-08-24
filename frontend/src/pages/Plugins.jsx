@@ -110,6 +110,10 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
   const [ttsVoice, setTtsVoice]                   = useState('');
   const [sttLanguage, setSttLanguage]             = useState('');
   const [verificationPrompt, setVerificationPrompt] = useState('');
+  const [extractionPrompt, setExtractionPrompt]     = useState('');
+  const [expectedAccount, setExpectedAccount]       = useState('');
+  const [expectedBank, setExpectedBank]             = useState('');
+  const [expectedNames, setExpectedNames]           = useState('');
   const [page1Body, setPage1Body] = useState('');
   const [page2Body, setPage2Body] = useState('');
   const [page4Body, setPage4Body] = useState('');
@@ -158,6 +162,10 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
         setTtsVoice(TTS_VOICES.includes(savedVoice) ? r.data.tts_voice : 'Kore');
         setSttLanguage(r.data.stt_language || 'en-US');
         setVerificationPrompt(r.data.verification_prompt || '');
+        setExtractionPrompt(r.data.extraction_prompt || '');
+        setExpectedAccount(r.data.expected_account || '');
+        setExpectedBank(r.data.expected_bank || '');
+        setExpectedNames(r.data.expected_names || '');
         setPage1Body(r.data.page1_body || '');
         setPage2Body(r.data.page2_body || '');
         setPage4Body(r.data.page4_body || '');
@@ -233,6 +241,10 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
         body.stt_language  = sttLanguage;
       } else if (isImageAnalyzer) {
         body.verification_prompt = verificationPrompt;
+        body.extraction_prompt   = extractionPrompt;
+        body.expected_account    = expectedAccount;
+        body.expected_bank       = expectedBank;
+        body.expected_names      = expectedNames;
       } else if (isTarot) {
         body.prompt     = prompt;
         body.page1_body = page1Body;
@@ -368,6 +380,52 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
             className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y"
           />
           <p className="text-xs text-slate-400 mt-1">Supports images (JPG, PNG) and PDFs.</p>
+
+          <div className="mt-4 pt-3 border-t border-slate-100">
+            <label className="text-xs font-medium text-slate-500 block mb-1">Your receiving account</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              Used to check that the money actually reached you. Leave these blank and slips are
+              still read, but nobody checks who was paid, and no slip is ever reported as verified.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                value={expectedAccount}
+                onChange={e => setExpectedAccount(e.target.value)}
+                placeholder="Account number"
+                className="flex-1 min-w-0 px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400"
+              />
+              <input
+                value={expectedBank}
+                onChange={e => setExpectedBank(e.target.value)}
+                placeholder="Bank"
+                className="flex-1 min-w-0 px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400"
+              />
+            </div>
+            <input
+              value={expectedNames}
+              onChange={e => setExpectedNames(e.target.value)}
+              placeholder="Account name, and any spellings a slip might show"
+              className="w-full mt-2 px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400"
+            />
+          </div>
+
+          <div className="mt-4 pt-3 border-t border-slate-100">
+            <label className="text-xs font-medium text-slate-500 block mb-1">Reading instructions (advanced)</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              What the vision pass looks for and how it reports back. Leave blank to use the
+              built-in one, which reads the slip and runs the fraud checks against the account
+              above. Write your own only if you need different fields or rules, and keep it
+              returning a single JSON object. Write <code className="font-mono">{'{today}'}</code>
+              {' '}wherever you need today's date.
+            </p>
+            <textarea
+              value={extractionPrompt}
+              onChange={e => setExtractionPrompt(e.target.value)}
+              rows={10}
+              placeholder="Leave blank to use the built-in reading instructions…"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 resize-y font-mono"
+            />
+          </div>
         </div>
       )}
 

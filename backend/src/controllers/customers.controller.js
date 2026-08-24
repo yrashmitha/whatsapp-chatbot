@@ -82,7 +82,7 @@ async function getMessages(req, res) {
       : (clientId ? [phone, clientId, limit] : [phone, limit]);
     const q = `
       SELECT id, phone_number, message_text, sender_type, created_at, cost_usd, media_type, media_url, wamid, is_deleted,
-             delivery_status, delivered_at, read_at, error_code, error_message, interactive
+             delivery_status, delivered_at, read_at, error_code, error_message, interactive, extracted
       FROM messages
       WHERE phone_number=$1 ${clientId ? 'AND client_id=$2' : ''}
       ${before ? `AND created_at < ${clientId ? '$3' : '$2'}` : ''}

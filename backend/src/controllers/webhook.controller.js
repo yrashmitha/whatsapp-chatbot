@@ -187,7 +187,7 @@ function receiveWebhook(req, res) {
           }
         }
 
-        await db.insertMessage(from, userLabel, 'user', null, client?.id ?? null, 'image', customerMediaUrl);
+        await db.insertMessage(from, userLabel, 'user', null, client?.id ?? null, 'image', customerMediaUrl, msg.id);
 
         // ── Image Analyzer addon ────────────────────────────────────────────
         let imageNote = null;
@@ -210,6 +210,8 @@ function receiveWebhook(req, res) {
               }
 
               imageNote = buildAnalysisNote(analysis, caption, pendingOrders, cfg.verification_prompt || '');
+              await db.setMessageExtraction(msg.id, analysis)
+                .catch(e => log.warn('[IMAGE-ANALYZER] Could not store the reading:', e.message));
             }
           } catch (e) {
             console.warn('[IMAGE-ANALYZER] Failed, using default note:', e.message);
@@ -224,6 +226,10 @@ function receiveWebhook(req, res) {
             if (extractorCheck.rows.length) {
               log.info('[MEDIA-EXTRACTOR] Extracting image content via Gemini');
               const { text: extracted } = await extractFromBuffer(imgBuffer, imgMimeType, 'photo', null, await getGeminiKey(client.id));
+              if (extracted) {
+                await db.setMessageExtraction(msg.id, { text: extracted })
+                  .catch(e => log.warn('[MEDIA-EXTRACTOR] Could not store the reading:', e.message));
+              }
               if (extracted) {
                 imageNote = caption ? `${extracted}\n[Customer also included a caption: "${caption}"]` : extracted;
                 log.info('[MEDIA-EXTRACTOR] Image extraction succeeded');
@@ -310,7 +316,7 @@ function receiveWebhook(req, res) {
           }
         }
         await db.upsertCustomer(from, null, client?.id);
-        await db.insertMessage(from, `[Document: ${docFileName}]`, 'user', null, client?.id ?? null, 'pdf', docStoredUrl);
+        await db.insertMessage(from, `[Document: ${docFileName}]`, 'user', null, client?.id ?? null, 'pdf', docStoredUrl, msg.id);
 
         // ── Image Analyzer addon for PDFs ───────────────────────────────────
         let docAnalyzed = false;
@@ -340,6 +346,8 @@ function receiveWebhook(req, res) {
               }
 
               const docNote = buildAnalysisNote(analysis, '', pendingOrders, cfg.verification_prompt || '');
+              await db.setMessageExtraction(msg.id, analysis)
+                .catch(e => log.warn('[IMAGE-ANALYZER] Could not store the reading:', e.message));
               const { botReply: docReply, imagesToSend: docImages, productImagesToSend: docProductImages, isFallback: docFallback } = await handleMessage(from, docNote, docSession.chat, { skipUserInsert: true, client, traceId });
               if (docFallback) {
                 log.warn(`[WEBHOOK] Fallback triggered on document — suppressing reply to customer`);
@@ -393,6 +401,10 @@ function receiveWebhook(req, res) {
 
                 log.info('[MEDIA-EXTRACTOR] Extracting document content via Gemini');
                 const { text: extracted } = await extractFromBuffer(docBuffer, docMimeType, docFileName, null, await getGeminiKey(client.id));
+                if (extracted) {
+                  await db.setMessageExtraction(msg.id, { text: extracted })
+                    .catch(e => log.warn('[MEDIA-EXTRACTOR] Could not store the reading:', e.message));
+                }
                 const docNote = extracted || `[Customer sent a document (${docFileName}). Acknowledge receipt and let them know the team will review it.]`;
                 log.info(`[MEDIA-EXTRACTOR] Document extraction ${extracted ? 'succeeded' : 'returned empty — using fallback note'}`);
 

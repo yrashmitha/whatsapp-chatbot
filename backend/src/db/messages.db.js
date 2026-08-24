@@ -194,4 +194,26 @@ async function attachWamidToLatestBotMessage(phoneNumber, clientId, wamid) {
   if (row) db.prepare(`UPDATE messages SET wamid = ?, delivery_status = 'sent' WHERE id = ?`).run(wamid, row.id);
 }
 
-module.exports = { insertMessage, getMessagesByPhone, deleteMessages, deleteMessage, updateMessageStatus, attachWamidToLatestBotMessage };
+/**
+ * Store what was read out of an attachment, against the message that carried it.
+ *
+ * Keyed on the WhatsApp message id, which is unique and already recorded when
+ * the attachment arrives, so a slow analysis cannot attach itself to a later
+ * message from the same customer.
+ *
+ * @param {string} wamid
+ * @param {Object} data - the vision result, or { text } for a plain extraction
+ * @returns {Promise<boolean>} whether a message matched
+ */
+async function setMessageExtraction(wamid, data) {
+  if (!wamid || !data) return false;
+  const payload = JSON.stringify(data);
+  if (IS_PG) {
+    const res = await pool.query('UPDATE messages SET extracted=$2 WHERE wamid=$1', [wamid, payload]);
+    return res.rowCount > 0;
+  }
+  const r = db.prepare('UPDATE messages SET extracted=? WHERE wamid=?').run(payload, wamid);
+  return r.changes > 0;
+}
+
+module.exports = { insertMessage, getMessagesByPhone, deleteMessages, deleteMessage, updateMessageStatus, attachWamidToLatestBotMessage, setMessageExtraction };

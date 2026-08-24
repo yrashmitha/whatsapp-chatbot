@@ -1,4 +1,5 @@
 import { formatMessageTime } from '../../lib/utils';
+import ExtractedReading from './ExtractedReading';
 
 
 /**
@@ -311,6 +312,8 @@ export default function MessageBubble({ msg, onDelete }) {
                && !(hasAudio && /^\[Audio:[^\]]*\]$/.test(text.trim())) && (
           <div className="whitespace-pre-wrap break-words">{formatWhatsApp(text)}</div>
         )}
+        {isUser && msg.extracted && <ExtractedReading extracted={msg.extracted} />}
+
         {interactive && <InteractiveMenu menu={interactive} />}
 
         <div className={`text-xs mt-1 ${isUser ? 'text-slate-400' : 'opacity-60'} text-right`}>

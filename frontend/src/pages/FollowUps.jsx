@@ -15,6 +15,16 @@ import api from '../lib/api';
  * something you cannot act on.
  */
 
+/** "2h ago" — precise enough to judge whether it is worth chasing again. */
+function ago(iso) {
+  if (!iso) return '';
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const h = Math.round(mins / 60);
+  return h < 24 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
+}
+
 const TEMP = {
   hot:  { label: 'Hot',  dot: 'bg-red-500',   chip: 'bg-red-50 text-red-700 border-red-200' },
   warm: { label: 'Warm', dot: 'bg-amber-500', chip: 'bg-amber-50 text-amber-700 border-amber-200' },
@@ -83,7 +93,8 @@ function Card({ item, onOpen }) {
   };
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col gap-2">
+    <div className={`border rounded-xl p-3 flex flex-col gap-2 ${
+      item.handled ? 'bg-slate-50 border-slate-200 opacity-75' : 'bg-white border-slate-200'}`}>
       <div className="flex items-start gap-2">
         <span className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${t.dot}`} />
         <div className="flex-1 min-w-0">
@@ -108,6 +119,16 @@ function Card({ item, onOpen }) {
 
       {/* The facts, not the model's opinion of them. */}
       <div className="flex flex-wrap gap-1.5 text-[10px]">
+        {item.followedUpAt && (
+          <span className="px-1.5 py-0.5 rounded-full border border-emerald-300 bg-emerald-100 text-emerald-800 font-semibold">
+            ✓ followed up {ago(item.followedUpAt)}
+          </span>
+        )}
+        {item.scheduledFor && !item.followedUpAt && (
+          <span className="px-1.5 py-0.5 rounded-full border border-violet-300 bg-violet-100 text-violet-800 font-semibold">
+            ⏱ queued for {String(item.scheduledFor).slice(11, 16)}
+          </span>
+        )}
         <span className={`px-1.5 py-0.5 rounded-full border ${t.chip}`}>{t.label}</span>
         {item.theySpokeLast && (
           <span className="px-1.5 py-0.5 rounded-full border border-red-200 bg-red-50 text-red-700">we never replied</span>
@@ -222,6 +243,7 @@ export default function FollowUps() {
   const superAdmin = isSuperAdmin(user);
   const clientId = superAdmin ? (selectedClientId || null) : user?.clientId;
   const [onlyDue, setOnlyDue] = useState(false);
+  const [showHandled, setShowHandled] = useState(false);
 
   const { data, isFetching, refetch } = useQuery({
     queryKey: ['follow-ups', clientId],
@@ -253,7 +275,10 @@ export default function FollowUps() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['follow-ups-scheduled'] }),
   });
 
-  const items = (data?.items || []).filter(i => !onlyDue || i.due);
+  const all = data?.items || [];
+  const items = all
+    .filter(i => (showHandled ? true : !i.handled))
+    .filter(i => !onlyDue || i.due);
   const c = data?.counts;
   const pct = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '—');
 
@@ -276,17 +301,28 @@ export default function FollowUps() {
 
         {c && (
           <div className="flex flex-wrap gap-2 mb-4">
-            {[['total', c.total, 'bg-slate-100 text-slate-600'],
+            {[['still to do', c.waiting ?? c.total, 'bg-slate-100 text-slate-600'],
               ['hot', c.hot, 'bg-red-50 text-red-700'],
               ['warm', c.warm, 'bg-amber-50 text-amber-700'],
               ['due now', c.due, 'bg-violet-100 text-violet-700'],
               ['closing soon', c.closingSoon, 'bg-red-100 text-red-700']].map(([label, n, cls]) => (
               <span key={label} className={`text-xs px-2.5 py-1 rounded-full font-medium ${cls}`}>{n} {label}</span>
             ))}
-            <label className="text-xs flex items-center gap-1.5 text-slate-500 ml-auto cursor-pointer">
-              <input type="checkbox" checked={onlyDue} onChange={e => setOnlyDue(e.target.checked)} className="accent-violet-600" />
-              only due
-            </label>
+            {c.handled > 0 && (
+              <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-emerald-50 text-emerald-700">
+                {c.handled} done
+              </span>
+            )}
+            <div className="flex gap-3 ml-auto">
+              <label className="text-xs flex items-center gap-1.5 text-slate-500 cursor-pointer">
+                <input type="checkbox" checked={onlyDue} onChange={e => setOnlyDue(e.target.checked)} className="accent-violet-600" />
+                only due
+              </label>
+              <label className="text-xs flex items-center gap-1.5 text-slate-500 cursor-pointer">
+                <input type="checkbox" checked={showHandled} onChange={e => setShowHandled(e.target.checked)} className="accent-violet-600" />
+                show done
+              </label>
+            </div>
           </div>
         )}
 
@@ -298,7 +334,9 @@ export default function FollowUps() {
 
         {data && items.length === 0 && (
           <div className="text-sm text-slate-400 py-8 text-center">
-            {onlyDue ? 'Nothing due right now.' : 'Nobody is waiting. Everyone who ordered has either paid or fallen outside the window.'}
+            {onlyDue ? 'Nothing due right now.'
+              : all.length > 0 ? 'All caught up — everyone reachable has been followed up. Tick “show done” to see them.'
+              : 'Nobody is waiting. Everyone who ordered has either paid or fallen outside the window.'}
           </div>
         )}
 

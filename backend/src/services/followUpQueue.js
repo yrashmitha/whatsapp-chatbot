@@ -92,7 +92,10 @@ async function loadCandidates(clientId) {
            AND m.sender_type = 'bot' AND m.created_at > c.last_customer_message_at)::int AS chased_since,
        (SELECT COUNT(*) FROM messages m
          WHERE m.phone_number = c.phone_number AND m.client_id = c.client_id
-           AND m.sender_type = 'user')::int AS total_in
+           AND m.sender_type = 'user')::int AS total_in,
+       fu.sent_at   AS followed_up_at,
+       fu.angle     AS followed_up_angle,
+       sch.send_at  AS scheduled_for
      FROM orders o
      JOIN customers c
        ON c.phone_number = o.phone_number AND c.client_id = o.client_id
@@ -108,6 +111,19 @@ async function loadCandidates(clientId) {
           AND m.sender_type = 'bot'
         ORDER BY m.id DESC LIMIT 1
      ) lout ON TRUE
+     -- Only follow-ups sent since they last spoke count as answered: an older
+     -- one belongs to a conversation that has moved on.
+     LEFT JOIN LATERAL (
+       SELECT sent_at, angle FROM follow_up_sends f
+        WHERE f.order_id = o.order_id AND f.client_id = o.client_id
+          AND f.sent_at > c.last_customer_message_at
+        ORDER BY f.sent_at DESC LIMIT 1
+     ) fu ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT send_at FROM scheduled_follow_ups s
+        WHERE s.order_id = o.order_id AND s.client_id = o.client_id AND s.status = 'pending'
+        ORDER BY s.send_at ASC LIMIT 1
+     ) sch ON TRUE
      WHERE o.client_id = $1
        AND o.status = 'pending'
        AND c.last_customer_message_at IS NOT NULL
@@ -157,9 +173,12 @@ function factsFor(row) {
     package: cf.package || cf.product_id || null,
     remarks: Array.isArray(row.remarks) ? row.remarks.map(r => r.text).slice(-3) : [],
     // Due once they have been quiet a while and nobody has chased since.
-    due: minutesQuiet >= QUIET_MINUTES && Number(row.chased_since || 0) === 0,
+    due: minutesQuiet >= QUIET_MINUTES && Number(row.chased_since || 0) === 0 && !row.followed_up_at && !row.scheduled_for,
     closingSoon: hoursLeft <= CLOSING_SOON_HOURS,
     lastInAt: row.last_in_at || null,
+    followedUpAt: row.followed_up_at || null,
+    followedUpAngle: row.followed_up_angle || null,
+    scheduledFor: row.scheduled_for || null,
   };
 }
 
@@ -467,6 +486,10 @@ async function buildQueue(clientId) {
       why: j?.why || (f.theySpokeLast ? 'They spoke last and we never replied' : 'Awaiting payment'),
       angle: j?.angle || '',
       draft: j?.draft || '',
+      followedUpAt: f.followedUpAt,
+      followedUpAngle: f.followedUpAngle,
+      scheduledFor: f.scheduledFor,
+      handled: !!(f.followedUpAt || f.scheduledFor),
       suggestedSendAt: f.suggestedSendAt || '',
       whenWhy: f.suggestedWhenWhy || '',
       windowClosesLocal: f.windowClosesLocalOut || '',
@@ -475,12 +498,17 @@ async function buildQueue(clientId) {
     };
   });
 
+  // Work still to do first; anyone already contacted or queued sinks.
+  const handled = (i) => (i.followedUpAt || i.scheduledFor ? 1 : 0);
   items.sort((a, b) =>
+    handled(a) - handled(b) ||
     (TEMP_RANK[a.temp] ?? 1) - (TEMP_RANK[b.temp] ?? 1) ||
     a.hoursLeft - b.hoursLeft);
 
-  const counts = { total: items.length, hot: 0, warm: 0, cold: 0, due: 0, closingSoon: 0 };
+  const counts = { total: items.length, hot: 0, warm: 0, cold: 0, due: 0, closingSoon: 0, handled: 0, waiting: 0 };
   for (const i of items) {
+    if (i.followedUpAt || i.scheduledFor) { counts.handled++; continue; }
+    counts.waiting++;
     counts[i.temp] = (counts[i.temp] || 0) + 1;
     if (i.due) counts.due++;
     if (i.closingSoon) counts.closingSoon++;

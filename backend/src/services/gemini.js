@@ -318,7 +318,7 @@ async function buildChatSession(phoneNumber, client) {
     .filter(m => !m.message_text.startsWith('[SYSTEM NOTE'))
     .map(m => ({
       role: m.sender_type === 'user' ? 'user' : 'model',
-      parts: [{ text: m.message_text }],
+      parts: [{ text: historyTextFor(m) }],
     }));
 
   // Gemini requires alternating user/model turns — merge consecutive same-role entries
@@ -438,6 +438,29 @@ function looksLikeReasoningLeak(text) {
   return false;
 }
 
+/**
+ * How a stored message should read when it goes back into the model as history.
+ *
+ * A menu is stored as its body text so the CRM transcript reads naturally, but
+ * the model did not write that body as prose — it wrote words and a marker, and
+ * the sender turned the marker into a menu. Replaying the body alone teaches it
+ * that menu bodies are things you type, and it stops emitting markers
+ * altogether. Seen in the wild: a conversation that used five menus one day and
+ * none the next, typing the bodies out instead.
+ *
+ * @param {Object} m - a messages row
+ * @returns {string}
+ */
+function historyTextFor(m) {
+  const text = m.message_text || '';
+  let menu = m.interactive;
+  if (!menu) return text;
+  if (typeof menu === 'string') { try { menu = JSON.parse(menu); } catch { return text; } }
+  if (!menu?.id) return text;
+  const kind = menu.kind === 'buttons' ? 'BUTTONS' : 'LIST';
+  return `${text}\n[[${kind}:${menu.id}]]`;
+}
+
 async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserInsert = false, client = null, retryNote = null, traceId = '?' } = {}) {
   const log = makeLogger(traceId, client?.id, phoneNumber);
   log.info(`[IN] "${userMessage.substring(0, 100)}"`);
@@ -465,8 +488,9 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
       for (const m of recent) {
         const role = m.sender_type === 'user' ? 'user' : 'model';
         const last = merged[merged.length - 1];
-        if (last && last.role === role) { last.parts[0].text += '\n' + m.message_text; }
-        else merged.push({ role, parts: [{ text: m.message_text }] });
+        const histText = historyTextFor(m);
+        if (last && last.role === role) { last.parts[0].text += '\n' + histText; }
+        else merged.push({ role, parts: [{ text: histText }] });
       }
       while (merged.length && merged[0].role !== 'user') merged.shift();
       chatSession._history = merged;

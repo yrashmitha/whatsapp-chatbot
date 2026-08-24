@@ -47,7 +47,7 @@ const CONCURRENCY = 4;
  * first time this was missed, a prompt change reached nobody: every fingerprint
  * still matched, so the whole queue kept serving answers from the old prompt.
  */
-const JUDGEMENT_VERSION = 2;
+const JUDGEMENT_VERSION = 3;
 
 /**
  * What a judgement depends on: the rules in force, what they last said, and
@@ -357,7 +357,7 @@ async function buildQueue(clientId) {
   const saved = new Map();
   if (facts.length) {
     const { rows } = await db.pgQuery(
-      `SELECT order_id, fingerprint, temp, why, angle, draft
+      `SELECT order_id, fingerprint, temp, why, angle, draft, send_at, when_why
          FROM follow_up_judgements
         WHERE client_id = $1 AND order_id = ANY($2)`,
       [clientId, facts.map(f => f.orderId)]);
@@ -369,7 +369,10 @@ async function buildQueue(clientId) {
     const fp = fingerprint(f);
     const hit = saved.get(f.orderId);
     if (hit && hit.fingerprint === fp) {
-      f._judgement = { temp: hit.temp, why: hit.why, angle: hit.angle, draft: hit.draft };
+      f._judgement = {
+        temp: hit.temp, why: hit.why, angle: hit.angle, draft: hit.draft,
+        sendAt: hit.send_at || '', whenWhy: hit.when_why || '',
+      };
     } else {
       stale.push({ f, fp });
     }
@@ -385,12 +388,15 @@ async function buildQueue(clientId) {
       // A judgement that cannot be stored is still usable now, so a write
       // failure must not lose the call that was already paid for.
       await db.pgQuery(
-        `INSERT INTO follow_up_judgements (client_id, order_id, fingerprint, temp, why, angle, draft, created_at)
-              VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+        `INSERT INTO follow_up_judgements
+           (client_id, order_id, fingerprint, temp, why, angle, draft, send_at, when_why, created_at)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
          ON CONFLICT (client_id, order_id) DO UPDATE
             SET fingerprint = EXCLUDED.fingerprint, temp = EXCLUDED.temp, why = EXCLUDED.why,
-                angle = EXCLUDED.angle, draft = EXCLUDED.draft, created_at = NOW()`,
-        [clientId, s.f.orderId, s.fp, j.temp, j.why, j.angle || '', j.draft]
+                angle = EXCLUDED.angle, draft = EXCLUDED.draft, send_at = EXCLUDED.send_at,
+                when_why = EXCLUDED.when_why, created_at = NOW()`,
+        [clientId, s.f.orderId, s.fp, j.temp, j.why, j.angle || '', j.draft,
+         j.sendAt || '', j.whenWhy || '']
       ).catch(e => console.warn(`[FOLLOW-UP] Could not store judgement for ${s.f.orderId}:`, e.message));
     }));
     console.log(`[FOLLOW-UP] ${clientId}: ${facts.length} in queue, ${stale.length} needed judging`);
@@ -400,17 +406,45 @@ async function buildQueue(clientId) {
     const j = f._judgement;
     delete f._judgement;
 
-    // A suggested time is only useful if it is actually sendable: far enough
-    // ahead to be worth scheduling, and safely inside the window.
+    // A suggested time is only useful if it is still sendable. One stored
+    // yesterday may now be in the past, and a window that had twenty hours left
+    // has fewer now, so it is re-checked on every read rather than trusted.
+    const closes = f.windowClosesAt ? new Date(f.windowClosesAt) : null;
+    const earliest = Date.now() + 15 * 60_000;
+    const latest = closes ? closes.getTime() - 15 * 60_000 : Infinity;
+    const usable = (at) => at && at.getTime() > earliest && at.getTime() < latest;
+
     let suggested = '';
-    if (j?.sendAt) {
-      const at = localToUtc(j.sendAt, tz);
-      const closes = f.windowClosesAt ? new Date(f.windowClosesAt) : null;
-      const okSoon = at && at.getTime() > Date.now() + 15 * 60_000;
-      const okWindow = !closes || (at && at.getTime() < closes.getTime() - 15 * 60_000);
-      if (okSoon && okWindow) suggested = j.sendAt;
+    let whenWhy = j?.whenWhy || '';
+    if (j?.sendAt && usable(localToUtc(j.sendAt, tz))) {
+      suggested = j.sendAt;
+    } else if (latest > earliest) {
+      // Their own suggestion no longer fits, but there is still room. Prefer
+      // the next morning when the window reaches it — someone who said they
+      // would pay tomorrow should hear from us tomorrow, not tonight — and
+      // otherwise an hour from now.
+      const morning = new Date();
+      morning.setUTCHours(morning.getUTCHours() + 24);
+      const nextMorningLocal = `${formatLocal(morning, tz).slice(0, 10)} 09:00`;
+      const nextMorning = localToUtc(nextMorningLocal, tz);
+      if (usable(nextMorning)) {
+        suggested = nextMorningLocal;
+        whenWhy = whenWhy || 'next morning, inside their window';
+      } else {
+        // An hour from now where there is room, otherwise the latest moment
+        // that still works. A tight window is exactly when a suggestion is most
+        // useful, so it should not be the case that produces an empty box.
+        const hour = Date.now() + 60 * 60_000;
+        const at = new Date(Math.min(hour, latest - 5 * 60_000));
+        if (usable(at)) {
+          suggested = formatLocal(at, tz);
+          whenWhy = whenWhy || (hour > latest ? 'last moment before their window shuts' : 'about an hour from now');
+        }
+      }
     }
     f.suggestedSendAt = suggested;
+    f.suggestedWhenWhy = suggested ? whenWhy : '';
+    f.windowClosesLocalOut = f.windowClosesLocal;
     return {
       ...f,
       temp: j?.temp || (f.theySpokeLast ? 'hot' : 'warm'),
@@ -418,7 +452,9 @@ async function buildQueue(clientId) {
       angle: j?.angle || '',
       draft: j?.draft || '',
       suggestedSendAt: f.suggestedSendAt || '',
-      whenWhy: j?.whenWhy || '',
+      whenWhy: f.suggestedWhenWhy || '',
+      windowClosesLocal: f.windowClosesLocalOut || '',
+      timezone: f.timezone || '',
       classified: !!j,
     };
   });

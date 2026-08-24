@@ -158,7 +158,7 @@ function Card({ item, onOpen }) {
             className={`text-xs px-3 py-1.5 rounded-lg border cursor-pointer ${showLater
               ? 'border-violet-400 text-violet-700 bg-violet-50'
               : 'border-slate-200 bg-white text-slate-600 hover:border-violet-300'}`}
-          >Later…</button>
+          >{item.suggestedSendAt ? `Later — ${item.suggestedSendAt.slice(11)}` : 'Later…'}</button>
         )}
         {item.draft && !done && (
           <button
@@ -174,9 +174,25 @@ function Card({ item, onOpen }) {
 
       {showLater && !done && (
         <div className="border border-violet-200 bg-violet-50/40 rounded-lg px-2.5 py-2 flex flex-col gap-1.5">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-violet-500">
-            Send later{item.whenWhy ? ` — ${item.whenWhy}` : ''}
-          </div>
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-violet-500">Send later</div>
+
+          {item.suggestedSendAt ? (
+            <button
+              onClick={() => setWhen(item.suggestedSendAt.replace(' ', 'T'))}
+              className={`text-left text-xs rounded-lg px-2.5 py-1.5 border cursor-pointer ${
+                when === item.suggestedSendAt.replace(' ', 'T')
+                  ? 'border-violet-400 bg-violet-100 text-violet-800'
+                  : 'border-violet-200 bg-white text-slate-700 hover:border-violet-400'}`}
+            >
+              <span className="font-semibold">{item.suggestedSendAt}</span>
+              {item.whenWhy && <span className="text-slate-500"> — {item.whenWhy}</span>}
+            </button>
+          ) : (
+            <div className="text-xs text-amber-700">
+              No good time left — their window closes at {item.windowClosesLocal || 'soon'}. Send now instead.
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-2 items-center">
             <input
               type="datetime-local"
@@ -191,7 +207,8 @@ function Card({ item, onOpen }) {
             >{later.isPending ? 'Scheduling…' : 'Schedule'}</button>
           </div>
           <p className="text-[10px] text-slate-400">
-            Their local time. It will not go if they reply first, pay, or their window closes.
+            {item.timezone || 'Their'} time · must be before {item.windowClosesLocal || 'their window closes'}.
+            It will not go if they reply first, pay, or the window shuts.
           </p>
         </div>
       )}

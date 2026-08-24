@@ -310,9 +310,13 @@ async function init() {
         why         TEXT,
         angle       TEXT,
         draft       TEXT,
+        send_at     TEXT,
+        when_why    TEXT,
         created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         PRIMARY KEY (client_id, order_id)
       )`);
+    await pool.query(`ALTER TABLE follow_up_judgements ADD COLUMN IF NOT EXISTS send_at TEXT`);
+    await pool.query(`ALTER TABLE follow_up_judgements ADD COLUMN IF NOT EXISTS when_why TEXT`);
     await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS delivery_status TEXT`);
     // The list or buttons that were sent, so the CRM can draw the real thing.
     await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS interactive JSONB`);

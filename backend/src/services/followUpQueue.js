@@ -39,9 +39,19 @@ const CLOSING_SOON_HOURS = 4;
 /** How many candidates to classify at once. One call each, run in parallel. */
 const CONCURRENCY = 4;
 
-/** Re-classifying an unchanged conversation buys nothing. */
-const cache = new Map();
-const CACHE_TTL_MS = 10 * 60 * 1000;
+/**
+ * What a judgement depends on: what they last said, and whether they are due.
+ *
+ * Not the hours left in the window — that changes continuously, and the drafts
+ * lean on what the person said rather than on the clock, so including it would
+ * pay to regenerate near-identical text every few minutes.
+ *
+ * @param {Object} f
+ * @returns {string}
+ */
+function fingerprint(f) {
+  return `${f.due ? 'due' : 'quiet'}|${f.theySpokeLast ? 'ours' : 'theirs'}|${f.lastFromThem.slice(0, 120)}`;
+}
 
 /**
  * Every pending order whose customer can still be messaged for free.
@@ -298,23 +308,47 @@ async function buildQueue(clientId) {
   const rows = await loadCandidates(clientId);
   const facts = rows.map(factsFor);
 
-  // Only spend a model call where something has actually changed.
+  // Only spend a model call where the conversation has actually moved.
+  const saved = new Map();
+  if (facts.length) {
+    const { rows } = await db.pgQuery(
+      `SELECT order_id, fingerprint, temp, why, angle, draft
+         FROM follow_up_judgements
+        WHERE client_id = $1 AND order_id = ANY($2)`,
+      [clientId, facts.map(f => f.orderId)]);
+    rows.forEach(r => saved.set(r.order_id, r));
+  }
+
   const stale = [];
   for (const f of facts) {
-    const key = `${clientId}:${f.orderId}:${f.minutesQuiet >= QUIET_MINUTES}:${f.lastFromThem.slice(0, 60)}`;
-    const hit = cache.get(key);
-    if (hit && Date.now() - hit.at < CACHE_TTL_MS) f._judgement = hit.value;
-    else stale.push({ f, key });
+    const fp = fingerprint(f);
+    const hit = saved.get(f.orderId);
+    if (hit && hit.fingerprint === fp) {
+      f._judgement = { temp: hit.temp, why: hit.why, angle: hit.angle, draft: hit.draft };
+    } else {
+      stale.push({ f, fp });
+    }
   }
 
   if (stale.length) {
     const apiKey = await getGeminiKey(clientId);
     const judged = await classifyAll(stale.map(s => s.f), apiKey);
-    stale.forEach((s, n) => {
+    await Promise.all(stale.map(async (s, n) => {
       const j = judged[n] || null;
       s.f._judgement = j;
-      if (j) cache.set(s.key, { at: Date.now(), value: j });
-    });
+      if (!j) return;
+      // A judgement that cannot be stored is still usable now, so a write
+      // failure must not lose the call that was already paid for.
+      await db.pgQuery(
+        `INSERT INTO follow_up_judgements (client_id, order_id, fingerprint, temp, why, angle, draft, created_at)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+         ON CONFLICT (client_id, order_id) DO UPDATE
+            SET fingerprint = EXCLUDED.fingerprint, temp = EXCLUDED.temp, why = EXCLUDED.why,
+                angle = EXCLUDED.angle, draft = EXCLUDED.draft, created_at = NOW()`,
+        [clientId, s.f.orderId, s.fp, j.temp, j.why, j.angle || '', j.draft]
+      ).catch(e => console.warn(`[FOLLOW-UP] Could not store judgement for ${s.f.orderId}:`, e.message));
+    }));
+    console.log(`[FOLLOW-UP] ${clientId}: ${facts.length} in queue, ${stale.length} needed judging`);
   }
 
   const items = facts.map((f) => {

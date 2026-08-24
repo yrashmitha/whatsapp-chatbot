@@ -278,6 +278,22 @@ async function init() {
         sent_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_follow_up_sends_client ON follow_up_sends (client_id, sent_at DESC)`);
+
+    // Judging a conversation costs a model call, and the answer only changes
+    // when the conversation does. Keyed on a fingerprint of exactly that, so an
+    // unchanged conversation is never judged twice.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS follow_up_judgements (
+        client_id   TEXT NOT NULL,
+        order_id    TEXT NOT NULL,
+        fingerprint TEXT NOT NULL,
+        temp        TEXT,
+        why         TEXT,
+        angle       TEXT,
+        draft       TEXT,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (client_id, order_id)
+      )`);
     await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS delivery_status TEXT`);
     // The list or buttons that were sent, so the CRM can draw the real thing.
     await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS interactive JSONB`);

@@ -91,6 +91,12 @@ function Card({ item, onOpen }) {
 
       <div className="text-xs text-slate-500 italic">{item.why}</div>
 
+      {item.angle && (
+        <div className="text-[10px] text-violet-500 font-medium uppercase tracking-wide">
+          angle: {item.angle}
+        </div>
+      )}
+
       {item.draft && (
         <div className="border border-violet-200 bg-violet-50/50 rounded-lg px-2.5 py-2">
           <div className="text-[10px] font-semibold uppercase tracking-wide text-violet-500 mb-1">Suggested message</div>

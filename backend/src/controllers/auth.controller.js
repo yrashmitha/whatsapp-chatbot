@@ -9,6 +9,7 @@ const bcrypt = require('bcryptjs');
 const jwt    = require('jsonwebtoken');
 const db     = require('../db');
 const { JWT_SECRET } = require('../config/env');
+const { sanitize }   = require('../services/permissions');
 
 /**
  * POST /auth/login — authenticate a superadmin or client user.
@@ -30,6 +31,45 @@ async function login(req, res) {
       const user = { role: 'superadmin', clientId: null, name: 'Super Admin' };
       return res.json({ token, user });
     }
+    // Check for an operator: a real user row scoped to one client.
+    const opRow = await db.pgQuery(
+      `SELECT u.id, u.password_hash, u.client_id, u.display_name, u.permissions, u.active,
+              c.name AS client_name, c.type AS client_type
+         FROM crm_users u JOIN clients c ON c.id = u.client_id
+        WHERE u.username = $1 AND u.client_id IS NOT NULL AND c.active = TRUE`,
+      [username]
+    );
+    if (opRow.rows.length > 0) {
+      const op = opRow.rows[0];
+      const valid = await bcrypt.compare(password, op.password_hash);
+      // Same message either way: a disabled account must not be distinguishable
+      // from a wrong password, or it confirms the username to whoever is trying.
+      if (!valid || !op.active) return res.status(401).json({ error: 'Invalid credentials' });
+      const permissions = sanitize(op.permissions);
+      const token = jwt.sign(
+        { sub: username, role: 'client', clientId: op.client_id, uid: op.id,
+          displayName: op.display_name || username, permissions },
+        JWT_SECRET, { expiresIn: '7d' }
+      );
+      const horoOp = await db.pgQuery(
+        `SELECT 1 FROM plugin_configs WHERE client_id=$1 AND plugin_id='horoscope_reading' LIMIT 1`,
+        [op.client_id]
+      );
+      const cfgOp = await db.pgQuery(
+        `SELECT plugin_enabled FROM client_configs WHERE client_id=$1`, [op.client_id]
+      );
+      return res.json({
+        token,
+        user: {
+          role: 'client', clientId: op.client_id, uid: op.id,
+          name: op.display_name || username, clientName: op.client_name,
+          clientType: op.client_type, permissions,
+          plugin_enabled: !!cfgOp.rows[0]?.plugin_enabled,
+          horoscope_enabled: horoOp.rows.length > 0,
+        },
+      });
+    }
+
     // Check client user
     const cfgRow = await db.pgQuery(
       `SELECT cc.crm_password_hash, cc.plugin_enabled, c.name, c.type

@@ -340,6 +340,15 @@ async function init() {
         role          TEXT NOT NULL DEFAULT 'client'
       );
       ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS crm_password_hash TEXT;
+      -- Operators are users; the owner is still the shared client password above.
+      -- client_id is NULL for a superadmin and set for everyone else, so a row's
+      -- tenant is never inferred from its username.
+      ALTER TABLE crm_users ADD COLUMN IF NOT EXISTS client_id    TEXT;
+      ALTER TABLE crm_users ADD COLUMN IF NOT EXISTS display_name TEXT;
+      ALTER TABLE crm_users ADD COLUMN IF NOT EXISTS permissions  JSONB NOT NULL DEFAULT '[]'::jsonb;
+      ALTER TABLE crm_users ADD COLUMN IF NOT EXISTS active       BOOLEAN NOT NULL DEFAULT TRUE;
+      ALTER TABLE crm_users ADD COLUMN IF NOT EXISTS created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW();
+      CREATE INDEX IF NOT EXISTS idx_crm_users_client ON crm_users (client_id) WHERE client_id IS NOT NULL;
       ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS error_message TEXT;
       CREATE TABLE IF NOT EXISTS message_retry_queue (
         id           SERIAL PRIMARY KEY,

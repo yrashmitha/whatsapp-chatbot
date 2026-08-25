@@ -24,6 +24,7 @@ const pluginRoutes     = require('./plugins.routes');
 const settingsRoutes   = require('./settings.routes');
 const menusRoutes      = require('./menus.routes');
 const followUpsRoutes  = require('./followUps.routes');
+const crmUsersRoutes   = require('./crmUsers.routes');
 const horoscopeQaRoutes = require('./horoscopeQa.routes');
 const testChatRoutes    = require('./testChat.routes');
 const summaryRoutes      = require('./summary.routes');
@@ -75,6 +76,7 @@ const webhookLimiter = rateLimit({
  *   /api/settings      → settingsRoutes
  *   /api/menus         → menusRoutes
  *   /api/follow-ups    → followUpsRoutes
+ *   /api/crm-users     → crmUsersRoutes
  *   /api/horoscope-qa  → horoscopeQaRoutes
  *   /api/test-chat     → testChatRoutes
  *   /admin             → adminRoutes
@@ -108,6 +110,7 @@ function mountRoutes(app) {
   app.use('/api/settings',     settingsRoutes);
   app.use('/api/menus',        menusRoutes);
   app.use('/api/follow-ups',   followUpsRoutes);
+  app.use('/api/crm-users',   crmUsersRoutes);
   app.use('/api/horoscope-qa', horoscopeQaRoutes);
   app.use('/api/test-chat',    testChatRoutes);
   app.use('/api/summary',        summaryRoutes);

@@ -13,7 +13,7 @@ const bcrypt = require('bcryptjs');
 const db     = require('../db');
 const resolveClientId = require('../middleware/resolveClientId');
 const { PERMISSIONS, OPERATOR_DEFAULT, sanitize } = require('../services/permissions');
-const log = require('../utils/logger');
+
 
 /** Columns that are safe to return. Deliberately not `*`. */
 const SAFE = 'id, username, display_name, permissions, active, created_at';
@@ -68,7 +68,7 @@ async function createUser(req, res) {
        VALUES ($1,$2,'client',$3,$4,$5::jsonb,TRUE) RETURNING ${SAFE}`,
       [username, hash, clientId, display_name || username, JSON.stringify(perms)]
     );
-    log.info(`[USERS] ${req.user.sub} created operator ${username} for ${clientId}`);
+    console.log(`[USERS] ${req.user.sub} created operator ${username} for ${clientId}`);
     res.status(201).json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
@@ -98,7 +98,7 @@ async function updateUser(req, res) {
        active === undefined ? null : !!active]
     );
     if (!r.rows.length) return res.status(404).json({ error: 'No such user' });
-    log.info(`[USERS] ${req.user.sub} updated operator ${r.rows[0].username}`);
+    console.log(`[USERS] ${req.user.sub} updated operator ${r.rows[0].username}`);
     res.json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
@@ -119,7 +119,7 @@ async function resetPassword(req, res) {
       [req.params.id, clientId, hash]
     );
     if (!r.rows.length) return res.status(404).json({ error: 'No such user' });
-    log.info(`[USERS] ${req.user.sub} reset the password for ${r.rows[0].username}`);
+    console.log(`[USERS] ${req.user.sub} reset the password for ${r.rows[0].username}`);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 }

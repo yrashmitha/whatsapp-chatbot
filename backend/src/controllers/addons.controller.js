@@ -221,7 +221,7 @@ async function sendMedia(req, res) {
     );
     const wamid = mediaResp.data?.messages?.[0]?.id || null;
 
-    await db.insertMessage(phone, msgText, 'bot', null, clientId, mediaType, fileUrl, wamid);
+    await db.insertMessage(phone, msgText, 'bot', null, clientId, mediaType, fileUrl, wamid, null, { sentBy: req.user?.uid ?? null });
     res.json({ ok: true, url: fileUrl });
   } catch (e) {
     console.error('[CRM MEDIA] send-media error:', e.message);

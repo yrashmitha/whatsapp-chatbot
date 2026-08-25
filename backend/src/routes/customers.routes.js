@@ -7,6 +7,7 @@
 'use strict';
 
 const router  = require('express').Router();
+const requirePermission = require('../middleware/requirePermission');
 const jwtAuth = require('../middleware/jwtAuth');
 const {
   listCustomers,
@@ -18,6 +19,8 @@ const {
   markRead,
   getAiMode,
   setAiMode,
+  claimChat,
+  releaseChat,
   listClients,
 } = require('../controllers/customers.controller');
 
@@ -48,5 +51,7 @@ router.post('/customers/:phone/mark-read',           jwtAuth, markRead);
 // AI mode per customer
 router.get('/customers/:phone/ai-mode',              jwtAuth, getAiMode);
 router.patch('/customers/:phone/ai-mode',            jwtAuth, setAiMode);
+router.post('/customers/:phone/claim',               jwtAuth, requirePermission('chat.claim'), claimChat);
+router.post('/customers/:phone/release',             jwtAuth, requirePermission('chat.claim'), releaseChat);
 
 module.exports = router;

@@ -340,6 +340,35 @@ async function init() {
         role          TEXT NOT NULL DEFAULT 'client'
       );
       ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS crm_password_hash TEXT;
+      -- Which operator sent this, or NULL for the bot. Outbound messages are all
+      -- stored as sender_type 'bot' regardless of who wrote them, so without
+      -- this there is no way to tell a person's reply from the model's.
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS sent_by INT;
+      -- approved_by holds a name for reading; the id is what payroll joins on,
+      -- and it survives the person being renamed.
+      ALTER TABLE scheduled_follow_ups ADD COLUMN IF NOT EXISTS approved_by_uid INT;
+      -- Who is working this chat by hand, and since when. NULL means the bot has
+      -- it, which is the default and the overwhelming majority.
+      ALTER TABLE customer_settings ADD COLUMN IF NOT EXISTS owned_by INT;
+      ALTER TABLE customer_settings ADD COLUMN IF NOT EXISTS owned_at TIMESTAMPTZ;
+      -- Append only, never updated. Payroll needs to know who owned a chat when
+      -- a payment landed, which is often weeks after they handed it back, and a
+      -- disputed commission is settled by reading this rather than by argument.
+      CREATE TABLE IF NOT EXISTS chat_ownership_log (
+        id           SERIAL PRIMARY KEY,
+        client_id    TEXT NOT NULL,
+        phone_number TEXT NOT NULL,
+        user_id      INT,
+        actor_id     INT,
+        action       TEXT NOT NULL,
+        reason       TEXT,
+        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_ownership_chat
+        ON chat_ownership_log (client_id, phone_number, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_ownership_user
+        ON chat_ownership_log (user_id, created_at DESC) WHERE user_id IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_messages_sent_by ON messages (sent_by) WHERE sent_by IS NOT NULL;
       -- Operators are users; the owner is still the shared client password above.
       -- client_id is NULL for a superadmin and set for everyone else, so a row's
       -- tenant is never inferred from its username.

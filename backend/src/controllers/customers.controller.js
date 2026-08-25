@@ -12,6 +12,8 @@ const clientRouter = require('../services/clientRouter');
 const { sendWhatsAppMessage, waToken, waPhoneId } = require('../services/whatsapp');
 const { chatSessions } = require('../workers/sessionManager');
 const resolveClientId  = require('../middleware/resolveClientId');
+const ownership        = require('../services/chatOwnership');
+const { hasPermission } = require('../services/permissions');
 
 /**
  * GET /api/customers — paginated customer list with unread badge counts.
@@ -83,7 +85,7 @@ async function getMessages(req, res) {
       : (clientId ? [phone, clientId, limit] : [phone, limit]);
     const q = `
       SELECT id, phone_number, message_text, sender_type, created_at, cost_usd, media_type, media_url, wamid, is_deleted,
-             delivery_status, delivered_at, read_at, error_code, error_message, interactive, extracted
+             delivery_status, delivered_at, read_at, error_code, error_message, interactive, extracted, sent_by
       FROM messages
       WHERE phone_number=$1 ${clientId ? 'AND client_id=$2' : ''}
       ${before ? `AND created_at < ${clientId ? '$3' : '$2'}` : ''}
@@ -91,6 +93,18 @@ async function getMessages(req, res) {
       LIMIT ${before ? (clientId ? '$4' : '$3') : (clientId ? '$3' : '$2')}`;
     const r = await db.pgQuery(q, params);
     const msgs = r.rows.reverse(); // oldest first
+
+    // Documents are the paid deliverable. Someone without the permission still
+    // sees that a file was sent and when, which is what they need to answer
+    // "did you get it?", but does not get a link they can open.
+    if (!hasPermission(req.user, 'chat.view_documents')) {
+      for (const m of msgs) {
+        if (m.media_type === 'pdf' || m.media_type === 'document') {
+          m.media_url = null;
+          m.media_restricted = true;
+        }
+      }
+    }
     res.json({ messages: msgs, hasMore: msgs.length === limit });
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
@@ -125,7 +139,7 @@ async function sendMessage(req, res) {
 
     if (type === 'text') {
       const wamid = await sendWhatsAppMessage(phone, message, client);
-      await db.insertMessage(phone, message, 'bot', null, clientId, null, null, wamid);
+      await db.insertMessage(phone, message, 'bot', null, clientId, null, null, wamid, null, { sentBy: req.user?.uid ?? null });
     } else if (type === 'image' && mediaUrl) {
       const imgResp = await axios.post(
         `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
@@ -133,7 +147,7 @@ async function sendMessage(req, res) {
         { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
       );
       const wamid = imgResp.data?.messages?.[0]?.id || null;
-      await db.insertMessage(phone, `[Image] ${message}`, 'bot', null, clientId, 'image', mediaUrl, wamid);
+      await db.insertMessage(phone, `[Image] ${message}`, 'bot', null, clientId, 'image', mediaUrl, wamid, null, { sentBy: req.user?.uid ?? null });
     }
     res.json({ ok: true, window_warning: !windowOpen });
   } catch (e) { res.status(500).json({ error: e?.response?.data?.error?.message || e.message }); }
@@ -245,6 +259,52 @@ async function setAiMode(req, res) {
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 
+
+/**
+ * POST /api/customers/:phone/claim - take this chat over from the bot.
+ *
+ * Silences the bot for this customer and puts the operator's name on the chat.
+ * Both halves matter: the first is what lets them reply without being talked
+ * over, the second is what a sale is later credited from.
+ *
+ * @param {import('express').Request}  req
+ * @param {import('express').Response} res
+ * @returns {Promise<void>}
+ */
+async function claimChat(req, res) {
+  const clientId = resolveClientId(req);
+  const { phone } = req.params;
+  // The owner's shared login has no uid, so there is nobody to credit. Let them
+  // take chats over - they run the business - but say plainly that it does not
+  // attribute, rather than silently recording a claim with no name on it.
+  if (!req.user?.uid) {
+    return res.status(400).json({
+      error: 'Claiming a chat needs a personal login. The shared client login cannot be credited with a sale.',
+    });
+  }
+  try {
+    const result = await ownership.claim(clientId, phone, req.user.uid);
+    chatSessions.delete(`${clientId}:${phone}`);
+    res.json({ ok: true, ai_enabled: false, ...result });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+/**
+ * POST /api/customers/:phone/release - hand this chat back to the bot.
+ *
+ * @param {import('express').Request}  req
+ * @param {import('express').Response} res
+ * @returns {Promise<void>}
+ */
+async function releaseChat(req, res) {
+  const clientId = resolveClientId(req);
+  const { phone } = req.params;
+  try {
+    const was = await ownership.release(clientId, phone, req.user?.uid ?? null);
+    res.json({ ok: true, ai_enabled: true, was_owned: was });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
 /**
  * GET /api/clients — list all active clients (superadmin only).
  *
@@ -270,5 +330,7 @@ module.exports = {
   markRead,
   getAiMode,
   setAiMode,
+  claimChat,
+  releaseChat,
   listClients,
 };

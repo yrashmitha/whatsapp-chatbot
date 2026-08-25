@@ -137,10 +137,11 @@ function windowClosesAt(lastCustomerMessageAt) {
  * @param {string} args.sendAtLocal - "YYYY-MM-DD HH:mm" in the client's timezone
  * @param {string} [args.angle]
  * @param {string} [args.temp]
- * @param {string} [args.approvedBy]
+ * @param {string} [args.approvedBy]    - the approver's username, for reading
+ * @param {number} [args.approvedByUid] - the approver's crm_users id, for payroll
  * @returns {Promise<Object>} the stored row
  */
-async function schedule({ clientId, orderId, message, sendAtLocal, angle, temp, approvedBy }) {
+async function schedule({ clientId, orderId, message, sendAtLocal, angle, temp, approvedBy, approvedByUid }) {
   const text = String(message || '').trim();
   if (!text) throw Object.assign(new Error('A message is required'), { statusCode: 400 });
 
@@ -181,9 +182,10 @@ async function schedule({ clientId, orderId, message, sendAtLocal, angle, temp, 
 
   const ins = await db.pgQuery(
     `INSERT INTO scheduled_follow_ups
-       (client_id, order_id, phone_number, message, angle, temp, send_at, approved_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-    [clientId, orderId, phone, text, angle || null, temp || null, when.toISOString(), approvedBy || null]);
+       (client_id, order_id, phone_number, message, angle, temp, send_at, approved_by, approved_by_uid)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+    [clientId, orderId, phone, text, angle || null, temp || null, when.toISOString(),
+     approvedBy || null, approvedByUid ?? null]);
 
   console.log(`[SCHEDULED] ${clientId}/${orderId} queued for ${formatLocal(when, tz)} (${tz})`);
   return ins.rows[0];
@@ -296,7 +298,9 @@ async function runDue() {
 
       const client = await clientRouter.getClientById(job.client_id);
       const wamid = await sendWhatsAppMessage(job.phone_number, job.message, client);
-      await db.insertMessage(job.phone_number, job.message, 'bot', null, job.client_id, null, null, wamid);
+      // Approving the message is the act of sending it, so it is theirs.
+      await db.insertMessage(job.phone_number, job.message, 'bot', null, job.client_id, null, null, wamid,
+                             null, { sentBy: job.approved_by_uid ?? null });
       await db.pgQuery(
         `INSERT INTO follow_up_sends (client_id, order_id, phone_number, angle, temp, message, edited)
          VALUES ($1,$2,$3,$4,$5,$6,FALSE)`,

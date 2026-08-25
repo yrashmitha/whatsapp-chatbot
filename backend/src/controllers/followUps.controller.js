@@ -67,7 +67,7 @@ async function sendFollowUp(req, res) {
 
     const client = await clientRouter.getClientById(clientId);
     const wamid = await sendWhatsAppMessage(phone, text, client);
-    await db.insertMessage(phone, text, 'bot', null, clientId, null, null, wamid);
+    await db.insertMessage(phone, text, 'bot', null, clientId, null, null, wamid, null, { sentBy: req.user?.uid ?? null });
     await db.pgQuery(
       `INSERT INTO follow_up_sends (client_id, order_id, phone_number, angle, temp, message, edited)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
@@ -145,7 +145,8 @@ async function scheduleFollowUp(req, res) {
       sendAtLocal: req.body?.send_at,
       angle: req.body?.angle,
       temp: req.body?.temp,
-      approvedBy: req.user?.username || null,
+      approvedBy:    req.user?.sub || null,
+      approvedByUid: req.user?.uid ?? null,
     });
     res.json({ ok: true, scheduled: row });
   } catch (e) {

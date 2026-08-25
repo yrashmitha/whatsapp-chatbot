@@ -30,6 +30,8 @@ const PERMISSIONS = [
   { id: 'chat.send_media',  group: 'Conversations', label: 'Send media, voice clips and PDFs' },
   { id: 'chat.claim',       group: 'Conversations', label: 'Take over a chat from the bot',
     note: 'Taking over silences the bot for that customer.' },
+  { id: 'chat.view_documents', group: 'Conversations', label: 'Open documents sent in a chat',
+    note: 'The PDFs sent to customers are the paid deliverable. Someone who can open every one of them can walk out with the product.' },
   { id: 'chat.delete',      group: 'Conversations', label: 'Delete messages and customers',
     note: 'Irreversible.', ownerOnly: true },
 

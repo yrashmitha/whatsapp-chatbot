@@ -9,6 +9,7 @@ const db = require('../db');
 const resolveClientId = require('../middleware/resolveClientId');
 const { hasPermission } = require('../services/permissions');
 const { creditIfPaid, TZ } = require('../services/salesCredit');
+const commission = require('../services/commission');
 const { generateOrderId } = require('../services/gemini');
 const clientRouter = require('../services/clientRouter');
 
@@ -28,6 +29,12 @@ async function listOrders(req, res) {
   const search    = req.query.search    || '';
   const date_from = req.query.date_from || '';
   const date_to   = req.query.date_to   || '';
+  // Who closed it: a crm_users id, 'bot' for sales nobody claimed, or blank for
+  // everyone. An operator may only ever see their own, so their own id wins
+  // over whatever the query string asked for.
+  const operator  = req.user?.uid && !hasPermission(req.user, 'finance.income')
+    ? String(req.user.uid)
+    : (req.query.operator || '');
   try {
     const conditions = [];
     const params = [];
@@ -36,6 +43,8 @@ async function listOrders(req, res) {
     if (search)     { params.push(`%${search}%`);   conditions.push(`(o.order_id ILIKE $${params.length} OR o.phone_number ILIKE $${params.length})`); }
     if (date_from)  { params.push(date_from);        conditions.push(`o.created_at >= $${params.length}::date`); }
     if (date_to)    { params.push(date_to);          conditions.push(`o.created_at < ($${params.length}::date + INTERVAL '1 day')`); }
+    if (operator === 'bot') { conditions.push(`o.credited_to IS NULL`); }
+    else if (operator)      { params.push(parseInt(operator, 10)); conditions.push(`o.credited_to=$${params.length}`); }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     params.push(limit);  const limitIdx  = params.length;
     params.push(offset); const offsetIdx = params.length;
@@ -46,6 +55,8 @@ async function listOrders(req, res) {
     if (search)     { countParams.push(`%${search}%`);  countConditions.push(`(order_id ILIKE $${countParams.length} OR phone_number ILIKE $${countParams.length})`); }
     if (date_from)  { countParams.push(date_from);       countConditions.push(`created_at >= $${countParams.length}::date`); }
     if (date_to)    { countParams.push(date_to);         countConditions.push(`created_at < ($${countParams.length}::date + INTERVAL '1 day')`); }
+    if (operator === 'bot') { countConditions.push(`credited_to IS NULL`); }
+    else if (operator)      { countParams.push(parseInt(operator, 10)); countConditions.push(`credited_to=$${countParams.length}`); }
     const countWhere = countConditions.length ? `WHERE ${countConditions.join(' AND ')}` : '';
     const [rows, countRes] = await Promise.all([
       db.pgQuery(`SELECT o.*, o.phone_number AS phone, cu.name AS customer_name FROM orders o LEFT JOIN customers cu ON cu.phone_number=o.phone_number ${where} ORDER BY o.created_at DESC LIMIT $${limitIdx} OFFSET $${offsetIdx}`, params),
@@ -177,6 +188,46 @@ async function incomeSummary(req, res) {
       });
     }
 
+    // Narrowing to one operator answers a different question: what these sales
+    // brought in, and what is owed on them. The scheme prices each sale by its
+    // own frozen sequence number, so the figure does not depend on which
+    // filter happened to be applied when it was asked for.
+    const pick = req.query.operator || '';
+    if (pick) {
+      const isBot = pick === 'bot';
+      const sales = await db.pgQuery(
+        `SELECT o.credit_seq, (
+                  CASE
+                    WHEN regexp_replace(o.custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g') ~ '^[0-9]+([.][0-9]+)?$'
+                      THEN (regexp_replace(o.custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g'))::numeric
+                    ELSE COALESCE((
+                      SELECT SUM((item->>'price')::numeric)
+                      FROM jsonb_array_elements(COALESCE(o.custom_fields->'items', '[]'::jsonb)) AS item
+                    ), 0)
+                  END
+                ) AS amount, u.display_name
+           FROM orders o
+           LEFT JOIN crm_users u ON u.id = o.credited_to
+          WHERE o.client_id = $1 AND o.status = ANY($2) AND ${MONTH}
+            AND ${isBot ? 'o.credited_to IS NULL' : 'o.credited_to = $3'}`,
+        isBot ? [clientId, PAID_STATUSES] : [clientId, PAID_STATUSES, parseInt(pick, 10)]
+      );
+      const rowsP = sales.rows;
+      const income = rowsP.reduce((a, x) => a + (parseFloat(x.amount) || 0), 0);
+      const scheme = await commission.getScheme(clientId);
+      // The bot earns nobody a commission, so do not imply one by reporting 0.
+      const owed = isBot ? null : commission.totalFor(scheme, rowsP).total;
+      return res.json({
+        scope: isBot ? 'bot' : 'operator',
+        operator: isBot ? null : { user_id: parseInt(pick, 10), name: rowsP[0]?.display_name || `user ${pick}` },
+        month: colomboMonth(),
+        total: income,
+        order_count: rowsP.length,
+        commission: owed,
+        commission_configured: commission.isConfigured(scheme),
+      });
+    }
+
     // The owner's view: the bot's unattended sales, each operator's, and the sum.
     const r = await db.pgQuery(
       `SELECT o.credited_to,
@@ -211,12 +262,36 @@ async function incomeSummary(req, res) {
         order_count: x.order_count,
       }));
 
+    // What each of them is owed on this month's sales so far.
+    const scheme = await commission.getScheme(clientId);
+    if (commission.isConfigured(scheme)) {
+      for (const o of operators) {
+        const seqs = await db.pgQuery(
+          `SELECT o.credit_seq, (
+              CASE
+                WHEN regexp_replace(o.custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g') ~ '^[0-9]+([.][0-9]+)?$'
+                  THEN (regexp_replace(o.custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g'))::numeric
+                ELSE COALESCE((
+                  SELECT SUM((item->>'price')::numeric)
+                  FROM jsonb_array_elements(COALESCE(o.custom_fields->'items', '[]'::jsonb)) AS item
+                ), 0)
+              END
+            ) AS amount
+             FROM orders o
+            WHERE o.client_id=$1 AND o.status = ANY($2) AND o.credited_to=$3 AND ${MONTH}`,
+          [clientId, PAID_STATUSES, o.user_id]);
+        o.commission = commission.totalFor(scheme, seqs.rows).total;
+      }
+    }
+
     res.json({
       scope: 'all',
       month: colomboMonth(),
       bot: { total: num(houseRow?.total), order_count: houseRow?.order_count || 0 },
       operators,
       operator_total: operators.reduce((a, o) => a + o.total, 0),
+      commission_total: operators.reduce((a, o) => a + (o.commission || 0), 0),
+      commission_configured: commission.isConfigured(scheme),
       total: r.rows.reduce((a, x) => a + num(x.total), 0),
       order_count: r.rows.reduce((a, x) => a + x.order_count, 0),
     });

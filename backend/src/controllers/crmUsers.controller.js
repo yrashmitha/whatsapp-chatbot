@@ -13,6 +13,7 @@ const bcrypt = require('bcryptjs');
 const db     = require('../db');
 const resolveClientId = require('../middleware/resolveClientId');
 const { PERMISSIONS, OPERATOR_DEFAULT, sanitize } = require('../services/permissions');
+const commission = require('../services/commission');
 
 
 /** Columns that are safe to return. Deliberately not `*`. */
@@ -124,4 +125,41 @@ async function resetPassword(req, res) {
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 
-module.exports = { listUsers, listPermissions, createUser, updateUser, resetPassword };
+/**
+ * GET /api/crm-users/commission - the client's commission scheme.
+ */
+async function getCommission(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    const scheme = await commission.getScheme(clientId);
+    res.json({ ...scheme, configured: commission.isConfigured(scheme) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+/**
+ * PUT /api/crm-users/commission - set it.
+ *
+ * Changing the scheme changes what every uncounted sale is worth from here on.
+ * It does not touch a period already paid, because a closed period keeps the
+ * figures it was closed with.
+ */
+async function saveCommission(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  const tiers = req.body?.tiers;
+  if (!Array.isArray(tiers)) return res.status(400).json({ error: 'tiers (array) required' });
+  if (tiers.length && !tiers.some(t => parseInt(t.from, 10) === 1)) {
+    return res.status(400).json({ error: 'The first tier must start at sale 1, or early sales pay nothing' });
+  }
+  try {
+    const saved = await commission.saveScheme(clientId, req.body);
+    console.log(`[COMMISSION] ${req.user.sub} set ${clientId} to ${saved.basis} ${JSON.stringify(saved.tiers)}`);
+    res.json({ ...saved, configured: commission.isConfigured(saved) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+module.exports = {
+  listUsers, listPermissions, createUser, updateUser, resetPassword,
+  getCommission, saveCommission,
+};

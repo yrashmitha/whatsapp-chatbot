@@ -11,6 +11,7 @@
 'use strict';
 
 const router  = require('express').Router();
+const requirePermission = require('../middleware/requirePermission');
 const jwtAuth = require('../middleware/jwtAuth');
 const { upload } = require('../config/multer');
 const {
@@ -30,11 +31,11 @@ const {
 
 // ── Products ──────────────────────────────────────────────────────────────────
 // Note: /bulk must come before /:id so it is not swallowed as an id
-router.post('/bulk',         jwtAuth, bulkImportProducts);
+router.post('/bulk',         jwtAuth, requirePermission('settings.products'), bulkImportProducts);
 router.get('/',              jwtAuth, listProducts);
 router.get('/:id',           jwtAuth, getProduct);
-router.post('/',             jwtAuth, createProduct);
-router.put('/:id',           jwtAuth, updateProduct);
-router.delete('/:id',        jwtAuth, deleteProduct);
+router.post('/',             jwtAuth, requirePermission('settings.products'), createProduct);
+router.put('/:id',           jwtAuth, requirePermission('settings.products'), updateProduct);
+router.delete('/:id',        jwtAuth, requirePermission('settings.products'), deleteProduct);
 
 module.exports = router;

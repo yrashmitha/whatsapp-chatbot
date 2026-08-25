@@ -80,6 +80,8 @@ const PERMISSIONS = [
   { id: 'settings.menus',         group: 'Configuration', label: 'Edit interactive menus',      ownerOnly: true },
   { id: 'settings.plugins',       group: 'Configuration', label: 'Edit plugin and report prompts', ownerOnly: true },
   { id: 'settings.knowledge',     group: 'Configuration', label: 'Edit the knowledge base',     ownerOnly: true },
+  { id: 'settings.products',     group: 'Configuration', label: 'Edit the service catalogue and prices',
+    note: 'What a service costs is a business decision, not an inbox one.' },
   { id: 'settings.quick_replies', group: 'Configuration', label: 'Edit quick replies' },
   { id: 'settings.media',         group: 'Configuration', label: 'Manage the media library' },
   { id: 'settings.voice_clips',   group: 'Configuration', label: 'Manage voice clips' },

@@ -7,6 +7,7 @@
 'use strict';
 
 const router  = require('express').Router();
+const requirePermission = require('../middleware/requirePermission');
 const jwtAuth = require('../middleware/jwtAuth');
 const {
   listAttributes,
@@ -17,10 +18,10 @@ const {
 } = require('../controllers/products.controller');
 
 // Note: /bulk must come before /:id
-router.post('/bulk',    jwtAuth, bulkImportAttributes);
+router.post('/bulk',    jwtAuth, requirePermission('settings.products'), bulkImportAttributes);
 router.get('/',         jwtAuth, listAttributes);
-router.post('/',        jwtAuth, createAttribute);
-router.put('/:id',      jwtAuth, updateAttribute);
-router.delete('/:id',   jwtAuth, deleteAttribute);
+router.post('/',        jwtAuth, requirePermission('settings.products'), createAttribute);
+router.put('/:id',      jwtAuth, requirePermission('settings.products'), updateAttribute);
+router.delete('/:id',   jwtAuth, requirePermission('settings.products'), deleteAttribute);
 
 module.exports = router;

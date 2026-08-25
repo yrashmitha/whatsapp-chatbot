@@ -28,29 +28,29 @@ const {
 router.get('/clients',                               jwtAuth, listClients);
 
 // Customer list — GET /api/customers
-router.get('/customers',                             jwtAuth, listCustomers);
+router.get('/customers',                             jwtAuth, requirePermission('chat.read'), listCustomers);
 
 // Messages for a customer — GET /api/messages/:phone
-router.get('/messages/:phone',                       jwtAuth, getMessages);
+router.get('/messages/:phone',                       jwtAuth, requirePermission('chat.read'), getMessages);
 
 // Send WhatsApp message — POST /api/send
-router.post('/send',                                 jwtAuth, sendMessage);
+router.post('/send',                                 jwtAuth, requirePermission('chat.reply'), sendMessage);
 
 // Delete all messages for a customer — DELETE /api/customers/:phone/messages
-router.delete('/customers/:phone/messages',          jwtAuth, deleteCustomerMessages);
+router.delete('/customers/:phone/messages',          jwtAuth, requirePermission('chat.delete'), deleteCustomerMessages);
 
 // Soft-delete a single message — DELETE /api/messages/:id
-router.delete('/messages/:id',                       jwtAuth, deleteMessage);
+router.delete('/messages/:id',                       jwtAuth, requirePermission('chat.delete'), deleteMessage);
 
 // Delete a customer — DELETE /api/customers/:phone
-router.delete('/customers/:phone',                   jwtAuth, deleteCustomer);
+router.delete('/customers/:phone',                   jwtAuth, requirePermission('chat.delete'), deleteCustomer);
 
 // Mark customer messages as read — POST /api/customers/:phone/mark-read
-router.post('/customers/:phone/mark-read',           jwtAuth, markRead);
+router.post('/customers/:phone/mark-read',           jwtAuth, requirePermission('chat.read'), markRead);
 
 // AI mode per customer
-router.get('/customers/:phone/ai-mode',              jwtAuth, getAiMode);
-router.patch('/customers/:phone/ai-mode',            jwtAuth, setAiMode);
+router.get('/customers/:phone/ai-mode',              jwtAuth, requirePermission('chat.read'), getAiMode);
+router.patch('/customers/:phone/ai-mode',            jwtAuth, requirePermission('chat.claim'), setAiMode);
 router.post('/customers/:phone/claim',               jwtAuth, requirePermission('chat.claim'), claimChat);
 router.post('/customers/:phone/release',             jwtAuth, requirePermission('chat.claim'), releaseChat);
 

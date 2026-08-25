@@ -1,6 +1,7 @@
 'use strict';
 
 const { Router } = require('express');
+const requirePermission = require('../middleware/requirePermission');
 const jwtAuth = require('../middleware/jwtAuth');
 const {
   handleVoiceWebhook,
@@ -22,7 +23,7 @@ router.post('/webhook/status', handleStatusWebhook);
 router.get('/audio/:token', serveAudio);
 
 // ── CRM UI (protected) ───────────────────────────────────────────────────────
-router.get('/',         jwtAuth, listCallsHandler);
-router.get('/:callSid', jwtAuth, getCallHandler);
+router.get('/',         jwtAuth, requirePermission('chat.read'), listCallsHandler);
+router.get('/:callSid', jwtAuth, requirePermission('chat.read'), getCallHandler);
 
 module.exports = router;

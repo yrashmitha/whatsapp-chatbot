@@ -116,6 +116,10 @@ function me(req, res) {
 async function setPassword(req, res) {
   const { clientId, password } = req.body;
   if (!clientId || !password) return res.status(400).json({ error: 'clientId and password required' });
+  // An operator's token carries the same clientId as the owner's, so the check
+  // below would let them change the shared client password and lock the owner
+  // out. Setting it is the owner's or the superadmin's job, never an operator's.
+  if (req.user.uid) return res.status(403).json({ error: 'Forbidden' });
   if (req.user.role !== 'superadmin' && req.user.clientId !== clientId)
     return res.status(403).json({ error: 'Forbidden' });
   try {

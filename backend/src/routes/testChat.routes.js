@@ -6,6 +6,7 @@
 'use strict';
 
 const router  = require('express').Router();
+const requirePermission = require('../middleware/requirePermission');
 const jwtAuth = require('../middleware/jwtAuth');
 const { upload } = require('../config/multer');
 const {
@@ -17,15 +18,15 @@ const {
 } = require('../controllers/testChat.controller');
 
 // Draft prompt applied to test sessions only.
-router.get('/config',                  jwtAuth, testConfig);
-router.post('/config',                 jwtAuth, testConfig);
+router.get('/config',                  jwtAuth, requirePermission('ai.test_chat'), testConfig);
+router.post('/config',                 jwtAuth, requirePermission('ai.test_chat'), testConfig);
 
 // Media extraction preview.
-router.post('/extract',                jwtAuth, upload.single('file'), testExtract);
+router.post('/extract',                jwtAuth, requirePermission('ai.test_chat'), upload.single('file'), testExtract);
 
 // Declared after the literal paths so they are not shadowed by :sessionId.
-router.post('/:sessionId/message',     jwtAuth, sendTestMessage);
-router.get('/:sessionId/messages',     jwtAuth, getTestMessages);
-router.delete('/:sessionId',           jwtAuth, resetTestSession);
+router.post('/:sessionId/message',     jwtAuth, requirePermission('ai.test_chat'), sendTestMessage);
+router.get('/:sessionId/messages',     jwtAuth, requirePermission('ai.test_chat'), getTestMessages);
+router.delete('/:sessionId',           jwtAuth, requirePermission('ai.test_chat'), resetTestSession);
 
 module.exports = router;

@@ -7,6 +7,8 @@
 
 const db = require('../db');
 const resolveClientId = require('../middleware/resolveClientId');
+const { hasPermission } = require('../services/permissions');
+const { creditIfPaid, TZ } = require('../services/salesCredit');
 const { generateOrderId } = require('../services/gemini');
 const clientRouter = require('../services/clientRouter');
 
@@ -134,33 +136,101 @@ async function incomeSummary(req, res) {
   if (!await db.hasAddon(clientId, 'income_summary')) {
     return res.status(403).json({ error: 'income_summary addon not enabled' });
   }
+  // An operator sees only what they closed. The owner sees the split.
+  const uid = req.user?.uid ?? null;
+  if (uid && !hasPermission(req.user, 'finance.income')) {
+    if (!hasPermission(req.user, 'payroll.own')) {
+      return res.status(403).json({ error: 'You do not have permission to see income figures' });
+    }
+  }
+
+  // The month a sale belongs to is the month it was in Sri Lanka. Colombo is
+  // UTC+5:30, so a payment before 05:30 on the first falls in the previous
+  // month in UTC, which on a tiered commission changes what it pays.
+  const MONTH = `date_trunc('month', o.created_at AT TIME ZONE '${TZ}')
+                   = date_trunc('month', (NOW() AT TIME ZONE '${TZ}'))`;
+
   try {
-    const r = await db.pgQuery(
-      `SELECT
-         COUNT(*) AS order_count,
-         COALESCE(SUM(
+    if (uid && !hasPermission(req.user, 'finance.income')) {
+      const own = await db.pgQuery(
+        `SELECT COUNT(*) AS order_count,
+                COALESCE(SUM(
            CASE
-             WHEN regexp_replace(custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g') ~ '^[0-9]+([.][0-9]+)?$'
-               THEN (regexp_replace(custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g'))::numeric
+             WHEN regexp_replace(o.custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g') ~ '^[0-9]+([.][0-9]+)?$'
+               THEN (regexp_replace(o.custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g'))::numeric
              ELSE COALESCE((
                SELECT SUM((item->>'price')::numeric)
-               FROM jsonb_array_elements(COALESCE(custom_fields->'items', '[]'::jsonb)) AS item
+               FROM jsonb_array_elements(COALESCE(o.custom_fields->'items', '[]'::jsonb)) AS item
              ), 0)
            END
-         ), 0) AS total
-       FROM orders
-       WHERE client_id = $1
-         AND status = ANY($2)
-         AND created_at >= date_trunc('month', NOW())
-         AND created_at <  date_trunc('month', NOW()) + INTERVAL '1 month'`,
+                ), 0) AS total
+           FROM orders o
+          WHERE o.client_id = $1 AND o.status = ANY($2)
+            AND o.credited_to = $3 AND ${MONTH}`,
+        [clientId, PAID_STATUSES, uid]
+      );
+      return res.json({
+        scope: 'own',
+        total: parseFloat(own.rows[0].total) || 0,
+        order_count: parseInt(own.rows[0].order_count, 10) || 0,
+        month: colomboMonth(),
+      });
+    }
+
+    // The owner's view: the bot's unattended sales, each operator's, and the sum.
+    const r = await db.pgQuery(
+      `SELECT o.credited_to,
+              u.display_name,
+              COUNT(*)::int AS order_count,
+              COALESCE(SUM(
+           CASE
+             WHEN regexp_replace(o.custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g') ~ '^[0-9]+([.][0-9]+)?$'
+               THEN (regexp_replace(o.custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g'))::numeric
+             ELSE COALESCE((
+               SELECT SUM((item->>'price')::numeric)
+               FROM jsonb_array_elements(COALESCE(o.custom_fields->'items', '[]'::jsonb)) AS item
+             ), 0)
+           END
+              ), 0) AS total
+         FROM orders o
+         LEFT JOIN crm_users u ON u.id = o.credited_to
+        WHERE o.client_id = $1 AND o.status = ANY($2) AND ${MONTH}
+        GROUP BY o.credited_to, u.display_name
+        ORDER BY total DESC`,
       [clientId, PAID_STATUSES]
     );
+
+    const num = (v) => parseFloat(v) || 0;
+    const houseRow = r.rows.find((x) => x.credited_to === null);
+    const operators = r.rows
+      .filter((x) => x.credited_to !== null)
+      .map((x) => ({
+        user_id: x.credited_to,
+        name: x.display_name || `user ${x.credited_to}`,
+        total: num(x.total),
+        order_count: x.order_count,
+      }));
+
     res.json({
-      total: parseFloat(r.rows[0].total) || 0,
-      order_count: parseInt(r.rows[0].order_count, 10) || 0,
-      month: new Date().toISOString().slice(0, 7),
+      scope: 'all',
+      month: colomboMonth(),
+      bot: { total: num(houseRow?.total), order_count: houseRow?.order_count || 0 },
+      operators,
+      operator_total: operators.reduce((a, o) => a + o.total, 0),
+      total: r.rows.reduce((a, x) => a + num(x.total), 0),
+      order_count: r.rows.reduce((a, x) => a + x.order_count, 0),
     });
   } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
+}
+
+/**
+ * The current month in Colombo, as YYYY-MM.
+ *
+ * @returns {string}
+ */
+function colomboMonth() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit' })
+    .format(new Date()).slice(0, 7);
 }
 
 /**
@@ -178,6 +248,8 @@ async function updateStatus(req, res) {
   try {
     await db.pgQuery(`UPDATE orders SET status=$1 WHERE order_id=$2`, [status, req.params.id]);
     res.json({ ok: true });
+    // Freeze whose sale this is, once, the first time it reads as paid.
+    creditIfPaid(resolveClientId(req), req.params.id, status);
     // Fire CAPI Purchase event when an admin manually marks an order as paid
     if (status === 'payment_received' || status === 'paid') {
       db.pgQuery('SELECT phone_number, client_id FROM orders WHERE order_id=$1', [req.params.id])

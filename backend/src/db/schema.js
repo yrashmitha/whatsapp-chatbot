@@ -349,6 +349,16 @@ async function init() {
       ALTER TABLE scheduled_follow_ups ADD COLUMN IF NOT EXISTS approved_by_uid INT;
       -- Who is working this chat by hand, and since when. NULL means the bot has
       -- it, which is the default and the overwhelming majority.
+      -- Frozen at the moment payment is received, never recomputed. A formula
+      -- that steps up after N sales in a Colombo month needs the position as
+      -- well as the fact, so credit_seq is stamped here rather than derived
+      -- later, when a reassignment or a correction could change it.
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS credited_to   INT;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS credited_at   TIMESTAMPTZ;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS credit_reason TEXT;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS credit_seq    INT;
+      CREATE INDEX IF NOT EXISTS idx_orders_credited
+        ON orders (client_id, credited_to, credited_at) WHERE credited_to IS NOT NULL;
       ALTER TABLE customer_settings ADD COLUMN IF NOT EXISTS owned_by INT;
       ALTER TABLE customer_settings ADD COLUMN IF NOT EXISTS owned_at TIMESTAMPTZ;
       -- Append only, never updated. Payroll needs to know who owned a chat when

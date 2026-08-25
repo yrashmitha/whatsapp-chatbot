@@ -215,6 +215,14 @@ async function updateOrderStatus(req, res) {
   console.log(`[ADMIN] PATCH /admin/order/${orderId}/status → ${status}`);
   try {
     await db.updateOrderStatusById(orderId, status);
+    // Same freeze as the CRM path: a superadmin marking an order paid still
+    // decides whose sale it was.
+    {
+      const r = await db.pgQuery('SELECT client_id FROM orders WHERE order_id=$1', [orderId]);
+      if (r.rows.length) {
+        require('../services/salesCredit').creditIfPaid(r.rows[0].client_id, orderId, status);
+      }
+    }
     res.json({ ok: true });
   } catch (err) {
     console.error(`[ADMIN] order status update error:`, err.message);

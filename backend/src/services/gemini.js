@@ -55,6 +55,25 @@ const ORDER_MARKER_REGEX   = /\[\[ORDER_COMPLETE:([\s\S]*?)\]\]/;
 const ORDER_UPDATE_REGEX   = /\[\[ORDER_UPDATE:([\s\S]*?)\]\]/;
 /** @type {RegExp} Matches [[UPDATE_SUMMARY:...]] markers */
 const UPDATE_SUMMARY_REGEX = /\[\[UPDATE_SUMMARY:([\s\S]*?)\]\]/;
+/**
+ * The numeric value of an amount a payment slip was read as.
+ *
+ * Vision returns figures with whatever decoration the slip carried: "LKR
+ * 3490.00", "Rs. 3,490/=", "3490". Everything downstream wants a number, so
+ * strip the decoration and only accept the result if it is one.
+ *
+ * @param {*} raw
+ * @returns {number|null} null when nothing numeric survives
+ */
+function parseSlipAmount(raw) {
+  if (raw === null || raw === undefined) return null;
+  const runs = String(raw).replace(/,/g, '').match(/[0-9]+(?:\.[0-9]+)?/g);
+  if (!runs) return null;
+  const best = runs.sort((a, b) => b.length - a.length)[0];
+  const n = parseFloat(best);
+  return Number.isFinite(n) ? n : null;
+}
+
 /** @type {RegExp} Matches [[PAYMENT_IDENTIFIED:{...}]] markers */
 const PAYMENT_IDENTIFIED_REGEX = /\[\[PAYMENT_IDENTIFIED:([\s\S]*?)\]\]/;
 /**
@@ -913,6 +932,10 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     try {
       const paymentData = JSON.parse(paymentMatch[1]);
       const targetOrderId = paymentData.order_id;
+      const slipAmount = parseSlipAmount(paymentData.amount);
+      if (paymentData.amount != null && slipAmount === null) {
+        log.warn(`[ORDER] PAYMENT_IDENTIFIED: unreadable amount ${JSON.stringify(paymentData.amount)}`);
+      }
       const orders = await db.getOrdersByPhone(phoneNumber, client?.id);
       const order = targetOrderId
         ? orders.find(o => o.order_id === targetOrderId)
@@ -924,7 +947,8 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
         await db.updateOrderCustomFields(order.order_id, {
           ...cf,
           payment_identified: {
-            amount:    paymentData.amount    || null,
+            amount:    slipAmount !== null ? slipAmount.toFixed(2) : null,
+            amount_raw: paymentData.amount != null ? String(paymentData.amount) : null,
             date:      paymentData.date      || null,
             bank:      paymentData.bank      || null,
             ref:       paymentData.ref       || null,
@@ -935,7 +959,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
         require('./metaConversions').fireCAPIEvent(client?.id, 'Purchase', phoneNumber, {
           order_id: order.order_id,
           currency: 'LKR',
-          value:    parseFloat(paymentData.amount) || 0,
+          value:    slipAmount || 0,
         }).catch(() => {});
       } else {
         log.warn(`[ORDER] PAYMENT_IDENTIFIED: no matching order`);

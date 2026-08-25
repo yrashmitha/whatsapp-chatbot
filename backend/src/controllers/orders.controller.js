@@ -140,8 +140,8 @@ async function incomeSummary(req, res) {
          COUNT(*) AS order_count,
          COALESCE(SUM(
            CASE
-             WHEN NULLIF(regexp_replace(custom_fields->'payment_identified'->>'amount', ',', '', 'g'), '') IS NOT NULL
-               THEN (regexp_replace(custom_fields->'payment_identified'->>'amount', ',', '', 'g'))::numeric
+             WHEN regexp_replace(custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g') ~ '^[0-9]+([.][0-9]+)?$'
+               THEN (regexp_replace(custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g'))::numeric
              ELSE COALESCE((
                SELECT SUM((item->>'price')::numeric)
                FROM jsonb_array_elements(COALESCE(custom_fields->'items', '[]'::jsonb)) AS item

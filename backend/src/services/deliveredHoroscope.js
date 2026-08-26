@@ -18,6 +18,7 @@
 'use strict';
 
 const { pgQuery } = require('../db/connection');
+const { customerNameFrom } = require('../utils/customerName');
 
 /**
  * Strip non-digits and take the rightmost 9 — the subscriber number, however
@@ -59,7 +60,7 @@ function sectionsObjectToArray(sections) {
  */
 function personFromCustomFields(cf) {
   return {
-    name:       cf?.customer_name || cf?.name || null,
+    name:       customerNameFrom(cf, null),
     birthDate:  cf?.birth_date  || null,
     birthTime:  cf?.birth_time  || null,
     birthPlace: cf?.birth_place || null,

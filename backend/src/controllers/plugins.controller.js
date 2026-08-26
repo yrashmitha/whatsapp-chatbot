@@ -26,6 +26,7 @@ const { buildPorondamDoc } = require('../services/porondamReport');
 const { generateFollowUp, DEFAULT_FOLLOWUP_PROMPT } = require('../services/followup');
 const { syncAudienceForClient, createAudienceForClient, getRecentEvents } = require('../services/metaConversions');
 const resolveClientId = require('../middleware/resolveClientId');
+const { customerNameFrom } = require('../utils/customerName');
 
 /**
  * Default prompt template for the AI Fill (ai-prepare) feature.
@@ -641,7 +642,7 @@ async function downloadHoroscope(req, res) {
     const config = clientId ? await db.getPluginConfig(clientId, 'horoscope_reading') : {};
 
     const buffer = await buildHoroscopeDoc({
-      customerName:   cf.customer_name || '',
+      customerName:   customerNameFrom(cf),
       sections:       hd.sections,
       specialAnswers: hd.special_answers  || [],
       specialNote:    config.special_note || '',
@@ -689,7 +690,7 @@ async function downloadHoroscopePdf(req, res) {
     const config = clientId ? await db.getPluginConfig(clientId, 'horoscope_reading') : {};
 
     const docxBuffer = await buildHoroscopeDoc({
-      customerName:   cf.customer_name || '',
+      customerName:   customerNameFrom(cf),
       sections:       hd.sections,
       specialAnswers: hd.special_answers  || [],
       specialNote:    config.special_note || '',
@@ -793,7 +794,7 @@ async function downloadQuantumDocx(req, res) {
 
     const config = clientId ? await db.getPluginConfig(clientId, 'horoscope_reading') : {};
     const buffer = await buildQuantumDoc({
-      customerName:        cf.customer_name || '',
+      customerName:        customerNameFrom(cf),
       quantumData:         hd.quantum_data,
       auraAnalysis:        hd.aura_analysis,
       quantumReading:      hd.quantum_reading      || null,
@@ -830,7 +831,7 @@ async function downloadQuantumPdf(req, res) {
 
     const config = clientId ? await db.getPluginConfig(clientId, 'horoscope_reading') : {};
     const docxBuffer = await buildQuantumDoc({
-      customerName:        cf.customer_name || '',
+      customerName:        customerNameFrom(cf),
       quantumData:         hd.quantum_data,
       auraAnalysis:        hd.aura_analysis,
       quantumReading:      hd.quantum_reading      || null,
@@ -1159,7 +1160,7 @@ async function aiPrepareHoroscope(req, res) {
       : DEFAULT_AI_FILL_PROMPT;
 
     const prompt = template
-      .replace(/\{\{customer_name\}\}/g, cf.customer_name || cf.name || '')
+      .replace(/\{\{customer_name\}\}/g, customerNameFrom(cf))
       .replace(/\{\{birth_date\}\}/g,    cf.birth_date || '')
       .replace(/\{\{birth_time\}\}/g,    cf.birth_time || '')
       .replace(/\{\{birth_place\}\}/g,   cf.birth_place || '')

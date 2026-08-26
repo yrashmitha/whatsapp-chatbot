@@ -65,6 +65,37 @@ export function timeAgoShort(iso) {
   return `${Math.floor(days / 30)}mo`;
 }
 
+/**
+ * Keys a customer name has been stored under, newest mistake last.
+ *
+ * The name goes wherever the client's order fields say, and pj's key has moved:
+ * `name`, then `customer_name`, then `b` from 22 August after somebody edited
+ * the field and mangled the key. Readers checked two of the three, so the name
+ * silently stopped appearing. Mirrors backend/src/utils/customerName.js.
+ */
+const NAME_KEYS = ['customer_name', 'name', 'full_name', 'b'];
+
+/**
+ * The customer's name from an order's custom_fields, whatever key it is under.
+ *
+ * @param {Object|string|null} customFields
+ * @param {string} [fallback]
+ * @returns {string}
+ */
+export function customerNameFrom(customFields, fallback = '') {
+  if (!customFields) return fallback;
+  let cf = customFields;
+  if (typeof cf === 'string') {
+    try { cf = JSON.parse(cf); } catch { return fallback; }
+  }
+  if (typeof cf !== 'object') return fallback;
+  for (const key of NAME_KEYS) {
+    const v = cf[key];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return fallback;
+}
+
 export function formatPrice(price, priceMax, currency = 'LKR') {
   if (price == null) return '-';
   const fmt = n => Number(n).toLocaleString();

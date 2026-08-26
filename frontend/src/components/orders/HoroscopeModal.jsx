@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import api, { GEO_USER_AGENT } from '../../lib/api';
 import { useToast } from '../ui/Toast';
+import { customerNameFrom } from '../../lib/utils';
 import ChatThread from '../chat/ChatThread';
 import MatchMakingPanel from './MatchMakingPanel';
 
@@ -71,7 +72,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
   const [showChartData, setShowChartData] = useState(false);
 
   // ── Birth fields ───────────────────────────────────────────────────────────
-  const [customerName, setCustomerName] = useState(cf.customer_name || cf.name || '');
+  const [customerName, setCustomerName] = useState(customerNameFrom(cf));
   const [checkingSign, setCheckingSign] = useState(false);
   const [detectedLagna, setDetectedLagna] = useState(existingHd.chart_data?.ascendant?.sign || null);
   const [aiPreparing, setAiPreparing]   = useState(false);

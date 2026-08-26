@@ -133,10 +133,13 @@ function receiveWebhook(req, res) {
       const traceId = genTraceId();
       log = makeLogger(traceId, client.id, from);
 
-      // Human-like delay → mark read (blue ticks)
+      // Deliberately not marking it read yet. A blue tick says somebody read
+      // this, and nobody has: the bot might be switched off, in which case the
+      // customer would see their message go blue and then get nothing, which
+      // reads as being ignored. The receipt is sent below, once we know the bot
+      // is actually going to answer, or later when an operator opens the chat.
       // Note: WhatsApp Cloud API does not support typing indicators
       await new Promise(r => setTimeout(r, 1000 + Math.random() * 1500));
-      markMessageRead(msg.id, client).catch(() => {});
 
       log.info(`[WEBHOOK] type=${msg.type}`);
 
@@ -464,7 +467,7 @@ function receiveWebhook(req, res) {
       // they sent.
       if (client.ai_enabled === false) {
         await db.upsertCustomer(from, null, client.id);
-        await db.insertMessage(from, userMessage, 'user', null, client.id);
+        await db.insertMessage(from, userMessage, 'user', null, client.id, null, null, msg.id);
 
         // An away message is opt-in and sent at most once every six hours: a
         // customer who writes three times does not need telling three times.
@@ -488,9 +491,11 @@ function receiveWebhook(req, res) {
 
       // Check per-chat AI mode — if disabled, store message and skip Gemini
       const aiEnabled = await db.getCustomerAiEnabled(from, client.id);
+      // The bot is about to read it, so now the tick is honest.
+      if (aiEnabled) markMessageRead(msg.id, client).catch(() => {});
       if (!aiEnabled) {
         await db.upsertCustomer(from, null, client.id);
-        await db.insertMessage(from, userMessage, 'user', null, client.id);
+        await db.insertMessage(from, userMessage, 'user', null, client.id, null, null, msg.id);
         log.info(`[WEBHOOK] AI disabled for this chat — message stored, no reply sent`);
         return;
       }
@@ -513,7 +518,7 @@ function receiveWebhook(req, res) {
         const used = usageRows[0].cnt;
         if (used >= totalLimit) {
           await db.upsertCustomer(from, null, client.id);
-          await db.insertMessage(from, userMessage, 'user', null, client.id);
+          await db.insertMessage(from, userMessage, 'user', null, client.id, null, null, msg.id);
           const limitMsg = client.contact_number
             ? `Our AI assistant has reached its monthly limit. Please contact us at ${client.contact_number} for assistance 🙏`
             : `Our AI assistant has reached its monthly limit. We'll be back next month 🙏`;

@@ -9,7 +9,7 @@
 const axios        = require('axios');
 const db           = require('../db');
 const clientRouter = require('../services/clientRouter');
-const { sendWhatsAppMessage, waToken, waPhoneId } = require('../services/whatsapp');
+const { sendWhatsAppMessage, waToken, waPhoneId, markMessageRead } = require('../services/whatsapp');
 const { chatSessions } = require('../workers/sessionManager');
 const resolveClientId  = require('../middleware/resolveClientId');
 const ownership        = require('../services/chatOwnership');
@@ -218,10 +218,31 @@ async function markRead(req, res) {
   const { phone } = req.params;
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
   try {
+    // Anything inbound since the chat was last opened has now genuinely been
+     // read by a person, so the customer can be told. WhatsApp treats a receipt
+     // as covering everything before it in the conversation, so only the newest
+     // needs sending.
+    const unread = await db.pgQuery(
+      `SELECT m.wamid
+         FROM messages m
+         JOIN customers cu ON cu.phone_number = m.phone_number AND cu.client_id = m.client_id
+        WHERE m.phone_number=$1 AND m.client_id=$2 AND m.sender_type='user'
+          AND m.wamid IS NOT NULL
+          AND (cu.last_read_at IS NULL OR m.created_at > cu.last_read_at)
+        ORDER BY m.created_at DESC LIMIT 1`,
+      [phone, clientId]);
+
     await db.pgQuery(
       `UPDATE customers SET last_read_at = NOW() WHERE phone_number = $1 AND client_id = $2`,
       [phone, clientId]
     );
+
+    if (unread.rows.length) {
+      const client = await clientRouter.getClientById(clientId);
+      // Never let a failed receipt fail the request: the operator has read the
+      // chat either way, and the tick is a courtesy to the customer.
+      markMessageRead(unread.rows[0].wamid, client).catch(() => {});
+    }
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 }

@@ -40,7 +40,10 @@ export default function CreateOrderDrawer({ open, onClose, customer, clientId })
     enabled: open && !!clientId,
     retry: false,
   });
-  const productList = Array.isArray(products) ? products : (products?.products || []);
+  // Only what is currently for sale. A retired tier stays in the catalogue so
+  // past orders still make sense, but must not be sellable again.
+  const productList = (Array.isArray(products) ? products : (products?.products || []))
+    .filter(p => p.active !== false);
   const chosen = productList.find(p => String(p.id) === productId);
   const price = productId === 'custom' ? Number(customPrice) || 0 : Number(chosen?.price) || 0;
 

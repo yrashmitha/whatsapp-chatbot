@@ -125,11 +125,13 @@ async function getMessages(req, res) {
     // an id the message never carried.
     if (msgs.length) {
       const refs = await db.pgQuery(
-        `SELECT source_id, source_type, source_url, headline, body, media_type, created_at
-           FROM ad_referrals
-          WHERE client_id=$1 AND phone_number=$2
-            AND created_at BETWEEN $3::timestamptz - INTERVAL '1 minute' AND $4::timestamptz + INTERVAL '1 minute'
-          ORDER BY created_at`,
+        `SELECT r.source_id, r.source_type, r.source_url, r.headline, r.body, r.media_type, r.created_at,
+                d.name AS ad_name, d.campaign_name, d.effective_status, d.amount_spent
+           FROM ad_referrals r
+           LEFT JOIN ad_details d ON d.ad_id = r.source_id
+          WHERE r.client_id=$1 AND r.phone_number=$2
+            AND r.created_at BETWEEN $3::timestamptz - INTERVAL '1 minute' AND $4::timestamptz + INTERVAL '1 minute'
+          ORDER BY r.created_at`,
         [clientId, phone, msgs[0].created_at, msgs[msgs.length - 1].created_at]);
       for (const ref of refs.rows) {
         const hit = msgs.find(m => m.sender_type === 'user'

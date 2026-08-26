@@ -364,6 +364,24 @@ async function init() {
         raw          JSONB,
         created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+      -- What an ad id means, in words. The referral carries an id and the page
+      -- name, which is the same for every ad, so on its own it cannot tell one
+      -- ad from another. Filled from Meta and cached here so reading a chat
+      -- does not depend on an API call.
+      CREATE TABLE IF NOT EXISTS ad_details (
+        ad_id            TEXT PRIMARY KEY,
+        client_id        TEXT,
+        name             TEXT,
+        campaign_id      TEXT,
+        campaign_name    TEXT,
+        adset_id         TEXT,
+        effective_status TEXT,
+        amount_spent     TEXT,
+        impressions      BIGINT,
+        clicks           BIGINT,
+        cost_per_result  TEXT,
+        updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
       CREATE INDEX IF NOT EXISTS idx_ad_referrals_ad
         ON ad_referrals (client_id, source_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_ad_referrals_phone

@@ -333,6 +333,9 @@ async function ordersByAd(req, res) {
     const r = await db.pgQuery(
       `SELECT cu.first_ad_id AS ad_id,
               MAX(cu.first_ad_headline) AS headline,
+              MAX(d.name) AS ad_name,
+              MAX(d.amount_spent) AS amount_spent,
+              MAX(d.effective_status) AS effective_status,
               COUNT(DISTINCT cu.phone_number)::int AS people,
               COUNT(DISTINCT o.order_id)::int      AS orders,
               COUNT(DISTINCT o.order_id) FILTER (WHERE o.status = ANY($2))::int AS paid,
@@ -350,6 +353,7 @@ async function ordersByAd(req, res) {
          FROM customers cu
          LEFT JOIN orders o
            ON o.phone_number = cu.phone_number AND o.client_id = cu.client_id
+         LEFT JOIN ad_details d ON d.ad_id = cu.first_ad_id
          WHERE cu.client_id = $1
            AND ($3::date IS NULL OR cu.first_ad_at >= $3::date)
            AND ($4::date IS NULL OR cu.first_ad_at < ($4::date + INTERVAL '1 day'))
@@ -359,7 +363,10 @@ async function ordersByAd(req, res) {
 
     const rows = r.rows.map(x => ({
       ad_id: x.ad_id,
+      ad_name: x.ad_name,
       headline: x.headline,
+      amount_spent: x.amount_spent,
+      effective_status: x.effective_status,
       people: x.people,
       orders: x.orders,
       paid: x.paid,

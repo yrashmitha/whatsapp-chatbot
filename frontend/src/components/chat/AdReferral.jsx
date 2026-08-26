@@ -11,7 +11,14 @@
  */
 export default function AdReferral({ referral }) {
   if (!referral) return null;
-  const { headline, body, source_url: url, source_id: adId, source_type: type } = referral;
+  const {
+    headline, body, source_url: url, source_id: adId, source_type: type,
+    ad_name: adName, campaign_name: campaign, effective_status: status, amount_spent: spent,
+  } = referral;
+  // The referral's own headline is the page name, identical on every ad, so the
+  // ad's name is what actually tells one from another. It comes from the cache
+  // rather than the referral, and may be missing for an ad we have not seen.
+  const title = adName || headline;
 
   return (
     <div
@@ -26,8 +33,20 @@ export default function AdReferral({ referral }) {
         <span>📣</span>
         <span>Came from {type === 'post' ? 'a post' : 'an ad'}</span>
       </div>
-      {headline && (
-        <div className="font-medium" style={{ color: 'var(--text-1)' }}>{headline}</div>
+      {title && (
+        <div className="font-medium" style={{ color: 'var(--text-1)' }}>{title}</div>
+      )}
+      {adName && headline && headline !== adName && (
+        <div style={{ color: 'var(--text-3)' }}>{headline}</div>
+      )}
+      {(campaign || spent || status) && (
+        <div className="mt-1 flex items-center gap-2 flex-wrap" style={{ color: 'var(--text-2)' }}>
+          {campaign && <span>{campaign}</span>}
+          {spent && <span>spent {spent}</span>}
+          {status && status !== 'ACTIVE' && (
+            <span style={{ color: '#fbbf24' }}>{status.toLowerCase().replace(/_/g, ' ')}</span>
+          )}
+        </div>
       )}
       {body && (
         // Ad copy runs long; two lines is enough to recognise which ad it was.

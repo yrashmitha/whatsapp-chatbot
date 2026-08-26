@@ -1,5 +1,6 @@
 import { formatMessageTime } from '../../lib/utils';
 import ExtractedReading from './ExtractedReading';
+import AdReferral from './AdReferral';
 
 
 /**
@@ -231,6 +232,15 @@ export default function MessageBubble({ msg, onDelete }) {
   const mediaUrl = resolveMediaUrl(msg.media_url);
 
   const bubble = (
+    <>
+    {/* The ad that started this conversation, above the message it arrived
+        with, because that is where someone reading the chat asks what this
+        person was promised before they typed anything. */}
+    {msg.referral && (
+      <div className={`flex ${isUser ? 'justify-start' : 'justify-end'}`}>
+        <AdReferral referral={msg.referral} />
+      </div>
+    )}
     <div className={`group flex ${isUser ? 'justify-start' : 'justify-end'} items-end gap-1 mb-2`}>
       {/* Delete button — left of bubble for outbound, visible on hover */}
       {!isUser && onDelete && (
@@ -360,6 +370,7 @@ export default function MessageBubble({ msg, onDelete }) {
         </div>
       </div>
     </div>
+    </>
   );
 
   if (!extraParts.length) return bubble;

@@ -119,6 +119,25 @@ async function getMessages(req, res) {
     const r = await db.pgQuery(q, params);
     const msgs = r.rows.reverse(); // oldest first
 
+    // Attach the ad someone arrived through to the message they arrived with.
+    // The referral is recorded a moment before the message row is written, so
+    // it is matched to the first inbound message at or after it rather than by
+    // an id the message never carried.
+    if (msgs.length) {
+      const refs = await db.pgQuery(
+        `SELECT source_id, source_type, source_url, headline, body, media_type, created_at
+           FROM ad_referrals
+          WHERE client_id=$1 AND phone_number=$2
+            AND created_at BETWEEN $3::timestamptz - INTERVAL '1 minute' AND $4::timestamptz + INTERVAL '1 minute'
+          ORDER BY created_at`,
+        [clientId, phone, msgs[0].created_at, msgs[msgs.length - 1].created_at]);
+      for (const ref of refs.rows) {
+        const hit = msgs.find(m => m.sender_type === 'user'
+          && new Date(m.created_at).getTime() >= new Date(ref.created_at).getTime() - 60_000);
+        if (hit && !hit.referral) hit.referral = ref;
+      }
+    }
+
     // Documents are the paid deliverable. Someone without the permission still
     // sees that a file was sent and when, which is what they need to answer
     // "did you get it?", but does not get a link they can open.

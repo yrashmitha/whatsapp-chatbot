@@ -13,6 +13,7 @@ const { sendWhatsAppMessage, waToken, waPhoneId, markMessageRead } = require('..
 const { chatSessions } = require('../workers/sessionManager');
 const resolveClientId  = require('../middleware/resolveClientId');
 const ownership        = require('../services/chatOwnership');
+const { IDLE_RELEASE_HOURS } = require('../services/chatOwnership');
 const { hasPermission } = require('../services/permissions');
 
 /**
@@ -61,7 +62,13 @@ async function listCustomers(req, res) {
                 JOIN crm_users u ON u.id = cs.owned_by
                WHERE cs.phone_number=cu.phone_number AND cs.client_id=cu.client_id) AS owned_by_name,
              (SELECT cs.ai_enabled FROM customer_settings cs
-               WHERE cs.phone_number=cu.phone_number AND cs.client_id=cu.client_id) AS ai_enabled
+               WHERE cs.phone_number=cu.phone_number AND cs.client_id=cu.client_id) AS ai_enabled,
+             -- When the pause started, and when anyone last sent anything. The
+             -- bot comes back once both are old enough, so the countdown runs
+             -- from whichever is later and any reply pushes it out again.
+             (SELECT cs.paused_at FROM customer_settings cs
+               WHERE cs.phone_number=cu.phone_number AND cs.client_id=cu.client_id) AS paused_at,
+             MAX(m.created_at) FILTER (WHERE m.sender_type = 'bot') AS last_outbound_at
       FROM customers cu
       LEFT JOIN messages m ON m.phone_number=cu.phone_number AND m.client_id=cu.client_id
       LEFT JOIN orders   o ON o.phone_number=cu.phone_number AND o.client_id=cu.client_id
@@ -74,7 +81,13 @@ async function listCustomers(req, res) {
       : `SELECT COUNT(*) FROM customers cu ${search ? "WHERE (phone_number ILIKE $1 OR name ILIKE $1)" : ''}`;
     const countParams = clientId ? [clientId, ...(search ? [`%${search}%`] : [])] : (search ? [`%${search}%`] : []);
     const [rows, countRes] = await Promise.all([db.pgQuery(q, params), db.pgQuery(countQ, countParams)]);
-    res.json({ customers: rows.rows, total: parseInt(countRes.rows[0].count), page, limit });
+    // One source for the window, so the screen cannot disagree with the sweep.
+    res.json({
+      customers: rows.rows,
+      total: parseInt(countRes.rows[0].count),
+      page, limit,
+      resume_hours: IDLE_RELEASE_HOURS,
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 

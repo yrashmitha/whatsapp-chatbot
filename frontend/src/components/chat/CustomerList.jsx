@@ -6,6 +6,30 @@ import Spinner from '../ui/Spinner';
 
 const WINDOW_MS = 24 * 3600_000;
 
+/**
+ * How long before the bot takes this chat back.
+ *
+ * The sweep releases a chat once the pause is older than the window and nothing
+ * has been sent inside it, so the clock runs from whichever of those is later
+ * and every reply pushes it out again. Returns null when the chat is not on a
+ * clock at all, which includes a bot switched off deliberately.
+ *
+ * @param {Object} c     - a customer row
+ * @param {number} hours - the release window
+ * @param {number} now   - Date.now(), passed in so one timer drives the list
+ * @returns {{mins: number, label: string}|null}
+ */
+function resumeCountdown(c, hours, now) {
+  if (!c.paused_at || c.ai_enabled !== false) return null;
+  const started = new Date(c.paused_at).getTime();
+  const lastOut = c.last_outbound_at ? new Date(c.last_outbound_at).getTime() : 0;
+  const from = Math.max(started, lastOut);
+  const mins = Math.ceil((from + hours * 3600_000 - now) / 60000);
+  if (mins <= 0) return { mins: 0, label: 'due' };
+  if (mins < 60) return { mins, label: `${mins}m` };
+  return { mins, label: `${Math.floor(mins / 60)}h ${mins % 60}m` };
+}
+
 function windowBadge(last_message_at) {
   if (!last_message_at) return null;
   const rem = WINDOW_MS - (Date.now() - new Date(last_message_at));
@@ -56,6 +80,7 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [, setTick] = useState(0);
+  const now = Date.now();
   useEffect(() => {
     const id = setInterval(() => setTick(t => t + 1), 60_000);
     return () => clearInterval(id);
@@ -72,6 +97,8 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
   });
 
   const customers = data?.customers || [];
+  // The server owns the window, so the chip cannot disagree with the sweep.
+  const resumeHours = data?.resume_hours ?? 4;
 
   return (
     <div className="flex flex-col h-full">
@@ -169,6 +196,25 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
                               title="The bot is not replying to this chat. Nobody has taken it over."
                             >⏸ bot off</span>
                           ) : null}
+                          {(() => {
+                            // Only chats actually on a clock. A bot switched off
+                            // deliberately has no paused_at and shows nothing,
+                            // which is the point of the distinction.
+                            const cd = resumeCountdown(c, resumeHours, now);
+                            if (!cd) return null;
+                            const urgent = cd.mins <= 30;
+                            return (
+                              <span
+                                className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                                style={urgent
+                                  ? { background: 'rgba(239,68,68,0.18)', color: '#f87171' }
+                                  : { background: 'rgba(245,158,11,0.15)', color: '#fbbf24' }}
+                                title={cd.mins === 0
+                                  ? 'The bot is about to take this chat back.'
+                                  : `The bot takes this chat back in ${cd.label} unless somebody replies.`}
+                              >⏱ {cd.label}</span>
+                            );
+                          })()}
                           {c.has_voice && (
                             <span
                               className="text-[10px] px-1.5 py-0.5 rounded font-medium"

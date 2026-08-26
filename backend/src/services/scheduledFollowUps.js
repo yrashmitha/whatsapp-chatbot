@@ -300,7 +300,7 @@ async function runDue() {
       const wamid = await sendWhatsAppMessage(job.phone_number, job.message, client);
       // Approving the message is the act of sending it, so it is theirs.
       await db.insertMessage(job.phone_number, job.message, 'bot', null, job.client_id, null, null, wamid,
-                             null, { sentBy: job.approved_by_uid ?? null });
+                             null, { sentBy: job.approved_by_uid ?? null, sentManual: true });
       await db.pgQuery(
         `INSERT INTO follow_up_sends (client_id, order_id, phone_number, angle, temp, message, edited)
          VALUES ($1,$2,$3,$4,$5,$6,FALSE)`,

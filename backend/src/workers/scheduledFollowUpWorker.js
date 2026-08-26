@@ -22,6 +22,10 @@ const TICK_MS = 60 * 1000;
 function startScheduledFollowUpWorker() {
   console.log('[SCHEDULED] Worker started, checking every minute');
   return setInterval(async () => {
+    // Undo pauses nobody followed up on. Same minute tick: it is one cheap
+    // query, and a stranded chat is a customer getting no reply at all.
+    require('../services/chatOwnership').resumeIdle().catch(e =>
+      console.error('[OWNERSHIP] resumeIdle failed:', e.message));
     try {
       const { sent, cancelled } = await runDue();
       if (sent || cancelled) {

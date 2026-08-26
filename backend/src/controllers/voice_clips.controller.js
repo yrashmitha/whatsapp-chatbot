@@ -32,8 +32,10 @@ async function sendRecording(req, res) {
     const audioUrl = `${PUBLIC_URL || ''}/uploads/${path.basename(stored)}`;
     const client = await clientRouter.getClientById(clientId);
     const wamid = await sendWhatsAppAudio(phone, audioUrl, client);
+    await require('../services/chatOwnership')
+      .pauseForManualReply(clientId, phone, req.user?.uid ?? null);
     await db.insertMessage(phone, '[Voice note]', 'bot', null, clientId, 'audio', audioUrl,
-                           wamid, null, { sentBy: req.user?.uid ?? null });
+                           wamid, null, { sentBy: req.user?.uid ?? null, sentManual: true });
     res.json({ ok: true, audio_url: audioUrl });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -115,7 +117,7 @@ async function sendVoiceClip(req, res) {
 
     const client = clientId ? await clientRouter.getClientById(clientId) : null;
     const wamid = await sendWhatsAppAudio(phone, clip.audio_url, client);
-    await db.insertMessage(phone, `[Voice: ${clip.name}]`, 'bot', null, clientId, 'audio', clip.audio_url, wamid, null, { sentBy: req.user?.uid ?? null });
+    await db.insertMessage(phone, `[Voice: ${clip.name}]`, 'bot', null, clientId, 'audio', clip.audio_url, wamid, null, { sentBy: req.user?.uid ?? null, sentManual: true });
     res.json({ ok: true });
   } catch (e) {
     console.error('[VOICE-CLIP] send error:', e.message);

@@ -344,6 +344,10 @@ async function init() {
       -- stored as sender_type 'bot' regardless of who wrote them, so without
       -- this there is no way to tell a person's reply from the model's.
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS sent_by INT;
+      -- A person typed this, whether or not we know which person. pj signs in
+      -- on the shared client password and has no crm_users row, so sent_by
+      -- alone cannot tell pj's replies from the model's.
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS sent_manual BOOLEAN NOT NULL DEFAULT FALSE;
       -- approved_by holds a name for reading; the id is what payroll joins on,
       -- and it survives the person being renamed.
       ALTER TABLE scheduled_follow_ups ADD COLUMN IF NOT EXISTS approved_by_uid INT;
@@ -361,6 +365,10 @@ async function init() {
         ON orders (client_id, credited_to, credited_at) WHERE credited_to IS NOT NULL;
       ALTER TABLE customer_settings ADD COLUMN IF NOT EXISTS owned_by INT;
       ALTER TABLE customer_settings ADD COLUMN IF NOT EXISTS owned_at TIMESTAMPTZ;
+      -- Set when the bot was paused by somebody replying by hand, and left NULL
+      -- when it was switched off deliberately. Only the first kind resumes on
+      -- its own; the second is a decision and stays until it is reversed.
+      ALTER TABLE customer_settings ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ;
       -- Append only, never updated. Payroll needs to know who owned a chat when
       -- a payment landed, which is often weeks after they handed it back, and a
       -- disputed commission is settled by reading this rather than by argument.

@@ -23,10 +23,11 @@ const { pool, db, IS_PG } = require('./connection');
  */
 async function insertMessage(phoneNumber, text, senderType, costUsd = null, clientId = null, mediaType = null, mediaUrl = null, wamid = null, interactive = null, opts = {}) {
   const sentBy = opts.sentBy ?? null;
+  const sentManual = opts.sentManual === true;
   if (IS_PG) {
     await pool.query(
-      'INSERT INTO messages (phone_number, message_text, sender_type, cost_usd, client_id, media_type, media_url, wamid, interactive, sent_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
-      [phoneNumber, text, senderType, costUsd, clientId, mediaType, mediaUrl, wamid, interactive ? JSON.stringify(interactive) : null, sentBy]
+      'INSERT INTO messages (phone_number, message_text, sender_type, cost_usd, client_id, media_type, media_url, wamid, interactive, sent_by, sent_manual) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)',
+      [phoneNumber, text, senderType, costUsd, clientId, mediaType, mediaUrl, wamid, interactive ? JSON.stringify(interactive) : null, sentBy, sentManual]
     );
     if (senderType === 'user') {
       await pool.query(

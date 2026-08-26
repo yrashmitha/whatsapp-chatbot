@@ -111,7 +111,7 @@ async function release(clientId, phone, actorId, action = 'release', reason) {
   const before = await ownerOf(clientId, phone);
   if (!before.owned_by) return false;
   await db.pgQuery(
-    `UPDATE customer_settings SET ai_enabled=TRUE, owned_by=NULL, owned_at=NULL
+    `UPDATE customer_settings SET ai_enabled=TRUE, owned_by=NULL, owned_at=NULL, paused_at=NULL
       WHERE client_id=$1 AND phone_number=$2`, [clientId, phone]);
   await record(clientId, phone, { userId: before.owned_by, actorId, action, reason });
   console.log(`[OWNERSHIP] ${clientId}/${phone} released by ${actorId ?? 'system'} (${action})`);
@@ -157,6 +157,87 @@ async function creditableOwner(clientId, phone, at) {
 }
 
 /**
+ * Somebody replied by hand, so the bot should stop answering this customer.
+ *
+ * Called on every manual send. If the sender can be credited with a sale - an
+ * operator with their own login - this also claims the chat, because typing a
+ * reply is taking the conversation over whether or not anyone pressed a button.
+ * pj has no crm_users row and earns no commission, so pj's reply pauses the bot
+ * and leaves the chat unowned, free for an operator to pick up and earn on.
+ *
+ * @param {string} clientId
+ * @param {string} phone
+ * @param {number|null} userId - the operator, or null for the owner
+ * @returns {Promise<void>}
+ */
+async function pauseForManualReply(clientId, phone, userId) {
+  if (userId) {
+    const before = await ownerOf(clientId, phone);
+    if (before.owned_by === userId) return;   // already theirs, nothing to say
+    await claim(clientId, phone, userId);
+    await db.pgQuery(
+      `UPDATE customer_settings SET paused_at=NOW() WHERE client_id=$1 AND phone_number=$2`,
+      [clientId, phone]);
+    return;
+  }
+  // The owner: pause without taking ownership.
+  await db.pgQuery(
+    `INSERT INTO customer_settings (phone_number, client_id, ai_enabled, paused_at)
+     VALUES ($2,$1,FALSE,NOW())
+     ON CONFLICT (phone_number, client_id)
+     DO UPDATE SET ai_enabled=FALSE,
+                   paused_at=COALESCE(customer_settings.paused_at, NOW())`,
+    [clientId, phone]);
+}
+
+/**
+ * Undo pauses that nobody followed up on.
+ *
+ * A chat paused by a manual reply and then forgotten gets no replies at all,
+ * from anyone, which is worse than the bot answering imperfectly. So it resumes
+ * on its own once it has been quiet for a while. A chat pj switched off
+ * deliberately has no paused_at and is never touched.
+ *
+ * @param {number} [hours]
+ * @returns {Promise<number>} how many resumed
+ */
+async function resumeIdle(hours = IDLE_RELEASE_HOURS) {
+  const r = await db.pgQuery(
+    `SELECT cs.client_id, cs.phone_number, cs.owned_by
+       FROM customer_settings cs
+      WHERE cs.paused_at IS NOT NULL
+        AND cs.ai_enabled = FALSE
+        AND cs.paused_at < NOW() - ($1 || ' hours')::interval
+        AND NOT EXISTS (
+          SELECT 1 FROM messages m
+           WHERE m.client_id = cs.client_id AND m.phone_number = cs.phone_number
+             AND m.sender_type = 'bot'
+             AND m.created_at > NOW() - ($1 || ' hours')::interval)`,
+    [String(hours)]);
+
+  for (const row of r.rows) {
+    if (row.owned_by) {
+      await release(row.client_id, row.phone_number, null, 'auto_release',
+                    `no reply for ${hours} hours`);
+    } else {
+      await db.pgQuery(
+        `UPDATE customer_settings SET ai_enabled=TRUE, paused_at=NULL
+          WHERE client_id=$1 AND phone_number=$2`, [row.client_id, row.phone_number]);
+      await record(row.client_id, row.phone_number, {
+        userId: null, actorId: null, action: 'auto_resume',
+        reason: `no reply for ${hours} hours`,
+      });
+    }
+    // Clear the pause marker either way, so it is not resumed twice.
+    await db.pgQuery(
+      `UPDATE customer_settings SET paused_at=NULL WHERE client_id=$1 AND phone_number=$2`,
+      [row.client_id, row.phone_number]);
+  }
+  if (r.rows.length) console.log(`[OWNERSHIP] the bot resumed on ${r.rows.length} quiet chat(s)`);
+  return r.rows.length;
+}
+
+/**
  * Hand back chats that were claimed and then left silent.
  *
  * @param {number} [hours]
@@ -182,4 +263,7 @@ async function releaseIdle(hours = IDLE_RELEASE_HOURS) {
   return r.rows.length;
 }
 
-module.exports = { claim, release, ownerOf, creditableOwner, releaseIdle, IDLE_RELEASE_HOURS };
+module.exports = {
+  claim, release, ownerOf, creditableOwner, releaseIdle, resumeIdle,
+  pauseForManualReply, IDLE_RELEASE_HOURS,
+};

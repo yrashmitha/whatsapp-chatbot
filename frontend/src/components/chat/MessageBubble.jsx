@@ -326,11 +326,21 @@ export default function MessageBubble({ msg, onDelete }) {
         {interactive && <InteractiveMenu menu={interactive} />}
 
         <div className={`text-xs mt-1 ${isUser ? 'text-slate-400' : 'opacity-60'} text-right`}>
-          {/* Every outbound message is stored as 'bot' whoever wrote it, so the
-              only thing that distinguishes a person's reply is sent_by. */}
+          {/* Three people write into this thread and all three are stored as
+              sender_type 'bot'. sent_manual says a person typed it; sent_by says
+              which person, when we have an account for them. The owner signs in
+              on the shared client password and has no account, so a manual
+              message with no sender is theirs. */}
           {!isUser && (
-            <span className="mr-1.5" title={msg.sent_by ? 'Sent by a person' : 'Sent by the bot'}>
-              {msg.sent_by ? `👤 ${msg.sent_by_name || 'operator'}` : '🤖'}
+            <span
+              className="mr-1.5"
+              title={!msg.sent_manual ? 'Written by the bot'
+                : msg.sent_by ? `Sent by ${msg.sent_by_name || 'an operator'}`
+                : 'Sent by the account owner'}
+            >
+              {!msg.sent_manual ? '🤖'
+                : msg.sent_by ? `👤 ${msg.sent_by_name || 'operator'}`
+                : '👤 you'}
             </span>
           )}
           {formatMessageTime(msg.created_at)}

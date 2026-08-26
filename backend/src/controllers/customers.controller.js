@@ -86,7 +86,7 @@ async function getMessages(req, res) {
       : (clientId ? [phone, clientId, limit] : [phone, limit]);
     const q = `
       SELECT id, phone_number, message_text, sender_type, created_at, cost_usd, media_type, media_url, wamid, is_deleted,
-             delivery_status, delivered_at, read_at, error_code, error_message, interactive, extracted, sent_by,
+             delivery_status, delivered_at, read_at, error_code, error_message, interactive, extracted, sent_by, sent_manual,
              (SELECT COALESCE(display_name, username) FROM crm_users WHERE id = messages.sent_by) AS sent_by_name
       FROM messages
       WHERE phone_number=$1 ${clientId ? 'AND client_id=$2' : ''}
@@ -141,7 +141,8 @@ async function sendMessage(req, res) {
 
     if (type === 'text') {
       const wamid = await sendWhatsAppMessage(phone, message, client);
-      await db.insertMessage(phone, message, 'bot', null, clientId, null, null, wamid, null, { sentBy: req.user?.uid ?? null });
+      await ownership.pauseForManualReply(clientId, phone, req.user?.uid ?? null);
+      await db.insertMessage(phone, message, 'bot', null, clientId, null, null, wamid, null, { sentBy: req.user?.uid ?? null, sentManual: true });
     } else if (type === 'image' && mediaUrl) {
       const imgResp = await axios.post(
         `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
@@ -149,7 +150,8 @@ async function sendMessage(req, res) {
         { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
       );
       const wamid = imgResp.data?.messages?.[0]?.id || null;
-      await db.insertMessage(phone, `[Image] ${message}`, 'bot', null, clientId, 'image', mediaUrl, wamid, null, { sentBy: req.user?.uid ?? null });
+      await ownership.pauseForManualReply(clientId, phone, req.user?.uid ?? null);
+      await db.insertMessage(phone, `[Image] ${message}`, 'bot', null, clientId, 'image', mediaUrl, wamid, null, { sentBy: req.user?.uid ?? null, sentManual: true });
     }
     res.json({ ok: true, window_warning: !windowOpen });
   } catch (e) { res.status(500).json({ error: e?.response?.data?.error?.message || e.message }); }

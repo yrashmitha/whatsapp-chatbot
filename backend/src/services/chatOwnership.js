@@ -74,10 +74,10 @@ async function ownerOf(clientId, phone) {
 async function claim(clientId, phone, userId) {
   const before = await ownerOf(clientId, phone);
   await db.pgQuery(
-    `INSERT INTO customer_settings (phone_number, client_id, ai_enabled, owned_by, owned_at)
-     VALUES ($2,$1,FALSE,$3,NOW())
+    `INSERT INTO customer_settings (phone_number, client_id, ai_enabled, owned_by, owned_at, paused_at)
+     VALUES ($2,$1,FALSE,$3,NOW(),NOW())
      ON CONFLICT (phone_number, client_id)
-     DO UPDATE SET ai_enabled=FALSE, owned_by=$3, owned_at=NOW()`,
+     DO UPDATE SET ai_enabled=FALSE, owned_by=$3, owned_at=NOW(), paused_at=NOW()`,
     [clientId, phone, userId]
   );
   const takenFrom = before.owned_by && before.owned_by !== userId ? before.owned_by : null;
@@ -175,9 +175,6 @@ async function pauseForManualReply(clientId, phone, userId) {
     const before = await ownerOf(clientId, phone);
     if (before.owned_by === userId) return;   // already theirs, nothing to say
     await claim(clientId, phone, userId);
-    await db.pgQuery(
-      `UPDATE customer_settings SET paused_at=NOW() WHERE client_id=$1 AND phone_number=$2`,
-      [clientId, phone]);
     return;
   }
   // The owner: pause without taking ownership.
@@ -237,33 +234,7 @@ async function resumeIdle(hours = IDLE_RELEASE_HOURS) {
   return r.rows.length;
 }
 
-/**
- * Hand back chats that were claimed and then left silent.
- *
- * @param {number} [hours]
- * @returns {Promise<number>} how many were released
- */
-async function releaseIdle(hours = IDLE_RELEASE_HOURS) {
-  const r = await db.pgQuery(
-    `SELECT cs.client_id, cs.phone_number, cs.owned_by
-       FROM customer_settings cs
-      WHERE cs.owned_by IS NOT NULL
-        AND cs.owned_at < NOW() - ($1 || ' hours')::interval
-        AND NOT EXISTS (
-          SELECT 1 FROM messages m
-           WHERE m.client_id = cs.client_id AND m.phone_number = cs.phone_number
-             AND m.sender_type = 'bot'
-             AND m.created_at > NOW() - ($1 || ' hours')::interval)`,
-    [String(hours)]);
-  for (const row of r.rows) {
-    await release(row.client_id, row.phone_number, null, 'auto_release',
-                  `no reply for ${hours} hours`);
-  }
-  if (r.rows.length) console.log(`[OWNERSHIP] auto-released ${r.rows.length} idle chat(s)`);
-  return r.rows.length;
-}
-
 module.exports = {
-  claim, release, ownerOf, creditableOwner, releaseIdle, resumeIdle,
+  claim, release, ownerOf, creditableOwner, resumeIdle,
   pauseForManualReply, IDLE_RELEASE_HOURS,
 };

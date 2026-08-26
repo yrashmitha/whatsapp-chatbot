@@ -348,6 +348,31 @@ async function init() {
       -- on the shared client password and has no crm_users row, so sent_by
       -- alone cannot tell pj's replies from the model's.
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS sent_manual BOOLEAN NOT NULL DEFAULT FALSE;
+      -- Every click that arrived through an ad, kept in full. WhatsApp sends
+      -- this once, on the first message after the click, and never again.
+      CREATE TABLE IF NOT EXISTS ad_referrals (
+        id           SERIAL PRIMARY KEY,
+        client_id    TEXT NOT NULL,
+        phone_number TEXT NOT NULL,
+        source_id    TEXT,
+        source_type  TEXT,
+        source_url   TEXT,
+        headline     TEXT,
+        body         TEXT,
+        media_type   TEXT,
+        ctwa_clid    TEXT,
+        raw          JSONB,
+        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_ad_referrals_ad
+        ON ad_referrals (client_id, source_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_ad_referrals_phone
+        ON ad_referrals (client_id, phone_number, created_at);
+      -- What brought this person in the first time. A sale is credited to the
+      -- ad that produced the customer, not the one they happened to click last.
+      ALTER TABLE customers ADD COLUMN IF NOT EXISTS first_ad_id       TEXT;
+      ALTER TABLE customers ADD COLUMN IF NOT EXISTS first_ad_headline TEXT;
+      ALTER TABLE customers ADD COLUMN IF NOT EXISTS first_ad_at       TIMESTAMPTZ;
       -- approved_by holds a name for reading; the id is what payroll joins on,
       -- and it survives the person being renamed.
       ALTER TABLE scheduled_follow_ups ADD COLUMN IF NOT EXISTS approved_by_uid INT;

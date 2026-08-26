@@ -64,6 +64,46 @@ function verifyWebhook(req, res) {
 }
 
 /**
+ * Keep the ad a message arrived through, if it arrived through one.
+ *
+ * WhatsApp attaches this to the first message after a click-to-WhatsApp ad and
+ * never sends it again, so it is recorded before anything that could fail or
+ * return early. Every click is kept; the first one is also stamped on the
+ * customer, because that is what a sale gets attributed to.
+ *
+ * @param {string} clientId
+ * @param {string} phone
+ * @param {Object|undefined} referral - the webhook's referral object
+ * @returns {Promise<void>}
+ */
+async function recordReferral(clientId, phone, referral) {
+  if (!referral || typeof referral !== 'object') return;
+  const adId = referral.source_id || null;
+  try {
+    await db.pgQuery(
+      `INSERT INTO ad_referrals
+         (client_id, phone_number, source_id, source_type, source_url, headline, body, media_type, ctwa_clid, raw)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)`,
+      [clientId, phone, adId, referral.source_type || null, referral.source_url || null,
+       referral.headline || null, referral.body || null, referral.media_type || null,
+       referral.ctwa_clid || null, JSON.stringify(referral)]);
+
+    // First touch only: COALESCE leaves an existing attribution alone.
+    await db.pgQuery(
+      `UPDATE customers
+          SET first_ad_id       = COALESCE(first_ad_id, $3),
+              first_ad_headline = COALESCE(first_ad_headline, $4),
+              first_ad_at       = COALESCE(first_ad_at, NOW())
+        WHERE phone_number = $2 AND client_id = $1`,
+      [clientId, phone, adId, referral.headline || null]);
+    console.log(`[REFERRAL] ${clientId}/${phone} arrived from ad ${adId || '(no id)'}`);
+  } catch (e) {
+    // Never let attribution break a conversation.
+    console.warn('[REFERRAL] could not record:', e.message);
+  }
+}
+
+/**
  * POST /webhook — process incoming WhatsApp messages (text, image, document).
  * Responds 200 immediately and handles the message asynchronously.
  *
@@ -132,6 +172,13 @@ function receiveWebhook(req, res) {
 
       const traceId = genTraceId();
       log = makeLogger(traceId, client.id, from);
+
+      // Before anything that can return early. The reply can be retried; the
+      // referral arrives exactly once and is gone if this turn bails out.
+      if (msg.referral) {
+        await db.upsertCustomer(from, null, client.id);
+        await recordReferral(client.id, from, msg.referral);
+      }
 
       // Deliberately not marking it read yet. A blue tick says somebody read
       // this, and nobody has: the bot might be switched off, in which case the

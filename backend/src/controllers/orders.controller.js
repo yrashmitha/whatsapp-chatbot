@@ -313,6 +313,70 @@ function colomboMonth() {
 }
 
 /**
+ * GET /api/orders/by-ad — what each ad actually produced.
+ *
+ * People, orders, paid orders and revenue, grouped by the ad that first brought
+ * the customer in. First touch rather than last, because the question is which
+ * ad produces customers, and a person who clicks a second ad on the way to
+ * paying was already yours.
+ *
+ * @param {import('express').Request}  req
+ * @param {import('express').Response} res
+ * @returns {Promise<void>}
+ */
+async function ordersByAd(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  const from = req.query.date_from || null;
+  const to   = req.query.date_to   || null;
+  try {
+    const r = await db.pgQuery(
+      `SELECT cu.first_ad_id AS ad_id,
+              MAX(cu.first_ad_headline) AS headline,
+              COUNT(DISTINCT cu.phone_number)::int AS people,
+              COUNT(DISTINCT o.order_id)::int      AS orders,
+              COUNT(DISTINCT o.order_id) FILTER (WHERE o.status = ANY($2))::int AS paid,
+              COALESCE(SUM(
+                CASE WHEN o.status = ANY($2) THEN (
+                  CASE
+                    WHEN regexp_replace(o.custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g') ~ '^[0-9]+([.][0-9]+)?$'
+                      THEN (regexp_replace(o.custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g'))::numeric
+                    ELSE COALESCE((
+                      SELECT SUM((item->>'price')::numeric)
+                      FROM jsonb_array_elements(CASE WHEN jsonb_typeof(o.custom_fields->'items')='array'
+                                                     THEN o.custom_fields->'items' ELSE '[]'::jsonb END) AS item), 0)
+                  END) ELSE 0 END
+              ), 0) AS revenue
+         FROM customers cu
+         LEFT JOIN orders o
+           ON o.phone_number = cu.phone_number AND o.client_id = cu.client_id
+         WHERE cu.client_id = $1
+           AND ($3::date IS NULL OR cu.first_ad_at >= $3::date)
+           AND ($4::date IS NULL OR cu.first_ad_at < ($4::date + INTERVAL '1 day'))
+         GROUP BY cu.first_ad_id
+         ORDER BY revenue DESC NULLS LAST`,
+      [clientId, PAID_STATUSES, from, to]);
+
+    const rows = r.rows.map(x => ({
+      ad_id: x.ad_id,
+      headline: x.headline,
+      people: x.people,
+      orders: x.orders,
+      paid: x.paid,
+      revenue: parseFloat(x.revenue) || 0,
+      // The number the question is really about.
+      cost_per_sale_inputs: { people: x.people, paid: x.paid },
+    }));
+    res.json({
+      ads: rows.filter(x => x.ad_id),
+      // Everyone who did not arrive through an ad we recorded: organic, or
+      // from before this was captured at all.
+      unattributed: rows.find(x => !x.ad_id) || null,
+    });
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
+}
+
+/**
  * PATCH /api/orders/:id/status — update order status.
  *
  * @param {import('express').Request}  req
@@ -517,4 +581,5 @@ async function deleteRemark(req, res) {
   }
 }
 
-module.exports = { listOrders, exportOrders, incomeSummary, updateStatus, updateFields, updateNotes, createOrder, deleteOrder, addRemark, deleteRemark };
+module.exports = {
+  ordersByAd, listOrders, exportOrders, incomeSummary, updateStatus, updateFields, updateNotes, createOrder, deleteOrder, addRemark, deleteRemark };

@@ -13,6 +13,7 @@ const {
   listOrders,
   exportOrders,
   incomeSummary,
+  ordersByAd,
   updateStatus,
   updateFields,
   updateNotes,
@@ -26,6 +27,7 @@ router.get('/',               jwtAuth, requirePermission('orders.view'), listOrd
 router.post('/',              jwtAuth, requirePermission('orders.create'), createOrder);
 router.get('/export',         jwtAuth, requirePermission('orders.export'), exportOrders);
 router.get('/income-summary', jwtAuth, incomeSummary);
+router.get('/by-ad',          jwtAuth, requirePermission('finance.income'), ordersByAd);
 router.patch('/:id/status',  jwtAuth, requirePermission('orders.status'), orderScope, updateStatus);
 router.patch('/:id/fields',  jwtAuth, requirePermission('orders.edit'), orderScope, updateFields);
 router.patch('/:id/notes',   jwtAuth, requirePermission('orders.edit'), orderScope, updateNotes);

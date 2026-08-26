@@ -51,7 +51,17 @@ async function listCustomers(req, res) {
                 AND m2.client_id    = cu.client_id
                 AND m2.sender_type  = 'user'
                 AND m2.created_at   > COALESCE(cu.last_read_at, '1970-01-01T00:00:00Z')
-             ) AS unread_count
+             ) AS unread_count,
+             -- Who is working this chat by hand, and whether the bot is holding
+             -- off. Correlated subqueries rather than joins so a chat with no
+             -- settings row behaves exactly as it does today.
+             (SELECT cs.owned_by FROM customer_settings cs
+               WHERE cs.phone_number=cu.phone_number AND cs.client_id=cu.client_id) AS owned_by,
+             (SELECT COALESCE(u.display_name, u.username) FROM customer_settings cs
+                JOIN crm_users u ON u.id = cs.owned_by
+               WHERE cs.phone_number=cu.phone_number AND cs.client_id=cu.client_id) AS owned_by_name,
+             (SELECT cs.ai_enabled FROM customer_settings cs
+               WHERE cs.phone_number=cu.phone_number AND cs.client_id=cu.client_id) AS ai_enabled
       FROM customers cu
       LEFT JOIN messages m ON m.phone_number=cu.phone_number AND m.client_id=cu.client_id
       LEFT JOIN orders   o ON o.phone_number=cu.phone_number AND o.client_id=cu.client_id

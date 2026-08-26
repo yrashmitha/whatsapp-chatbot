@@ -151,6 +151,24 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
                               style={{ background: 'rgba(59,130,246,0.15)', color: '#60a5fa' }}
                             >📷 Images</span>
                           )}
+                          {/* Who is working this chat by hand. An owner is a
+                              person's name; a paused chat with nobody on it is
+                              the owner's own reply, or a switch someone flipped.
+                              Either way the bot is not answering, which is the
+                              thing worth seeing from the list. */}
+                          {c.owned_by ? (
+                            <span
+                              className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                              style={{ background: 'rgba(139,92,246,0.18)', color: '#a78bfa' }}
+                              title={`${c.owned_by_name || 'An operator'} has taken this chat over. The bot is not replying.`}
+                            >👤 {c.owned_by_name || 'operator'}</span>
+                          ) : c.ai_enabled === false ? (
+                            <span
+                              className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                              style={{ background: 'rgba(148,163,184,0.18)', color: 'var(--text-2)' }}
+                              title="The bot is not replying to this chat. Nobody has taken it over."
+                            >⏸ bot off</span>
+                          ) : null}
                           {c.has_voice && (
                             <span
                               className="text-[10px] px-1.5 py-0.5 rounded font-medium"

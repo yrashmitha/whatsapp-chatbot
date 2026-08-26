@@ -73,12 +73,17 @@ async function ownerOf(clientId, phone) {
  */
 async function claim(clientId, phone, userId) {
   const before = await ownerOf(clientId, phone);
+  // Only mark this as an undoable pause if we are the ones switching the bot
+  // off. A chat that was already off was switched off by a person on purpose,
+  // and taking it over must not quietly give that decision a four hour expiry.
+  const weArePausing = before.ai_enabled !== false;
   await db.pgQuery(
     `INSERT INTO customer_settings (phone_number, client_id, ai_enabled, owned_by, owned_at, paused_at)
-     VALUES ($2,$1,FALSE,$3,NOW(),NOW())
+     VALUES ($2,$1,FALSE,$3,NOW(),CASE WHEN $4 THEN NOW() ELSE NULL END)
      ON CONFLICT (phone_number, client_id)
-     DO UPDATE SET ai_enabled=FALSE, owned_by=$3, owned_at=NOW(), paused_at=NOW()`,
-    [clientId, phone, userId]
+     DO UPDATE SET ai_enabled=FALSE, owned_by=$3, owned_at=NOW(),
+                   paused_at = CASE WHEN $4 THEN NOW() ELSE customer_settings.paused_at END`,
+    [clientId, phone, userId, weArePausing]
   );
   const takenFrom = before.owned_by && before.owned_by !== userId ? before.owned_by : null;
   if (takenFrom) {
@@ -146,14 +151,17 @@ async function creditableOwner(clientId, phone, at) {
 
   const { user_id: userId, created_at: since } = r.rows[0];
   const spoke = await db.pgQuery(
-    `SELECT 1 FROM messages
-      WHERE client_id=$1 AND phone_number=$2 AND sent_by=$3 AND created_at >= $4
-      LIMIT 1`,
+    `SELECT COUNT(*)::int n FROM messages
+      WHERE client_id=$1 AND phone_number=$2 AND sent_by=$3 AND created_at >= $4`,
     [clientId, phone, userId, since]);
-  if (!spoke.rows.length) {
+  const said = spoke.rows[0].n;
+  if (!said) {
     return { userId: null, reason: 'house: the chat was claimed but nothing was sent' };
   }
-  return { userId, reason: 'claimed and worked' };
+  // The count goes on the record deliberately. A sale credited after a single
+  // message is not necessarily wrong - the closing message often is the sale -
+  // but it should be visible rather than buried.
+  return { userId, reason: `claimed and worked (${said} message${said === 1 ? '' : 's'})` };
 }
 
 /**
@@ -177,14 +185,17 @@ async function pauseForManualReply(clientId, phone, userId) {
     await claim(clientId, phone, userId);
     return;
   }
-  // The owner: pause without taking ownership.
+  // The owner: pause without taking ownership. Same rule - if the bot was
+  // already off, that was a decision, and replying does not put a clock on it.
   await db.pgQuery(
     `INSERT INTO customer_settings (phone_number, client_id, ai_enabled, paused_at)
      VALUES ($2,$1,FALSE,NOW())
      ON CONFLICT (phone_number, client_id)
      DO UPDATE SET ai_enabled=FALSE,
-                   paused_at=COALESCE(customer_settings.paused_at, NOW())`,
-    [clientId, phone]);
+                   paused_at = CASE WHEN customer_settings.ai_enabled
+                                    THEN COALESCE(customer_settings.paused_at, NOW())
+                                    ELSE customer_settings.paused_at END`,
+     [clientId, phone]);
 }
 
 /**

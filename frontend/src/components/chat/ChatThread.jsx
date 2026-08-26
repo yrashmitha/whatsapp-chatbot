@@ -287,7 +287,7 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
                 🔮 Tarot
               </button>
             )}
-            {addonsData?.addons?.includes('horoscope_followup_qa') && (
+            {addonsData?.addons?.includes('horoscope_followup_qa') && perms.can('ai.generate_report') && (
               <button
                 onClick={() => setHoroscopeQaOpen(true)}
                 className="text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-violet-100 text-violet-700 hover:bg-violet-200"
@@ -392,7 +392,7 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
               🔮 Tarot
             </button>
           )}
-          {addonsData?.addons?.includes('horoscope_followup_qa') && (
+          {addonsData?.addons?.includes('horoscope_followup_qa') && perms.can('ai.generate_report') && (
             <button
               onClick={() => setHoroscopeQaOpen(true)}
               className="shrink-0 text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-violet-100 text-violet-700 hover:bg-violet-200"

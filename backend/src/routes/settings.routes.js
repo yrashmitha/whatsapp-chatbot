@@ -8,11 +8,13 @@
 const router  = require('express').Router();
 const requirePermission = require('../middleware/requirePermission');
 const jwtAuth = require('../middleware/jwtAuth');
-const { getSettings, updatePrompt, changePassword, updateTokens } = require('../controllers/settings.controller');
+const { getSettings, updatePrompt, changePassword, updateTokens, setAiMode } = require('../controllers/settings.controller');
 
-router.get('/',           jwtAuth, requirePermission('settings.prompts'), getSettings);
+// Anyone signed in may read it; getSettings decides how much of it they see.
+router.get('/',           jwtAuth, getSettings);
 router.put('/prompt',     jwtAuth, requirePermission('settings.prompts'), updatePrompt);
 router.put('/password',   jwtAuth, requirePermission('settings.keys'), changePassword);
 router.put('/tokens',     jwtAuth, requirePermission('settings.keys'), updateTokens);
+router.put('/ai-mode',    jwtAuth, requirePermission('settings.prompts'), setAiMode);
 
 module.exports = router;

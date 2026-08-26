@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import api from '../../lib/api';
+import VoiceRecordButton from './VoiceRecordButton';
 import { useToast } from '../ui/Toast';
 
 function VoiceClipPickerModal({ open, onClose, phone, clientId, onSent }) {
@@ -257,6 +258,8 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, followU
                   <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                 </svg>
               </button>
+              {/* Saved clips above; this records a new one and sends it. */}
+              <VoiceRecordButton phone={phone} clientId={clientId} onSent={onSent} />
             </>
           )}
           {followUpEnabled && (
@@ -326,6 +329,8 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, followU
                   <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                 </svg>
               </button>
+              {/* Saved clips above; this records a new one and sends it. */}
+              <VoiceRecordButton phone={phone} clientId={clientId} onSent={onSent} />
             </>
           )}
           {followUpEnabled && (

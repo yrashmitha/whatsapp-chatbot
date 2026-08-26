@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { useAuthStore, isSuperAdmin } from '../stores/auth';
 import Layout from '../components/Layout';
 import MenusPanel from '../components/MenusPanel';
@@ -127,6 +127,15 @@ export default function Settings() {
     queryKey: ['settings', clientId],
     queryFn: () => api.get('/settings', { params }).then(r => r.data),
     enabled: !!clientId,
+  });
+
+  const aiMode = useMutation({
+    mutationFn: (enabled) => api.put('/settings/ai-mode', { enabled }, { params }),
+    onSuccess: (r) => {
+      toast.success(r.data.ai_enabled ? 'The bot is answering again' : 'The bot has stopped replying to everyone');
+      qc.invalidateQueries({ queryKey: ['settings', clientId] });
+    },
+    onError: (e) => toast.error(e?.response?.data?.error || 'Could not change that'),
   });
 
   useEffect(() => {
@@ -282,7 +291,32 @@ export default function Settings() {
   return (
     <Layout>
       <div className="flex-1 overflow-y-auto px-6 py-6">
-        <h1 className="text-lg font-semibold text-slate-800 mb-4">Settings</h1>
+        <div className="flex items-center gap-3 mb-4 flex-wrap">
+          <h1 className="text-lg font-semibold text-slate-800">Settings</h1>
+          {/* The bot's master switch. Above the tabs on purpose: this is the
+              thing you reach for in a hurry, and it should not be behind one. */}
+          {settingsData && (
+            <button
+              onClick={() => aiMode.mutate(!(settingsData.ai_enabled !== false))}
+              disabled={aiMode.isPending}
+              title={settingsData.ai_enabled !== false
+                ? 'The bot is answering customers. Turn it off to stop all automatic replies.'
+                : 'The bot is not answering anyone. Customers still reach you; nothing is lost.'}
+              className={`text-xs font-medium px-3 py-1.5 rounded-lg border cursor-pointer transition-colors ${
+                settingsData.ai_enabled !== false
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                  : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
+              }`}
+            >
+              {settingsData.ai_enabled !== false ? '🤖 Bot is ON' : '⏸ Bot is OFF for everyone'}
+            </button>
+          )}
+          {settingsData?.ai_enabled === false && (
+            <span className="text-xs text-red-600">
+              No customer is getting an automatic reply right now.
+            </span>
+          )}
+        </div>
 
         {/* Tab bar */}
         <div style={{ display: 'flex', borderBottom: '1px solid #e2e8f0', marginBottom: 24 }}>

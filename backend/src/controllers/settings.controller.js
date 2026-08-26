@@ -13,6 +13,7 @@ const { invalidateClientKeys } = require('../services/clientKeys');
 const pluginLoader  = require('../services/pluginLoader');
 const { chatSessions } = require('../workers/sessionManager');
 const resolveClientId  = require('../middleware/resolveClientId');
+const { hasPermission } = require('../services/permissions');
 
 /**
  * GET /api/settings — return the current client's settings row.
@@ -28,7 +29,7 @@ async function getSettings(req, res) {
     const r = await db.pgQuery(
       `SELECT custom_prompt, error_message, system_prompt_mode, temperature, thinking_budget, brand_name, brand_color,
               order_fields, contact_number, knowledge_base_enabled, product_catalog_enabled, plugin_enabled,
-              owner_phone,
+              owner_phone, ai_enabled,
               (wa_token IS NOT NULL AND wa_token <> '') AS wa_token_set,
               (gemini_api_key IS NOT NULL AND gemini_api_key <> '') AS gemini_api_key_set,
               (freeastro_api_key IS NOT NULL AND freeastro_api_key <> '') AS freeastro_api_key_set,
@@ -41,6 +42,17 @@ async function getSettings(req, res) {
       try { row.order_fields = JSON.parse(row.order_fields); } catch { row.order_fields = []; }
     }
     if (!row.order_fields) row.order_fields = [];
+
+    // Everyone signed in needs the structural half to draw a screen: the order
+    // fields a Create Order form renders, the brand, the feature flags. The
+    // prompt and which keys are set belong to whoever may edit them.
+    if (!hasPermission(req.user, 'settings.prompts')) {
+      const { custom_prompt, error_message, system_prompt_mode, temperature,
+              thinking_budget, owner_phone, wa_token_set, gemini_api_key_set,
+              freeastro_api_key_set, use_system_wa_token, use_system_gemini_key,
+              use_system_freeastro_key, ...safe } = row;
+      return res.json(safe);
+    }
     res.json(row);
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
@@ -167,4 +179,40 @@ async function updateTokens(req, res) {
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 
-module.exports = { getSettings, updatePrompt, changePassword, updateTokens };
+/**
+ * PUT /api/settings/ai-mode - turn this client's bot on or off entirely.
+ *
+ * The webhook has always honoured client_configs.ai_enabled; nothing ever
+ * exposed it, so the only way to silence the bot was per customer, one chat at
+ * a time. This is the switch for "stop replying to anyone until I say so".
+ *
+ * Deliberately its own endpoint rather than a field on the settings form. If
+ * turning the bot off means filling in a form and pressing Save, it will not be
+ * reached for in the moment somebody needs it.
+ *
+ * @param {import('express').Request}  req
+ * @param {import('express').Response} res
+ * @returns {Promise<void>}
+ */
+async function setAiMode(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  const { enabled } = req.body || {};
+  if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled (boolean) required' });
+  try {
+    const r = await db.pgQuery(
+      `UPDATE client_configs SET ai_enabled=$2, updated_at=NOW() WHERE client_id=$1 RETURNING ai_enabled`,
+      [clientId, enabled]);
+    if (!r.rows.length) return res.status(404).json({ error: 'No such client' });
+    // The webhook reads the cached client, so without this the switch does
+    // nothing until the cache happens to expire.
+    clientRouter.invalidateCache(clientId);
+    for (const key of chatSessions.keys()) {
+      if (key.startsWith(`${clientId}:`)) chatSessions.delete(key);
+    }
+    console.log(`[SETTINGS] ${req.user.sub} turned ${clientId}'s bot ${enabled ? 'ON' : 'OFF'}`);
+    res.json({ ok: true, ai_enabled: r.rows[0].ai_enabled });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+module.exports = { getSettings, updatePrompt, changePassword, updateTokens, setAiMode };

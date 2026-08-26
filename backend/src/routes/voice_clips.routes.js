@@ -9,6 +9,7 @@ const {
   createVoiceClip,
   deleteVoiceClip,
   sendVoiceClip,
+  sendRecording,
 } = require('../controllers/voice_clips.controller');
 
 router.get   ('/',     jwtAuth, listVoiceClips);
@@ -17,5 +18,7 @@ router.delete('/:id',  jwtAuth, requirePermission('settings.voice_clips'), delet
 
 // CRM send-voice — mounted separately under /api/crm/send-voice
 router.post('/send',   jwtAuth, requirePermission('chat.send_media'), sendVoiceClip);
+router.post('/send-recording', jwtAuth, requirePermission('chat.send_media'),
+  uploadMedia.single('audio'), sendRecording);
 
 module.exports = router;

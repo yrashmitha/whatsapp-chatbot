@@ -151,6 +151,12 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
                               style={{ background: 'rgba(59,130,246,0.15)', color: '#60a5fa' }}
                             >📷 Images</span>
                           )}
+                          {c.has_voice && (
+                            <span
+                              className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                              style={{ background: 'rgba(139,92,246,0.15)', color: '#a78bfa' }}
+                            >🎤 Voice</span>
+                          )}
                           {c.has_document && (
                             <span
                               className="text-[10px] px-1.5 py-0.5 rounded font-medium"

@@ -34,6 +34,10 @@ export default function VoiceRecordButton({ phone, clientId, onSent }) {
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const recorderRef = useRef(null);
+  // Held between recordings on purpose. Stopping the tracks releases the
+  // microphone, and iOS then treats the next getUserMedia as a fresh request
+  // and prompts again, so an operator answering ten people was asked ten times.
+  const streamRef = useRef(null);
   const chunksRef = useRef([]);
   const abortRef = useRef(false);
   const params = clientId ? { client_id: clientId } : {};
@@ -52,6 +56,13 @@ export default function VoiceRecordButton({ phone, clientId, onSent }) {
     onError: (e) => toast.error(e?.response?.data?.error || 'Could not send the voice note'),
   });
 
+  // Release the microphone when the operator leaves the chat, so the tab is
+  // not holding it open all day.
+  useEffect(() => () => {
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
+  }, []);
+
   // A running count, so nobody discovers afterwards that they recorded four
   // minutes of silence.
   useEffect(() => {
@@ -62,14 +73,21 @@ export default function VoiceRecordButton({ phone, clientId, onSent }) {
 
   const start = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Reuse the open microphone if we still have a live one.
+      let stream = streamRef.current;
+      if (!stream || !stream.getAudioTracks().some(t => t.readyState === 'live')) {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        streamRef.current = stream;
+      }
       const mimeType = pickMimeType();
       const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
       chunksRef.current = [];
       abortRef.current = false;
       recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
       recorder.onstop = () => {
-        stream.getTracks().forEach(t => t.stop());
+        // Deliberately not stopping the tracks here; see streamRef above. The
+        // browser's own recording indicator stays on while the tab is open,
+        // which is honest - the page does still hold the microphone.
         if (abortRef.current) return;
         const blob = new Blob(chunksRef.current, { type: mimeType || 'audio/webm' });
         // Under a second is a slip of the finger, not a message.

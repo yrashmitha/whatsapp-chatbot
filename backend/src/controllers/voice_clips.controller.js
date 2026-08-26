@@ -5,7 +5,7 @@ const clientRouter = require('../services/clientRouter');
 const { sendWhatsAppAudio } = require('../services/whatsapp');
 const { PUBLIC_URL } = require('../config/env');
 const resolveClientId = require('../middleware/resolveClientId');
-const { transcodeToOggOpus } = require('../services/audioTranscode');
+const { transcodeToOggOpus, writeBrowserCopy } = require('../services/audioTranscode');
 const path = require('path');
 
 /**
@@ -28,6 +28,7 @@ async function sendRecording(req, res) {
 
   try {
     const stored = await transcodeToOggOpus(req.file.path);
+    await writeBrowserCopy(stored);
     const audioUrl = `${PUBLIC_URL || ''}/uploads/${path.basename(stored)}`;
     const client = await clientRouter.getClientById(clientId);
     const wamid = await sendWhatsAppAudio(phone, audioUrl, client);
@@ -69,6 +70,7 @@ async function createVoiceClip(req, res) {
   const keyword = trigger_keyword.trim().toLowerCase().replace(/\s+/g, '_');
   // Whatever was uploaded becomes Ogg/Opus, or WhatsApp shows it as a file.
   const stored = await transcodeToOggOpus(req.file.path);
+  await writeBrowserCopy(stored);   // so Safari can play it back in the CRM
   const audioUrl = `${PUBLIC_URL || ''}/uploads/${path.basename(stored)}`;
 
   try {

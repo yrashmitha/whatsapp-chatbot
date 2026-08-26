@@ -53,4 +53,38 @@ function transcodeToOggOpus(inputPath) {
   });
 }
 
-module.exports = { transcodeToOggOpus };
+/**
+ * Write an AAC copy beside an audio file, for playing in a browser.
+ *
+ * Safari plays no Ogg, and Ogg is the only thing WhatsApp renders as a voice
+ * note, so the two cannot be the same file. The CRM plays this one; WhatsApp
+ * gets the Ogg. Same base name, so the player can find it without another
+ * column or another lookup.
+ *
+ * Best effort in every sense: no ffmpeg, or a failure, simply means Safari
+ * cannot play that particular clip, which is where we already were.
+ *
+ * @param {string} inputPath
+ * @returns {Promise<string|null>} the .m4a path, or null
+ */
+function writeBrowserCopy(inputPath) {
+  const dir = path.dirname(inputPath);
+  const base = path.basename(inputPath, path.extname(inputPath));
+  const outputPath = path.join(dir, `${base}.m4a`);
+  return new Promise((resolve) => {
+    execFile(
+      'ffmpeg',
+      ['-y', '-i', inputPath, '-c:a', 'aac', '-b:a', '48k', '-ac', '1', '-vn', outputPath],
+      { timeout: 30000 },
+      (err) => {
+        if (err) {
+          console.warn('[AUDIO] no browser copy made:', err.message);
+          return resolve(null);
+        }
+        resolve(outputPath);
+      }
+    );
+  });
+}
+
+module.exports = { transcodeToOggOpus, writeBrowserCopy };

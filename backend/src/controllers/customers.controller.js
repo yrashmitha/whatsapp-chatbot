@@ -43,7 +43,8 @@ async function listCustomers(req, res) {
              GREATEST(cu.last_customer_message_at, MAX(m.created_at)) AS last_activity_at,
              cu.needs_attention,
              BOOL_OR(m.media_type = 'image') AS has_image,
-             BOOL_OR(m.media_type IN ('pdf', 'document', 'audio', 'voice')) AS has_document,
+             BOOL_OR(m.media_type IN ('pdf', 'document')) AS has_document,
+             BOOL_OR(m.media_type IN ('audio', 'voice')) AS has_voice,
              (SELECT status FROM orders o2 WHERE o2.phone_number=cu.phone_number AND o2.client_id=cu.client_id ORDER BY o2.created_at DESC LIMIT 1) AS latest_order_status,
              (SELECT COUNT(*) FROM messages m2
               WHERE m2.phone_number = cu.phone_number

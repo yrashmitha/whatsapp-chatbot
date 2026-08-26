@@ -302,7 +302,16 @@ export default function MessageBubble({ msg, onDelete }) {
         {/* Audio media */}
         {hasAudio && (
           <div className="mb-1">
-            <audio controls src={mediaUrl} className="w-full max-w-xs rounded" style={{ height: 36 }} />
+            {/* Safari plays no Ogg, and Ogg is the only thing WhatsApp renders
+                as a voice note, so the file that was sent and the file the CRM
+                can play are not the same file. The AAC copy sits beside it under
+                the same name. Chrome takes either; Safari takes the second.
+                A clip from before this existed has no .m4a, and the browser
+                simply falls through to the Ogg as it did before. */}
+            <audio controls className="w-full max-w-xs rounded" style={{ height: 36 }}>
+              {/\.ogg$/i.test(mediaUrl) && <source src={mediaUrl.replace(/\.ogg$/i, '.m4a')} type="audio/mp4" />}
+              <source src={mediaUrl} />
+            </audio>
           </div>
         )}
 

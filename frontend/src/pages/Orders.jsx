@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore, isSuperAdmin } from '../stores/auth';
+import { usePermissions } from '../lib/permissions';
+import IncomeBadges from '../components/orders/IncomeBadges';
 import Layout from '../components/Layout';
 import { useFeatureGate, LockBadge } from '../components/FeatureLock';
 import Pagination from '../components/ui/Pagination';
@@ -38,6 +40,8 @@ export default function Orders() {
   const [statusFilter, setStatusFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  // '' every sale, 'bot' the ones nobody claimed, or a crm_users id.
+  const [operator, setOperator] = useState('');
   const [expandedOrder, setExpandedOrder] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null); // { id, orderId, fields }
   const [editingNoteId, setEditingNoteId] = useState(null);
@@ -64,11 +68,25 @@ export default function Orders() {
   const { isEnabled, guard, showLocked, lockModal } = useFeatureGate(clientId, superAdmin);
   const showTarot = true;
 
+  const { can, isOwner } = usePermissions();
+  // Only the owner picks whose sales to look at. An operator has one
+  // answer available to them and the server enforces it either way.
+  const canPickOperator = isOwner && can('finance.income');
   const showIncome = true;
   const showMatch  = showHoroscope;
+  const { data: operators = [] } = useQuery({
+    queryKey: ['crm-users', clientId],
+    queryFn: () => api.get('/crm-users', { params: { client_id: clientId } }).then(r => r.data),
+    enabled: canPickOperator,
+    // A missing list is not worth a red toast on a page that works without it.
+    retry: false,
+  });
+
   const { data: incomeData } = useQuery({
-    queryKey: ['orders-income-summary', clientId],
-    queryFn: () => api.get('/orders/income-summary', { params: { client_id: clientId } }).then(r => r.data),
+    queryKey: ['orders-income-summary', clientId, operator],
+    queryFn: () => api.get('/orders/income-summary', {
+      params: { ...(clientId && { client_id: clientId }), ...(operator && { operator }) },
+    }).then(r => r.data),
     enabled: isEnabled('income_summary'),
   });
 
@@ -78,6 +96,7 @@ export default function Orders() {
     ...(statusFilter && { status: statusFilter }),
     ...(dateFrom && { date_from: dateFrom }),
     ...(dateTo && { date_to: dateTo }),
+    ...(operator && { operator }),
     ...(clientId && { client_id: clientId }),
   };
 
@@ -174,7 +193,7 @@ export default function Orders() {
   };
 
   const handleExport = async () => {
-    const exportParams = new URLSearchParams({ ...(clientId && { client_id: clientId }), ...(statusFilter && { status: statusFilter }), ...(search && { search }), ...(dateFrom && { date_from: dateFrom }), ...(dateTo && { date_to: dateTo }) });
+    const exportParams = new URLSearchParams({ ...(clientId && { client_id: clientId }), ...(statusFilter && { status: statusFilter }), ...(search && { search }), ...(dateFrom && { date_from: dateFrom }), ...(dateTo && { date_to: dateTo }), ...(operator && { operator }) });
     const token = localStorage.getItem('crm_token');
     const res = await fetch(`/api/orders/export?${exportParams}`, { headers: { Authorization: `Bearer ${token}` } });
     const blob = await res.blob();
@@ -193,14 +212,13 @@ export default function Orders() {
       <div className="flex flex-col h-full">
         <div className="px-6 py-4 border-b border-slate-200 bg-white flex items-center gap-3 flex-wrap shrink-0">
           <h1 className="text-lg font-semibold text-slate-800 mr-2">Orders</h1>
-          {isEnabled('income_summary') ? (incomeData && (
-            <div
-              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200"
-              title={`${incomeData.order_count} paid order${incomeData.order_count === 1 ? '' : 's'} this month`}
-            >
-              💰 This month: LKR {incomeData.total.toLocaleString()}
-            </div>
-          )) : (
+          {isEnabled('income_summary') ? (
+            <IncomeBadges
+              income={incomeData}
+              operator={operator}
+              onPick={(v) => { setOperator(v); setPage(1); }}
+            />
+          ) : (
             <button
               onClick={() => showLocked('income_summary')}
               title="Income Summary — see what this does"
@@ -216,6 +234,19 @@ export default function Orders() {
             <option value="">All statuses</option>
             {STATUS_FILTER_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
+          {canPickOperator && (
+            <select value={operator} onChange={e => { setOperator(e.target.value); setPage(1); }}
+              className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-violet-400"
+              title="Whose sales to show">
+              <option value="">Everyone</option>
+              <option value="bot">🤖 Bot only</option>
+              {operators.map(o => (
+                <option key={o.id} value={String(o.id)}>
+                  👤 {o.display_name || o.username}{o.active ? '' : ' (disabled)'}
+                </option>
+              ))}
+            </select>
+          )}
           <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }}
             className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-violet-400"
             title="From date" />

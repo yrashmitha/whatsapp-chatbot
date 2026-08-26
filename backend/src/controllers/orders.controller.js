@@ -171,7 +171,7 @@ async function incomeSummary(req, res) {
                THEN (regexp_replace(o.custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g'))::numeric
              ELSE COALESCE((
                SELECT SUM((item->>'price')::numeric)
-               FROM jsonb_array_elements(COALESCE(o.custom_fields->'items', '[]'::jsonb)) AS item
+               FROM jsonb_array_elements(CASE WHEN jsonb_typeof(o.custom_fields->'items')='array' THEN o.custom_fields->'items' ELSE '[]'::jsonb END) AS item
              ), 0)
            END
                 ), 0) AS total
@@ -202,7 +202,7 @@ async function incomeSummary(req, res) {
                       THEN (regexp_replace(o.custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g'))::numeric
                     ELSE COALESCE((
                       SELECT SUM((item->>'price')::numeric)
-                      FROM jsonb_array_elements(COALESCE(o.custom_fields->'items', '[]'::jsonb)) AS item
+                      FROM jsonb_array_elements(CASE WHEN jsonb_typeof(o.custom_fields->'items')='array' THEN o.custom_fields->'items' ELSE '[]'::jsonb END) AS item
                     ), 0)
                   END
                 ) AS amount, u.display_name
@@ -239,7 +239,7 @@ async function incomeSummary(req, res) {
                THEN (regexp_replace(o.custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g'))::numeric
              ELSE COALESCE((
                SELECT SUM((item->>'price')::numeric)
-               FROM jsonb_array_elements(COALESCE(o.custom_fields->'items', '[]'::jsonb)) AS item
+               FROM jsonb_array_elements(CASE WHEN jsonb_typeof(o.custom_fields->'items')='array' THEN o.custom_fields->'items' ELSE '[]'::jsonb END) AS item
              ), 0)
            END
               ), 0) AS total
@@ -273,7 +273,7 @@ async function incomeSummary(req, res) {
                   THEN (regexp_replace(o.custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g'))::numeric
                 ELSE COALESCE((
                   SELECT SUM((item->>'price')::numeric)
-                  FROM jsonb_array_elements(COALESCE(o.custom_fields->'items', '[]'::jsonb)) AS item
+                  FROM jsonb_array_elements(CASE WHEN jsonb_typeof(o.custom_fields->'items')='array' THEN o.custom_fields->'items' ELSE '[]'::jsonb END) AS item
                 ), 0)
               END
             ) AS amount

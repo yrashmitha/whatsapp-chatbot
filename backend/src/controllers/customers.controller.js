@@ -236,7 +236,10 @@ async function getAiMode(req, res) {
   const { phone } = req.params;
   try {
     const enabled = await db.getCustomerAiEnabled(phone, clientId);
-    res.json({ ai_enabled: enabled });
+    // Ownership rides along: the header needs both to decide whether to offer
+    // "take over" or "hand back", and they are two halves of one fact.
+    const own = await ownership.ownerOf(clientId, phone);
+    res.json({ ai_enabled: enabled, owned_by: own.owned_by, owned_at: own.owned_at });
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 

@@ -13,12 +13,17 @@ export default function CreateOrderDrawer({ open, onClose, customer, clientId })
   const [fields, setFields] = useState({});
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  // A catalogue product id, 'custom', or '' for no price yet.
+  const [productId, setProductId] = useState('');
+  const [customPrice, setCustomPrice] = useState('');
 
   // Reset form when drawer opens
   const handleOpen = () => {
     setPhone(customer?.phone || '');
     setFields({});
     setNotes('');
+    setProductId('');
+    setCustomPrice('');
   };
 
   // Fetch client's order field definitions
@@ -28,6 +33,16 @@ export default function CreateOrderDrawer({ open, onClose, customer, clientId })
     enabled: open && !!clientId,
   });
   const orderFields = settings?.order_fields || [];
+
+  const { data: products = [] } = useQuery({
+    queryKey: ['products', clientId],
+    queryFn: () => api.get('/products', { params: clientId ? { client_id: clientId } : {} }).then(r => r.data),
+    enabled: open && !!clientId,
+    retry: false,
+  });
+  const productList = Array.isArray(products) ? products : (products?.products || []);
+  const chosen = productList.find(p => String(p.id) === productId);
+  const price = productId === 'custom' ? Number(customPrice) || 0 : Number(chosen?.price) || 0;
 
   const setField = (key, val) => setFields(prev => ({ ...prev, [key]: val }));
 
@@ -40,6 +55,14 @@ export default function CreateOrderDrawer({ open, onClose, customer, clientId })
       const custom_fields = {
         customer_name: fields.customer_name ?? (customer?.name || ''),
         ...Object.fromEntries(orderFields.map(f => [f.key, fields[f.key] ?? ''])),
+        // Same shape the bot writes, so income and commission read one field.
+        ...(price > 0 && {
+          items: [{
+            product_id: chosen?.id ?? price,
+            name: chosen?.name || `Rs ${price}`,
+            price,
+          }],
+        }),
       };
       const res = await api.post('/orders', {
         phone_number: phoneVal,
@@ -106,6 +129,45 @@ export default function CreateOrderDrawer({ open, onClose, customer, clientId })
             onChange={e => setField('customer_name', e.target.value)}
             placeholder="Full name (optional)"
           />
+        </div>
+
+        {/* Price. Without one the order is worth nothing to the income figure
+            and nothing to whoever closed it. */}
+        <div>
+          <label style={labelStyle}>Service / Price</label>
+          <select
+            style={inputStyle}
+            value={productId}
+            onChange={e => setProductId(e.target.value)}
+          >
+            <option value="">Choose a service…</option>
+            {productList.map(p => (
+              <option key={p.id} value={String(p.id)}>
+                {p.name} — Rs {Number(p.price).toLocaleString()}
+              </option>
+            ))}
+            <option value="custom">Other amount…</option>
+          </select>
+          {productId === 'custom' && (
+            <input
+              style={{ ...inputStyle, marginTop: 6 }}
+              type="number"
+              min="0"
+              value={customPrice}
+              onChange={e => setCustomPrice(e.target.value)}
+              placeholder="Amount in LKR"
+            />
+          )}
+          {price > 0 ? (
+            <div style={{ fontSize: 11, color: 'var(--text-2)', marginTop: 4 }}>
+              This order will count as Rs {price.toLocaleString()}.
+            </div>
+          ) : (
+            <div style={{ fontSize: 11, color: '#b45309', marginTop: 4 }}>
+              Without a price this order counts as zero in the income figure, and
+              earns no commission for whoever closed it.
+            </div>
+          )}
         </div>
 
         {/* Dynamic order fields */}

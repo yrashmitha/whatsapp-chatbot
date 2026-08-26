@@ -1,6 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore, isSuperAdmin } from '../stores/auth';
+import { can } from '../lib/permissions';
 import { useThemeStore } from '../stores/theme';
 import api from '../lib/api';
 
@@ -33,22 +34,25 @@ const icons = {
   consult:      <IC d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />,
 };
 
+// `perm` mirrors the permission guarding that page's routes. A nav entry
+// without one is reachable by anyone signed in.
 const ALL_NAV = [
-  { to: '/summary',   label: 'Summary',   icon: icons.summary   },
-  { to: '/chat',      label: 'Chats',     icon: icons.chat      },
-  { to: '/follow-ups', label: 'Follow-ups', icon: icons.chat     },
-  { to: '/orders',    label: 'Orders',    icon: icons.orders    },
+  { to: '/summary',   label: 'Summary',   icon: icons.summary,   perm: 'orders.view' },
+  { to: '/chat',      label: 'Chats',     icon: icons.chat,      perm: 'chat.read'   },
+  { to: '/follow-ups', label: 'Follow-ups', icon: icons.chat,    perm: 'followups.view' },
+  { to: '/orders',    label: 'Orders',    icon: icons.orders,    perm: 'orders.view' },
+  { to: '/operators', label: 'Operators', icon: icons.clients,   perm: 'users.manage' },
   { to: '/products',  label: 'Products',  icon: icons.products,  key: 'product_catalog_enabled' },
-  { to: '/knowledge', label: 'Knowledge', icon: icons.knowledge, key: 'knowledge_base_enabled'  },
+  { to: '/knowledge', label: 'Knowledge', icon: icons.knowledge, key: 'knowledge_base_enabled', perm: 'settings.knowledge' },
   { to: '/media',     label: 'Media',     icon: icons.media     },
   { to: '/clients',   label: 'Clients',   icon: icons.clients,   adminOnly: true },
   { to: '/packages',  label: 'Packages',  icon: icons.packages,  adminOnly: true },
   { to: '/addons',    label: 'Addons',    icon: icons.addons,    adminOnly: true },
   { to: '/calls',        label: 'Calls',        icon: icons.calls,       addonKey: 'ai_call_answering' },
   { to: '/voice-clips',  label: 'Voice Clips',  icon: icons.voiceclips },
-  { to: '/plugins',       label: 'Plugins',  icon: icons.plugins              },
-  { to: '/test-chat',     label: 'Test Chat', icon: icons.plugins             },
-  { to: '/settings',      label: 'Settings', icon: icons.settings             },
+  { to: '/plugins',       label: 'Plugins',  icon: icons.plugins,  perm: 'settings.plugins' },
+  { to: '/test-chat',     label: 'Test Chat', icon: icons.plugins, perm: 'ai.test_chat'     },
+  { to: '/settings',      label: 'Settings', icon: icons.settings, perm: 'settings.prompts' },
   { to: '/consult-admin', label: 'Consult',  icon: icons.consult, adminOnly: true },
 ];
 
@@ -80,6 +84,8 @@ export default function Layout({ children, hideNavOnMobile = false }) {
 
   const navItems = ALL_NAV.filter(n => {
     if (n.adminOnly && !superAdmin) return false;
+    // Hiding is a courtesy; the routes behind each page refuse independently.
+    if (n.perm && !can(user, n.perm)) return false;
     if (n.key && !settings?.[n.key]) return false;
     if (n.addonKey && !addonsStatus?.addons?.includes(n.addonKey)) return false;
     return true;

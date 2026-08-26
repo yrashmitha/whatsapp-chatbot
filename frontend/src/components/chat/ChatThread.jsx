@@ -10,6 +10,7 @@ import CreateOrderDrawer from './CreateOrderDrawer';
 import Spinner from '../ui/Spinner';
 import Button from '../ui/Button';
 import { useToast } from '../ui/Toast';
+import { usePermissions } from '../../lib/permissions';
 import { STATUS_OPTIONS, STATUS_COLORS } from '../../lib/utils';
 import useSwipeBack from '../../lib/useSwipeBack';
 
@@ -24,6 +25,7 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
   const [createOrderOpen, setCreateOrderOpen] = useState(false);
   const [messagePrefill, setMessagePrefill] = useState('');
   const toast = useToast();
+  const perms = usePermissions();
   const qc = useQueryClient();
   const topRef = useRef();
   const bottomRef = useRef();
@@ -146,6 +148,8 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
     }).then(r => r.data),
   });
   const aiEnabled = aiModeData?.ai_enabled ?? true;
+  const ownedBy = aiModeData?.owned_by ?? null;
+  const mineAlready = ownedBy != null && ownedBy === perms.user?.uid;
 
   const { data: addonsData } = useQuery({
     queryKey: ['addons-status', clientId],
@@ -198,6 +202,22 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
     const file = e.dataTransfer.files?.[0];
     if (file) await uploadFile(file);
   };
+
+  // Claiming silences the bot and records who is working the chat. Releasing
+  // hands it back. Credit for a sale is decided from that record, not from who
+  // happened to type last.
+  const claimMutation = useMutation({
+    mutationFn: () => api.post(`/customers/${phone}/claim`, {},
+      { params: clientId ? { client_id: clientId } : {} }),
+    onSuccess: () => refetchAiMode(),
+    onError: (e) => toast.error(e?.response?.data?.error || 'Could not take over this chat'),
+  });
+  const releaseMutation = useMutation({
+    mutationFn: () => api.post(`/customers/${phone}/release`, {},
+      { params: clientId ? { client_id: clientId } : {} }),
+    onSuccess: () => refetchAiMode(),
+    onError: (e) => toast.error(e?.response?.data?.error || 'Could not hand this chat back'),
+  });
 
   const toggleAiMutation = useMutation({
     mutationFn: (enabled) => api.patch(`/customers/${phone}/ai-mode`, { enabled },
@@ -282,29 +302,67 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
             >
               + Order
             </button>
-            <button
-              onClick={() => toggleAiMutation.mutate(!aiEnabled)}
-              disabled={toggleAiMutation.isPending}
-              className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${
-                aiEnabled ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-slate-200 text-slate-500 hover:bg-slate-300'
-              }`}
-            >
-              AI {aiEnabled ? 'ON' : 'OFF'}
-            </button>
+            {perms.isOperator ? (
+              <button
+                onClick={() => (mineAlready ? releaseMutation.mutate() : claimMutation.mutate())}
+                disabled={claimMutation.isPending || releaseMutation.isPending}
+                title={mineAlready
+                  ? 'Hand this chat back to the bot'
+                  : (ownedBy ? 'Another operator has this chat. Taking over moves it to you.' : 'Reply yourself. The bot stops answering this customer.')}
+                className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${
+                  mineAlready
+                    ? 'bg-violet-100 text-violet-700 hover:bg-violet-200'
+                    : ownedBy
+                      ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                      : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                }`}
+              >
+                {mineAlready ? 'Mine · hand back' : (ownedBy ? 'Take over' : 'Take over')}
+              </button>
+            ) : (
+              <button
+                onClick={() => toggleAiMutation.mutate(!aiEnabled)}
+                disabled={toggleAiMutation.isPending}
+                className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${
+                  aiEnabled ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-slate-200 text-slate-500 hover:bg-slate-300'
+                }`}
+              >
+                AI {aiEnabled ? 'ON' : 'OFF'}
+              </button>
+            )}
             <Button variant="ghost" size="sm" onClick={handleDeleteHistory}>Clear history</Button>
             <Button variant="danger" size="sm" onClick={handleDeleteCustomer}>Delete</Button>
           </div>
           {/* Mobile: just AI toggle in top row */}
           <div className="flex md:hidden items-center gap-1.5 shrink-0">
-            <button
-              onClick={() => toggleAiMutation.mutate(!aiEnabled)}
-              disabled={toggleAiMutation.isPending}
-              className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${
-                aiEnabled ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-slate-200 text-slate-500 hover:bg-slate-300'
-              }`}
-            >
-              AI {aiEnabled ? 'ON' : 'OFF'}
-            </button>
+            {perms.isOperator ? (
+              <button
+                onClick={() => (mineAlready ? releaseMutation.mutate() : claimMutation.mutate())}
+                disabled={claimMutation.isPending || releaseMutation.isPending}
+                title={mineAlready
+                  ? 'Hand this chat back to the bot'
+                  : (ownedBy ? 'Another operator has this chat. Taking over moves it to you.' : 'Reply yourself. The bot stops answering this customer.')}
+                className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${
+                  mineAlready
+                    ? 'bg-violet-100 text-violet-700 hover:bg-violet-200'
+                    : ownedBy
+                      ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                      : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                }`}
+              >
+                {mineAlready ? 'Mine · hand back' : (ownedBy ? 'Take over' : 'Take over')}
+              </button>
+            ) : (
+              <button
+                onClick={() => toggleAiMutation.mutate(!aiEnabled)}
+                disabled={toggleAiMutation.isPending}
+                className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${
+                  aiEnabled ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-slate-200 text-slate-500 hover:bg-slate-300'
+                }`}
+              >
+                AI {aiEnabled ? 'ON' : 'OFF'}
+              </button>
+            )}
             <button
               onClick={() => setActionsOpen(o => !o)}
               aria-label="More actions"

@@ -53,6 +53,9 @@ export const STATUS_COLORS = {
   // Current statuses
   pending:          'bg-amber-100 text-amber-800',
   started:          'bg-blue-100 text-blue-800',
+  // A slip has arrived and nobody has checked the bank yet. Amber on purpose:
+  // it is a queue to work through, not a state to leave things in.
+  payment_identified: 'bg-amber-100 text-amber-800',
   delivered:        'bg-violet-100 text-violet-800',
   done:             'bg-emerald-100 text-emerald-800',
   cancelled:        'bg-red-100 text-red-800',
@@ -62,7 +65,7 @@ export const STATUS_COLORS = {
   complete:         'bg-emerald-100 text-emerald-800',
 };
 
-export const STATUS_OPTIONS = ['pending', 'started', 'delivered', 'done', 'cancelled', 'payment_received'];
+export const STATUS_OPTIONS = ['pending', 'started', 'payment_identified', 'delivered', 'done', 'cancelled', 'payment_received'];
 
 // All statuses including legacy values — used in filter dropdowns so old orders remain filterable
-export const STATUS_FILTER_OPTIONS = ['pending', 'started', 'delivered', 'done', 'cancelled', 'payment_received', 'paid', 'complete'];
+export const STATUS_FILTER_OPTIONS = ['pending', 'started', 'payment_identified', 'delivered', 'done', 'cancelled', 'payment_received', 'paid', 'complete'];

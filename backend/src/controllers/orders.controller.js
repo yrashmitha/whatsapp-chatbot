@@ -320,15 +320,37 @@ function colomboMonth() {
  * @returns {Promise<void>}
  */
 async function updateStatus(req, res) {
-  const ALLOWED = ['pending','started','delivered','done','cancelled','payment_received','paid','complete'];
+  // payment_identified is deliberately absent from PAID_STATUSES: a slip has
+  // been seen, not banked. It must not count as income, must not freeze a
+  // credit, and is the one money-adjacent status an operator may set.
+  const ALLOWED = ['pending','started','payment_identified','delivered','done','cancelled','payment_received','paid','complete'];
   const { status } = req.body;
   if (!status || !ALLOWED.includes(status))
     return res.status(400).json({ error: `Invalid status. Allowed: ${ALLOWED.join(', ')}` });
+  const clientId = resolveClientId(req);
   try {
+    // Saying the money arrived is the owner's call, because the owner is the one
+    // checking the bank. The gate is on any status that would freeze credit, not
+    // just on the word "payment_received", or an operator could jump an order
+    // straight to delivered and credit themselves a sale nobody had banked.
+    // Already-credited orders are exempt: marking a paid order delivered is the
+    // ordinary next step and belongs to whoever is doing the work.
+    if (PAID_STATUSES.includes(status) && !hasPermission(req.user, 'orders.mark_paid')) {
+      const seen = await db.pgQuery(
+        `SELECT credited_at FROM orders WHERE order_id=$1 AND client_id=$2`,
+        [req.params.id, clientId]);
+      if (!seen.rows.length) return res.status(404).json({ error: 'No such order' });
+      if (!seen.rows[0].credited_at) {
+        return res.status(403).json({
+          error: 'Only the account owner can confirm a payment, since they are the one checking the bank.',
+          permission: 'orders.mark_paid',
+        });
+      }
+    }
     await db.pgQuery(`UPDATE orders SET status=$1 WHERE order_id=$2`, [status, req.params.id]);
     res.json({ ok: true });
     // Freeze whose sale this is, once, the first time it reads as paid.
-    creditIfPaid(resolveClientId(req), req.params.id, status);
+    creditIfPaid(clientId, req.params.id, status);
     // Fire CAPI Purchase event when an admin manually marks an order as paid
     if (status === 'payment_received' || status === 'paid') {
       db.pgQuery('SELECT phone_number, client_id FROM orders WHERE order_id=$1', [req.params.id])

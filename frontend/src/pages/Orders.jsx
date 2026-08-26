@@ -3,6 +3,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore, isSuperAdmin } from '../stores/auth';
 import { usePermissions } from '../lib/permissions';
 import IncomeBadges from '../components/orders/IncomeBadges';
+
+/** Statuses that mean the money arrived. Mirrors the server's list. */
+const PAID_STATUSES = ['payment_received', 'paid', 'delivered', 'done', 'complete'];
 import Layout from '../components/Layout';
 import { useFeatureGate, LockBadge } from '../components/FeatureLock';
 import Pagination from '../components/ui/Pagination';
@@ -72,6 +75,7 @@ export default function Orders() {
   // Only the owner picks whose sales to look at. An operator has one
   // answer available to them and the server enforces it either way.
   const canPickOperator = isOwner && can('finance.income');
+  const canMarkPaid = can('orders.mark_paid');
   const showIncome = true;
   const showMatch  = showHoroscope;
   const { data: operators = [] } = useQuery({
@@ -327,7 +331,15 @@ export default function Orders() {
                               className={`text-xs font-medium rounded-md px-2 py-1 border cursor-pointer outline-none ${STATUS_COLORS[o.status] || 'bg-slate-100 text-slate-600 border-slate-200'}`}
                             >
                               {!STATUS_OPTIONS.includes(o.status) && <option value={o.status}>{o.status}</option>}
-                              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                              {STATUS_OPTIONS.map(s => (
+                                <option key={s} value={s}
+                                  /* Confirming a payment is the owner's, since they check
+                                     the bank. Already-credited orders are exempt, so
+                                     marking a paid order delivered still works. */
+                                  disabled={!canMarkPaid && PAID_STATUSES.includes(s) && !o.credited_at}>
+                                  {s}{!canMarkPaid && PAID_STATUSES.includes(s) && !o.credited_at ? ' (owner only)' : ''}
+                                </option>
+                              ))}
                             </select>
                             {paymentIdentified && o.status !== 'payment_received' && (
                               <div

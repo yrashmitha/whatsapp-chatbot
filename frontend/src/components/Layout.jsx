@@ -156,8 +156,14 @@ export default function Layout({ children, hideNavOnMobile = false }) {
             </select>
           )}
           {user && (
-            <span className="text-xs px-2 py-1 rounded-lg hidden md:block" style={{ background: 'var(--bg-card)', color: 'var(--text-3)' }}>
-              {superAdmin ? 'Admin' : user.clientId}
+            <span className="text-xs px-2 py-1 rounded-lg hidden md:block" style={{ background: 'var(--bg-card)', color: 'var(--text-3)' }}
+                  title={user.uid ? `Signed in as ${user.name || user.clientId} on ${user.clientId}` : undefined}>
+              {/* An operator is a person, not the account they work in. Showing
+                  the client id told everyone they were "pj". */}
+              {superAdmin ? 'Admin' : (user.uid ? (user.name || user.username) : user.clientId)}
+              {user.uid && (
+                <span className="opacity-50 ml-1">· {user.clientId}</span>
+              )}
             </span>
           )}
           {iconBtn(toggle, theme === 'dark' ? 'Light mode' : 'Dark mode', theme === 'dark' ? icons.sun : icons.moon)}

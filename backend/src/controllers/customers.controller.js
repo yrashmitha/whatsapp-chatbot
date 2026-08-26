@@ -304,8 +304,26 @@ async function setAiMode(req, res) {
   const { enabled } = req.body;
   if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled (boolean) required' });
   try {
-    await db.setCustomerAiMode(phone, clientId, enabled);
-    if (!enabled) chatSessions.delete(`${clientId}:${phone}`);
+    // The toggle and ownership are two switches for one thing, and they were
+    // able to contradict each other: turning the bot back on left the chat
+    // owned by an operator with the bot also replying, so both would answer.
+    if (enabled) {
+      // Turning the bot on is handing the chat back, so say so properly and
+      // leave a record rather than silently orphaning the ownership.
+      await ownership.release(clientId, phone, req.user?.uid ?? null, 'release',
+                              'the bot was switched back on');
+      await db.setCustomerAiMode(phone, clientId, true);
+      await db.pgQuery(
+        `UPDATE customer_settings SET paused_at=NULL WHERE client_id=$1 AND phone_number=$2`,
+        [clientId, phone]);
+    } else {
+      // Switching it off by hand is a decision, not a pause: no clock on it.
+      await db.setCustomerAiMode(phone, clientId, false);
+      await db.pgQuery(
+        `UPDATE customer_settings SET paused_at=NULL WHERE client_id=$1 AND phone_number=$2`,
+        [clientId, phone]);
+      chatSessions.delete(`${clientId}:${phone}`);
+    }
     res.json({ ok: true, ai_enabled: enabled });
   } catch (e) { res.status(500).json({ error: e.message }); }
 }

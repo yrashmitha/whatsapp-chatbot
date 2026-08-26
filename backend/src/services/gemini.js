@@ -956,6 +956,19 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
           },
         });
         log.info(`[ORDER] Payment identified flag set on ${order.order_id}`);
+
+        // Move it into the queue of slips waiting to be checked against the
+        // bank. Only from a state that has not been settled yet: an order
+        // already marked paid, delivered or cancelled must not be dragged
+        // backwards because a customer sent the receipt a second time.
+        const UNSETTLED = ['pending', 'started', 'pending-payment'];
+        if (UNSETTLED.includes(order.status)) {
+          await db.pgQuery(
+            `UPDATE orders SET status='payment_identified'
+              WHERE order_id=$1 AND client_id=$2 AND status = ANY($3)`,
+            [order.order_id, client?.id ?? null, UNSETTLED]);
+          log.info(`[ORDER] ${order.order_id} moved to payment_identified, awaiting a bank check`);
+        }
         require('./metaConversions').fireCAPIEvent(client?.id, 'Purchase', phoneNumber, {
           order_id: order.order_id,
           currency: 'LKR',

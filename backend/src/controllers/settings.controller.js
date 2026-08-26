@@ -29,7 +29,7 @@ async function getSettings(req, res) {
     const r = await db.pgQuery(
       `SELECT custom_prompt, error_message, system_prompt_mode, temperature, thinking_budget, brand_name, brand_color,
               order_fields, contact_number, knowledge_base_enabled, product_catalog_enabled, plugin_enabled,
-              owner_phone, ai_enabled,
+              owner_phone, ai_enabled, away_message,
               (wa_token IS NOT NULL AND wa_token <> '') AS wa_token_set,
               (gemini_api_key IS NOT NULL AND gemini_api_key <> '') AS gemini_api_key_set,
               (freeastro_api_key IS NOT NULL AND freeastro_api_key <> '') AS freeastro_api_key_set,
@@ -200,9 +200,16 @@ async function setAiMode(req, res) {
   const { enabled } = req.body || {};
   if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled (boolean) required' });
   try {
+    // Writing the away message here too: it only matters while the bot is off,
+     // so this is where somebody is thinking about it.
+    const hasAway = typeof req.body?.away_message === 'string';
     const r = await db.pgQuery(
-      `UPDATE client_configs SET ai_enabled=$2, updated_at=NOW() WHERE client_id=$1 RETURNING ai_enabled`,
-      [clientId, enabled]);
+      `UPDATE client_configs
+          SET ai_enabled=$2,
+              away_message = CASE WHEN $3 THEN NULLIF($4, '') ELSE away_message END,
+              updated_at=NOW()
+        WHERE client_id=$1 RETURNING ai_enabled, away_message`,
+      [clientId, enabled, hasAway, (req.body?.away_message || '').trim()]);
     if (!r.rows.length) return res.status(404).json({ error: 'No such client' });
     // The webhook reads the cached client, so without this the switch does
     // nothing until the cache happens to expire.
@@ -211,7 +218,7 @@ async function setAiMode(req, res) {
       if (key.startsWith(`${clientId}:`)) chatSessions.delete(key);
     }
     console.log(`[SETTINGS] ${req.user.sub} turned ${clientId}'s bot ${enabled ? 'ON' : 'OFF'}`);
-    res.json({ ok: true, ai_enabled: r.rows[0].ai_enabled });
+    res.json({ ok: true, ai_enabled: r.rows[0].ai_enabled, away_message: r.rows[0].away_message });
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 

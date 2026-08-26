@@ -129,10 +129,15 @@ export default function Settings() {
     enabled: !!clientId,
   });
 
+  // null until edited, so an untouched field never overwrites what is stored.
+  const [awayDraft, setAwayDraft] = useState(null);
+
   const aiMode = useMutation({
-    mutationFn: (enabled) => api.put('/settings/ai-mode', { enabled }, { params }),
+    mutationFn: (arg) => api.put('/settings/ai-mode',
+      typeof arg === 'boolean' ? { enabled: arg } : arg, { params }),
     onSuccess: (r) => {
       toast.success(r.data.ai_enabled ? 'The bot is answering again' : 'The bot has stopped replying to everyone');
+      setAwayDraft(null);
       qc.invalidateQueries({ queryKey: ['settings', clientId] });
     },
     onError: (e) => toast.error(e?.response?.data?.error || 'Could not change that'),
@@ -311,12 +316,34 @@ export default function Settings() {
               {settingsData.ai_enabled !== false ? '🤖 Bot is ON' : '⏸ Bot is OFF for everyone'}
             </button>
           )}
-          {settingsData?.ai_enabled === false && (
-            <span className="text-xs text-red-600">
-              No customer is getting an automatic reply right now.
-            </span>
-          )}
         </div>
+        {settingsData?.ai_enabled === false && (
+          <div className="mb-4 text-xs bg-red-50 border border-red-200 rounded-lg px-3 py-2 max-w-2xl">
+            <div className="text-red-700 font-medium mb-1.5">
+              The bot is not replying to anyone. Messages still arrive in Chats for someone to answer by hand.
+            </div>
+            <label className="block text-slate-600 mb-1">
+              Optional: send this once to anyone who writes in, at most once every six hours.
+              Leave it empty and nothing is sent, which is usually what you want while
+              someone is answering manually.
+            </label>
+            <div className="flex gap-2">
+              <input
+                value={awayDraft ?? (settingsData.away_message || '')}
+                onChange={e => setAwayDraft(e.target.value)}
+                placeholder="e.g. අද දවසේ පිළිතුරු දෙන්න ටිකක් වෙලා යයි 🙏"
+                className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-violet-400"
+              />
+              <button
+                onClick={() => aiMode.mutate({ enabled: false, away_message: awayDraft ?? '' })}
+                disabled={awayDraft === null || aiMode.isPending}
+                className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 bg-white cursor-pointer disabled:opacity-50"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Tab bar */}
         <div style={{ display: 'flex', borderBottom: '1px solid #e2e8f0', marginBottom: 24 }}>

@@ -382,6 +382,9 @@ async function init() {
       -- Operators are users; the owner is still the shared client password above.
       -- client_id is NULL for a superadmin and set for everyone else, so a row's
       -- tenant is never inferred from its username.
+      -- Sent when the bot is switched off, if the client has written one.
+      -- Empty means silence, which is what switching the bot off should mean.
+      ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS away_message TEXT;
       ALTER TABLE crm_users ADD COLUMN IF NOT EXISTS client_id    TEXT;
       ALTER TABLE crm_users ADD COLUMN IF NOT EXISTS display_name TEXT;
       ALTER TABLE crm_users ADD COLUMN IF NOT EXISTS permissions  JSONB NOT NULL DEFAULT '[]'::jsonb;

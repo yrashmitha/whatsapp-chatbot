@@ -457,16 +457,32 @@ function receiveWebhook(req, res) {
         return;
       }
 
-      // Global AI kill switch — if disabled for this client, send fallback message
+      // Global kill switch. Switching the bot off means it stops talking; the
+      // message is still stored so a person can answer it in the CRM. It used to
+      // reply "our assistant is currently unavailable" to every inbound message,
+      // which told a paying customer to go away, in English, once per message
+      // they sent.
       if (client.ai_enabled === false) {
         await db.upsertCustomer(from, null, client.id);
         await db.insertMessage(from, userMessage, 'user', null, client.id);
-        const disabledMsg = client.contact_number
-          ? `Our assistant is currently unavailable. Please contact us directly at ${client.contact_number} 🙏`
-          : `Our assistant is currently unavailable. We'll get back to you shortly 🙏`;
-        await sendWhatsAppMessage(from, disabledMsg, client);
-        await db.insertMessage(from, disabledMsg, 'bot', null, client.id);
-        log.info(`[WEBHOOK] AI disabled — fallback sent`);
+
+        // An away message is opt-in and sent at most once every six hours: a
+        // customer who writes three times does not need telling three times.
+        const away = (client.away_message || '').trim();
+        if (away) {
+          const recent = await db.pgQuery(
+            `SELECT 1 FROM messages
+              WHERE client_id=$1 AND phone_number=$2 AND sender_type='bot'
+                AND message_text=$3 AND created_at > NOW() - INTERVAL '6 hours'
+              LIMIT 1`, [client.id, from, away]);
+          if (!recent.rows.length) {
+            await sendWhatsAppMessage(from, away, client);
+            await db.insertMessage(from, away, 'bot', null, client.id);
+            log.info(`[WEBHOOK] bot off — away message sent`);
+            return;
+          }
+        }
+        log.info(`[WEBHOOK] bot off — message stored, nothing sent`);
         return;
       }
 

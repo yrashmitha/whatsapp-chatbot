@@ -30,11 +30,15 @@ async function listOrders(req, res) {
   const date_from = req.query.date_from || '';
   const date_to   = req.query.date_to   || '';
   // Who closed it: a crm_users id, 'bot' for sales nobody claimed, or blank for
-  // everyone. An operator may only ever see their own, so their own id wins
-  // over whatever the query string asked for.
-  const operator  = req.user?.uid && !hasPermission(req.user, 'finance.income')
-    ? String(req.user.uid)
-    : (req.query.operator || '');
+  // everyone.
+  //
+  // This is a view, not a restriction, and it stays that way for operators too.
+  // Credit is stamped at payment, so a pending order has none - filtering an
+  // operator's list to their own credited sales would hide every order they are
+  // meant to be chasing and show them only the ones already paid. The inbox is
+  // shared; what is private is the money, and that is scoped in the income
+  // summary instead.
+  const operator = req.query.operator || '';
   try {
     const conditions = [];
     const params = [];

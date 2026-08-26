@@ -269,7 +269,7 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
           </div>
           {/* Action buttons: inline on desktop, only AI toggle visible on mobile */}
           <div className="hidden md:flex gap-2 items-center shrink-0">
-            {addonsData?.addons?.includes('astro_vedic_chart') && customerOrders.some(o => o.status === 'pending') && (
+            {addonsData?.addons?.includes('astro_vedic_chart') && perms.can('ai.astro_chart') && customerOrders.some(o => o.status === 'pending') && (
               <button
                 onClick={() => setAstroModalOpen(true)}
                 className="text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-amber-100 text-amber-700 hover:bg-amber-200"
@@ -278,7 +278,7 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
                 ✨ Astro
               </button>
             )}
-            {addonsData?.addons?.includes('tarot_reading') && (
+            {addonsData?.addons?.includes('tarot_reading') && perms.can('ai.generate_report') && (
               <button
                 onClick={() => setTarotModalOpen(true)}
                 className="text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-purple-100 text-purple-700 hover:bg-purple-200"
@@ -376,7 +376,7 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
         </div>
         {/* Mobile action row — behind the overflow menu, so the thread keeps the screen */}
         <div className={`md:hidden ${actionsOpen ? 'flex' : 'hidden'} flex-wrap gap-1.5 items-center px-2 pb-2`}>
-          {addonsData?.addons?.includes('astro_vedic_chart') && customerOrders.some(o => o.status === 'pending') && (
+          {addonsData?.addons?.includes('astro_vedic_chart') && perms.can('ai.astro_chart') && customerOrders.some(o => o.status === 'pending') && (
             <button
               onClick={() => setAstroModalOpen(true)}
               className="shrink-0 text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-amber-100 text-amber-700 hover:bg-amber-200"
@@ -384,7 +384,7 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
               ✨ Astro
             </button>
           )}
-          {addonsData?.addons?.includes('tarot_reading') && (
+          {addonsData?.addons?.includes('tarot_reading') && perms.can('ai.generate_report') && (
             <button
               onClick={() => setTarotModalOpen(true)}
               className="shrink-0 text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-purple-100 text-purple-700 hover:bg-purple-200"

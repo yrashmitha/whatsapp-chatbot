@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '../../lib/api';
-import { timeAgo } from '../../lib/utils';
+import { timeAgoShort } from '../../lib/utils';
 import Spinner from '../ui/Spinner';
 
 const WINDOW_MS = 24 * 3600_000;
@@ -143,8 +143,8 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
                       {c.last_message && (
                         <div className="text-xs truncate mt-0.5" style={{ color: 'var(--text-2)' }}>{c.last_message}</div>
                       )}
-                      {(c.has_image || c.has_document || c.latest_order_status) && (
-                        <div className="flex gap-1 mt-1 flex-wrap">
+                      {(c.has_image || c.has_document || c.has_voice || c.latest_order_status || c.owned_by || c.ai_enabled === false || c.client_id) && (
+                        <div className="flex gap-1 mt-1 flex-wrap items-center">
                           {c.has_image && (
                             <span
                               className="text-[10px] px-1.5 py-0.5 rounded font-medium"
@@ -181,6 +181,12 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
                               style={{ background: 'rgba(245,158,11,0.15)', color: '#fbbf24' }}
                             >📄 Docs</span>
                           )}
+                          {c.client_id && (
+                            <span
+                              className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                              style={{ background: 'rgba(99,102,241,0.15)', color: 'var(--accent)' }}
+                            >{c.client_id}</span>
+                          )}
                           {c.latest_order_status && (
                             <span
                               className="text-[10px] px-1.5 py-0.5 rounded font-medium"
@@ -191,13 +197,11 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
                           )}
                         </div>
                       )}
-                      {c.client_id && (
-                        <div className="text-xs mt-0.5" style={{ color: 'var(--accent)' }}>{c.client_id}</div>
-                      )}
+
                     </div>
                     <div className="shrink-0 text-right flex flex-col items-end gap-0.5">
                       {c.last_message_at && (
-                        <div className="text-xs" style={{ color: 'var(--text-3)' }}>{timeAgo(c.last_message_at)}</div>
+                        <div className="text-xs whitespace-nowrap" style={{ color: 'var(--text-3)' }}>{timeAgoShort(c.last_message_at)}</div>
                       )}
                       {c.unread_count > 0 && (
                         <span className="min-w-5 h-5 flex items-center justify-center rounded-full bg-green-500 text-white text-xs font-bold px-1">

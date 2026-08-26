@@ -15,7 +15,7 @@ const clientRouter = require('../services/clientRouter');
 const { buildChatSession, handleMessage } = require('../services/gemini');
 const { sendWhatsAppMessage, sendWhatsAppImage, sendWhatsAppAudio, sendBotReply, sendWhatsAppInteractiveList, sendWhatsAppReplyButtons, waToken, waPhoneId, markMessageRead } = require('../services/whatsapp');
 const { chatSessions } = require('../workers/sessionManager');
-const { UPLOADS_DIR } = require('../config/env');
+const { UPLOADS_DIR, PUBLIC_URL } = require('../config/env');
 const { analyzePaymentDocument, buildAnalysisNote } = require('../services/imageAnalysis');
 const { extractFromBuffer } = require('../services/mediaExtractor');
 const { getGeminiKey } = require('../services/clientKeys');
@@ -76,17 +76,46 @@ function verifyWebhook(req, res) {
  * @param {Object|undefined} referral - the webhook's referral object
  * @returns {Promise<void>}
  */
+/**
+ * Copy an ad's picture into uploads, and return the path to serve it from.
+ *
+ * Meta's own url is signed and carries an expiry, so it is useless to a chat
+ * someone opens next month. Best effort: a failure costs the card its picture
+ * and nothing else.
+ *
+ * @param {string} url
+ * @returns {Promise<string|null>}
+ */
+async function cacheAdThumb(url) {
+  if (!url) return null;
+  try {
+    const res = await axios.get(url, { responseType: 'arraybuffer', timeout: 15000, maxContentLength: 5 * 1024 * 1024 });
+    const type = String(res.headers['content-type'] || '');
+    if (!type.startsWith('image/')) return null;
+    const ext = type.includes('png') ? 'png' : type.includes('webp') ? 'webp' : 'jpg';
+    const name = `ad-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    await fs.promises.mkdir(UPLOADS_DIR, { recursive: true });
+    await fs.promises.writeFile(path.join(UPLOADS_DIR, name), Buffer.from(res.data));
+    return `${PUBLIC_URL || ''}/uploads/${name}`;
+  } catch (e) {
+    console.warn('[REFERRAL] could not cache the ad image:', e.message);
+    return null;
+  }
+}
+
 async function recordReferral(clientId, phone, referral) {
   if (!referral || typeof referral !== 'object') return;
   const adId = referral.source_id || null;
   try {
+    // An image ad carries image_url, a video one carries thumbnail_url.
+    const thumb = await cacheAdThumb(referral.image_url || referral.thumbnail_url);
     await db.pgQuery(
       `INSERT INTO ad_referrals
-         (client_id, phone_number, source_id, source_type, source_url, headline, body, media_type, ctwa_clid, raw)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)`,
+         (client_id, phone_number, source_id, source_type, source_url, headline, body, media_type, ctwa_clid, raw, thumb_url)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11)`,
       [clientId, phone, adId, referral.source_type || null, referral.source_url || null,
        referral.headline || null, referral.body || null, referral.media_type || null,
-       referral.ctwa_clid || null, JSON.stringify(referral)]);
+       referral.ctwa_clid || null, JSON.stringify(referral), thumb]);
 
     // First touch only: COALESCE leaves an existing attribution alone.
     await db.pgQuery(

@@ -125,7 +125,7 @@ async function getMessages(req, res) {
     // an id the message never carried.
     if (msgs.length) {
       const refs = await db.pgQuery(
-        `SELECT r.source_id, r.source_type, r.source_url, r.headline, r.body, r.media_type, r.created_at,
+        `SELECT r.source_id, r.source_type, r.source_url, r.headline, r.body, r.media_type, r.created_at, r.thumb_url,
                 d.name AS ad_name, d.campaign_name, d.effective_status, d.amount_spent
            FROM ad_referrals r
            LEFT JOIN ad_details d ON d.ad_id = r.source_id

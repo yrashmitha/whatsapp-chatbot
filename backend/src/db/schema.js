@@ -362,6 +362,10 @@ async function init() {
         media_type   TEXT,
         ctwa_clid    TEXT,
         raw          JSONB,
+        -- A local copy of the ad's image. The fbcdn original is signed and
+        -- expires, so it cannot be linked to from a chat that will be read
+        -- weeks later.
+        thumb_url    TEXT,
         created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
       -- What an ad id means, in words. The referral carries an id and the page

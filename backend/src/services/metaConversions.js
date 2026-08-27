@@ -89,11 +89,13 @@ async function fireCAPIEvent(clientId, eventName, phone, customData = {}) {
       data: [{
         event_name:    eventName,
         event_time:    Math.floor(Date.now() / 1000),
-        // A conversion that happened in a chat, not on a website. With a click
+        // A conversion that happened in a chat, not on a website. Meta lists
+        // business_messaging as "ads that click to Messenger, Instagram or
+        // WhatsApp"; which of the three is inferred from the click id, and
+        // there is no messaging_channel field to declare it. With a click
         // id Meta can attribute it to the ad; without one it falls back to
         // matching on the hashed phone, which rarely lands.
         action_source: ctwaClid ? 'business_messaging' : 'other',
-        ...(ctwaClid && { messaging_channel: 'whatsapp' }),
         user_data:     userData,
         custom_data:   customData,
       }],

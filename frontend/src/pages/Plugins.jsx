@@ -121,6 +121,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
   const [pixelId, setPixelId]           = useState('');
   const [adAccountId, setAdAccountId]   = useState('');
   const [audienceId, setAudienceId]     = useState('');
+  const [testEventCode, setTestEventCode] = useState('');
   const [syncing, setSyncing]                     = useState(false);
   const [creatingAudience, setCreatingAudience]   = useState(false);
   const [audienceName, setAudienceName]           = useState('WhatsApp Bot Customers');
@@ -172,6 +173,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
         setPixelId(r.data.pixel_id || '');
         setAdAccountId(r.data.ad_account_id || '');
         setAudienceId(r.data.audience_id || '');
+        setTestEventCode(r.data.test_event_code || '');
       })
       .catch(() => {
         setConfig({});
@@ -203,6 +205,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
         setPixelId('');
         setAdAccountId('');
         setAudienceId('');
+        setTestEventCode('');
       });
   }, [pluginMeta.id, clientId]);
 
@@ -252,9 +255,10 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
         body.page4_body = page4Body;
         for (const f of TAROT_EXTRAS) body[f.key] = extras[f.key] || '';
       } else if (isMetaConversions) {
-        body.pixel_id      = pixelId;
-        body.ad_account_id = adAccountId;
-        body.audience_id   = audienceId;
+        body.pixel_id        = pixelId;
+        body.ad_account_id   = adAccountId;
+        body.audience_id     = audienceId;
+        body.test_event_code = testEventCode.trim();
       } else {
         body.prompt = prompt; // covers astro_vedic_chart and any generic plugin
         if (pluginMeta.id === 'follow_up_generator') body.prompt2 = prompt2;
@@ -568,6 +572,27 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
               placeholder="act_123456789"
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 font-mono"
             />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Test Event Code</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              Only while checking the setup. Events sent with a code appear in Events Manager under
+              <strong> Test Events</strong> and are kept out of attribution and optimisation, so a test cannot
+              teach your campaign about a sale that did not happen.
+            </p>
+            <input
+              type="text"
+              value={testEventCode}
+              onChange={e => setTestEventCode(e.target.value)}
+              placeholder="TEST12345"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 font-mono"
+            />
+            {testEventCode.trim() && (
+              <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-2.5 py-2 mt-1.5">
+                Test mode is on. Real payments are being reported as tests and will not count towards
+                optimisation. Clear this field when you have finished checking.
+              </p>
+            )}
           </div>
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">Custom Audience ID</label>

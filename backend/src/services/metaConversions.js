@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const axios  = require('axios');
 const db     = require('../db');
+const { orderValue } = require('./salesCredit');
 
 function hashStr(s) {
   return crypto.createHash('sha256').update(s).digest('hex');
@@ -12,14 +13,23 @@ function hashPhone(phone) {
   return hashStr((phone || '').replace(/\D/g, ''));
 }
 
-function buildUserData(phone, customerName) {
-  const userData = { ph: [hashPhone(phone)] };
-  if (customerName) {
-    const parts = customerName.trim().split(/\s+/).filter(Boolean);
-    if (parts[0]) userData.fn = [hashStr(parts[0].toLowerCase())];
-    if (parts.length > 1) userData.ln = [hashStr(parts.slice(1).join(' ').toLowerCase())];
-  }
-  return userData;
+/**
+ * Who Meta should match this event to.
+ *
+ * The hashed phone, and the click id when the conversation started from an ad.
+ * The click id is the one that works: it names the exact click, so there is
+ * nothing left to guess at.
+ *
+ * fn/ln used to be sent, split off the stored name by taking the first word as
+ * the given name. On Sri Lankan names that word is almost always the ge-name -
+ * in "kodagodage ranil yohan rupasinghe" the given name is the second - so the
+ * field was usually wrong. And two thirds of the stored names are in Sinhala
+ * script, which cannot hash-match a Facebook profile held in Latin. Fields that
+ * never match add nothing and pull the Event Match Quality score down, so they
+ * are not sent.
+ */
+function buildUserData(phone) {
+  return { ph: [hashPhone(phone)] };
 }
 
 async function _getConfig(clientId) {
@@ -58,16 +68,6 @@ async function fireCAPIEvent(clientId, eventName, phone, customData = {}) {
     const cfg = await _getConfig(clientId);
     if (!cfg) return;
 
-    // Look up customer name for better identity matching
-    let customerName = null;
-    if (db.IS_PG) {
-      const r = await db.pgQuery(
-        `SELECT name FROM customers WHERE phone_number=$1 AND client_id=$2 LIMIT 1`,
-        [phone, clientId]
-      ).catch(() => ({ rows: [] }));
-      customerName = r.rows[0]?.name || null;
-    }
-
     // The click that started this conversation, if it came from an ad. This is
     // what turns the event from "somebody bought" into "this ad produced a
     // customer", which is the only version Meta can optimise on.
@@ -82,8 +82,24 @@ async function fireCAPIEvent(clientId, eventName, phone, customData = {}) {
       ctwaClid = r.rows[0]?.ctwa_clid || null;
     }
 
-    const userData = buildUserData(phone, customerName);
+    const userData = buildUserData(phone);
     if (ctwaClid) userData.ctwa_clid = ctwaClid;
+
+    // What the sale was worth. Without it Meta is told a purchase happened and
+    // nothing about its size, which counts conversions but cannot optimise for
+    // the valuable ones or report a return on spend. A caller that already
+    // holds the figure - the slip it just read - keeps it; otherwise the order
+    // is priced by the same rule the income page uses.
+    const data = { ...customData };
+    if (!(parseFloat(data.value) > 0) && data.order_id && db.IS_PG) {
+      const r = await db.pgQuery(
+        `SELECT custom_fields FROM orders WHERE order_id=$1 AND client_id=$2 LIMIT 1`,
+        [data.order_id, clientId]
+      ).catch(() => ({ rows: [] }));
+      const v = orderValue(r.rows[0]?.custom_fields);
+      if (v > 0) data.value = v;
+    }
+    if (parseFloat(data.value) > 0 && !data.currency) data.currency = 'LKR';
 
     const payload = {
       data: [{
@@ -97,7 +113,7 @@ async function fireCAPIEvent(clientId, eventName, phone, customData = {}) {
         // matching on the hashed phone, which rarely lands.
         action_source: ctwaClid ? 'business_messaging' : 'other',
         user_data:     userData,
-        custom_data:   customData,
+        custom_data:   data,
       }],
       access_token: cfg.accessToken,
     };
@@ -108,9 +124,9 @@ async function fireCAPIEvent(clientId, eventName, phone, customData = {}) {
       { headers: { 'Content-Type': 'application/json' } }
     );
     const received = r.data.events_received;
-    console.log(`[META-CAPI] ${eventName} sent for ...${phone.slice(-4)}: events_received=${received} name=${!!customerName} click=${!!ctwaClid}`);
+    console.log(`[META-CAPI] ${eventName} sent for ...${phone.slice(-4)}: events_received=${received} value=${data.value || 0} click=${!!ctwaClid}`);
     await _logEvent(clientId, eventName, phone, 'ok',
-      `events_received=${received}${customerName ? ' +name' : ''}${ctwaClid ? ' +click' : ' (no click id, attribution will be weak)'}`);
+      `events_received=${received}${data.value > 0 ? ` LKR ${data.value}` : ' (no value on record)'}${ctwaClid ? ' +click' : ' (no click id, attribution will be weak)'}`);
   } catch (e) {
     const msg = e?.response?.data?.error?.message || e.message;
     console.warn(`[META-CAPI] Failed to send ${eventName} for ...${phone.slice(-4)}:`, msg);

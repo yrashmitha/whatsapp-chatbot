@@ -8,7 +8,7 @@
 const db = require('../db');
 const resolveClientId = require('../middleware/resolveClientId');
 const { hasPermission } = require('../services/permissions');
-const { creditIfPaid, TZ } = require('../services/salesCredit');
+const { creditIfPaid, TZ, VALUE_SQL } = require('../services/salesCredit');
 const commission = require('../services/commission');
 const { generateOrderId } = require('../services/gemini');
 const clientRouter = require('../services/clientRouter');
@@ -170,14 +170,7 @@ async function incomeSummary(req, res) {
       const own = await db.pgQuery(
         `SELECT COUNT(*) AS order_count,
                 COALESCE(SUM(
-           CASE
-             WHEN regexp_replace(o.custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g') ~ '^[0-9]+([.][0-9]+)?$'
-               THEN (regexp_replace(o.custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g'))::numeric
-             ELSE COALESCE((
-               SELECT SUM((item->>'price')::numeric)
-               FROM jsonb_array_elements(CASE WHEN jsonb_typeof(o.custom_fields->'items')='array' THEN o.custom_fields->'items' ELSE '[]'::jsonb END) AS item
-             ), 0)
-           END
+           ${VALUE_SQL}
                 ), 0) AS total
            FROM orders o
           WHERE o.client_id = $1 AND o.status = ANY($2)
@@ -201,14 +194,7 @@ async function incomeSummary(req, res) {
       const isBot = pick === 'bot';
       const sales = await db.pgQuery(
         `SELECT o.credit_seq, (
-                  CASE
-                    WHEN regexp_replace(o.custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g') ~ '^[0-9]+([.][0-9]+)?$'
-                      THEN (regexp_replace(o.custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g'))::numeric
-                    ELSE COALESCE((
-                      SELECT SUM((item->>'price')::numeric)
-                      FROM jsonb_array_elements(CASE WHEN jsonb_typeof(o.custom_fields->'items')='array' THEN o.custom_fields->'items' ELSE '[]'::jsonb END) AS item
-                    ), 0)
-                  END
+                  ${VALUE_SQL}
                 ) AS amount, u.display_name
            FROM orders o
            LEFT JOIN crm_users u ON u.id = o.credited_to
@@ -238,14 +224,7 @@ async function incomeSummary(req, res) {
               u.display_name,
               COUNT(*)::int AS order_count,
               COALESCE(SUM(
-           CASE
-             WHEN regexp_replace(o.custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g') ~ '^[0-9]+([.][0-9]+)?$'
-               THEN (regexp_replace(o.custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g'))::numeric
-             ELSE COALESCE((
-               SELECT SUM((item->>'price')::numeric)
-               FROM jsonb_array_elements(CASE WHEN jsonb_typeof(o.custom_fields->'items')='array' THEN o.custom_fields->'items' ELSE '[]'::jsonb END) AS item
-             ), 0)
-           END
+           ${VALUE_SQL}
               ), 0) AS total
          FROM orders o
          LEFT JOIN crm_users u ON u.id = o.credited_to
@@ -272,14 +251,7 @@ async function incomeSummary(req, res) {
       for (const o of operators) {
         const seqs = await db.pgQuery(
           `SELECT o.credit_seq, (
-              CASE
-                WHEN regexp_replace(o.custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g') ~ '^[0-9]+([.][0-9]+)?$'
-                  THEN (regexp_replace(o.custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g'))::numeric
-                ELSE COALESCE((
-                  SELECT SUM((item->>'price')::numeric)
-                  FROM jsonb_array_elements(CASE WHEN jsonb_typeof(o.custom_fields->'items')='array' THEN o.custom_fields->'items' ELSE '[]'::jsonb END) AS item
-                ), 0)
-              END
+              ${VALUE_SQL}
             ) AS amount
              FROM orders o
             WHERE o.client_id=$1 AND o.status = ANY($2) AND o.credited_to=$3 AND ${MONTH}`,
@@ -341,14 +313,7 @@ async function ordersByAd(req, res) {
               COUNT(DISTINCT o.order_id) FILTER (WHERE o.status = ANY($2))::int AS paid,
               COALESCE(SUM(
                 CASE WHEN o.status = ANY($2) THEN (
-                  CASE
-                    WHEN regexp_replace(o.custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g') ~ '^[0-9]+([.][0-9]+)?$'
-                      THEN (regexp_replace(o.custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g'))::numeric
-                    ELSE COALESCE((
-                      SELECT SUM((item->>'price')::numeric)
-                      FROM jsonb_array_elements(CASE WHEN jsonb_typeof(o.custom_fields->'items')='array'
-                                                     THEN o.custom_fields->'items' ELSE '[]'::jsonb END) AS item), 0)
-                  END) ELSE 0 END
+                  ${VALUE_SQL}) ELSE 0 END
               ), 0) AS revenue
          FROM customers cu
          LEFT JOIN orders o

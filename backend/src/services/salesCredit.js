@@ -100,4 +100,63 @@ async function creditIfPaid(clientId, orderId, status) {
   }
 }
 
-module.exports = { creditOrder, creditIfPaid, PAID_STATUSES, TZ };
+/**
+ * What a sale was worth.
+ *
+ * There is no price column. An order's value is the slip amount if one was read
+ * off a transfer, and the sum of its line items otherwise. The slip wins because
+ * it is what actually arrived in the bank; the line items are what was quoted,
+ * which a customer may have paid short or over.
+ *
+ * Two dialects of one rule. The income page has to aggregate in SQL and Meta has
+ * to be told a number per event in JS, and until now those were separate pieces
+ * of code that happened to agree. VALUE_SQL and orderValue must stay in step: if
+ * the payroll figure and the figure Meta optimises on ever diverge, neither can
+ * be trusted, and nobody would notice for a month.
+ *
+ * Returns 0 when neither is present, which is honest - most paid orders have no
+ * recorded price at all.
+ */
+const VALUE_SQL = `(
+  CASE
+    WHEN regexp_replace(o.custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g') ~ '^[0-9]+([.][0-9]+)?$'
+      THEN (regexp_replace(o.custom_fields->'payment_identified'->>'amount', '[^0-9.]', '', 'g'))::numeric
+    ELSE COALESCE((
+      SELECT SUM((item->>'price')::numeric)
+      FROM jsonb_array_elements(
+        CASE WHEN jsonb_typeof(o.custom_fields->'items')='array'
+             THEN o.custom_fields->'items' ELSE '[]'::jsonb END) AS item
+    ), 0)
+  END
+)`;
+
+/**
+ * The same rule, against a custom_fields object.
+ *
+ * @param {object|null} customFields
+ * @returns {number} the value in rupees, 0 when unknown
+ */
+function orderValue(customFields) {
+  const cf = customFields || {};
+
+  const raw = cf.payment_identified && cf.payment_identified.amount;
+  if (raw != null) {
+    const cleaned = String(raw).replace(/[^0-9.]/g, '');
+    if (/^[0-9]+(\.[0-9]+)?$/.test(cleaned)) {
+      const n = parseFloat(cleaned);
+      if (n > 0) return n;
+    }
+  }
+
+  if (Array.isArray(cf.items)) {
+    const sum = cf.items.reduce((total, item) => {
+      const p = parseFloat(item && item.price);
+      return total + (Number.isFinite(p) ? p : 0);
+    }, 0);
+    if (sum > 0) return sum;
+  }
+
+  return 0;
+}
+
+module.exports = { creditOrder, creditIfPaid, orderValue, PAID_STATUSES, TZ, VALUE_SQL };

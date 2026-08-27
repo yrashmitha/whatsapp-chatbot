@@ -1390,6 +1390,65 @@ async function metaEventsForOrder(req, res) {
 }
 
 /**
+ * POST /api/plugins/meta/retry/:orderId — send this order's conversions again.
+ *
+ * Which events to send is decided from the order, not from what failed: an
+ * order that has been paid owes Meta both a Lead and a Purchase, whatever the
+ * log says. That way a retry also repairs an event that was never attempted -
+ * an order placed while the addon was switched off, say.
+ *
+ * Safe to press repeatedly. Every event carries event_id, so Meta counts one
+ * sale once however many times it hears about it.
+ */
+async function retryMetaEvents(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+
+  try {
+    const { rows } = await db.pgQuery(
+      `SELECT order_id, phone_number, status FROM orders WHERE order_id=$1 AND client_id=$2`,
+      [req.params.orderId, clientId]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Order not found' });
+
+    const order = rows[0];
+    const { fireCAPIEvent } = require('../services/metaConversions');
+    const PAID = ['payment_received', 'paid', 'delivered', 'done', 'complete'];
+
+    const wanted = ['Lead'];
+    if (PAID.includes(order.status)) wanted.push('Purchase');
+
+    // Ask the send how it went rather than reading the log back. The log is
+    // written asynchronously and the mirror's row lands a few seconds later, so
+    // querying it here reported "nothing was sent" about conversions that had
+    // in fact gone through.
+    const sent = [];
+    const failed = [];
+    for (const eventName of wanted) {
+      const r = await fireCAPIEvent(clientId, eventName, order.phone_number, { order_id: order.order_id })
+        .catch(e => ({ ok: false, error: e.message }));
+      if (r?.ok) sent.push({ event: eventName, value: r.value, messaging: r.messaging, test: r.test });
+      else failed.push({ event: eventName, error: r?.error || 'unknown' });
+    }
+
+    const notConfigured = failed.length === wanted.length
+      && failed.every(f => f.error === 'not configured');
+
+    res.json({
+      ok: failed.length === 0 && sent.length > 0,
+      attempted: wanted,
+      sent,
+      failed,
+      note: notConfigured
+        ? 'Nothing was sent. The Meta Ads Tracking addon may be switched off, or its dataset and token unset.'
+        : undefined,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
+
+/**
  * POST /api/plugins/meta/create-audience — create a new Meta Custom Audience and save its ID.
  */
 async function createMetaAudience(req, res) {
@@ -2105,6 +2164,7 @@ async function downloadPorondamPdf(req, res) {
 
 module.exports = {
   metaEventsForOrder,
+  retryMetaEvents,
   getPluginConfig, updatePluginConfig, getPluginCustomerData, generateAstroChart,
   analyzeAuraImage,
   aiPrepareHoroscope,

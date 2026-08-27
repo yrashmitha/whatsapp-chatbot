@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../lib/api';
+import MetaTracking from '../orders/MetaTracking';
 import MessageBubble from './MessageBubble';
 import MessageInput from './MessageInput';
 import AstroChartModal from './AstroChartModal';
@@ -429,6 +430,10 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
                 <div key={o.order_id} className="flex items-center gap-2 text-xs bg-slate-50 rounded-lg px-3 py-2">
                   <span className="font-mono font-semibold text-slate-700 shrink-0">#{o.order_id}</span>
                   <span className="text-slate-400 shrink-0">{new Date(o.created_at).toLocaleDateString()}</span>
+                  {/* Whether Meta heard about this sale, and a way to send it
+                      again if it did not. One line, so the conversation stays
+                      the point of this panel. */}
+                  <MetaTracking orderId={o.order_id} clientId={clientId} compact />
                   <div className="ml-auto">
                     <select
                       value={o.status}

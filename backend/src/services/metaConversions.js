@@ -176,10 +176,17 @@ async function _logEvent(clientId, eventName, phone, status, detail, extra = {})
  * Silent no-op if the addon isn't enabled or config is missing.
  */
 async function fireCAPIEvent(clientId, eventName, phone, customData = {}) {
-  if (!clientId || !phone) return;
+  if (!clientId || !phone) return { ok: false, error: 'no client or phone' };
+
+  // Callers in the message path ignore this and must keep doing so - a failed
+  // conversion can never be allowed to interrupt a reply to a customer. It is
+  // returned for the retry button, which has to be able to say what happened
+  // instead of reading the log back and racing the writes to it.
+  let result = { ok: false, error: 'not configured' };
+
   try {
     const cfg = await _getConfig(clientId);
-    if (!cfg) return;
+    if (!cfg) return result;
 
     // The click that started this conversation, if it came from an ad. This is
     // what turns the event from "somebody bought" into "this ad produced a
@@ -318,6 +325,7 @@ async function fireCAPIEvent(clientId, eventName, phone, customData = {}) {
       });
     }
     console.log(`[META-CAPI] ${eventName} sent for ...${phone.slice(-4)}: events_received=${received} value=${data.value || 0} click=${!!ctwaClid} waba=${!!wabaId}`);
+    result = { ok: true, received, value: data.value || 0, messaging, test: !!cfg.testEventCode };
     const _event = payload.data[0];
     await _logEvent(clientId, eventName, phone, cfg.testEventCode ? 'test' : 'ok',
       `events_received=${received}${data.value > 0 ? ` LKR ${data.value}` : ' (no value on record)'}${ctwaClid ? ' +click' : ' (no click id, attribution will be weak)'}`,
@@ -329,9 +337,12 @@ async function fireCAPIEvent(clientId, eventName, phone, customData = {}) {
     // former is how a rejected event looks like an unexplained failure.
     const err = e?.response?.data?.error;
     const msg = [err?.error_user_msg, err?.message].filter(Boolean).join(' | ') || e.message;
+    result = { ok: false, error: msg };
     console.warn(`[META-CAPI] Failed to send ${eventName} for ...${phone.slice(-4)}:`, msg);
     await _logEvent(clientId, eventName, phone, 'error', msg);
   }
+
+  return result;
 }
 
 /**

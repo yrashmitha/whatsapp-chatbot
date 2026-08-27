@@ -1,4 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useToast } from '../ui/Toast';
 import api from '../../lib/api';
 
 /**
@@ -13,7 +15,15 @@ import api from '../../lib/api';
  * somebody corrects a price afterwards the two will differ, and that difference
  * is the useful thing to see rather than something to hide.
  */
-export default function MetaTracking({ orderId, clientId }) {
+/**
+ * @param {object}  props
+ * @param {string}  props.orderId
+ * @param {string}  props.clientId
+ * @param {boolean} [props.compact] one line, for the chat panel's order list
+ */
+export default function MetaTracking({ orderId, clientId, compact = false }) {
+  const qc = useQueryClient();
+  const toast = useToast();
   const { data, isLoading } = useQuery({
     queryKey: ['meta-events', orderId, clientId],
     queryFn: () => api
@@ -21,6 +31,18 @@ export default function MetaTracking({ orderId, clientId }) {
       .then(r => r.data.events),
     staleTime: 30_000,
     retry: false,
+  });
+
+  const retry = useMutation({
+    mutationFn: () => api
+      .post(`/plugins/meta/retry/${orderId}`, clientId ? { client_id: clientId } : {})
+      .then(r => r.data),
+    onSuccess: (r) => {
+      if (r.ok) toast.success('Reported to Meta');
+      else toast.error(r.note || r.failed?.[0]?.error || 'Meta would not accept it');
+      qc.invalidateQueries({ queryKey: ['meta-events', orderId] });
+    },
+    onError: (e) => toast.error(e?.response?.data?.error || 'Could not reach the server'),
   });
 
   if (isLoading) return null;
@@ -57,13 +79,42 @@ export default function MetaTracking({ orderId, clientId }) {
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   const anyError = rows.some(r => r.status === 'error');
 
+  const RetryButton = () => (
+    <button
+      onClick={() => retry.mutate()}
+      disabled={retry.isPending}
+      className="text-xs px-2 py-0.5 rounded-md border-0 cursor-pointer disabled:opacity-60"
+      style={{ background: 'rgba(239,68,68,0.12)', color: '#dc2626' }}
+      title="Send it again. Meta counts one sale once, so this cannot double-count."
+    >
+      {retry.isPending ? 'Sending…' : 'Retry'}
+    </button>
+  );
+
+  // One line, for the order list in the chat panel, where a full panel would
+  // crowd out the conversation.
+  if (compact) {
+    return (
+      <span className="flex items-center gap-1.5 text-xs shrink-0">
+        <span title={rows.map(r => `${r.event_name}: ${r.status === 'error' ? r.detail : 'reported'}`).join(' | ')}
+              style={{ color: anyError ? '#dc2626' : '#059669' }}>
+          {anyError ? '⚠ Meta' : '✓ Meta'}
+        </span>
+        {anyError && <RetryButton />}
+      </span>
+    );
+  }
+
   return (
     <div className="mb-3 p-3 rounded" style={{
       background: anyError ? 'rgba(239,68,68,0.08)' : 'rgba(16,185,129,0.08)',
       border: `1px solid ${anyError ? 'rgba(239,68,68,0.25)' : 'rgba(16,185,129,0.22)'}`,
     }}>
-      <div className="text-xs font-semibold mb-1.5" style={{ color: anyError ? '#dc2626' : '#059669' }}>
-        Meta ads tracking
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-xs font-semibold" style={{ color: anyError ? '#dc2626' : '#059669' }}>
+          Meta ads tracking
+        </span>
+        {anyError && <RetryButton />}
       </div>
 
       <div className="flex flex-col gap-1">

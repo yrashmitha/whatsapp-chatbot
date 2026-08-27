@@ -50,6 +50,7 @@ const {
   generateFollowUpMessage,
   syncMetaAudience,
   createMetaAudience,
+  metaEventsForOrder,
   recentMetaEvents,
 } = require('../controllers/plugins.controller');
 
@@ -99,6 +100,10 @@ router.get('/horoscope/download-porondam-docx/:orderId',        jwtAuth, require
 router.get('/horoscope/download-porondam-pdf/:orderId',         jwtAuth, requirePermission('reports.download'), orderScope, downloadPorondamPdf);
 router.post('/follow-up',                               jwtAuth, requirePermission('ai.followup_draft'), generateFollowUpMessage);
 router.get('/meta/recent-events',                       jwtAuth, requirePermission('settings.keys'), recentMetaEvents);
+// Readable by anyone who can see the order it belongs to - it reports on that
+// order and nothing else, and hiding it behind the key permission would keep it
+// from the operators who work the orders.
+router.get('/meta/events/:orderId',                     jwtAuth, requirePermission('orders.view'), metaEventsForOrder);
 router.post('/meta/sync-audience',                      jwtAuth, requirePermission('settings.keys'), syncMetaAudience);
 router.post('/meta/create-audience',                    jwtAuth, requirePermission('settings.keys'), createMetaAudience);
 

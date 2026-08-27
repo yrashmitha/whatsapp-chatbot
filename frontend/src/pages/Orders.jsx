@@ -19,6 +19,7 @@ import CreateOrderDrawer from '../components/chat/CreateOrderDrawer';
 import HoroscopeModal from '../components/orders/HoroscopeModal';
 import HoroscopeEditorDrawer from '../components/orders/HoroscopeEditorDrawer';
 import OrderRemarks from '../components/orders/OrderRemarks';
+import MetaTracking from '../components/orders/MetaTracking';
 import WaMessageModal from '../components/orders/WaMessageModal';
 import TarotGenerateModal from '../components/orders/TarotGenerateModal';
 import TarotEditorDrawer from '../components/orders/TarotEditorDrawer';
@@ -538,6 +539,10 @@ export default function Orders() {
                                 <div className="text-xs whitespace-pre-wrap" style={{ color: 'var(--text-2)' }}>{o.ai_summary}</div>
                               </div>
                             )}
+
+                            {/* Did Meta hear about this sale? Silent when there is
+                                nothing to report. */}
+                            <MetaTracking orderId={o.order_id} clientId={clientId} />
 
                             {/* Remarks — the operator's running log */}
                             <div className="mb-3">

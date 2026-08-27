@@ -1353,6 +1353,43 @@ async function syncMetaAudience(req, res) {
 }
 
 /**
+ * GET /api/plugins/meta/events/:orderId — what Meta was told about this order.
+ *
+ * The stored payload rather than a guess: the value shown is what was actually
+ * sent, which can differ from what the order says now if a price was corrected
+ * afterwards. That difference is worth seeing, not hiding.
+ */
+async function metaEventsForOrder(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    const { rows } = await db.pgQuery(
+      `SELECT event_name, status, detail, dataset_id, action_source, created_at,
+              (payload->'custom_data'->>'value')::numeric      AS value,
+              (payload->'user_data' ? 'ctwa_clid')             AS has_click
+         FROM meta_capi_log
+        WHERE client_id = $1 AND order_id = $2
+        ORDER BY created_at`,
+      [clientId, req.params.orderId]
+    );
+    res.json({
+      events: rows.map(r => ({
+        event_name:   r.event_name,
+        status:       r.status === 'test' ? 'ok' : r.status,
+        test:         r.status === 'test',
+        detail:       r.detail,
+        value:        r.value == null ? 0 : Number(r.value),
+        // Whether Meta can tie this sale to the ad click that started the chat.
+        messaging:    r.action_source === 'business_messaging' && r.has_click,
+        created_at:   r.created_at,
+      })),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
+
+/**
  * POST /api/plugins/meta/create-audience — create a new Meta Custom Audience and save its ID.
  */
 async function createMetaAudience(req, res) {
@@ -2067,6 +2104,7 @@ async function downloadPorondamPdf(req, res) {
 }
 
 module.exports = {
+  metaEventsForOrder,
   getPluginConfig, updatePluginConfig, getPluginCustomerData, generateAstroChart,
   analyzeAuraImage,
   aiPrepareHoroscope,

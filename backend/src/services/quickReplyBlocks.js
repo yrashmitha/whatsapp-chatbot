@@ -16,108 +16,6 @@
 
 const db = require('../db');
 
-/** @type {RegExp} Matches {{price}}, {{anchor}}, {{price:key}}, {{anchor:key}}. */
-const PRICE_TOKEN = /\{\{(price|anchor)(?::([a-z0-9_-]+))?\}\}/gi;
-
-/**
- * Format a figure the way the blocks already write it: 1500 -> "1,500".
- *
- * @param {number|string} n
- * @returns {string}
- */
-function money(n) {
-  const v = Number(n);
-  if (!Number.isFinite(v)) return '';
-  return v.toLocaleString('en-US');
-}
-
-/**
- * Put the figures into a block.
- *
- * A block selling one thing resolves the bare {{price}} and {{anchor}}. A block
- * offering more than one - porondam pitches two tiers in a single message - has
- * to name which, as {{price:porondam-full}}. A token naming a service the block
- * does not sell renders empty rather than leaving braces in a customer's
- * message, and is reported to the caller.
- *
- * @param {string} text
- * @param {Array<{key:string,price:number,anchor:number}>} services
- * @returns {{text: string, unresolved: string[]}}
- */
-function renderPrices(text, services) {
-  if (!text || !Array.isArray(services) || !services.length) {
-    return { text: text || '', unresolved: [] };
-  }
-  const byKey = new Map(services.map(s => [String(s.key).toLowerCase(), s]));
-  const unresolved = [];
-
-  const out = text.replace(PRICE_TOKEN, (whole, field, key) => {
-    const svc = key ? byKey.get(key.toLowerCase()) : services[0];
-    if (!svc) { unresolved.push(whole); return ''; }
-    const v = field.toLowerCase() === 'anchor' ? svc.anchor : svc.price;
-    if (v == null || v === '') { unresolved.push(whole); return ''; }
-    return money(v);
-  });
-
-  return { text: out, unresolved };
-}
-
-/**
- * Every service this client sells, across all their blocks.
- *
- * This is the list place_order offers the model, so the catalogue the bot can
- * record an order against is exactly the catalogue the customer was quoted
- * from. There is no second list to keep in step, which is the whole point.
- *
- * @param {string} clientId
- * @returns {Promise<Array<{key:string,label:string,price:number,anchor:number|null,block:string}>>}
- */
-async function servicesFor(clientId) {
-  if (!clientId || !db.IS_PG) return [];
-  const { rows } = await db.pgQuery(
-    `SELECT title, services FROM quick_replies
-      WHERE client_id=$1 AND jsonb_array_length(COALESCE(services,'[]'::jsonb)) > 0
-      ORDER BY title`,
-    [clientId]
-  ).catch(() => ({ rows: [] }));
-
-  const out = [];
-  const seen = new Set();
-  for (const row of rows) {
-    const list = Array.isArray(row.services) ? row.services : [];
-    for (const s of list) {
-      if (!s || !s.key) continue;
-      const key = String(s.key).toLowerCase();
-      // Two blocks claiming one key would make the price depend on which row
-      // came back first. First wins, and the duplicate is dropped rather than
-      // silently overriding a live price.
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push({
-        key,
-        label:  s.label || s.key,
-        price:  Number(s.price) || 0,
-        anchor: (s.anchor == null || s.anchor === '') ? null : (Number(s.anchor) || null),
-        block:  row.title,
-      });
-    }
-  }
-  return out;
-}
-
-/**
- * Price one service by key.
- *
- * @param {string} clientId
- * @param {string} key
- * @returns {Promise<{key:string,label:string,price:number,anchor:number|null,block:string}|null>}
- */
-async function serviceByKey(clientId, key) {
-  if (!key) return null;
-  const all = await servicesFor(clientId);
-  return all.find(s => s.key === String(key).toLowerCase()) || null;
-}
-
 /** @type {RegExp} Matches [[QR:title]], where a title may contain a dash. */
 const QR_REGEX = /\[\[QR:([a-z0-9_-]+)\]\]/gi;
 
@@ -139,19 +37,10 @@ async function resolveBlocks(clientId, text) {
   if (!wanted.length) return { text, used: [], missing: [] };
 
   const { rows } = await db.pgQuery(
-    'SELECT title, text, services FROM quick_replies WHERE client_id=$1 AND LOWER(title) = ANY($2)',
+    'SELECT title, text FROM quick_replies WHERE client_id=$1 AND LOWER(title) = ANY($2)',
     [clientId, wanted]
   );
-  // The figures live beside the block, not inside the sentence, so a reprice
-  // is one edit rather than nine. They are rendered here, as the message is
-  // built, for the same reason the block itself is.
-  const byTitle = new Map(rows.map(r => {
-    const { text: priced, unresolved } = renderPrices(r.text, r.services);
-    if (unresolved.length) {
-      console.warn(`[QR] ${clientId}/${r.title}: unresolved ${unresolved.join(', ')}`);
-    }
-    return [r.title.toLowerCase(), priced];
-  }));
+  const byTitle = new Map(rows.map(r => [r.title.toLowerCase(), r.text]));
 
   const used = [];
   const missing = [];
@@ -181,7 +70,4 @@ async function listBlockNames(clientId) {
   return rows.map(r => r.title);
 }
 
-module.exports = {
-  resolveBlocks, listBlockNames, renderPrices, servicesFor, serviceByKey, money,
-  QR_REGEX, PRICE_TOKEN,
-};
+module.exports = { resolveBlocks, listBlockNames, QR_REGEX };

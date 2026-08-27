@@ -20,6 +20,7 @@ import HoroscopeModal from '../components/orders/HoroscopeModal';
 import HoroscopeEditorDrawer from '../components/orders/HoroscopeEditorDrawer';
 import OrderRemarks from '../components/orders/OrderRemarks';
 import MetaTracking from '../components/orders/MetaTracking';
+import MetaRowMarker from '../components/orders/MetaRowMarker';
 import WaMessageModal from '../components/orders/WaMessageModal';
 import TarotGenerateModal from '../components/orders/TarotGenerateModal';
 import TarotEditorDrawer from '../components/orders/TarotEditorDrawer';
@@ -211,6 +212,21 @@ export default function Orders() {
   // Column count for colSpan
   const colCount = superAdmin ? 6 : 5;
 
+  // One request for the page rather than one per row. The ids come from the
+  // orders already loaded, so this follows whatever filter and page is showing.
+  const visibleOrderIds = (data?.orders || []).map(o => o.order_id).filter(Boolean);
+  const { data: metaStatusData } = useQuery({
+    queryKey: ['meta-statuses', clientId, visibleOrderIds.join(',')],
+    queryFn: () => api.get('/plugins/meta/statuses', {
+      params: { order_ids: visibleOrderIds.join(','), ...(clientId && { client_id: clientId }) },
+    }).then(r => r.data.statuses),
+    enabled: visibleOrderIds.length > 0,
+    staleTime: 30_000,
+    retry: false,
+  });
+  const metaStatuses = metaStatusData || {};
+
+
   return (
     <Layout>
       {lockModal}
@@ -315,7 +331,16 @@ export default function Orders() {
                   return (
                     <React.Fragment key={o.id}>
                       <tr className="border-b border-slate-100 hover:bg-slate-50">
-                        <td className="py-2.5 pr-4 text-slate-500 font-mono text-xs">#{o.order_id || o.id}</td>
+                        <td className="py-2.5 pr-4 text-slate-500 font-mono text-xs">
+                          <div className="flex items-center gap-1.5">
+                            <span>#{o.order_id || o.id}</span>
+                            {/* On the row, not inside the expansion: a sale Meta
+                                never heard about has to be visible while
+                                scanning the list, not after opening it. Carries
+                                its own Retry when the last attempt failed. */}
+                            <MetaRowMarker orderId={o.order_id} clientId={clientId} state={metaStatuses[o.order_id]} />
+                          </div>
+                        </td>
                         <td className="py-2.5 pr-4">
                           <button
                             onClick={() => setDrawerCustomer({ phone: o.phone || o.phone_number, name: o.customer_name || o.phone || o.phone_number })}

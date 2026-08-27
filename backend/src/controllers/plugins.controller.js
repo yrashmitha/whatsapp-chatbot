@@ -1390,6 +1390,45 @@ async function metaEventsForOrder(req, res) {
 }
 
 /**
+ * GET /api/plugins/meta/statuses?order_ids=a,b,c — one answer per order.
+ *
+ * The orders page shows fifty rows and each one wants to know whether its sale
+ * reached Meta. Asking per row is fifty requests to render one page, so the
+ * page asks once for everything it is about to draw.
+ *
+ * Latest attempt per event only: an event that failed and then succeeded on
+ * retry is not a failure, and marking it as one is how a warning becomes
+ * wallpaper.
+ */
+async function metaStatusesForOrders(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+
+  const ids = String(req.query.order_ids || '')
+    .split(',').map(x => x.trim()).filter(Boolean).slice(0, 200);
+  if (!ids.length) return res.json({ statuses: {} });
+
+  try {
+    const { rows } = await db.pgQuery(
+      `SELECT DISTINCT ON (order_id, event_name) order_id, event_name, status
+         FROM meta_capi_log
+        WHERE client_id = $1 AND order_id = ANY($2)
+        ORDER BY order_id, event_name, created_at DESC`,
+      [clientId, ids]
+    );
+
+    const statuses = {};
+    for (const r of rows) {
+      const cur = statuses[r.order_id] || (statuses[r.order_id] = { tracked: true, failed: 0 });
+      if (r.status === 'error') cur.failed++;
+    }
+    res.json({ statuses });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
+
+/**
  * GET /api/plugins/meta/summary?phone=... — one answer for a whole customer.
  *
  * The point of a summary is to be seen without being looked for, so it sits on
@@ -2203,6 +2242,7 @@ async function downloadPorondamPdf(req, res) {
 
 module.exports = {
   metaEventsForOrder,
+  metaStatusesForOrders,
   metaSummaryForCustomer,
   retryMetaEvents,
   getPluginConfig, updatePluginConfig, getPluginCustomerData, generateAstroChart,

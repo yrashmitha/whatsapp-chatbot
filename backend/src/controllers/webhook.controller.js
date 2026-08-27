@@ -217,6 +217,58 @@ function receiveWebhook(req, res) {
       // Note: WhatsApp Cloud API does not support typing indicators
       await new Promise(r => setTimeout(r, 1000 + Math.random() * 1500));
 
+      // Whether the bot may answer at all, decided before anything is
+      // dispatched on message type. This used to live below the text handling,
+      // so a photo or a PDF was answered whatever the switch said: the operator
+      // saw their typed conversation respected while the model kept replying to
+      // everything the customer sent as an attachment.
+      const botMayReply = await (async () => {
+        if (client.ai_enabled === false) return false;
+        return db.getCustomerAiEnabled(from, client.id);
+      })();
+
+      if (!botMayReply) {
+        // Store it so a person can answer in the CRM, labelled the way the
+        // branch below would have labelled it.
+        const label = msg.type === 'image'
+          ? `[Photo:${msg.image?.id || ''}]${msg.image?.caption ? ` ${msg.image.caption}` : ''}`
+          : msg.type === 'document'
+            ? `[Document: ${msg.document?.filename || 'file'}]`
+            : msg.type === 'audio'
+              ? '[Voice message]'
+              : (msg.text?.body || msg.interactive?.list_reply?.title
+                 || msg.interactive?.button_reply?.title || `[${msg.type}]`);
+        const mediaType = msg.type === 'image' ? 'image'
+          : msg.type === 'document' ? 'pdf'
+          : msg.type === 'audio' ? 'audio' : null;
+
+        await db.upsertCustomer(from, null, client.id);
+        await db.insertMessage(from, label, 'user', null, client.id, mediaType, null, msg.id);
+
+        // An away message is opt-in and only for the global switch: a chat an
+        // operator has taken over is being handled by a person, and telling
+        // that customer nobody is available would be false.
+        const away = client.ai_enabled === false ? (client.away_message || '').trim() : '';
+        if (away) {
+          const recent = await db.pgQuery(
+            `SELECT 1 FROM messages
+              WHERE client_id=$1 AND phone_number=$2 AND sender_type='bot'
+                AND message_text=$3 AND created_at > NOW() - INTERVAL '6 hours'
+              LIMIT 1`, [client.id, from, away]);
+          if (!recent.rows.length) {
+            await sendWhatsAppMessage(from, away, client);
+            await db.insertMessage(from, away, 'bot', null, client.id);
+            log.info(`[WEBHOOK] bot off - away message sent`);
+            return;
+          }
+        }
+        log.info(`[WEBHOOK] bot off for ${msg.type} - stored, nothing sent`);
+        return;
+      }
+
+      // The bot is going to read it, so the tick is honest.
+      markMessageRead(msg.id, client).catch(() => {});
+
       log.info(`[WEBHOOK] type=${msg.type}`);
 
       // ── Image messages ──────────────────────────────────────────────────────
@@ -536,45 +588,6 @@ function receiveWebhook(req, res) {
         return;
       }
 
-      // Global kill switch. Switching the bot off means it stops talking; the
-      // message is still stored so a person can answer it in the CRM. It used to
-      // reply "our assistant is currently unavailable" to every inbound message,
-      // which told a paying customer to go away, in English, once per message
-      // they sent.
-      if (client.ai_enabled === false) {
-        await db.upsertCustomer(from, null, client.id);
-        await db.insertMessage(from, userMessage, 'user', null, client.id, null, null, msg.id);
-
-        // An away message is opt-in and sent at most once every six hours: a
-        // customer who writes three times does not need telling three times.
-        const away = (client.away_message || '').trim();
-        if (away) {
-          const recent = await db.pgQuery(
-            `SELECT 1 FROM messages
-              WHERE client_id=$1 AND phone_number=$2 AND sender_type='bot'
-                AND message_text=$3 AND created_at > NOW() - INTERVAL '6 hours'
-              LIMIT 1`, [client.id, from, away]);
-          if (!recent.rows.length) {
-            await sendWhatsAppMessage(from, away, client);
-            await db.insertMessage(from, away, 'bot', null, client.id);
-            log.info(`[WEBHOOK] bot off — away message sent`);
-            return;
-          }
-        }
-        log.info(`[WEBHOOK] bot off — message stored, nothing sent`);
-        return;
-      }
-
-      // Check per-chat AI mode — if disabled, store message and skip Gemini
-      const aiEnabled = await db.getCustomerAiEnabled(from, client.id);
-      // The bot is about to read it, so now the tick is honest.
-      if (aiEnabled) markMessageRead(msg.id, client).catch(() => {});
-      if (!aiEnabled) {
-        await db.upsertCustomer(from, null, client.id);
-        await db.insertMessage(from, userMessage, 'user', null, client.id, null, null, msg.id);
-        log.info(`[WEBHOOK] AI disabled for this chat — message stored, no reply sent`);
-        return;
-      }
 
       // Package message limit check
       if (client.package_message_limit) {

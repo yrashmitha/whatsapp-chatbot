@@ -46,6 +46,12 @@ async function _getConfig(clientId) {
     accessToken: config.api_key,
     adAccountId: config.ad_account_id || '',
     audienceId:  config.audience_id   || '',
+    // Set only while verifying the setup. Events carrying a code land in Events
+    // Manager under Test Events and are kept out of attribution and
+    // optimisation, so a smoke test cannot teach the campaign about a sale that
+    // never happened. Left in by accident it would quietly exclude every real
+    // purchase, which is why fireCAPIEvent shouts about it on every send.
+    testEventCode: config.test_event_code || '',
   };
 }
 
@@ -116,7 +122,16 @@ async function fireCAPIEvent(clientId, eventName, phone, customData = {}) {
         custom_data:   data,
       }],
       access_token: cfg.accessToken,
+      ...(cfg.testEventCode && { test_event_code: cfg.testEventCode }),
     };
+
+    if (cfg.testEventCode) {
+      console.warn(
+        `[META-CAPI] TEST MODE (${cfg.testEventCode}) - this ${eventName} will show in `
+        + 'Test Events and will NOT count towards attribution or optimisation. '
+        + 'Clear test_event_code when you are done verifying.'
+      );
+    }
 
     const r = await axios.post(
       `https://graph.facebook.com/v18.0/${cfg.pixelId}/events`,
@@ -125,7 +140,7 @@ async function fireCAPIEvent(clientId, eventName, phone, customData = {}) {
     );
     const received = r.data.events_received;
     console.log(`[META-CAPI] ${eventName} sent for ...${phone.slice(-4)}: events_received=${received} value=${data.value || 0} click=${!!ctwaClid}`);
-    await _logEvent(clientId, eventName, phone, 'ok',
+    await _logEvent(clientId, eventName, phone, cfg.testEventCode ? 'test' : 'ok',
       `events_received=${received}${data.value > 0 ? ` LKR ${data.value}` : ' (no value on record)'}${ctwaClid ? ' +click' : ' (no click id, attribution will be weak)'}`);
   } catch (e) {
     const msg = e?.response?.data?.error?.message || e.message;

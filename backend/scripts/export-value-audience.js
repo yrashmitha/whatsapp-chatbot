@@ -169,12 +169,15 @@ async function readWwjs(url) {
 
   if (!people.length) { console.log('  no paying customers matched'); process.exit(0); }
 
-  const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const lines = ['phone,value,currency'];
+  // Meta's schema is phone and value, and nothing else. It states that a value
+  // column "must contain a numeric value only, without any currency
+  // characters" - so the currency is not a column, it is chosen in the upload
+  // dialog, and the number is written bare rather than quoted.
+  const lines = ['phone,value'];
   for (const p of people) {
     // E.164, which is the form Meta matches on. Sri Lankan numbers are stored
     // with the country code already, so this is a prefix rather than a rewrite.
-    lines.push([esc(`+${p.phone}`), esc(p.value), esc('LKR')].join(','));
+    lines.push(`+${p.phone},${Number(p.value) || 0}`);
   }
 
   fs.writeFileSync(OUT, lines.join('\n'), 'utf8');
@@ -193,6 +196,7 @@ async function readWwjs(url) {
   console.log('');
   console.log('  Ads Manager -> Audiences -> Create -> Customer list.');
   console.log('  Say yes when it asks whether the list includes a value column,');
+  console.log('  and set the currency to LKR in that dialog - it is not in the file.');
   console.log('  then build a 1% value-based lookalike from it.');
   console.log('  Delete the file afterwards - it is a list of customer phone numbers.');
   process.exit(0);

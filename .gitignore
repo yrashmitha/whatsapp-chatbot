@@ -9,3 +9,7 @@ pj-migration-values.md
 
 # stray local test asset
 backend/src/assets/test.jpeg
+
+# Customer phone lists exported for Meta audiences — never commit
+value-audience.csv
+facebook_audience.csv

@@ -50,6 +50,16 @@ const OUT  = arg('--out', path.join(process.cwd(), 'value-audience.csv'));
 const WWJS = arg('--wwjs', process.env.WWJS_DATABASE_URL || '');
 const MIN = parseFloat(arg('--min-value', '0')) || 0;
 
+// What a customer is worth when no price was ever recorded against their order.
+//
+// 258 of 437 have no price - the price field only started being filled on
+// 27 Aug 2026, and 280 of those orders predate the 25 Aug reprice. They are
+// real sales, so leaving them at 0 understates them; but they outnumber the
+// priced ones, so whatever goes here is what the audience is mostly weighted
+// by. For reference the known orders run 990 x71, 2990 x43, 1500 x34,
+// 3490 x34, mean 2057, median 1500.
+const DEFAULT_VALUE = parseFloat(arg('--default-value', '2990')) || 0;
+
 
 /**
  * Paying customers from the old wwjs system.
@@ -162,6 +172,17 @@ async function readWwjs(url) {
     }
   }
 
+  // Stand in for the sales whose price was never recorded, so they are not
+  // treated as worthless next to the ones that were.
+  let estimated = 0;
+  for (const v of merged.values()) {
+    if (!(v.value > 0) && DEFAULT_VALUE > 0) {
+      v.value = DEFAULT_VALUE * Math.max(1, v.orders);
+      v.estimated = true;
+      estimated++;
+    }
+  }
+
   const people = [...merged.entries()]
     .map(([phone, v]) => ({ phone, ...v }))
     .filter(p => p.value >= MIN)
@@ -187,7 +208,12 @@ async function readWwjs(url) {
   const repeat = people.filter(p => p.orders > 1).length;
 
   console.log(`  ${people.length} paying customers -> ${OUT}`);
-  console.log(`     ${withValue} carry a value, ${people.length - withValue} are 0 (no price on record)`);
+  const real = people.filter(p => !p.estimated).length;
+  console.log(`     ${real} priced from their orders, ${estimated} estimated at Rs ${DEFAULT_VALUE} each`);
+  if (estimated > real) {
+    console.log(`     note: more are estimated than known, so the weighting mostly reflects`);
+    console.log(`           that estimate. --default-value 1500 is the median of the known ones.`);
+  }
   console.log(`     ${repeat} have bought more than once`);
   console.log(`     total Rs ${total.toLocaleString()}`);
   if (WWJS) {

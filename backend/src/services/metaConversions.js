@@ -29,7 +29,22 @@ function hashPhone(phone) {
  * are not sent.
  */
 function buildUserData(phone) {
-  return { ph: [hashPhone(phone)] };
+  const digits = (phone || '').replace(/\D/g, '');
+  const userData = { ph: [hashPhone(phone)] };
+
+  // Every extra identifier lifts the match quality score, and the score is not
+  // cosmetic: it is how confidently Meta ties a sale to the person who saw the
+  // ad, and therefore how well it can optimise. A hashed phone on its own
+  // scores badly.
+  //
+  // The country is free - a Sri Lankan number begins 94 - and external_id lets
+  // Meta recognise a returning customer across events without knowing who they
+  // are. Neither says anything about the person that the phone number did not
+  // already say.
+  if (digits.startsWith('94')) userData.country = [hashStr('lk')];
+  if (digits) userData.external_id = [hashStr(digits)];
+
+  return userData;
 }
 
 /**

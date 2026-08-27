@@ -210,6 +210,12 @@ async function fireCAPIEvent(clientId, eventName, phone, customData = {}) {
         // what happened rather than tracking Meta's naming.
         event_name:    (messaging && eventName === 'Lead') ? 'LeadSubmitted' : eventName,
         event_time:    Math.floor(Date.now() / 1000),
+        // Meta deduplicates on event_id, and without one every send counts as
+        // another sale. A webhook retry, a status set twice, or a re-fire while
+        // testing would each invent a purchase that never happened and teach
+        // the campaign to chase it. One order can only be sold once, so the
+        // order id and the event name are exactly the right key.
+        ...(data.order_id && { event_id: `${eventName}:${data.order_id}` }),
         // A conversion that happened in a chat, not on a website.
         //
         // business_messaging is the accurate value and the one that lets a

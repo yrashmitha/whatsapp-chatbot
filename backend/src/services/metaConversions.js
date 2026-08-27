@@ -169,16 +169,55 @@ async function syncAudienceForClient(clientId) {
       ];
     });
 
-    const resp = await axios.post(
-      `https://graph.facebook.com/v18.0/${cfg.audienceId}/users`,
-      { payload: { schema, data }, access_token: cfg.accessToken },
-      { headers: { 'Content-Type': 'application/json' } }
-    );
+    let resp;
+    try {
+      resp = await axios.post(
+        `https://graph.facebook.com/v18.0/${cfg.audienceId}/users`,
+        { payload: { schema, data }, access_token: cfg.accessToken },
+        { headers: { 'Content-Type': 'application/json' } }
+      );
+    } catch (e) {
+      throw metaError(e, `Could not add customers to audience ${cfg.audienceId}`);
+    }
     totalReceived += resp.data.num_received || batch.length;
     console.log(`[META-AUDIENCE] Batch ${Math.floor(i / BATCH_SIZE) + 1}: received=${resp.data.num_received} invalid=${resp.data.num_invalid_entries || 0}`);
   }
 
   return { synced: totalReceived, total: rows.length };
+}
+
+/**
+ * Turn an axios failure into what Meta said was wrong.
+ *
+ * Without this the caller gets "Request failed with status code 400", which
+ * names the status and not the cause. Meta puts a usable sentence in
+ * error.message, and error_user_msg when it has one written for a human.
+ *
+ * The permission case is called out by name because it is both the likeliest
+ * failure and the least obvious: a Conversions API token is scoped to the
+ * dataset, while creating or filling an audience is an ad account operation.
+ * The same token that sends events happily will refuse this.
+ *
+ * @param {Error} e
+ * @param {string} what the operation being attempted, for the message
+ * @returns {Error}
+ */
+function metaError(e, what) {
+  const err = e?.response?.data?.error;
+  if (!err) return e;
+
+  const bits = [err.error_user_msg || err.message].filter(Boolean);
+  if (err.code === 200 || err.code === 10 || err.type === 'OAuthException') {
+    bits.push(
+      'This usually means the access token is not permitted to do this. A '
+      + 'Conversions API token generated in Events Manager can send events but '
+      + 'cannot manage audiences - that needs a token with ads_management on '
+      + 'the ad account, and the Custom Audience terms accepted for it.'
+    );
+  }
+  const out = new Error(`${what}: ${bits.join(' ')}`);
+  out.statusCode = e?.response?.status === 400 ? 400 : (e?.response?.status || 500);
+  return out;
 }
 
 /**
@@ -192,17 +231,22 @@ async function createAudienceForClient(clientId, audienceName) {
   if (!adAccountId)  throw new Error('ad_account_id not configured');
   if (!adAccountId.startsWith('act_')) adAccountId = `act_${adAccountId}`;
 
-  const r = await axios.post(
-    `https://graph.facebook.com/v18.0/${adAccountId}/customaudiences`,
-    {
-      name:                 audienceName || 'WhatsApp Bot Customers',
-      description:          'Customers from WhatsApp chatbot — auto-synced',
-      subtype:              'CUSTOM',
-      customer_file_source: 'USER_PROVIDED_ONLY',
-      access_token:         accessToken,
-    },
-    { headers: { 'Content-Type': 'application/json' } }
-  );
+  let r;
+  try {
+    r = await axios.post(
+      `https://graph.facebook.com/v18.0/${adAccountId}/customaudiences`,
+      {
+        name:                 audienceName || 'WhatsApp Bot Customers',
+        description:          'Customers from WhatsApp chatbot — auto-synced',
+        subtype:              'CUSTOM',
+        customer_file_source: 'USER_PROVIDED_ONLY',
+        access_token:         accessToken,
+      },
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+  } catch (e) {
+    throw metaError(e, `Could not create the audience in ${adAccountId}`);
+  }
   const audienceId = r.data.id;
 
   await db.upsertPluginConfig(clientId, 'meta_conversions', { ...config, audience_id: audienceId });

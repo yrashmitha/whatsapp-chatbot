@@ -594,6 +594,13 @@ async function init() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS idx_quick_replies_client ON quick_replies (client_id, sort_order);
+      -- What a block sells, and for how much. An array of
+      -- {key, label, price, anchor}: key is what place_order records, label is
+      -- what a human reads, price is what the sale is worth, anchor is the
+      -- struck-through "usual" figure. Most blocks sell one thing; porondam
+      -- offers two tiers in one message, so it is a list. Empty for the blocks
+      -- that are not a pitch at all.
+      ALTER TABLE quick_replies ADD COLUMN IF NOT EXISTS services JSONB NOT NULL DEFAULT '[]'::jsonb;
     `);
 
     // ── AI Call Answering ─────────────────────────────────────────────────────

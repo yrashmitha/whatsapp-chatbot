@@ -78,6 +78,44 @@ function parseSlipAmount(raw) {
 /** @type {RegExp} Matches [[PAYMENT_IDENTIFIED:{...}]] markers */
 const PAYMENT_IDENTIFIED_REGEX = /\[\[PAYMENT_IDENTIFIED:([\s\S]*?)\]\]/;
 /**
+ * Freeze what an order is worth onto the order itself.
+ *
+ * Reads details.package, looks the service up in the blocks, and writes items[]
+ * - the shape the income page, the commission scheme and the Conversions API
+ * already read. Nothing downstream changes.
+ *
+ * Frozen deliberately. Prices change, and an order has to stay worth what it
+ * was sold for: repricing in September must not rewrite August's revenue or the
+ * commission already paid against it.
+ *
+ * An unknown or absent package leaves the order alone. It is then worth nothing
+ * until a slip arrives, which is honest - better a missing figure than one
+ * invented from a stale list.
+ *
+ * @param {string} clientId
+ * @param {object} details mutated in place
+ * @returns {Promise<void>}
+ */
+async function priceOrderDetails(clientId, details) {
+  if (!clientId || !details || !details.package) return;
+  try {
+    const svc = await quickReplyBlocks.serviceByKey(clientId, details.package);
+    if (!svc) {
+      log.warn(`[ORDER] package "${details.package}" is not a service any block sells`);
+      return;
+    }
+    if (!(svc.price > 0)) {
+      log.warn(`[ORDER] service "${svc.key}" has no price set on block ${svc.block}`);
+      return;
+    }
+    details.items = [{ name: svc.label, price: svc.price, product_id: svc.key }];
+    log.info(`[ORDER] priced as ${svc.key} = LKR ${svc.price} (from block ${svc.block})`);
+  } catch (e) {
+    log.warn('[ORDER] could not price the order:', e.message);
+  }
+}
+
+/**
  * Generate a unique order ID in the format <PREFIX><YEAR>-<NNNN>.
  *
  * @param {Object|null} client - Client config object (provides order_id_prefix)
@@ -305,6 +343,28 @@ async function buildChatSession(phoneNumber, client) {
       type: 'STRING',
       description: 'A short internal note for the team: what the customer wants, which package, anything unusual. Never shown to the customer.',
     };
+
+    // Which service was agreed. Offered only when the client's blocks define
+    // services, so the list the model chooses from is the same list the
+    // customer was quoted from and cannot drift from it.
+    //
+    // The model names a key. It never states a price: it was still quoting
+    // 3,490 from memory two days after that price was withdrawn, and a
+    // hallucinated figure would flow straight into payroll and into what
+    // Meta optimises on. The figure is looked up from the block below.
+    const services = await quickReplyBlocks.servicesFor(client?.id).catch(() => []);
+    if (services.length) {
+      properties.package = {
+        type: 'STRING',
+        format: 'enum',
+        enum: services.map(s => s.key),
+        description:
+          'Which service the customer agreed to buy. Required once they have '
+          + 'agreed. Pick the key whose block you sent them: '
+          + services.map(s => `"${s.key}" = ${s.label}`).join('; ')
+          + '. Never state or guess a price yourself - the price comes from the block.',
+      };
+    }
     const placeOrderDecl = {
       name: 'place_order',
       description: 'Record the customer\'s order. Call this the moment the customer has confirmed their details are correct, and only then. Call it exactly once per customer. Pass every detail you collected. The customer sees nothing when you call it, so continue the conversation normally afterwards.',
@@ -655,6 +715,11 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
         } else {
           try {
             const details = { ...fc.args };
+            // Freeze what the sale was worth, from the block the customer was
+            // quoted from. Frozen because prices change: repricing next month
+            // must not rewrite what last month's orders were worth, or what
+            // commission was already paid on them.
+            await priceOrderDetails(client?.id, details);
             toolOrderId = await generateOrderId(client);
             await db.insertOrder(toolOrderId, phoneNumber, client?.id ?? null, details);
             log.info(`[ORDER] place_order created ${toolOrderId}`);
@@ -868,6 +933,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     }
 
     if (details) {
+      await priceOrderDetails(client?.id, details);
       orderId = await generateOrderId(client);
       await db.insertOrder(orderId, phoneNumber, client?.id ?? null, details);
       log.info(`[ORDER] Saved order ${orderId}`);

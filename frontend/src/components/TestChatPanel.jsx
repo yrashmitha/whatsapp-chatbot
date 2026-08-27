@@ -212,24 +212,36 @@ export default function TestChatPanel({ clientId, sessionId, onSessionReset }) {
               </p>
             )}
 
-            {messages.map((m, i) => {
+            {messages.flatMap((m, i) => {
               const mine = m.sender_type === 'user';
-              return (
-                <div key={i} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+              // The sender splits a reply on [[MSG_BREAK]] and delivers each
+              // part as its own WhatsApp message. Test Chat has to do the same
+              // or it shows one bubble with the marker in it, which is neither
+              // what the model wrote nor what a customer receives.
+              const parts = String(m.message_text || '')
+                .split('[[MSG_BREAK]]').map(p => p.trim()).filter(Boolean);
+              const bubbles = parts.length ? parts : [''];
+              return bubbles.map((part, j) => (
+                <div key={`${i}-${j}`} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
                   <div
                     className={`max-w-[78%] px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap leading-relaxed ${
                       mine ? 'bg-violet-600 text-white rounded-br-sm' : 'bg-slate-100 text-slate-800 rounded-bl-sm'
                     }`}
                   >
-                    {m.message_text}
-                    {m.media_type && (
+                    {part}
+                    {bubbles.length > 1 && (
+                      <span className={`block mt-1 text-[10px] ${mine ? 'text-violet-200' : 'text-slate-400'}`}>
+                        message {j + 1} of {bubbles.length}
+                      </span>
+                    )}
+                    {m.media_type && j === bubbles.length - 1 && (
                       <span className={`block mt-1 text-[10px] ${mine ? 'text-violet-200' : 'text-slate-400'}`}>
                         [{m.media_type}]
                       </span>
                     )}
                   </div>
                 </div>
-              );
+              ));
             })}
 
             {sendMutation.isPending && (

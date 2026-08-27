@@ -184,9 +184,22 @@ async function sendMessage(req, res) {
     ).catch(() => {});
 
     if (type === 'text') {
-      const wamid = await sendWhatsAppMessage(phone, message, client);
+      // A quick reply may carry [[MSG_BREAK]], the same marker the bot uses to
+      // send one answer as several bubbles: bank details, then the account
+      // number on its own so it is easy to copy. Each part is a real message to
+      // WhatsApp, so each gets its own row and its own wamid, or the thread and
+      // the delivery ticks would describe something the customer never received.
+      const parts = message.split('[[MSG_BREAK]]').map(p => p.trim()).filter(Boolean);
       await ownership.pauseForManualReply(clientId, phone, req.user?.uid ?? null);
-      await db.insertMessage(phone, message, 'bot', null, clientId, null, null, wamid, null, { sentBy: req.user?.uid ?? null, sentManual: true });
+      for (let i = 0; i < parts.length; i++) {
+        // The bot leaves the same gap. Sent back to back they arrive out of
+        // order often enough to matter, and the account number arriving before
+        // the bank details is worse than a moment's wait.
+        if (i > 0) await new Promise(r => setTimeout(r, 800));
+        const wamid = await sendWhatsAppMessage(phone, parts[i], client);
+        await db.insertMessage(phone, parts[i], 'bot', null, clientId, null, null, wamid, null,
+                               { sentBy: req.user?.uid ?? null, sentManual: true });
+      }
     } else if (type === 'image' && mediaUrl) {
       const imgResp = await axios.post(
         `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,

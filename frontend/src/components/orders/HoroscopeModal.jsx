@@ -652,8 +652,14 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
             <label className={labelCls}>Package</label>
             <div className="flex flex-wrap gap-3">
               {[
-                { value: '2990', label: 'Rs. 2990', badge: 'Basic' },
-                { value: '3490', label: 'Rs. 3490', badge: quantumFeatureEnabled ? '+ Aura & Quantum' : null },
+                // Labels name the depth of the report, not a price. These used
+                // to read "Rs. 2990" and "Rs. 3490", which stopped being true at
+                // the reprice and is not this control's business anyway - what
+                // the customer pays is settled on the order, from the block they
+                // were quoted from. The values stay as they are; the backend
+                // keys report depth off them.
+                { value: '2990', label: 'Basic', badge: null },
+                { value: '3490', label: 'Full', badge: quantumFeatureEnabled ? '+ Aura & Quantum' : null },
               ].map(({ value, label, badge }) => (
                 <label key={value} className="flex items-center gap-2 cursor-pointer">
                   <input

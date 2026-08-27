@@ -680,7 +680,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
           <div className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-slate-50">
             <div>
               <p className="text-sm font-medium text-slate-700">Aura &amp; Quantum Feature</p>
-              <p className="text-xs text-slate-400 mt-0.5">When off, the Rs. 3490 package option is hidden and no Aura/Quantum analysis is run.</p>
+              <p className="text-xs text-slate-400 mt-0.5">When off, the Full report option is hidden and no Aura/Quantum analysis is run.</p>
             </div>
             <button
               type="button"

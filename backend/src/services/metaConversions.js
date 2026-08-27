@@ -101,11 +101,22 @@ async function _getConfig(clientId) {
   const accessToken = waDataset ? waToken : config.api_key;
   if (!pixelId || !accessToken) return null;
 
+  // A second dataset to copy the conversion into, when the configured one is
+  // not the one already being used. It exists because the WhatsApp dataset can
+  // be invisible to the ad account that spends the money - they sit in
+  // different business portfolios, and Meta bars a new portfolio from sharing
+  // assets for the first few weeks. A conversion no campaign can read is worth
+  // nothing, so it is reported twice.
+  const mirror = (config.pixel_id && config.api_key && config.pixel_id !== pixelId)
+    ? { pixelId: config.pixel_id, accessToken: config.api_key }
+    : null;
+
   return {
     pixelId,
     accessToken,
     adAccountId: config.ad_account_id || '',
     audienceId:  config.audience_id   || '',
+    mirror,
     // Set only while verifying the setup. Events carrying a code land in Events
     // Manager under Test Events and are kept out of attribution and
     // optimisation, so a smoke test cannot teach the campaign about a sale that
@@ -230,6 +241,34 @@ async function fireCAPIEvent(clientId, eventName, phone, customData = {}) {
       { headers: { 'Content-Type': 'application/json' } }
     );
     const received = r.data.events_received;
+
+    // The same sale, to the dataset the ad account can see. That dataset has no
+    // WhatsApp Business Account attached and rejects business_messaging, so it
+    // goes as 'other'. The click id, the value and the currency are unchanged.
+    if (cfg.mirror) {
+      const copy = JSON.parse(JSON.stringify(payload.data[0]));
+      copy.event_name = eventName;
+      copy.action_source = 'other';
+      delete copy.messaging_channel;
+      delete copy.user_data.whatsapp_business_account_id;
+      await axios.post(
+        `https://graph.facebook.com/v18.0/${cfg.mirror.pixelId}/events`,
+        {
+          data: [copy],
+          access_token: cfg.mirror.accessToken,
+          ...(cfg.testEventCode && { test_event_code: cfg.testEventCode }),
+        },
+        { headers: { 'Content-Type': 'application/json' } }
+      ).then(() => {
+        console.log(`[META-CAPI] mirrored ${eventName} to ${cfg.mirror.pixelId}`);
+      }).catch((e) => {
+        // The mirror is a convenience, not the record. A dataset that refuses
+        // it must not take the real conversion down with it.
+        const err = e?.response?.data?.error;
+        console.warn(`[META-CAPI] mirror to ${cfg.mirror.pixelId} failed:`,
+          err?.error_user_msg || err?.message || e.message);
+      });
+    }
     console.log(`[META-CAPI] ${eventName} sent for ...${phone.slice(-4)}: events_received=${received} value=${data.value || 0} click=${!!ctwaClid} waba=${!!wabaId}`);
     await _logEvent(clientId, eventName, phone, cfg.testEventCode ? 'test' : 'ok',
       `events_received=${received}${data.value > 0 ? ` LKR ${data.value}` : ' (no value on record)'}${ctwaClid ? ' +click' : ' (no click id, attribution will be weak)'}`);

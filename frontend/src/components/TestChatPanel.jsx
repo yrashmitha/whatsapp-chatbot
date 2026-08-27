@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { formatWhatsApp } from '../lib/whatsappFormat';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../lib/api';
 import Button from './ui/Button';
@@ -228,7 +229,7 @@ export default function TestChatPanel({ clientId, sessionId, onSessionReset }) {
                       mine ? 'bg-violet-600 text-white rounded-br-sm' : 'bg-slate-100 text-slate-800 rounded-bl-sm'
                     }`}
                   >
-                    {part}
+                    {formatWhatsApp(part)}
                     {bubbles.length > 1 && (
                       <span className={`block mt-1 text-[10px] ${mine ? 'text-violet-200' : 'text-slate-400'}`}>
                         message {j + 1} of {bubbles.length}

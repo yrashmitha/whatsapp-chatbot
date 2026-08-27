@@ -1,6 +1,7 @@
 import { formatMessageTime } from '../../lib/utils';
 import ExtractedReading from './ExtractedReading';
 import AdReferral from './AdReferral';
+import { formatWhatsApp } from '../../lib/whatsappFormat';
 
 
 /**
@@ -11,46 +12,7 @@ import AdReferral from './AdReferral';
  * non-space character, which is what stops a lone asterisk in ordinary prose
  * from swallowing the rest of the line.
  */
-const WA_BOUNDARY = '\\s.,;:!?()\\[\\]{}"\\u2018\\u2019\\u201c\\u201d\\n';
-const WA_RE = new RegExp(
-  '(^|[' + WA_BOUNDARY + '])' +   // start, whitespace or punctuation before it
-  '([*_~`])' +                    // the mark
-  '(?![\\s])' +                   // no space straight after the opening mark
-  '([^\\n]*?[^\\s])' +            // the content, ending on a non-space
-  '\\2' +                         // the same mark again
-  '(?=$|[' + WA_BOUNDARY + '])',  // end, whitespace or punctuation after it
-  'g'
-);
 
-const WA_TAGS = { '*': 'strong', _: 'em', '~': 's', '`': 'code' };
-
-function formatWhatsApp(text) {
-  if (!text) return text;
-
-  const out = [];
-  let last = 0;
-  let key = 0;
-
-  for (const m of text.matchAll(WA_RE)) {
-    const [full, lead, mark, inner] = m;
-    const markStart = m.index + lead.length;
-
-    // Everything up to and including the boundary character stays as text.
-    if (markStart > last) out.push(text.slice(last, markStart));
-
-    const Tag = WA_TAGS[mark];
-    out.push(
-      Tag === 'code'
-        ? <code key={key++} className="font-mono text-[0.9em]">{inner}</code>
-        : <Tag key={key++}>{inner}</Tag>
-    );
-    last = m.index + full.length;
-  }
-
-  if (!out.length) return text;
-  if (last < text.length) out.push(text.slice(last));
-  return out;
-}
 
 /**
  * Delivery state of an outbound message, drawn the way WhatsApp draws it so it

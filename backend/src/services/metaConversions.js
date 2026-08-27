@@ -32,6 +32,41 @@ function buildUserData(phone) {
   return { ph: [hashPhone(phone)] };
 }
 
+/**
+ * Ask Meta for the dataset attached to this client's WhatsApp Business Account.
+ *
+ * POST /{waba_id}/dataset is retrieve-or-create: it returns the existing one if
+ * there is one and makes it if there is not, so calling it is idempotent. The
+ * answer is cached on the client so this is a one-off per client rather than a
+ * round trip on every sale.
+ *
+ * Returns null on any failure, which drops the caller back to whatever is
+ * configured in the plugin rather than dropping the event.
+ *
+ * @param {string} clientId
+ * @param {{waba_id: string, wa_token: string}} row
+ * @returns {Promise<string|null>}
+ */
+async function _resolveWaDataset(clientId, row) {
+  try {
+    const r = await axios.post(
+      `https://graph.facebook.com/v18.0/${row.waba_id}/dataset`,
+      {},
+      { params: { access_token: row.wa_token } }
+    );
+    const id = r.data?.id;
+    if (!id) return null;
+    await db.pgQuery('UPDATE client_configs SET wa_dataset_id=$1 WHERE client_id=$2',
+      [id, clientId]).catch(() => {});
+    console.log(`[META-CAPI] ${clientId}: WhatsApp dataset is ${id}`);
+    return id;
+  } catch (e) {
+    console.warn(`[META-CAPI] ${clientId}: could not resolve the WhatsApp dataset:`,
+      e?.response?.data?.error?.message || e.message);
+    return null;
+  }
+}
+
 async function _getConfig(clientId) {
   if (!db.IS_PG) return null;
   const addonCheck = await db.pgQuery(
@@ -40,10 +75,35 @@ async function _getConfig(clientId) {
   );
   if (!addonCheck.rows.length) return null;
   const config = await db.getPluginConfig(clientId, 'meta_conversions');
-  if (!config.pixel_id || !config.api_key) return null;
+
+  // A click-to-WhatsApp conversion belongs to the dataset attached to the
+  // WhatsApp Business Account. A dataset created by hand in Events Manager
+  // has no WABA linked and Meta rejects business_messaging events sent to
+  // it outright. POST /{waba_id}/dataset is retrieve-or-create, so asking
+  // for it is cheap and always correct, and it needs the WhatsApp token -
+  // the Events Manager token cannot see that dataset at all.
+  //
+  // The plugin's own pixel_id and api_key stay as an override, for a client
+  // sending conversions from somewhere that is not WhatsApp.
+  let waDataset = null;
+  let waToken   = null;
+  const w = await db.pgQuery(
+    'SELECT waba_id, wa_token, wa_dataset_id FROM client_configs WHERE client_id=$1',
+    [clientId]
+  ).catch(() => ({ rows: [] }));
+  const row = w.rows[0];
+  if (row?.waba_id && row?.wa_token) {
+    waToken = row.wa_token;
+    waDataset = row.wa_dataset_id || await _resolveWaDataset(clientId, row);
+  }
+
+  const pixelId     = waDataset || config.pixel_id;
+  const accessToken = waDataset ? waToken : config.api_key;
+  if (!pixelId || !accessToken) return null;
+
   return {
-    pixelId:     config.pixel_id,
-    accessToken: config.api_key,
+    pixelId,
+    accessToken,
     adAccountId: config.ad_account_id || '',
     audienceId:  config.audience_id   || '',
     // Set only while verifying the setup. Events carrying a code land in Events
@@ -117,7 +177,15 @@ async function fireCAPIEvent(clientId, eventName, phone, customData = {}) {
       const v = orderValue(r.rows[0]?.custom_fields);
       if (v > 0) data.value = v;
     }
-    if (parseFloat(data.value) > 0 && !data.currency) data.currency = 'LKR';
+    // Meta requires a currency on every Purchase, including one worth nothing:
+    // "Your purchase event doesn't include a currency parameter." Attaching it
+    // only alongside a known value meant that an order with no price on record
+    // was rejected outright rather than counted as a conversion without an
+    // amount, which is the more useful of the two.
+    if (eventName === 'Purchase' || parseFloat(data.value) > 0) {
+      if (!data.currency) data.currency = 'LKR';
+      if (!(parseFloat(data.value) > 0)) data.value = 0;
+    }
 
     const payload = {
       data: [{
@@ -158,7 +226,11 @@ async function fireCAPIEvent(clientId, eventName, phone, customData = {}) {
     await _logEvent(clientId, eventName, phone, cfg.testEventCode ? 'test' : 'ok',
       `events_received=${received}${data.value > 0 ? ` LKR ${data.value}` : ' (no value on record)'}${ctwaClid ? ' +click' : ' (no click id, attribution will be weak)'}`);
   } catch (e) {
-    const msg = e?.response?.data?.error?.message || e.message;
+    // Meta puts the generic "Invalid parameter" in message and the sentence
+    // that actually says what is wrong in error_user_msg. Keeping only the
+    // former is how a rejected event looks like an unexplained failure.
+    const err = e?.response?.data?.error;
+    const msg = [err?.error_user_msg, err?.message].filter(Boolean).join(' | ') || e.message;
     console.warn(`[META-CAPI] Failed to send ${eventName} for ...${phone.slice(-4)}:`, msg);
     await _logEvent(clientId, eventName, phone, 'error', msg);
   }

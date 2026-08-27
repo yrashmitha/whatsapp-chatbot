@@ -600,6 +600,10 @@ async function init() {
       -- it, but it arrives on every inbound webhook, so it is captured
       -- there rather than typed.
       ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS waba_id TEXT;
+      -- The dataset Meta attaches to that WABA, which is the only one that
+      -- accepts click-to-WhatsApp conversions. Cached after the first
+      -- retrieve-or-create so it is not asked for on every sale.
+      ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS wa_dataset_id TEXT;
     `);
 
     // ── AI Call Answering ─────────────────────────────────────────────────────

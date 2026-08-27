@@ -8,6 +8,7 @@
 'use strict';
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const quickReplyBlocks = require('./quickReplyBlocks');
 const db           = require('../db');
 const buildSystemInstruction = require('./buildInstruction');
 const { buildOrderFieldsInstruction, buildContactInstruction } = require('./buildInstruction');
@@ -476,6 +477,11 @@ function historyTextFor(m) {
   if (!menu) return text;
   if (typeof menu === 'string') { try { menu = JSON.parse(menu); } catch { return text; } }
   if (!menu?.id) return text;
+  // A named block is replayed as its name. The model wrote [[QR:2990]], not
+  // nine hundred characters of Sinhala, and showing it the words instead
+  // teaches it to type them out by hand next time. That is how the menus
+  // broke: their bodies were stored as prose and the model copied them.
+  if (menu.kind === 'quick_reply') return `[[QR:${menu.id}]]`;
   const kind = menu.kind === 'buttons' ? 'BUTTONS' : 'LIST';
   return `${text}\n[[${kind}:${menu.id}]]`;
 }
@@ -988,6 +994,25 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     try {
       botReply = await _pluginForMarkers.processMarkers(botReply, client, { phoneNumber, db, orderId: null });
     } catch (e) { console.error(`[PLUGIN] processMarkers error for ${client?.id}:`, e.message); }
+  }
+
+  // Swap [[QR:title]] for the block it names, before anything else looks at
+  // the text. The words then travel as ordinary message content: they are sent,
+  // stored and shown exactly as if the model had written them, which is what
+  // keeps the CRM honest about what the customer received.
+  let usedBlocks = [];
+  try {
+    const resolved = await quickReplyBlocks.resolveBlocks(client?.id, botReply);
+    if (resolved.missing.length) {
+      log.warn(`[QR] no block named ${resolved.missing.join(', ')} for ${client?.id}`);
+    }
+    if (resolved.used.length || resolved.missing.length) {
+      botReply = resolved.text;
+      usedBlocks = resolved.used;
+      if (resolved.used.length) log.info(`[QR] sent block(s): ${resolved.used.join(', ')}`);
+    }
+  } catch (e) {
+    log.error('[QR] could not resolve a block:', e.message);
   }
 
   // Strip [[MSG_BREAK]] markers before saving to DB (clean single text for history)

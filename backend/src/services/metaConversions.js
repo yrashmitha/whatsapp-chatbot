@@ -187,9 +187,17 @@ async function fireCAPIEvent(clientId, eventName, phone, customData = {}) {
       if (!(parseFloat(data.value) > 0)) data.value = 0;
     }
 
+    // Everything business_messaging needs, present together or not at all.
+    const messaging = Boolean(ctwaClid && wabaId);
+
     const payload = {
       data: [{
-        event_name:    eventName,
+        // Messaging conversions use their own vocabulary. Meta rejects "Lead"
+        // outright under business_messaging - "Provide a valid value ... such
+        // as 'Purchase' or 'LeadSubmitted'" - so the name is translated here
+        // rather than at the two call sites, which should go on describing
+        // what happened rather than tracking Meta's naming.
+        event_name:    (messaging && eventName === 'Lead') ? 'LeadSubmitted' : eventName,
         event_time:    Math.floor(Date.now() / 1000),
         // A conversion that happened in a chat, not on a website.
         //
@@ -199,8 +207,8 @@ async function fireCAPIEvent(clientId, eventName, phone, customData = {}) {
         // lowercase 'whatsapp', and 'WhatsApp' is refused. Without the WABA
         // id the whole event is rejected, so we fall back to 'other' instead:
         // a sale Meta counts imprecisely beats a sale it never hears about.
-        action_source: (ctwaClid && wabaId) ? 'business_messaging' : 'other',
-        ...((ctwaClid && wabaId) && { messaging_channel: 'whatsapp' }),
+        action_source: messaging ? 'business_messaging' : 'other',
+        ...(messaging && { messaging_channel: 'whatsapp' }),
         user_data:     userData,
         custom_data:   data,
       }],

@@ -141,13 +141,34 @@ async function _getConfig(clientId) {
   };
 }
 
-async function _logEvent(clientId, eventName, phone, status, detail) {
+/**
+ * Record an attempt, and keep the event body so it can be sent again.
+ *
+ * The body matters more than the outcome. Sales are going to a dataset the ad
+ * account cannot see, and when that is unblocked there will be weeks of them to
+ * replay - which is only possible if what was sent was kept. The stored user
+ * data is already hashed, so this holds nothing the orders table does not.
+ *
+ * @param {string} clientId
+ * @param {string} eventName
+ * @param {string} phone
+ * @param {'ok'|'error'|'test'} status
+ * @param {string} detail
+ * @param {object} [extra] dataset_id, event and order ids, and the event body
+ */
+async function _logEvent(clientId, eventName, phone, status, detail, extra = {}) {
   if (!db.IS_PG) return;
   const last4 = (phone || '').replace(/\D/g, '').slice(-4);
   db.pgQuery(
-    `INSERT INTO meta_capi_log (client_id, event_name, phone_last4, status, detail) VALUES ($1,$2,$3,$4,$5)`,
-    [clientId, eventName, last4, status, detail || null]
-  ).catch(() => {});
+    `INSERT INTO meta_capi_log
+       (client_id, event_name, phone_last4, status, detail,
+        payload, dataset_id, event_id, order_id, action_source)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+    [clientId, eventName, last4, status, detail || null,
+     extra.payload ? JSON.stringify(extra.payload) : null,
+     extra.datasetId || null, extra.eventId || null,
+     extra.orderId || null, extra.actionSource || null]
+  ).catch((e) => console.warn('[META-CAPI] could not log the event:', e.message));
 }
 
 /**
@@ -282,6 +303,12 @@ async function fireCAPIEvent(clientId, eventName, phone, customData = {}) {
         { headers: { 'Content-Type': 'application/json' } }
       ).then(() => {
         console.log(`[META-CAPI] mirrored ${eventName} to ${cfg.mirror.pixelId}`);
+        // Its own row: the two datasets took different bodies, and a replay has
+        // to know which of them a given sale already reached.
+        _logEvent(clientId, eventName, phone, cfg.testEventCode ? 'test' : 'ok',
+          `mirrored to ${cfg.mirror.pixelId}`,
+          { payload: copy, datasetId: cfg.mirror.pixelId, eventId: copy.event_id,
+            orderId: data.order_id, actionSource: copy.action_source });
       }).catch((e) => {
         // The mirror is a convenience, not the record. A dataset that refuses
         // it must not take the real conversion down with it.
@@ -291,8 +318,11 @@ async function fireCAPIEvent(clientId, eventName, phone, customData = {}) {
       });
     }
     console.log(`[META-CAPI] ${eventName} sent for ...${phone.slice(-4)}: events_received=${received} value=${data.value || 0} click=${!!ctwaClid} waba=${!!wabaId}`);
+    const _event = payload.data[0];
     await _logEvent(clientId, eventName, phone, cfg.testEventCode ? 'test' : 'ok',
-      `events_received=${received}${data.value > 0 ? ` LKR ${data.value}` : ' (no value on record)'}${ctwaClid ? ' +click' : ' (no click id, attribution will be weak)'}`);
+      `events_received=${received}${data.value > 0 ? ` LKR ${data.value}` : ' (no value on record)'}${ctwaClid ? ' +click' : ' (no click id, attribution will be weak)'}`,
+      { payload: _event, datasetId: cfg.pixelId, eventId: _event.event_id,
+        orderId: data.order_id, actionSource: _event.action_source });
   } catch (e) {
     // Meta puts the generic "Invalid parameter" in message and the sentence
     // that actually says what is wrong in error_user_msg. Keeping only the

@@ -728,6 +728,21 @@ async function init() {
         created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS idx_meta_capi_log_client ON meta_capi_log (client_id, created_at DESC);
+      -- The event as it was sent, so it can be sent again. Conversions are
+      -- currently going to a dataset the spending ad account cannot see;
+      -- when that is unblocked there will be weeks of sales to replay, and
+      -- nothing to replay them from unless the bodies were kept.
+      ALTER TABLE meta_capi_log ADD COLUMN IF NOT EXISTS payload       JSONB;
+      ALTER TABLE meta_capi_log ADD COLUMN IF NOT EXISTS dataset_id    TEXT;
+      ALTER TABLE meta_capi_log ADD COLUMN IF NOT EXISTS event_id      TEXT;
+      ALTER TABLE meta_capi_log ADD COLUMN IF NOT EXISTS order_id      TEXT;
+      ALTER TABLE meta_capi_log ADD COLUMN IF NOT EXISTS action_source TEXT;
+      ALTER TABLE meta_capi_log ADD COLUMN IF NOT EXISTS replayed_at   TIMESTAMPTZ;
+      -- 'test' was being written the moment test mode landed, and the old
+      -- check refused it, so those rows were lost to a silent catch.
+      ALTER TABLE meta_capi_log DROP CONSTRAINT IF EXISTS meta_capi_log_status_check;
+      CREATE INDEX IF NOT EXISTS idx_meta_capi_log_replay
+        ON meta_capi_log (client_id, dataset_id, created_at DESC);
     `);
 
     // ── Astro chart cache (dedupe freeastroapi calls by birth params) ─────────

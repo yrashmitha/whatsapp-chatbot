@@ -51,6 +51,7 @@ const {
   syncMetaAudience,
   createMetaAudience,
   metaEventsForOrder,
+  metaSummaryForCustomer,
   retryMetaEvents,
   recentMetaEvents,
 } = require('../controllers/plugins.controller');
@@ -104,6 +105,7 @@ router.get('/meta/recent-events',                       jwtAuth, requirePermissi
 // Readable by anyone who can see the order it belongs to - it reports on that
 // order and nothing else, and hiding it behind the key permission would keep it
 // from the operators who work the orders.
+router.get('/meta/summary',                             jwtAuth, requirePermission('orders.view'), metaSummaryForCustomer);
 router.get('/meta/events/:orderId',                     jwtAuth, requirePermission('orders.view'), metaEventsForOrder);
 // Resending is a write, and reporting a sale to an ad platform is not an
 // operator's call, so it sits behind the status permission rather than view.

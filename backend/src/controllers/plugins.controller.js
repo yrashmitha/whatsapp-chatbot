@@ -1390,6 +1390,45 @@ async function metaEventsForOrder(req, res) {
 }
 
 /**
+ * GET /api/plugins/meta/summary?phone=... — one answer for a whole customer.
+ *
+ * The point of a summary is to be seen without being looked for, so it sits on
+ * the collapsed header rather than inside the list. It answers one question:
+ * is there a sale here Meta was not told about?
+ *
+ * An order is failed only if its latest attempt failed. An event that failed at
+ * three o'clock and succeeded on retry at four is not a problem, and showing it
+ * as one teaches people to ignore the mark.
+ */
+async function metaSummaryForCustomer(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  const phone = String(req.query.phone || '').replace(/\D/g, '');
+  if (!phone) return res.status(400).json({ error: 'phone required' });
+
+  try {
+    const { rows } = await db.pgQuery(
+      `SELECT DISTINCT ON (l.order_id, l.event_name)
+              l.order_id, l.event_name, l.status
+         FROM meta_capi_log l
+         JOIN orders o ON o.order_id = l.order_id AND o.client_id = l.client_id
+        WHERE l.client_id = $1 AND o.phone_number = $2 AND l.order_id IS NOT NULL
+        ORDER BY l.order_id, l.event_name, l.created_at DESC`,
+      [clientId, phone]
+    );
+
+    const failed = rows.filter(r => r.status === 'error');
+    res.json({
+      tracked: rows.length > 0,
+      failed: failed.length,
+      failed_orders: [...new Set(failed.map(r => r.order_id))],
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
+
+/**
  * POST /api/plugins/meta/retry/:orderId — send this order's conversions again.
  *
  * Which events to send is decided from the order, not from what failed: an
@@ -2164,6 +2203,7 @@ async function downloadPorondamPdf(req, res) {
 
 module.exports = {
   metaEventsForOrder,
+  metaSummaryForCustomer,
   retryMetaEvents,
   getPluginConfig, updatePluginConfig, getPluginCustomerData, generateAstroChart,
   analyzeAuraImage,

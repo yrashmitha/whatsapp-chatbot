@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../lib/api';
 import MetaTracking from '../orders/MetaTracking';
+import MetaTrackingBadge from '../orders/MetaTrackingBadge';
 import MessageBubble from './MessageBubble';
 import MessageInput from './MessageInput';
 import AstroChartModal from './AstroChartModal';
@@ -419,7 +420,12 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
             onClick={() => setOrdersOpen(o => !o)}
             className="w-full flex items-center justify-between px-4 py-2 text-xs font-medium text-slate-500 hover:bg-slate-50 transition-colors bg-transparent border-0 cursor-pointer"
           >
-            <span>{customerOrders.length} order{customerOrders.length !== 1 ? 's' : ''}</span>
+            <span className="flex items-center gap-2">
+              {customerOrders.length} order{customerOrders.length !== 1 ? 's' : ''}
+              {/* Visible without opening anything — a warning that has to be
+                  looked for is not a warning. */}
+              <MetaTrackingBadge phone={phone} clientId={clientId} />
+            </span>
             <svg xmlns="http://www.w3.org/2000/svg" className={`w-3.5 h-3.5 transition-transform ${ordersOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
             </svg>
@@ -430,9 +436,9 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
                 <div key={o.order_id} className="flex items-center gap-2 text-xs bg-slate-50 rounded-lg px-3 py-2">
                   <span className="font-mono font-semibold text-slate-700 shrink-0">#{o.order_id}</span>
                   <span className="text-slate-400 shrink-0">{new Date(o.created_at).toLocaleDateString()}</span>
-                  {/* Whether Meta heard about this sale, and a way to send it
-                      again if it did not. One line, so the conversation stays
-                      the point of this panel. */}
+                  {/* The detail, and the Retry button when a send failed. The
+                      summary on the header above says whether to bother
+                      opening this at all. */}
                   <MetaTracking orderId={o.order_id} clientId={clientId} compact />
                   <div className="ml-auto">
                     <select

@@ -88,8 +88,20 @@ async function fireCAPIEvent(clientId, eventName, phone, customData = {}) {
       ctwaClid = r.rows[0]?.ctwa_clid || null;
     }
 
+    // Meta will not accept a business_messaging conversion without both the
+    // channel and the account that owns the conversation. Captured from the
+    // webhook rather than configured, because no token of ours can read it.
+    let wabaId = null;
+    if (db.IS_PG) {
+      const w = await db.pgQuery(
+        'SELECT waba_id FROM client_configs WHERE client_id=$1', [clientId]
+      ).catch(() => ({ rows: [] }));
+      wabaId = w.rows[0]?.waba_id || null;
+    }
+
     const userData = buildUserData(phone);
     if (ctwaClid) userData.ctwa_clid = ctwaClid;
+    if (wabaId) userData.whatsapp_business_account_id = wabaId;
 
     // What the sale was worth. Without it Meta is told a purchase happened and
     // nothing about its size, which counts conversions but cannot optimise for
@@ -111,13 +123,16 @@ async function fireCAPIEvent(clientId, eventName, phone, customData = {}) {
       data: [{
         event_name:    eventName,
         event_time:    Math.floor(Date.now() / 1000),
-        // A conversion that happened in a chat, not on a website. Meta lists
-        // business_messaging as "ads that click to Messenger, Instagram or
-        // WhatsApp"; which of the three is inferred from the click id, and
-        // there is no messaging_channel field to declare it. With a click
-        // id Meta can attribute it to the ad; without one it falls back to
-        // matching on the hashed phone, which rarely lands.
-        action_source: ctwaClid ? 'business_messaging' : 'other',
+        // A conversion that happened in a chat, not on a website.
+        //
+        // business_messaging is the accurate value and the one that lets a
+        // click id attribute the sale to its ad, but Meta will only accept it
+        // with messaging_channel and the owning account named alongside -
+        // lowercase 'whatsapp', and 'WhatsApp' is refused. Without the WABA
+        // id the whole event is rejected, so we fall back to 'other' instead:
+        // a sale Meta counts imprecisely beats a sale it never hears about.
+        action_source: (ctwaClid && wabaId) ? 'business_messaging' : 'other',
+        ...((ctwaClid && wabaId) && { messaging_channel: 'whatsapp' }),
         user_data:     userData,
         custom_data:   data,
       }],
@@ -139,7 +154,7 @@ async function fireCAPIEvent(clientId, eventName, phone, customData = {}) {
       { headers: { 'Content-Type': 'application/json' } }
     );
     const received = r.data.events_received;
-    console.log(`[META-CAPI] ${eventName} sent for ...${phone.slice(-4)}: events_received=${received} value=${data.value || 0} click=${!!ctwaClid}`);
+    console.log(`[META-CAPI] ${eventName} sent for ...${phone.slice(-4)}: events_received=${received} value=${data.value || 0} click=${!!ctwaClid} waba=${!!wabaId}`);
     await _logEvent(clientId, eventName, phone, cfg.testEventCode ? 'test' : 'ok',
       `events_received=${received}${data.value > 0 ? ` LKR ${data.value}` : ' (no value on record)'}${ctwaClid ? ' +click' : ' (no click id, attribution will be weak)'}`);
   } catch (e) {

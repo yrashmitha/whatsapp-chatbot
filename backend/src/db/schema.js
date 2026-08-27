@@ -594,6 +594,12 @@ async function init() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS idx_quick_replies_client ON quick_replies (client_id, sort_order);
+      -- The WhatsApp Business Account that owns this client's number.
+      -- Meta requires it alongside messaging_channel on any
+      -- business_messaging conversion. Neither of our tokens can read
+      -- it, but it arrives on every inbound webhook, so it is captured
+      -- there rather than typed.
+      ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS waba_id TEXT;
     `);
 
     // ── AI Call Answering ─────────────────────────────────────────────────────

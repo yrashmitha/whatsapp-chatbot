@@ -230,6 +230,16 @@ function receiveWebhook(req, res) {
         client = (await clientRouter.getClientById(process.env.DEV_CLIENT_ID)) || client;
       }
 
+      // Meta requires the WABA id on business_messaging conversions and will
+      // not let either of our tokens read it, but it is right here on every
+      // inbound message. Recorded once, per client, without anyone typing it.
+      const wabaId = req.body?.entry?.[0]?.id;
+      if (wabaId && client?.id && client.waba_id !== wabaId) {
+        db.pgQuery('UPDATE client_configs SET waba_id=$1 WHERE client_id=$2', [wabaId, client.id])
+          .then(() => clientRouter.invalidateClient?.(client.id))
+          .catch(() => {});
+      }
+
       const msg  = value.messages[0];
       // From March 31 2026, Meta may omit phone number for username-enabled users.
       // Fall back to BSUID (business-scoped user ID) from contacts array.

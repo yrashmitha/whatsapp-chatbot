@@ -21,6 +21,14 @@
  *
  *   node scripts/export-value-audience.js
  *   node scripts/export-value-audience.js --out audience.csv --min-value 1
+ *
+ * pj ran on wwjs before this CRM and those customers paid just as much, so
+ * point --wwjs at that database and the two are merged on the phone number.
+ * Someone who bought in both is one person with the sum of what they spent.
+ * The old database is only ever read.
+ *
+ *   node scripts/export-value-audience.js --wwjs "postgresql://..."
+ *   WWJS_DATABASE_URL=postgresql://... node scripts/export-value-audience.js
  */
 
 'use strict';
@@ -38,8 +46,80 @@ function arg(name, fallback) {
   return i > -1 ? process.argv[i + 1] : fallback;
 }
 
-const OUT = arg('--out', path.join(process.cwd(), 'value-audience.csv'));
+const OUT  = arg('--out', path.join(process.cwd(), 'value-audience.csv'));
+const WWJS = arg('--wwjs', process.env.WWJS_DATABASE_URL || '');
 const MIN = parseFloat(arg('--min-value', '0')) || 0;
+
+
+/**
+ * Paying customers from the old wwjs system.
+ *
+ * wwjs stores a package name rather than this CRM's custom_fields, and its
+ * prices are not all recorded either, so value is taken where it exists and
+ * left at zero where it does not - the same honesty the main query applies.
+ *
+ * Read-only, on its own connection, and any failure returns nothing rather than
+ * taking the export down: a partial audience beats no audience.
+ *
+ * @param {string} url
+ * @returns {Promise<Map<string, {value:number, orders:number}>>}
+ */
+async function readWwjs(url) {
+  const out = new Map();
+  if (!url) return out;
+
+  const { Pool } = require('pg');
+  const pool = new Pool({
+    connectionString: url,
+    ssl: /railway|rlwy\.net/.test(url) ? { rejectUnauthorized: false } : undefined,
+    max: 2,
+  });
+
+  try {
+    const cols = await pool.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_name='orders'`);
+    const names = new Set(cols.rows.map(r => r.column_name));
+    if (!names.has('phone_number')) {
+      console.warn('  wwjs: no orders.phone_number, skipping');
+      return out;
+    }
+
+    // Whatever that schema happens to call the money. wwjs predates the value
+    // rule in salesCredit, so it is read leniently rather than assumed.
+    const valueExpr = names.has('custom_fields')
+      ? `COALESCE(NULLIF(regexp_replace(COALESCE(custom_fields->>'price',''), '[^0-9.]', '', 'g'), '')::numeric, 0)`
+      : '0';
+
+    // Scope to this client, always. The old database is multi-tenant - six
+    // clients share it, and pj is the smallest of them. Reading it unscoped
+    // pulled in 54 of another client's paying customers, who would have gone
+    // into pj's lookalike: the wrong population to model, and one client's
+    // customer list used for another client's advertising. If the table has no
+    // client_id at all it is single-tenant and the whole thing is pj's.
+    const scoped = names.has('client_id');
+    if (!scoped) console.warn('  wwjs: no client_id column — treating the whole table as this client');
+
+    const { rows } = await pool.query(
+      `SELECT phone_number, SUM(${valueExpr})::numeric AS value, COUNT(*)::int AS orders
+         FROM orders
+        WHERE status IN ('payment_received','paid','delivered','done','complete')
+          AND phone_number IS NOT NULL
+          ${scoped ? 'AND client_id = $1' : ''}
+        GROUP BY phone_number`,
+      scoped ? [CLIENT] : []);
+
+    for (const r of rows) {
+      const digits = String(r.phone_number).replace(/\D/g, '');
+      if (digits) out.set(digits, { value: Number(r.value) || 0, orders: r.orders });
+    }
+    console.log(`  wwjs: ${out.size} paying customers for ${CLIENT}`);
+  } catch (e) {
+    console.warn('  wwjs: could not read it —', e.message);
+  } finally {
+    await pool.end().catch(() => {});
+  }
+  return out;
+}
 
 (async () => {
   if (!db.IS_PG) { console.error('This needs Postgres.'); process.exit(1); }
@@ -60,28 +140,56 @@ const MIN = parseFloat(arg('--min-value', '0')) || 0;
     [CLIENT, PAID_STATUSES, MIN]
   );
 
-  if (!rows.length) { console.log('  no paying customers matched'); process.exit(0); }
+  // Merge on the phone number, the one thing both systems agree about. A
+  // person who bought in both is one person with the sum of what they spent.
+  const merged = new Map();
+  for (const r of rows) {
+    const digits = String(r.phone_number).replace(/\D/g, '');
+    if (!digits) continue;
+    merged.set(digits, { value: Number(r.value) || 0, orders: r.orders, crm: true });
+  }
+
+  const old = await readWwjs(WWJS);
+  let overlap = 0;
+  for (const [digits, o] of old) {
+    const cur = merged.get(digits);
+    if (cur) {
+      cur.value += o.value;
+      cur.orders += o.orders;
+      overlap++;
+    } else {
+      merged.set(digits, { value: o.value, orders: o.orders, crm: false });
+    }
+  }
+
+  const people = [...merged.entries()]
+    .map(([phone, v]) => ({ phone, ...v }))
+    .filter(p => p.value >= MIN)
+    .sort((a, b) => b.value - a.value);
+
+  if (!people.length) { console.log('  no paying customers matched'); process.exit(0); }
 
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const lines = ['phone,value,currency'];
-  for (const r of rows) {
+  for (const p of people) {
     // E.164, which is the form Meta matches on. Sri Lankan numbers are stored
     // with the country code already, so this is a prefix rather than a rewrite.
-    const digits = String(r.phone_number).replace(/\D/g, '');
-    if (!digits) continue;
-    lines.push([esc(`+${digits}`), esc(Number(r.value) || 0), esc('LKR')].join(','));
+    lines.push([esc(`+${p.phone}`), esc(p.value), esc('LKR')].join(','));
   }
 
   fs.writeFileSync(OUT, lines.join('\n'), 'utf8');
 
-  const withValue = rows.filter(r => Number(r.value) > 0).length;
-  const total = rows.reduce((t, r) => t + (Number(r.value) || 0), 0);
-  const repeat = rows.filter(r => r.orders > 1).length;
+  const withValue = people.filter(p => p.value > 0).length;
+  const total = people.reduce((t, p) => t + p.value, 0);
+  const repeat = people.filter(p => p.orders > 1).length;
 
-  console.log(`  ${rows.length} paying customers -> ${OUT}`);
-  console.log(`     ${withValue} carry a value, ${rows.length - withValue} are 0 (no price on record)`);
+  console.log(`  ${people.length} paying customers -> ${OUT}`);
+  console.log(`     ${withValue} carry a value, ${people.length - withValue} are 0 (no price on record)`);
   console.log(`     ${repeat} have bought more than once`);
   console.log(`     total Rs ${total.toLocaleString()}`);
+  if (WWJS) {
+    console.log(`     ${old.size} came from wwjs, ${overlap} of them already in the CRM`);
+  }
   console.log('');
   console.log('  Ads Manager -> Audiences -> Create -> Customer list.');
   console.log('  Say yes when it asks whether the list includes a value column,');

@@ -68,12 +68,33 @@ async function fireCAPIEvent(clientId, eventName, phone, customData = {}) {
       customerName = r.rows[0]?.name || null;
     }
 
+    // The click that started this conversation, if it came from an ad. This is
+    // what turns the event from "somebody bought" into "this ad produced a
+    // customer", which is the only version Meta can optimise on.
+    let ctwaClid = null;
+    if (db.IS_PG) {
+      const r = await db.pgQuery(
+        `SELECT ctwa_clid FROM ad_referrals
+          WHERE client_id=$1 AND phone_number=$2 AND ctwa_clid IS NOT NULL
+          ORDER BY created_at DESC LIMIT 1`,
+        [clientId, phone]
+      ).catch(() => ({ rows: [] }));
+      ctwaClid = r.rows[0]?.ctwa_clid || null;
+    }
+
+    const userData = buildUserData(phone, customerName);
+    if (ctwaClid) userData.ctwa_clid = ctwaClid;
+
     const payload = {
       data: [{
         event_name:    eventName,
         event_time:    Math.floor(Date.now() / 1000),
-        action_source: 'other',
-        user_data:     buildUserData(phone, customerName),
+        // A conversion that happened in a chat, not on a website. With a click
+        // id Meta can attribute it to the ad; without one it falls back to
+        // matching on the hashed phone, which rarely lands.
+        action_source: ctwaClid ? 'business_messaging' : 'other',
+        ...(ctwaClid && { messaging_channel: 'whatsapp' }),
+        user_data:     userData,
         custom_data:   customData,
       }],
       access_token: cfg.accessToken,
@@ -85,8 +106,9 @@ async function fireCAPIEvent(clientId, eventName, phone, customData = {}) {
       { headers: { 'Content-Type': 'application/json' } }
     );
     const received = r.data.events_received;
-    console.log(`[META-CAPI] ${eventName} sent for ...${phone.slice(-4)}: events_received=${received} name=${!!customerName}`);
-    await _logEvent(clientId, eventName, phone, 'ok', `events_received=${received}${customerName ? ' +name' : ''}`);
+    console.log(`[META-CAPI] ${eventName} sent for ...${phone.slice(-4)}: events_received=${received} name=${!!customerName} click=${!!ctwaClid}`);
+    await _logEvent(clientId, eventName, phone, 'ok',
+      `events_received=${received}${customerName ? ' +name' : ''}${ctwaClid ? ' +click' : ' (no click id, attribution will be weak)'}`);
   } catch (e) {
     const msg = e?.response?.data?.error?.message || e.message;
     console.warn(`[META-CAPI] Failed to send ${eventName} for ...${phone.slice(-4)}:`, msg);

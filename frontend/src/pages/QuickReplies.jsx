@@ -3,6 +3,27 @@ import { useAuthStore, isSuperAdmin } from '../stores/auth';
 import { useToast } from '../components/ui/Toast';
 import api from '../lib/api';
 
+/**
+ * Matches {{price}}, {{anchor}}, {{price:key}}, {{anchor:key}}.
+ * Mirrors PRICE_TOKEN in backend/src/services/quickReplyBlocks.js - the two
+ * have to agree or the preview lies about what the customer will receive.
+ */
+const PRICE_TOKEN = /\{\{(price|anchor)(?::([a-z0-9_-]+))?\}\}/gi;
+
+/** Render the figures into a block, the way the server will when it sends. */
+function renderPrices(text, services) {
+  if (!text || !services?.length) return text || '';
+  const byKey = new Map(services.map(x => [String(x.key).toLowerCase(), x]));
+  return text.replace(PRICE_TOKEN, (whole, field, key) => {
+    const svc = key ? byKey.get(key.toLowerCase()) : services[0];
+    if (!svc) return whole;
+    const v = field.toLowerCase() === 'anchor' ? svc.anchor : svc.price;
+    if (v === null || v === undefined || v === '') return whole;
+    return Number(v).toLocaleString('en-US');
+  });
+}
+
+
 export default function QuickReplies() {
   const { user, selectedClientId } = useAuthStore();
   const superAdmin = isSuperAdmin(user);
@@ -14,6 +35,8 @@ export default function QuickReplies() {
   const [editingId, setEditingId]   = useState(null);   // null = no edit, 'new' = add form
   const [formTitle, setFormTitle]   = useState('');
   const [formText, setFormText]     = useState('');
+  // What this block sells. Empty for the blocks that are not a pitch.
+  const [formServices, setFormServices] = useState([]);
   const [saving, setSaving]         = useState(false);
 
   const params = clientId ? { client_id: clientId } : {};
@@ -28,8 +51,11 @@ export default function QuickReplies() {
 
   useEffect(() => { load(); }, [clientId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const openNew = () => { setEditingId('new'); setFormTitle(''); setFormText(''); };
-  const openEdit = (r) => { setEditingId(r.id); setFormTitle(r.title); setFormText(r.text); };
+  const openNew = () => { setEditingId('new'); setFormTitle(''); setFormText(''); setFormServices([]); };
+  const openEdit = (r) => {
+    setEditingId(r.id); setFormTitle(r.title); setFormText(r.text);
+    setFormServices(Array.isArray(r.services) ? r.services : []);
+  };
   const cancelEdit = () => setEditingId(null);
 
   const handleSave = async () => {
@@ -37,10 +63,10 @@ export default function QuickReplies() {
     setSaving(true);
     try {
       if (editingId === 'new') {
-        await api.post('/quick-replies', { title: formTitle.trim(), text: formText.trim(), ...params });
+        await api.post('/quick-replies', { title: formTitle.trim(), text: formText.trim(), services: formServices, ...params });
         toast.success('Quick reply added');
       } else {
-        await api.put(`/quick-replies/${editingId}`, { title: formTitle.trim(), text: formText.trim(), ...params });
+        await api.put(`/quick-replies/${editingId}`, { title: formTitle.trim(), text: formText.trim(), services: formServices, ...params });
         toast.success('Quick reply updated');
       }
       setEditingId(null);
@@ -105,6 +131,76 @@ export default function QuickReplies() {
                 style={{ resize: 'vertical' }}
               />
             </div>
+
+            {/* What this block sells. On the same form as the words, and saved
+                with them, because a price kept anywhere else drifts from the
+                sentence that quotes it. */}
+            <div className="border-t border-slate-100 pt-3">
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-medium text-slate-500">
+                  Services sold in this message
+                  <span className="text-slate-400 font-normal"> (leave empty if this is not a pitch)</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setFormServices([...formServices, { key: '', label: '', price: '', anchor: '' }])}
+                  className="px-2 py-1 text-xs font-medium text-violet-700 bg-violet-50 hover:bg-violet-100 rounded-lg border-0 cursor-pointer"
+                >+ Add service</button>
+              </div>
+
+              {formServices.length > 0 && (
+                <p className="text-xs text-slate-400 mb-2">
+                  Write <span className="font-mono bg-slate-100 px-1 rounded">{'{{price}}'}</span> and
+                  <span className="font-mono bg-slate-100 px-1 rounded ml-1">{'{{anchor}}'}</span> in the message instead of typing a number.
+                  {formServices.length > 1 && <> With more than one service, name it: <span className="font-mono bg-slate-100 px-1 rounded">{`{{price:${formServices[0].key || 'key'}}}`}</span></>}
+                </p>
+              )}
+
+              {formServices.map((svc, i) => (
+                <div key={i} className="flex flex-wrap gap-2 items-center mb-2">
+                  <input
+                    className={inputCls + ' flex-1 min-w-[7rem] font-mono'}
+                    placeholder="key"
+                    value={svc.key}
+                    onChange={e => setFormServices(formServices.map((x, j) => j === i ? { ...x, key: e.target.value } : x))}
+                  />
+                  <input
+                    className={inputCls + ' flex-[2] min-w-[9rem]'}
+                    placeholder="name shown to the team"
+                    value={svc.label}
+                    onChange={e => setFormServices(formServices.map((x, j) => j === i ? { ...x, label: e.target.value } : x))}
+                  />
+                  <input
+                    className={inputCls + ' w-24'}
+                    type="number" placeholder="price"
+                    value={svc.price ?? ''}
+                    onChange={e => setFormServices(formServices.map((x, j) => j === i ? { ...x, price: e.target.value } : x))}
+                  />
+                  <input
+                    className={inputCls + ' w-24'}
+                    type="number" placeholder="usual"
+                    value={svc.anchor ?? ''}
+                    onChange={e => setFormServices(formServices.map((x, j) => j === i ? { ...x, anchor: e.target.value } : x))}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setFormServices(formServices.filter((_, j) => j !== i))}
+                    className="px-2 py-1 text-xs text-red-600 bg-red-50 hover:bg-red-100 rounded-lg border-0 cursor-pointer"
+                  >Remove</button>
+                </div>
+              ))}
+
+              {/* The sentence the customer will actually read. Without this the
+                  person editing is checking a token, not the message. */}
+              {formServices.length > 0 && formText.match(PRICE_TOKEN) && (
+                <div className="mt-2 p-2.5 bg-slate-50 rounded-xl">
+                  <p className="text-xs font-medium text-slate-400 mb-1">What the customer sees</p>
+                  <p className="text-sm text-slate-700 whitespace-pre-wrap break-words">
+                    {renderPrices(formText, formServices)}
+                  </p>
+                </div>
+              )}
+            </div>
             <div className="flex gap-2 justify-end mt-1">
               <button onClick={cancelEdit} className="px-4 py-1.5 text-sm text-slate-600 bg-white border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-50">Cancel</button>
               <button
@@ -130,7 +226,16 @@ export default function QuickReplies() {
             <li key={r.id} className="flex items-start gap-3 bg-white border border-slate-200 rounded-2xl px-4 py-3 shadow-sm">
               <div className="flex-1 min-w-0">
                 <span className="text-xs font-semibold text-violet-600">/{r.title}</span>
-                <p className="text-sm text-slate-700 mt-0.5 whitespace-pre-wrap break-words">{r.text}</p>
+                <p className="text-sm text-slate-700 mt-0.5 whitespace-pre-wrap break-words">{renderPrices(r.text, r.services)}</p>
+                {r.services?.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {r.services.map(sv => (
+                      <span key={sv.key} className="text-xs px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-lg">
+                        {sv.label || sv.key} · රු. {Number(sv.price).toLocaleString('en-US')}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="flex gap-1 shrink-0">
                 <button

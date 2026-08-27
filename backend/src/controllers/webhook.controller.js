@@ -103,6 +103,43 @@ async function cacheAdThumb(url) {
   }
 }
 
+/**
+ * Fetch an inbound media file and keep it, returning the url to serve it from.
+ *
+ * WhatsApp hands over an id, not a file. The id buys a short-lived download url
+ * and then expires, so this has to happen while the message is being handled.
+ * A chat opened tomorrow cannot go back and get it.
+ *
+ * @param {string} mediaId
+ * @param {string} from    - the customer's number, used only in the filename
+ * @param {Object} client
+ * @returns {Promise<string|null>} a /uploads path, or null if it could not be fetched
+ */
+async function keepInboundMedia(mediaId, from, client) {
+  if (!mediaId) return null;
+  try {
+    const meta = await axios.get(
+      `https://graph.facebook.com/v18.0/${mediaId}`,
+      { headers: { Authorization: `Bearer ${waToken(client)}` } }
+    );
+    const dlUrl = meta.data?.url;
+    if (!dlUrl) return null;
+    const res = await axios.get(dlUrl, {
+      responseType: 'arraybuffer',
+      headers: { Authorization: `Bearer ${waToken(client)}` },
+    });
+    const mime = meta.data?.mime_type || 'application/octet-stream';
+    const ext = (mime.split('/')[1] || 'bin').split(';')[0];
+    const fname = `wa-${from}-${Date.now()}.${ext}`;
+    fs.writeFileSync(path.join(UPLOADS_DIR, fname), res.data);
+    console.log(`[MEDIA-DL] kept ${fname} (${mime})`);
+    return `/uploads/${fname}`;
+  } catch (e) {
+    console.warn('[MEDIA-DL] could not keep inbound media:', e.message);
+    return null;
+  }
+}
+
 async function recordReferral(clientId, phone, referral) {
   if (!referral || typeof referral !== 'object') return;
   const adId = referral.source_id || null;
@@ -242,8 +279,13 @@ function receiveWebhook(req, res) {
           : msg.type === 'document' ? 'pdf'
           : msg.type === 'audio' ? 'audio' : null;
 
+        // Keep the file as well as the label. The bot is not going to look at
+        // it, but the person handling this chat certainly wants to.
+        const mediaId = msg.image?.id || msg.document?.id || msg.audio?.id || null;
+        const keptUrl = mediaType ? await keepInboundMedia(mediaId, from, client) : null;
+
         await db.upsertCustomer(from, null, client.id);
-        await db.insertMessage(from, label, 'user', null, client.id, mediaType, null, msg.id);
+        await db.insertMessage(from, label, 'user', null, client.id, mediaType, keptUrl, msg.id);
 
         // An away message is opt-in and only for the global switch: a chat an
         // operator has taken over is being handled by a person, and telling

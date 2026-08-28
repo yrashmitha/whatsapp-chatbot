@@ -29,9 +29,12 @@ export default function SendTemplateModal({ orderIds, clientId, onClose, onSent 
     retry: false,
   });
 
+  // The endpoint answers { media: [...] }, not a bare array. Reading r.data
+  // gave an object, the Array.isArray guard below turned that into an empty
+  // list, and the picker showed "no images" for a library that had them.
   const { data: media = [] } = useQuery({
     queryKey: ['media', clientId],
-    queryFn: () => api.get('/media', { params }).then(r => r.data),
+    queryFn: () => api.get('/media', { params }).then(r => r.data.media || []),
     retry: false,
   });
 
@@ -125,7 +128,9 @@ export default function SendTemplateModal({ orderIds, clientId, onClose, onSent 
                 </select>
                 {!images.length && (
                   <p className="text-xs text-slate-500 mb-2">
-                    No images in the library. Upload a .png or .jpg on the Media page first.
+                    No .png or .jpg in the library
+                    {media.length ? ` (${media.length} file(s) there, none of them an image)` : ''}.
+                    Upload one on the Media page first.
                   </p>
                 )}
                 {imageUrl && (

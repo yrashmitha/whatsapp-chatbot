@@ -1642,6 +1642,9 @@ async function metaSummaryForCustomer(req, res) {
 
     res.json({
       tracked: orders.length > 0,
+      // How many orders, so the badge knows whether to show a count at all —
+      // "Lead ✓" reads better than "Lead ✓ 1" when there is only one.
+      orders:    orders.length,
       leads:     orders.filter(([, s]) => s.lead === 'ok').length,
       purchases: orders.filter(([, s]) => s.purchase === 'ok').length,
       failed: broken.length,

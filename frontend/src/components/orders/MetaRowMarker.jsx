@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '../ui/Toast';
 import api from '../../lib/api';
+import { marksFor, styleFor, glyphFor } from './metaMarks';
 
 /**
  * Whether the order and the payment each reached Meta, shown on the row itself.
@@ -45,24 +46,13 @@ export default function MetaRowMarker({ orderId, clientId, state }) {
   // addon is off. Not a failure, so no mark at all.
   if (!state || (!state.lead && !state.purchase)) return null;
 
-  const OK   = { background: 'rgba(16,185,129,0.12)', color: '#059669' };
-  const BAD  = { background: 'rgba(239,68,68,0.12)',  color: '#dc2626' };
-  const IDLE = { background: 'rgba(100,116,139,0.10)', color: '#94a3b8' };
-
-  const lead = state.lead === 'ok' ? 'ok' : state.lead === 'error' ? 'bad' : 'idle';
-  const purchase = state.purchase === 'ok' ? 'ok'
-    : state.purchase === 'error' ? 'bad'
-      // Paid with no purchase on record is a genuine hole. Unpaid is simply
-      // not due yet.
-      : state.paid ? 'bad' : 'idle';
-
-  const broken = lead === 'bad' || purchase === 'bad';
+  // Shared with the chat header, so the same fact never looks like two.
+  const { lead, purchase, broken } = marksFor(state);
 
   const Pill = ({ label, kind, title }) => (
     <span className="text-xs px-1.5 py-0.5 rounded-md font-medium"
-          style={kind === 'ok' ? OK : kind === 'bad' ? BAD : IDLE}
-          title={title}>
-      {label} {kind === 'ok' ? '✓' : kind === 'bad' ? '✗' : '·'}
+          style={styleFor(label, kind)} title={title}>
+      {label} {glyphFor(kind)}
     </span>
   );
 
@@ -81,7 +71,7 @@ export default function MetaRowMarker({ orderId, clientId, state }) {
           onClick={(e) => { e.stopPropagation(); retry.mutate(); }}
           disabled={retry.isPending}
           className="text-xs px-1.5 py-0.5 rounded-md border-0 cursor-pointer disabled:opacity-60"
-          style={BAD}
+          style={styleFor('Lead', 'bad')}
           title="Send it again. Every event carries an id, so Meta counts one sale once."
         >{retry.isPending ? '…' : 'Retry'}</button>
       )}

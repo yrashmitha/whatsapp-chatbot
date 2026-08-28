@@ -246,12 +246,19 @@ async function fireCAPIEvent(clientId, eventName, phone, customData = {}) {
 
     const payload = {
       data: [{
-        // Messaging conversions use their own vocabulary. Meta rejects "Lead"
-        // outright under business_messaging - "Provide a valid value ... such
-        // as 'Purchase' or 'LeadSubmitted'" - so the name is translated here
-        // rather than at the two call sites, which should go on describing
-        // what happened rather than tracking Meta's naming.
-        event_name:    (messaging && eventName === 'Lead') ? 'LeadSubmitted' : eventName,
+        // Messaging conversions use their own vocabulary: Meta rejects "Lead"
+        // outright under business_messaging and asks for "LeadSubmitted". The
+        // name is translated here rather than at the call sites, which should
+        // go on describing what happened rather than tracking Meta's naming.
+        //
+        // Translated always, not only when the click id is present. Doing it
+        // conditionally split one event across two names - LeadSubmitted for
+        // customers who arrived from an ad, Lead for everyone else - so Events
+        // Manager listed three event types for two things that happen, the
+        // volume was divided, and only one of the halves could be optimised on.
+        // Confirmed that LeadSubmitted is accepted with action_source 'other'
+        // as well, so there is no reason to keep both.
+        event_name:    eventName === 'Lead' ? 'LeadSubmitted' : eventName,
         event_time:    Math.floor(Date.now() / 1000),
         // Meta deduplicates on event_id, and without one every send counts as
         // another sale. A webhook retry, a status set twice, or a re-fire while

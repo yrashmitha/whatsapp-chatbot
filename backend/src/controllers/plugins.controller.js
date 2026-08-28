@@ -1559,18 +1559,36 @@ async function metaStatusesForOrders(req, res) {
   if (!ids.length) return res.json({ statuses: {} });
 
   try {
+    const { PAID_STATUSES } = require('../services/salesCredit');
+
+    // The latest attempt at each event, and whether the order has been paid.
+    // Without that second fact a Purchase that has not happened yet looks
+    // identical to one that failed, and most orders are waiting for payment.
     const { rows } = await db.pgQuery(
-      `SELECT DISTINCT ON (order_id, event_name) order_id, event_name, status
-         FROM meta_capi_log
-        WHERE client_id = $1 AND order_id = ANY($2)
-        ORDER BY order_id, event_name, created_at DESC`,
-      [clientId, ids]
+      `SELECT o.order_id,
+              (o.status = ANY($3)) AS paid,
+              l.event_name,
+              l.status
+         FROM orders o
+         LEFT JOIN LATERAL (
+           SELECT DISTINCT ON (event_name) event_name, status
+             FROM meta_capi_log
+            WHERE client_id = o.client_id AND order_id = o.order_id
+            ORDER BY event_name, created_at DESC
+         ) l ON TRUE
+        WHERE o.client_id = $1 AND o.order_id = ANY($2)`,
+      [clientId, ids, PAID_STATUSES]
     );
 
     const statuses = {};
     for (const r of rows) {
-      const cur = statuses[r.order_id] || (statuses[r.order_id] = { tracked: true, failed: 0 });
-      if (r.status === 'error') cur.failed++;
+      const cur = statuses[r.order_id]
+        || (statuses[r.order_id] = { lead: null, purchase: null, paid: r.paid });
+      // The send path renames Lead to LeadSubmitted for business_messaging,
+      // but the log keeps the original name. Accept both so a rename upstream
+      // does not quietly blank this column.
+      if (r.event_name === 'Lead' || r.event_name === 'LeadSubmitted') cur.lead = r.status;
+      if (r.event_name === 'Purchase') cur.purchase = r.status;
     }
     res.json({ statuses });
   } catch (e) {
@@ -1596,21 +1614,38 @@ async function metaSummaryForCustomer(req, res) {
   if (!phone) return res.status(400).json({ error: 'phone required' });
 
   try {
+    const { PAID_STATUSES } = require('../services/salesCredit');
+
     const { rows } = await db.pgQuery(
       `SELECT DISTINCT ON (l.order_id, l.event_name)
-              l.order_id, l.event_name, l.status
+              l.order_id, l.event_name, l.status,
+              (o.status = ANY($3)) AS paid
          FROM meta_capi_log l
          JOIN orders o ON o.order_id = l.order_id AND o.client_id = l.client_id
         WHERE l.client_id = $1 AND o.phone_number = $2 AND l.order_id IS NOT NULL
         ORDER BY l.order_id, l.event_name, l.created_at DESC`,
-      [clientId, phone]
+      [clientId, phone, PAID_STATUSES]
     );
 
-    const failed = rows.filter(r => r.status === 'error');
+    // Per order, so a purchase that is not due yet is never counted as one
+    // that went missing.
+    const byOrder = {};
+    for (const r of rows) {
+      const cur = byOrder[r.order_id]
+        || (byOrder[r.order_id] = { lead: null, purchase: null, paid: r.paid });
+      if (r.event_name === 'Lead' || r.event_name === 'LeadSubmitted') cur.lead = r.status;
+      if (r.event_name === 'Purchase') cur.purchase = r.status;
+    }
+    const orders = Object.entries(byOrder);
+    const broken = orders.filter(([, s]) =>
+      s.lead === 'error' || s.purchase === 'error' || (s.paid && !s.purchase));
+
     res.json({
-      tracked: rows.length > 0,
-      failed: failed.length,
-      failed_orders: [...new Set(failed.map(r => r.order_id))],
+      tracked: orders.length > 0,
+      leads:     orders.filter(([, s]) => s.lead === 'ok').length,
+      purchases: orders.filter(([, s]) => s.purchase === 'ok').length,
+      failed: broken.length,
+      failed_orders: broken.map(([id]) => id),
     });
   } catch (e) {
     res.status(500).json({ error: e.message });

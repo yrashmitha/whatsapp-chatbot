@@ -158,7 +158,8 @@ export default function MetaTracking({ orderId, clientId, compact = false }) {
 
       {!byEvent.has('Purchase') && (
         <div className="text-xs mt-1.5" style={{ color: 'var(--text-3)' }}>
-          No payment reported yet — that is sent when the order is marked payment received.
+          No payment reported yet — that is sent when the order is marked payment
+          received. If this order has already been paid, use Retry above.
         </div>
       )}
     </div>

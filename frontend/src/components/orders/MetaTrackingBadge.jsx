@@ -2,15 +2,16 @@ import { useQuery } from '@tanstack/react-query';
 import api from '../../lib/api';
 
 /**
- * One mark for a whole customer, on the collapsed orders header.
+ * What Meta was told about this customer, on the collapsed orders header.
  *
- * A warning that has to be looked for is not a warning. The per-order detail
- * belongs inside the list, but "is there a sale here Meta was never told
- * about?" has to be answerable without opening anything.
+ * A warning that has to be looked for is not a warning, so the counts sit where
+ * they are seen without opening anything: how many of this customer's orders
+ * were reported, and how many payments.
  *
- * Silent when nothing has been reported for this customer at all - an order
- * that predates the tracking, or a client without the addon, is not a failure
- * and should not wear a mark.
+ * An order awaiting payment has no purchase and that is correct, not a fault.
+ * Only a paid order with no purchase, or an event that actually failed, counts
+ * as broken — otherwise every customer with an open order would wear a warning
+ * and the mark would mean nothing within a day.
  */
 export default function MetaTrackingBadge({ phone, clientId }) {
   const { data } = useQuery({
@@ -25,19 +26,36 @@ export default function MetaTrackingBadge({ phone, clientId }) {
 
   if (!data?.tracked) return null;
 
-  const failed = data.failed > 0;
+  const broken = data.failed > 0;
+
+  const pill = (bg, fg) => ({
+    background: bg, color: fg,
+  });
+
+  if (broken) {
+    return (
+      <span className="text-xs px-1.5 py-0.5 rounded-md font-medium"
+            style={pill('rgba(239,68,68,0.12)', '#dc2626')}
+            title={`${data.failed} order(s) did not reach Meta: ${(data.failed_orders || []).join(', ')}. Open the order to retry.`}>
+        ⚠ Meta {data.failed}
+      </span>
+    );
+  }
 
   return (
-    <span
-      className="text-xs px-1.5 py-0.5 rounded-md font-medium"
-      style={failed
-        ? { background: 'rgba(239,68,68,0.12)', color: '#dc2626' }
-        : { background: 'rgba(16,185,129,0.12)', color: '#059669' }}
-      title={failed
-        ? `${data.failed} event(s) did not reach Meta. Open the order to retry.`
-        : 'Reported to Meta'}
-    >
-      {failed ? `⚠ Meta ${data.failed}` : '✓ Meta'}
+    <span className="inline-flex items-center gap-1">
+      <span className="text-xs px-1.5 py-0.5 rounded-md font-medium"
+            style={pill('rgba(16,185,129,0.12)', '#059669')}
+            title={`${data.leads} order(s) reported to Meta`}>
+        Lead {data.leads}
+      </span>
+      {data.purchases > 0 && (
+        <span className="text-xs px-1.5 py-0.5 rounded-md font-medium"
+              style={pill('rgba(16,185,129,0.12)', '#059669')}
+              title={`${data.purchases} payment(s) reported to Meta`}>
+          Purchase {data.purchases}
+        </span>
+      )}
     </span>
   );
 }

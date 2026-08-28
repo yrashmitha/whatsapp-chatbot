@@ -473,6 +473,21 @@ function looksLikeReasoningLeak(text) {
  */
 function historyTextFor(m) {
   const text = m.message_text || '';
+
+  // An approved WhatsApp template that was sent to this customer. Replayed
+  // as one line rather than as its own words: the model imitates what it is
+  // shown, and seven hundred characters of approved marketing copy in the
+  // history is an invitation to write more of it. The line still says what
+  // was promised, because the customer's next message is a reply to it and
+  // a bot that does not know an offer was made will answer the wrong thing.
+  const tpl = text.match(/^\[template_sent:([a-zA-Z0-9_-]+)\]/);
+  if (tpl) {
+    const body = text.slice(tpl[0].length).trim();
+    const gist = body.replace(/\s+/g, ' ').slice(0, 240);
+    return `[We sent this customer the "${tpl[1]}" WhatsApp template. It said: ${gist}`
+      + `${body.length > 240 ? '…' : ''}. Anything they say next is likely a reply to it.]`;
+  }
+
   let menu = m.interactive;
   if (!menu) return text;
   if (typeof menu === 'string') { try { menu = JSON.parse(menu); } catch { return text; } }

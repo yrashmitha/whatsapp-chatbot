@@ -170,6 +170,12 @@ export default function MessageBubble({ msg, onDelete }) {
   const rawText = msg.message_text || msg.content || '';
   const parts = rawText.split('[[MSG_BREAK]]').map(t => t.trim()).filter(Boolean);
   const text = parts[0] || '';
+
+  // A template send carries its name in a marker on the first line. The
+  // marker is for the machine; the operator wants the chip and the words.
+  const tplMatch = (text || '').match(/^\[template_sent:([a-zA-Z0-9_-]+)\]\s*/);
+  const templateName = tplMatch ? tplMatch[1] : null;
+  const shownText = tplMatch ? text.slice(tplMatch[0].length) : text;
   const extraParts = parts.slice(1);
 
   let interactive = msg.interactive || null;
@@ -287,11 +293,23 @@ export default function MessageBubble({ msg, onDelete }) {
           </div>
         )}
 
+        {/* An approved template that was sent. The marker is plumbing, so it
+            becomes a chip and the words below it are shown as the customer
+            received them. Without this the operator reads a raw
+            [template_sent:...] and cannot tell what actually went out. */}
+        {templateName && (
+          <span className="inline-block text-xs px-1.5 py-0.5 rounded-md font-medium mb-1"
+                style={{ background: 'rgba(217,119,6,0.12)', color: '#b45309' }}
+                title="Sent as an approved WhatsApp template">
+            Template · {templateName}
+          </span>
+        )}
+
         {/* Hide bare [Image/PDF/Audio: ...] labels when media is already rendered */}
-        {text && !(hasImage && /^\[Image:[^\]]*\]$/.test(text.trim()))
-               && !(hasPdf   && /^\[PDF:[^\]]*\]$/.test(text.trim()))
-               && !(hasAudio && /^\[Audio:[^\]]*\]$/.test(text.trim())) && (
-          <div className="whitespace-pre-wrap break-words">{formatWhatsApp(text)}</div>
+        {shownText && !(hasImage && /^\[Image:[^\]]*\]$/.test(shownText.trim()))
+               && !(hasPdf   && /^\[PDF:[^\]]*\]$/.test(shownText.trim()))
+               && !(hasAudio && /^\[Audio:[^\]]*\]$/.test(shownText.trim())) && (
+          <div className="whitespace-pre-wrap break-words">{formatWhatsApp(shownText)}</div>
         )}
         {isUser && msg.extracted && <ExtractedReading extracted={msg.extracted} />}
 

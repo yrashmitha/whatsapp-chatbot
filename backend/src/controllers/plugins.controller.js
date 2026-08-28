@@ -1540,6 +1540,50 @@ async function sendWhatsAppTemplate(req, res) {
 }
 
 /**
+ * GET /api/plugins/whatsapp/template-sends?order_ids=a,b,c
+ *
+ * Which of these orders belong to someone who has already had a template, and
+ * which one they had. The send skips repeats on its own, but only once it is
+ * running; this is what lets the count be right before anybody presses send.
+ *
+ * Keyed by customer, because that is how a template is sent. Someone who has
+ * had the offer has had it, whichever of their orders is ticked.
+ */
+async function templateSendsForOrders(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+
+  const ids = String(req.query.order_ids || '')
+    .split(',').map(x => x.trim()).filter(Boolean).slice(0, 200);
+  if (!ids.length) return res.json({ sends: {} });
+
+  try {
+    const { rows } = await db.pgQuery(
+      `SELECT DISTINCT ON (o.order_id)
+              o.order_id,
+              substring(m.message_text from '\\[template_sent:([a-zA-Z0-9_-]+)\\]') AS template,
+              m.created_at
+         FROM orders o
+         JOIN messages m
+           ON m.client_id = o.client_id
+          AND m.phone_number = o.phone_number
+          AND m.message_text LIKE '%[template_sent:%'
+        WHERE o.client_id = $1 AND o.order_id = ANY($2)
+        ORDER BY o.order_id, m.created_at DESC`,
+      [clientId, ids]
+    );
+
+    const sends = {};
+    for (const r of rows) {
+      sends[r.order_id] = { template: r.template, at: r.created_at };
+    }
+    res.json({ sends });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
+
+/**
  * GET /api/plugins/meta/statuses?order_ids=a,b,c — one answer per order.
  *
  * The orders page shows fifty rows and each one wants to know whether its sale
@@ -2430,6 +2474,7 @@ async function downloadPorondamPdf(req, res) {
 
 module.exports = {
   listWhatsAppTemplates,
+  templateSendsForOrders,
   sendWhatsAppTemplate,
   metaEventsForOrder,
   metaStatusesForOrders,

@@ -230,6 +230,20 @@ export default function Orders() {
   });
   const metaStatuses = metaStatusData || {};
 
+  // Who has already had a marketing template. The send skips repeats on its
+  // own, but only once it is running - by then you have already decided how
+  // many people to message. This is what makes the count right beforehand.
+  const { data: templateSendData } = useQuery({
+    queryKey: ['template-sends', clientId, visibleOrderIds.join(',')],
+    queryFn: () => api.get('/plugins/whatsapp/template-sends', {
+      params: { order_ids: visibleOrderIds.join(','), ...(clientId && { client_id: clientId }) },
+    }).then(r => r.data.sends),
+    enabled: visibleOrderIds.length > 0,
+    staleTime: 30_000,
+    retry: false,
+  });
+  const templateSends = templateSendData || {};
+
 
   return (
     <Layout>
@@ -375,6 +389,13 @@ export default function Orders() {
                                 scanning the list, not after opening it. Carries
                                 its own Retry when the last attempt failed. */}
                             <MetaRowMarker orderId={o.order_id} clientId={clientId} state={metaStatuses[o.order_id]} />
+                            {templateSends[o.order_id] && (
+                              <span className="text-xs px-1.5 py-0.5 rounded-md font-medium shrink-0"
+                                    style={{ background: 'rgba(217,119,6,0.12)', color: '#b45309' }}
+                                    title={`Already sent "${templateSends[o.order_id].template}" on ${new Date(templateSends[o.order_id].at).toLocaleString()}. Sending again is refused.`}>
+                                Template sent
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td className="py-2.5 pr-4">
@@ -772,6 +793,7 @@ export default function Orders() {
       {templateOpen && (
         <SendTemplateModal
           orderIds={selected}
+          alreadySent={selected.filter(id => templateSends[id])}
           clientId={clientId}
           onClose={() => setTemplateOpen(false)}
           onSent={() => setSelected([])}

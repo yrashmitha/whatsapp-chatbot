@@ -16,7 +16,12 @@ import api from '../../lib/api';
  * header needs a public https URL that stays reachable - the URL Meta shows on
  * an approved template is a temporary CDN link and will stop working.
  */
-export default function SendTemplateModal({ orderIds, clientId, onClose, onSent }) {
+/**
+ * @param {object}   props
+ * @param {string[]} props.orderIds
+ * @param {string[]} [props.alreadySent] orders whose customer has had a template
+ */
+export default function SendTemplateModal({ orderIds, alreadySent = [], clientId, onClose, onSent }) {
   const toast = useToast();
   const [template, setTemplate] = useState('');
   const [imageUrl, setImageUrl] = useState('');
@@ -61,16 +66,28 @@ export default function SendTemplateModal({ orderIds, clientId, onClose, onSent 
     onError: (e) => toast.error(e?.response?.data?.error || 'Could not send'),
   });
 
-  const blocked = !template || (needsImage && !imageUrl) || chosen?.variables > 0;
+  // The count that matters is the one that will actually go out, not the one
+  // that happens to be ticked. A marketing message is charged per send.
+  const willReceive = orderIds.length - alreadySent.length;
+
+  const blocked = !template || (needsImage && !imageUrl)
+    || chosen?.variables > 0 || willReceive === 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto p-5" onClick={e => e.stopPropagation()}>
         <h2 className="text-base font-semibold text-slate-800 mb-1">Send a WhatsApp template</h2>
         <p className="text-xs text-slate-500 mb-4">
-          To <strong>{orderIds.length}</strong> selected order{orderIds.length !== 1 ? 's' : ''}.
-          Anyone who already had this template is skipped automatically.
+          {willReceive} of <strong>{orderIds.length}</strong> selected
+          order{orderIds.length !== 1 ? 's' : ''} will be messaged.
+          {alreadySent.length > 0 && ` ${alreadySent.length} already had a template and are skipped.`}
         </p>
+
+        {willReceive === 0 && (
+          <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-2.5 py-2 mb-3">
+            Everyone selected has already had a template. Nothing would be sent.
+          </p>
+        )}
 
         {loadingTemplates && <p className="text-sm text-slate-400">Loading templates…</p>}
 
@@ -160,7 +177,7 @@ export default function SendTemplateModal({ orderIds, clientId, onClose, onSent 
             disabled={blocked || send.isPending}
             className="px-4 py-1.5 text-sm font-medium text-white bg-violet-600 hover:bg-violet-700 disabled:opacity-50 rounded-xl border-0 cursor-pointer"
           >
-            {send.isPending ? 'Sending…' : `Send to ${orderIds.length}`}
+            {send.isPending ? 'Sending…' : `Send to ${willReceive}`}
           </button>
         </div>
       </div>

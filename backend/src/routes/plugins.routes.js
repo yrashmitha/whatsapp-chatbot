@@ -51,6 +51,7 @@ const {
   syncMetaAudience,
   createMetaAudience,
   listWhatsAppTemplates,
+  templateSendsForOrders,
   sendWhatsAppTemplate,
   metaEventsForOrder,
   metaStatusesForOrders,
@@ -113,6 +114,7 @@ router.get('/whatsapp/templates',                       jwtAuth, requirePermissi
 // replying to one who just wrote in, so it sits behind the media permission
 // rather than plain reply.
 router.post('/whatsapp/send-template',                  jwtAuth, requirePermission('chat.send_media'), sendWhatsAppTemplate);
+router.get('/whatsapp/template-sends',                  jwtAuth, requirePermission('orders.view'), templateSendsForOrders);
 router.get('/meta/statuses',                            jwtAuth, requirePermission('orders.view'), metaStatusesForOrders);
 router.get('/meta/summary',                             jwtAuth, requirePermission('orders.view'), metaSummaryForCustomer);
 router.get('/meta/events/:orderId',                     jwtAuth, requirePermission('orders.view'), metaEventsForOrder);

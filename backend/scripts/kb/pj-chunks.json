@@ -1,0 +1,255 @@
+{
+  "_readme": [
+    "One topic per entry. The title is the CHUNK ID and the loader writes the",
+    "'## CHUNK ID:' header, the [NOTE:] lines and the body for you.",
+    "",
+    "aliases  — how customers actually type it, including romanised Sinhala.",
+    "           These are embedded with the chunk, which is what lets a query",
+    "           like 'komada gasthu' find a Sinhala-script answer.",
+    "exact    — true means the model must reproduce the body word for word.",
+    "send     — a quick reply block to send instead of writing a figure.",
+    "           Prices live in blocks, never here.",
+    "",
+    "pj: correct the Sinhala in 'body'. Everything else is machine-facing."
+  ],
+  "chunks": [
+    {
+      "id": "faq_price_overview",
+      "intent": "price",
+      "aliases": "gasthuwa, gaasthuwa, gasthu, gasthiwa, kiyada, kiyak, kiyak gannawada, gana, gana kiyada, price, charges, komada gasthu, charges kohomada, price kohomada, මිල, ගාස්තුව, ගාස්තුව කීයද, ගාස්තු, gana kiyada, kiyak gnnwda, hadahan parikshawata, kiyak gannawada, kendare balanna kiyak",
+      "send": "greet",
+      "body": "අපිට සේවා කිහිපයක් තියෙනවා, ගාස්තුව ඒ අනුව වෙනස් වෙනවා.\n\nඔයාට ඕන මොකක්ද කියලා කිව්වොත් මම ඒකේ විස්තරයි ගාස්තුවයි කියන්නම්."
+    },
+    {
+      "id": "faq_which_service_suits_me",
+      "intent": "price",
+      "aliases": "mokakda hoda, monawada ganna, which one, suitable, මොකක්ද හොඳ, කුමක්ද සුදුසු, mokak ganndha",
+      "body": "ඔයාට දැනගන්න ඕන දේ අනුව සේවාව තෝරගන්න පුළුවන්.\n\n• ජීවිතේ එක අංශයක් විතරක් (රැකියාව, අධ්‍යාපනය, ආර්ථිකය, සෞඛ්‍යය, රට යාම වගේ)\n• විවාහ ජීවිතය විතරක් සම්පූර්ණයෙන්ම\n• ජීවිතේ ප්‍රධාන අංශ 11ම, පිළියම් සහ ඉදිරි මාස 6ට සැලැස්මක් එක්කම\n• දෙන්නෙකුගේ කේන්දර ගැලපීම / පොරොන්දම්"
+    },
+    {
+      "id": "faq_does_full_report_cover_marriage",
+      "intent": "scope",
+      "aliases": "vivahaya gathath, marriage included, 1500 ta vivahaya, විවාහය ගැනත්, ඔක්කොම එනවද, sියල්ල එනවද",
+      "body": "ඔව්. සම්පූර්ණ ජීවන වාර්තාවට විවාහයත් ඇතුළත් වෙනවා.\n\nඒකෙන් ජීවිතේ ප්‍රධාන අංශ 11ම — විවාහය, රැකියාව, ධන යෝග, දේපළ, සෞඛ්‍යය ඇතුළුව — බලනවා. විවාහය ගැන විතරක් ගැඹුරින්ම ඕන නම් ඒකට වෙනම වාර්තාවකුත් තියෙනවා."
+    },
+    {
+      "id": "faq_how_to_pay",
+      "intent": "payment",
+      "aliases": "salli danne kohomda, salli denna komada, kohomada gewanne, how to pay, payment kohomd, gewanne kohomada, මුදල් ගෙවන්නේ කොහොමද, ගෙවන්නේ කොහොමද, salli denna komada, salli danne kohomda, salli danna, salli denna, 1500 denne kohomada",
+      "send": "payment-howto",
+      "body": "බැංකු ට්‍රාන්ස්ෆර් එකකින් හෝ බැංකුවට ගිහින් තැන්පත් කරන්නත් පුළුවන්.\n\nගිණුම් අංකය ඔයාගේ ඇණවුම එක්කම එවනවා — ගෙවීම ඔයාගේම වාර්තාවට හරියටම ගැලපෙන්න ඕන නිසා."
+    },
+    {
+      "id": "faq_pay_before_or_after",
+      "intent": "payment",
+      "aliases": "salli dla inna onid, kalinda, salli dammata passeda, pay before, advance, gewanna one da, කලින්ද, කලින් ගෙවන්න ඕනද, පස්සේද, damma gewanna one da, gewanna one da, damala inna one da, kalin gewanna",
+      "exact": true,
+      "body": "හඳහන් පරීක්ෂාවට කලින් සම්පූර්ණ මුදල බැර කරන්න ඕනේ. 🙏\n\nගෙවීම ලැබුණු ගමන් වැඩේ පටන් ගන්නවා."
+    },
+    {
+      "id": "faq_other_banks",
+      "intent": "payment",
+      "aliases": "peoples bank, boc, bank of ceylon, sampath, hnb, nsb, other bank, account ekak nadda, wena bank ekak, පීපල්ස්, බැංකුවක් තියෙනවද",
+      "send": "bank",
+      "body": "අපිට තියෙන්නේ කොමර්ෂල් බැංකු ගිණුමයි.\n\nඕනෑම බැංකුවකින් ඒ ගිණුමට ඔන්ලයින් ට්‍රාන්ස්ෆර් එකක් කරන්න පුළුවන් — ඔයාට කොමර්ෂල් ගිණුමක් තියෙන්න ඕන නෑ."
+    },
+    {
+      "id": "faq_cannot_reach_bank_today",
+      "intent": "payment",
+      "aliases": "bank yanna one online nha, town ekata yanna oni, dan salli danna bari, heta dawas bank deposit, machine eken, atm, බැංකුවට යන්න බෑ, හෙට දාන්නම්",
+      "body": "කමක් නෑ, ඔයාට පහසු වෙලාවක ගෙවන්න පුළුවන්. 🙏\n\nෆෝන් එකේ බැංකු ඇප් එකෙන් ට්‍රාන්ස්ෆර් කරන්නත් පුළුවන්, බැංකුවට යන්නම ඕන නෑ. මැෂින් එකකින් තැන්පත් කරන්නත් පුළුවන්."
+    },
+    {
+      "id": "faq_installments",
+      "intent": "payment",
+      "aliases": "kotas wasayen, installment, poddak poddak, part payment, කොටස් වශයෙන්, ටිකෙන් ටික",
+      "exact": true,
+      "body": "සමාවෙන්න, කොටස් වශයෙන් ගෙවීමක් කරන්න බෑ. සම්පූර්ණ මුදල එකවර බැර කරන්න ඕනේ. 🙏"
+    },
+    {
+      "id": "faq_receipt_what_to_send",
+      "intent": "payment",
+      "aliases": "receipt, risit, slip, screenshot, ewanne mokakda, රිසිට්, ස්ලිප්",
+      "exact": true,
+      "body": "ගෙවීම් කරලා රිසිට් එකේ ෆොටෝ එකක් හෝ ස්ක්‍රීන්ෂොට් එකක් මෙතනට එවන්න. 🙏"
+    },
+    {
+      "id": "faq_payment_not_confirmed_yet",
+      "intent": "payment",
+      "aliases": "salli dammada, receipt ewwa, gewwa, confirm una da, ලැබුණද, දැම්මා",
+      "body": "රිසිට් එක ලැබුණා. අපි ගිණුමට ආවාද කියලා චෙක් කරලා ඔයාට කියන්නම්.\n\nබැංකු චෙක් කිරීම අතින්ම කරන නිසා ටිකක් වෙලා යන්න පුළුවන්."
+    },
+    {
+      "id": "faq_delivery_time",
+      "intent": "timing",
+      "aliases": "dawas kiyakin, dina kiyak, kochchara welawak, kavada, kiyata denne, how long, delivery time, දවස් කීයක්, කවදාද, කීයටද, dina kiyak yanawada, kiyata denne, ada kiyata, kawada gann puluwan, kavada denne, kochchara dawas",
+      "exact": true,
+      "body": "ගෙවීම තහවුරු වුණාට පස්සේ දවස් 2-3ක් ඇතුළත වාර්තාව එවනවා. 🙏"
+    },
+    {
+      "id": "faq_why_2_3_days",
+      "intent": "timing",
+      "aliases": "ikmanata denna, hurry, mokada parakku, why 3 days, ඉක්මනට, පරක්කු",
+      "exact": true,
+      "body": "අපි හැම කේන්දරයක්ම ගණනය කරන්නේ රාහු කාලය මුළුමනින්ම මගහැර, අතින්ම ඉතා සූක්ෂ්මව.\n\nඒකයි දවස් 2-3ක් ගතවෙන්නේ. ඉක්මනට කරන දෙයක් නෙවෙයි, හරියටම කරන දෙයක්. 🙏"
+    },
+    {
+      "id": "faq_order_status",
+      "intent": "timing",
+      "aliases": "wade iwaraid, wade krn gmnd, tawama iwara naha, kohomada wade, status, mokada una, වැඩේ ඉවරද, තවම නැද්ද, horoscope eke wade, wade krn gmnd, wade karanawada, mage wade, kohomada mage wade",
+      "body": "ඔයාගේ වාර්තාවේ වැඩ කරගෙන යනවා.\n\nඉවර වුණු ගමන් මෙතනටම එවනවා. 🙏"
+    },
+    {
+      "id": "faq_order_id",
+      "intent": "timing",
+      "aliases": "order id, order number, ඇණවුම් අංකය, order eke number eka",
+      "body": "ඔයාගේ ඇණවුම් අංකය ඇණවුම හදපු වෙලාවේ එවලා තියෙනවා.\n\nහොයාගන්න බැරි නම් කියන්න, මම නැවත එවන්නම්."
+    },
+    {
+      "id": "faq_delivery_method",
+      "intent": "timing",
+      "aliases": "kohomada ewanne, pdf da, print da, post karanawada, link ekak, how will i get, කොහොමද එවන්නේ, link ekak ewanna, link eka, ewanne kohomada, mokakda ewanne",
+      "body": "වාර්තාව මේ WhatsApp නම්බර් එකටම PDF ලිපියක් විදිහට එවනවා.\n\nඕනෑම වෙලාවක බලාගන්නත්, ප්‍රින්ට් කරගන්නත් පුළුවන්."
+    },
+    {
+      "id": "faq_birth_time_unknown",
+      "intent": "details",
+      "aliases": "welawa danne naha, upan welawa naha, birth time unknown, welawa amathaka, උපන් වේලාව දන්නේ නෑ, වෙලාව නෑ, welawa hariyata danne naha, welawa danne naha, hariyata danne naha, welawa amathakai",
+      "body": "උපන් වේලාව හරියටම දන්නේ නැත්නම් ඒකට කරන්න පුළුවන් දේවල් කිහිපයක් තියෙනවා.\n\nඋපන් සහතිකයේ (Birth Certificate) වේලාව සඳහන් වෙනවා. ඒක නැත්නම් ගෙදර අය දන්නවා නම් ආසන්න වේලාවක් — උදේද, දවල්ද, රෑද කියන එක වත් — කියන්න පුළුවන් නම් ඒකෙනුත් වැඩ කරන්න පුළුවන්."
+    },
+    {
+      "id": "faq_birth_time_approximate",
+      "intent": "details",
+      "aliases": "ahanna welawa, ude wage, approximate time, hariyata naha, ආසන්න වේලාව",
+      "body": "ආසන්න වේලාවක් තිබුණත් වැඩ කරන්න පුළුවන්.\n\nඒත් වේලාව හරියටම තියෙනවා නම් වාර්තාව ගොඩක් නිවැරදියි. ලග්නය සහ දශා කාල වෙනස් වෙන්නේ මිනිත්තු ගාණකින් වුණත්."
+    },
+    {
+      "id": "faq_why_birth_place_matters",
+      "intent": "details",
+      "aliases": "upan sthanaya mokatada, birth place why, nagaraya, උපන් ස්ථානය මොකටද",
+      "body": "උපන් ස්ථානය අනුව ග්‍රහයන්ගේ අංශක වෙනස් වෙනවා.\n\nඒක නිසා නගරය හරියටම දැනගන්න ඕන — එතකොට තමයි කේන්දරය නිවැරදිව හදන්න පුළුවන්."
+    },
+    {
+      "id": "faq_details_privacy",
+      "intent": "details",
+      "aliases": "wisthara surakshitha da, private da, share karanawada, privacy, විස්තර ආරක්ෂිතද",
+      "body": "ඔයාගේ විස්තර කාටවත් දෙන්නේ නෑ.\n\nඒවා පාවිච්චි කරන්නේ ඔයාගේ වාර්තාව හදන්න විතරයි. 🙏"
+    },
+    {
+      "id": "faq_whats_in_the_report",
+      "intent": "scope",
+      "aliases": "mokakda enne, what is included, kohomada wartawa, monawada thiyenne, මොනවද තියෙන්නේ, වාර්තාවේ මොකද",
+      "body": "වාර්තාවට ජීවිතේ ප්‍රධාන අංශ 11ම ඇතුළත් වෙනවා — විවාහය, රැකියාව, ධන යෝග, දේපළ, සෞඛ්‍යය ඇතුළුව.\n\nඒ හැම එකකටම පිළියම්, ඉදිරි මාස 6 සඳහා සැලැස්මක්, සහ ඔයාට විශේෂයෙන් තියෙන ප්‍රශ්නවලට වෙනම පිළිතුරු ලැබෙනවා."
+    },
+    {
+      "id": "faq_can_you_read_partner_from_my_chart",
+      "intent": "scope",
+      "aliases": "sahakaruge, partner, mage eken balanna, wife husband, දෙන්නාගේ, සහකරු, mage eken balanna, mage eken balann plwn, mage kendaren, ekaman balanna",
+      "body": "ඔයාගේ කේන්දරයෙන් සහකරු ගැන කියන්න පුළුවන් දේ සීමිතයි — ඔයාගේ විවාහ ස්ථානය අනුව ආසන්න අදහසක් විතරයි.\n\nදෙන්නාගේම හරියටම බලන්න නම් දෙන්නාගේම කේන්දර ඕන. 🙏"
+    },
+    {
+      "id": "faq_followup_questions_after_report",
+      "intent": "scope",
+      "aliases": "passe ahanna puluwanda, questions after, pahadili karanna, clarification, පැහැදිලි කරන්න, පස්සේ අහන්න",
+      "body": "පුළුවන්. වාර්තාව ලැබුණාට පස්සේ තේරෙන්නේ නැති දෙයක් තිබුණොත් මෙතනට කියන්න.\n\nඅපි පැහැදිලි කරලා දෙන්නම්. 🙏"
+    },
+    {
+      "id": "kb_shani_mangala_dosha",
+      "intent": "astrology",
+      "aliases": "shani mangala, mangala dosha, kuja dosha, ශනි මංගල, මංගල දෝෂය",
+      "body": "මංගල දෝෂය කියන්නේ කේන්දරයේ කුජ (අඟහරු) ග්‍රහයා විවාහයට බලපාන ස්ථානයක සිටීමයි.\n\nඒක තියෙනවා කියලා විවාහය සිදු නොවෙනවා නෙවෙයි — බලපෑම කොපමණද, ඒකට පිළියම් මොනවාද කියන එක කේන්දරය බලලා තමයි කියන්න පුළුවන්."
+    },
+    {
+      "id": "kb_kala_sarpa_yoga",
+      "intent": "astrology",
+      "aliases": "kala sarpa, sarpa yoga, කාල සර්ප, සර්ප යෝගය",
+      "body": "කාල සර්ප යෝගය කියන්නේ රාහු සහ කේතු අතරට සියලුම ග්‍රහයන් හසුවෙන තත්ත්වයයි.\n\nඒක ජීවිතේ බාධා ගෙන එන්න පුළුවන්, ඒත් හැම කේන්දරයකටම එකවගේ බලපාන්නේ නෑ. ඔයාගේ කේන්දරයේ තියෙනවද, තිබුණොත් මොකද කරන්න ඕන කියලා වාර්තාවෙන් කියනවා."
+    },
+    {
+      "id": "kb_karma_sambandhata",
+      "intent": "astrology",
+      "aliases": "karma sambandhathawak, karmic, twin flame, soulmate, කර්ම සබඳතාවක්",
+      "body": "කර්ම සබඳතාවක් කියන්නේ පෙර භවයේ සම්බන්ධයක් නිසා මේ ජීවිතේ හමුවෙන අයයි.\n\nඒක තහවුරු කරගන්න සාමාන්‍ය පොරොන්දම් බැලීමෙන් විතරක් බෑ — දෙන්නාගේම කේන්දර ගැඹුරින් සසඳලා තමයි කියන්න පුළුවන්."
+    },
+    {
+      "id": "kb_lagna_explained",
+      "intent": "astrology",
+      "aliases": "lagnaya mokakda, lagna, ascendant, ලග්නය කියන්නේ, ලග්නය දන්නේ නෑ",
+      "body": "ලග්නය කියන්නේ ඔයා උපන් මොහොතේ නැගෙනහිර ක්ෂිතිජයේ තිබුණු රාශියයි.\n\nදන්නේ නැත්නම් කමක් නෑ — උපන් දිනය, වේලාව සහ ස්ථානය තිබුණොත් අපි ඒක ගණනය කරගන්නම්."
+    },
+    {
+      "id": "kb_rahu_kalaya_why_avoided",
+      "intent": "astrology",
+      "aliases": "rahu kalaya, rahu kalya mokada, රාහු කාලය",
+      "body": "රාහු කාලය කියන්නේ දවසේ සුබ නොවන කාල පරාසයයි.\n\nඅපි කේන්දර ගණනය කරන්නේ ඒ කාලය මුළුමනින්ම මගහැරලා. ඒකත් වැඩේට දවස් 2-3ක් යන එකට හේතුවක්."
+    },
+    {
+      "id": "faq_remedies_included",
+      "intent": "remedies",
+      "aliases": "piliyam, remedies, shanthikarma, ශාන්තිකර්ම, පිළියම්",
+      "body": "ඔව්. වාර්තාවට පිළියම් ඇතුළත් වෙනවා.\n\nගෙදරදීම කරන්න පුළුවන් සරල පිළියම් සහ අපල අවම කරන ක්‍රම වාර්තාවේම ලියලා එවනවා."
+    },
+    {
+      "id": "faq_oil_thel",
+      "intent": "remedies",
+      "aliases": "thel eka, thel ganna, oil, තෛල, තෙල් එක",
+      "body": "පාරම්පරික තෛල ගැන විස්තර වාර්තාවේ සඳහන් වෙනවා.\n\nඒක වෙනම ගන්න ඕන නම් වාර්තාව ලැබුණාට පස්සේ මෙතනට කියන්න. 🙏"
+    },
+    {
+      "id": "faq_nekath_auspicious_time",
+      "intent": "remedies",
+      "aliases": "nekatha, welawa balala denna, auspicious time, subha welawa, නැකත, සුබ වේලාව",
+      "body": "නැකත් බලලා දෙන එකත් කරනවා.\n\nමොකටද ඕන කියලා කිව්වොත් — ගෙදර යාම, වැඩක් පටන් ගැනීම, විවාහයක් වගේ — ඒකට වෙනම බලලා කියන්නම්."
+    },
+    {
+      "id": "faq_religion_of_remedies",
+      "intent": "remedies",
+      "aliases": "baudda, buddhist, agama, hindu, religion, බෞද්ධ, ආගම",
+      "body": "අපි දෙන පිළියම් බෞද්ධ ක්‍රමයට අනුවයි.\n\nඔයාට වෙනත් ආගමක් නම් කියන්න, ඒකට ගැලපෙන විදිහට කරන්න පුළුවන් දේ කියන්නම්."
+    },
+    {
+      "id": "faq_who_reads_the_chart",
+      "intent": "trust",
+      "aliases": "kawuda balanne, who reads, computer da, aula da, sathya da, කවුද බලන්නේ, ඇත්තද",
+      "exact": true,
+      "body": "අවුරුදු 40කට වැඩි පළපුරුද්දක් තියෙන ජෝතිර්වේදී මහත්මයෙක් තමයි හැම කේන්දරයක්ම අතින්ම බලන්නේ. 🙏"
+    },
+    {
+      "id": "faq_is_this_a_computer_report",
+      "intent": "trust",
+      "aliases": "software da, computer eken da, app ekakda, generated, පරිගණකයෙන්ද",
+      "exact": true,
+      "body": "නෑ, පරිගණකයෙන් විනාඩියෙන් හදන එකක් නෙවෙයි.\n\nඔයා උපන් හරි මොහොතේ ග්‍රහයන් හිටපු නිවැරදිම අංශක අතින්ම ගණනය කරලා තමයි වාර්තාව හදන්නේ. ඒකයි දවස් 2-3ක් යන්නේ."
+    },
+    {
+      "id": "faq_refund_policy",
+      "intent": "trust",
+      "aliases": "refund, salli ආපහු, money back, cancel karanna, ආපහු දෙනවද, salli apahu denawada, apahu denawada, apahu ganna, salli apahu",
+      "body": "වාර්තාව හදන්න පටන් ගත්තට පස්සේ මුදල ආපහු දෙන්න බෑ — ඒක අතින්ම කරන වැඩක් නිසා.\n\nඒත් වාර්තාවේ මොකක් හරි ප්‍රශ්නයක් තිබුණොත් මෙතනට කියන්න, අපි හදලා දෙන්නම්. 🙏"
+    },
+    {
+      "id": "faq_contact_details",
+      "intent": "trust",
+      "aliases": "call karanna puluwanda, phone number, office, adress, link ekak, කතා කරන්න, කන්තෝරුව",
+      "body": "සේවාව සම්පූර්ණයෙන්ම මේ WhatsApp නම්බර් එකෙන් තමයි කරන්නේ.\n\nඔයාට ඕන දේ මෙතනට ලියන්න, මම උදව් කරන්නම්. 🙏"
+    },
+    {
+      "id": "faq_unknown_fallback",
+      "intent": "fallback",
+      "aliases": "fallback, unknown, no match, wenath deyak",
+      "body": "ඒ ගැන මම හරියටම දැනගෙන කියන්නම්. 🙏\n\nඔයාට වෙන මොකක් හරි දැනගන්න ඕන දෙයක් තියෙනවද?"
+    },
+    {
+      "id": "faq_tarot_what_is_it",
+      "intent": "tarot",
+      "aliases": "tarot, tarrot, card reading, kartha, ටැරෝ, කාඩ්",
+      "body": "ටැරෝ කාඩ් කියවීම කියන්නේ කාඩ්පත් හරහා ඔයාගේ දැනට තියෙන තත්ත්වය සහ ඉදිරි මාස කිහිපය ගැන කියන ක්‍රමයක්.\n\nකේන්දරය වගේ උපන් වේලාව ඕන නෑ. ඔයාට තියෙන ප්‍රශ්නය කිව්වා නම් ඇති."
+    },
+    {
+      "id": "faq_tarot_vs_horoscope",
+      "intent": "tarot",
+      "aliases": "tarot da kendara da, wenasa, which is better, මොකද හොඳ ටැරෝ",
+      "body": "කේන්දරය කියන්නේ ඔයා උපන් මොහොතේ පදනමින් මුළු ජීවිතේම බලන එක.\n\nටැරෝ කියන්නේ දැනට තියෙන ප්‍රශ්නයකට, ළඟදී වෙන දේ ගැන ඉක්මන් පිළිතුරක්. දෙකම දෙකක්."
+    }
+  ]
+}

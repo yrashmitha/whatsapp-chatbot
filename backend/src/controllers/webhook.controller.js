@@ -104,6 +104,78 @@ async function cacheAdThumb(url) {
 }
 
 /**
+ * Read what a customer sent, and remember it, whether or not the bot replies.
+ *
+ * Silencing the bot should stop it talking, not stop it looking. A payment slip
+ * that arrives during a takeover is still a payment slip, and the amount and
+ * bank on it are what the CRM needs to move the order to payment_identified.
+ * Before this, 45% of images went unread because they landed while the bot was
+ * paused.
+ *
+ * Sends nothing. Stores the reading against the message and returns the note
+ * for the caller to use if it is going to reply.
+ *
+ * @param {object}      client
+ * @param {Buffer}      buffer
+ * @param {string}      mime
+ * @param {string|null} caption
+ * @param {string}      wamid
+ * @param {string}      from
+ * @param {object}      log
+ * @returns {Promise<string|null>} a note describing the image, or null
+ */
+async function readInboundImage(client, buffer, mime, caption, wamid, from, log) {
+  if (!buffer || !client?.id || !db.IS_PG) return null;
+
+  // The payment analyser first: it knows what a slip looks like and checks the
+  // account against the one we expect.
+  try {
+    const on = await db.pgQuery(
+      `SELECT enabled FROM client_addons WHERE client_id=$1 AND addon_id='image_analyzer' AND enabled=TRUE`,
+      [client.id]
+    );
+    if (on.rows.length) {
+      const cfg = await db.getPluginConfig(client.id, 'image_analyzer');
+      const analysis = await analyzePaymentDocument(buffer, mime, cfg.api_key || await getGeminiKey(client.id), {
+        account: cfg.expected_account || null,
+        bank:    cfg.expected_bank    || null,
+        names:   cfg.expected_names   || null,
+        prompt:  cfg.extraction_prompt || null,
+      });
+      log.info(`[IMAGE-ANALYZER] type=${analysis.document_type} payment=${analysis.is_payment_related} amount=${analysis.amount}`);
+
+      let pending = [];
+      if (analysis.is_payment_related) {
+        const orders = await db.getOrdersByPhone(from, client.id);
+        pending = orders.filter(o => o.status !== 'completed' && o.status !== 'cancelled');
+      }
+      await db.setMessageExtraction(wamid, analysis)
+        .catch(e => log.warn('[IMAGE-ANALYZER] could not store the reading:', e.message));
+      return buildAnalysisNote(analysis, caption, pending, cfg.verification_prompt || '');
+    }
+  } catch (e) {
+    log.warn('[IMAGE-ANALYZER] failed:', e.message);
+  }
+
+  // Otherwise the general extractor, which at least says what is in the picture.
+  try {
+    const on = await db.pgQuery(
+      `SELECT enabled FROM client_addons WHERE client_id=$1 AND addon_id='media_extractor' AND enabled=TRUE`,
+      [client.id]
+    );
+    if (!on.rows.length) return null;
+    const { text: extracted } = await extractFromBuffer(buffer, mime, 'photo', null, await getGeminiKey(client.id));
+    if (!extracted) return null;
+    await db.setMessageExtraction(wamid, { text: extracted })
+      .catch(e => log.warn('[MEDIA-EXTRACTOR] could not store the reading:', e.message));
+    return caption ? `${extracted}\n[Customer also included a caption: "${caption}"]` : extracted;
+  } catch (e) {
+    log.warn('[MEDIA-EXTRACTOR] failed:', e.message);
+    return null;
+  }
+}
+
+/**
  * Fetch an inbound media file and keep it, returning the url to serve it from.
  *
  * WhatsApp hands over an id, not a file. The id buys a short-lived download url
@@ -133,7 +205,9 @@ async function keepInboundMedia(mediaId, from, client) {
     const fname = `wa-${from}-${Date.now()}.${ext}`;
     fs.writeFileSync(path.join(UPLOADS_DIR, fname), res.data);
     console.log(`[MEDIA-DL] kept ${fname} (${mime})`);
-    return `/uploads/${fname}`;
+    // The bytes come back too. The caller may want to read the image even
+    // when the bot is silent, and fetching it twice would be wasteful.
+    return { url: `/uploads/${fname}`, buffer: Buffer.from(res.data), mime };
   } catch (e) {
     console.warn('[MEDIA-DL] could not keep inbound media:', e.message);
     return null;
@@ -293,10 +367,18 @@ function receiveWebhook(req, res) {
         // Keep the file as well as the label. The bot is not going to look at
         // it, but the person handling this chat certainly wants to.
         const mediaId = msg.image?.id || msg.document?.id || msg.audio?.id || null;
-        const keptUrl = mediaType ? await keepInboundMedia(mediaId, from, client) : null;
+        const kept = mediaType ? await keepInboundMedia(mediaId, from, client) : null;
 
         await db.upsertCustomer(from, null, client.id);
-        await db.insertMessage(from, label, 'user', null, client.id, mediaType, keptUrl, msg.id);
+        await db.insertMessage(from, label, 'user', null, client.id, mediaType, kept?.url || null, msg.id);
+
+        // Read it anyway. The bot is not going to say anything, but a slip is
+        // still a slip and whoever is handling this chat needs the amount and
+        // the bank without opening the picture themselves.
+        if (msg.type === 'image' && kept?.buffer) {
+          await readInboundImage(client, kept.buffer, kept.mime, msg.image?.caption || null, msg.id, from, log)
+            .catch(e => log.warn('[WEBHOOK] could not read the image while silent:', e.message));
+        }
 
         // An away message is opt-in and only for the global switch: a chat an
         // operator has taken over is being handled by a person, and telling

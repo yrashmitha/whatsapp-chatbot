@@ -21,6 +21,7 @@ import HoroscopeEditorDrawer from '../components/orders/HoroscopeEditorDrawer';
 import OrderRemarks from '../components/orders/OrderRemarks';
 import MetaTracking from '../components/orders/MetaTracking';
 import MetaRowMarker from '../components/orders/MetaRowMarker';
+import SendTemplateModal from '../components/orders/SendTemplateModal';
 import WaMessageModal from '../components/orders/WaMessageModal';
 import TarotGenerateModal from '../components/orders/TarotGenerateModal';
 import TarotEditorDrawer from '../components/orders/TarotEditorDrawer';
@@ -48,6 +49,9 @@ export default function Orders() {
   // '' every sale, 'bot' the ones nobody claimed, or a crm_users id.
   const [operator, setOperator] = useState('');
   const [expandedOrder, setExpandedOrder] = useState(null);
+  // Ticked orders, for sending a template to several people at once.
+  const [selected, setSelected] = useState([]);
+  const [templateOpen, setTemplateOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState(null); // { id, orderId, fields }
   const [editingNoteId, setEditingNoteId] = useState(null);
   const [noteText, setNoteText] = useState('');
@@ -210,7 +214,7 @@ export default function Orders() {
   };
 
   // Column count for colSpan
-  const colCount = superAdmin ? 6 : 5;
+  const colCount = superAdmin ? 7 : 6;
 
   // One request for the page rather than one per row. The ids come from the
   // orders already loaded, so this follows whatever filter and page is showing.
@@ -287,12 +291,35 @@ export default function Orders() {
         </div>
 
         <div className="flex-1 overflow-auto px-6 py-4">
+          {/* Appears only when something is ticked, so it never competes with
+              the table for attention. The count is in the button because the
+              number of people about to receive a paid message is the one thing
+              worth being sure about. */}
+          {selected.length > 0 && (
+            <div className="flex items-center gap-3 mb-3 px-3 py-2 rounded-xl"
+                 style={{ background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.2)" }}>
+              <span className="text-sm font-medium text-slate-700">{selected.length} selected</span>
+              <button onClick={() => setTemplateOpen(true)}
+                className="px-3 py-1 text-xs font-medium text-white bg-violet-600 hover:bg-violet-700 rounded-lg border-0 cursor-pointer">
+                Send WhatsApp template
+              </button>
+              <button onClick={() => setSelected([])}
+                className="text-xs text-slate-500 bg-transparent border-0 cursor-pointer ml-auto">Clear</button>
+            </div>
+          )}
+
           {isLoading ? (
             <div className="flex justify-center py-12"><Spinner /></div>
           ) : (
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-xs text-slate-500 uppercase tracking-wide border-b border-slate-200">
+                  <th className="py-2 text-left pr-2 w-8">
+                    <input type="checkbox"
+                      checked={orders.length > 0 && selected.length === orders.length}
+                      onChange={e => setSelected(e.target.checked ? orders.map(x => x.order_id).filter(Boolean) : [])}
+                      className="cursor-pointer" />
+                  </th>
                   <th className="py-2 text-left pr-4">Order ID</th>
                   <th className="py-2 text-left pr-4">Customer</th>
                   <th className="py-2 text-left pr-4">Status</th>
@@ -331,6 +358,15 @@ export default function Orders() {
                   return (
                     <React.Fragment key={o.id}>
                       <tr className="border-b border-slate-100 hover:bg-slate-50">
+                        <td className="py-2.5 pr-2">
+                          <input type="checkbox"
+                            checked={selected.includes(o.order_id)}
+                            onChange={e => setSelected(prev => e.target.checked
+                              ? [...prev, o.order_id]
+                              : prev.filter(x => x !== o.order_id))}
+                            onClick={e => e.stopPropagation()}
+                            className="cursor-pointer" />
+                        </td>
                         <td className="py-2.5 pr-4 text-slate-500 font-mono text-xs">
                           <div className="flex items-center gap-1.5">
                             <span>#{o.order_id || o.id}</span>
@@ -733,6 +769,15 @@ export default function Orders() {
           </div>
         </div>
       )}
+      {templateOpen && (
+        <SendTemplateModal
+          orderIds={selected}
+          clientId={clientId}
+          onClose={() => setTemplateOpen(false)}
+          onSent={() => setSelected([])}
+        />
+      )}
+
       <CreateOrderDrawer
         open={showCreate}
         onClose={() => setShowCreate(false)}

@@ -6,7 +6,8 @@
 
 'use strict';
 
-const db   = require('../db');
+const db    = require('../db');
+const axios = require('axios');
 const { generateAstroMessage, DEFAULT_ASTRO_PROMPT } = require('../services/astro');
 const { generateHoroscope, buildHoroscopeDoc, buildQuantumDoc, regenerateHoroscopeSection, generateWaMessage, renderYear, parseSinhalaDate, parseSinhalaTime } = require('../services/horoscope');
 const { calculateVedicChart } = require('../services/vedicChart');
@@ -1390,6 +1391,155 @@ async function metaEventsForOrder(req, res) {
 }
 
 /**
+ * GET /api/plugins/whatsapp/templates — the client's approved templates.
+ *
+ * Read from Meta, not from a local copy: approval can be withdrawn, and a
+ * template that is no longer APPROVED must not be offered.
+ */
+async function listWhatsAppTemplates(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    const { rows } = await db.pgQuery(
+      `SELECT waba_id, wa_token FROM client_configs WHERE client_id=$1`, [clientId]);
+    const cfg = rows[0];
+    if (!cfg?.waba_id || !cfg?.wa_token) {
+      return res.json({ templates: [], note: 'No WhatsApp Business Account on file yet. It is recorded from the next incoming message.' });
+    }
+    const r = await axios.get(
+      `https://graph.facebook.com/v18.0/${cfg.waba_id}/message_templates`,
+      { params: { access_token: cfg.wa_token, limit: 100 } }
+    );
+    const templates = (r.data.data || [])
+      .filter(t => t.status === 'APPROVED')
+      .map(t => {
+        const header = (t.components || []).find(x => x.type === 'HEADER');
+        const body   = (t.components || []).find(x => x.type === 'BODY');
+        return {
+          name: t.name,
+          language: t.language,
+          category: t.category,
+          body: body?.text || '',
+          header_format: header?.format || null,
+          // A template with body variables needs values this endpoint has no
+          // way to supply, so it is reported and the UI refuses it.
+          variables: (body?.text.match(/\{\{\d+\}\}/g) || []).length,
+        };
+      });
+    res.json({ templates });
+  } catch (e) {
+    res.status(500).json({ error: e?.response?.data?.error?.message || e.message });
+  }
+}
+
+/**
+ * POST /api/plugins/whatsapp/send-template — send one to chosen orders.
+ *
+ * Takes explicit order ids. A filter would be one mistyped number away from
+ * messaging every customer who ever ordered, and a marketing template is
+ * charged per message and answered with blocks when unwelcome, so choosing the
+ * recipients by hand is the safety rail rather than an inconvenience.
+ *
+ * Skips anyone who already received this template. Repeating an offer somebody
+ * declined is how a business earns a quality downgrade that degrades every
+ * later message, including the ones customers want.
+ */
+async function sendWhatsAppTemplate(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+
+  const { template, image_url, order_ids } = req.body || {};
+  if (!template) return res.status(400).json({ error: 'template required' });
+  if (!Array.isArray(order_ids) || !order_ids.length) {
+    return res.status(400).json({ error: 'Choose at least one order' });
+  }
+  if (order_ids.length > 100) {
+    return res.status(400).json({ error: 'At most 100 at a time' });
+  }
+
+  try {
+    const { rows: cfgRows } = await db.pgQuery(
+      `SELECT waba_id, wa_token, phone_number_id FROM client_configs WHERE client_id=$1`, [clientId]);
+    const cfg = cfgRows[0];
+    if (!cfg?.wa_token || !cfg?.phone_number_id) {
+      return res.status(400).json({ error: 'No WhatsApp credentials for this client' });
+    }
+
+    const tplRes = await axios.get(
+      `https://graph.facebook.com/v18.0/${cfg.waba_id}/message_templates`,
+      { params: { access_token: cfg.wa_token, limit: 100 } }
+    );
+    const tpl = (tplRes.data.data || []).find(t => t.name === template);
+    if (!tpl) return res.status(404).json({ error: `No template named "${template}"` });
+    if (tpl.status !== 'APPROVED') {
+      return res.status(400).json({ error: `"${template}" is ${tpl.status}, not approved` });
+    }
+
+    const header = (tpl.components || []).find(x => x.type === 'HEADER');
+    const body   = (tpl.components || []).find(x => x.type === 'BODY');
+    if ((body?.text.match(/\{\{\d+\}\}/g) || []).length) {
+      return res.status(400).json({ error: 'This template has variables and cannot be sent in bulk yet' });
+    }
+    if (header?.format === 'IMAGE' && !image_url) {
+      return res.status(400).json({ error: 'This template needs a header image' });
+    }
+
+    const SENT_TAG = `[template_sent:${template}]`;
+
+    // One phone per order, and never the same person twice in a run.
+    const { rows: targets } = await db.pgQuery(
+      `SELECT DISTINCT ON (o.phone_number) o.order_id, o.phone_number
+         FROM orders o
+        WHERE o.client_id = $1 AND o.order_id = ANY($2) AND o.phone_number IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM messages m
+             WHERE m.client_id = o.client_id AND m.phone_number = o.phone_number
+               AND m.message_text LIKE $3)
+        ORDER BY o.phone_number, o.created_at DESC`,
+      [clientId, order_ids, `%${SENT_TAG}%`]
+    );
+
+    const skipped = order_ids.length - targets.length;
+    const components = header?.format === 'IMAGE'
+      ? [{ type: 'header', parameters: [{ type: 'image', image: { link: image_url } }] }]
+      : undefined;
+
+    const sent = [];
+    const failed = [];
+    for (const t of targets) {
+      try {
+        const r = await axios.post(
+          `https://graph.facebook.com/v18.0/${cfg.phone_number_id}/messages`,
+          {
+            messaging_product: 'whatsapp',
+            to: t.phone_number,
+            type: 'template',
+            template: { name: template, language: { code: tpl.language }, ...(components && { components }) },
+          },
+          { headers: { Authorization: `Bearer ${cfg.wa_token}`, 'Content-Type': 'application/json' } }
+        );
+        const wamid = r.data?.messages?.[0]?.id || null;
+        await db.pgQuery(
+          `INSERT INTO messages (phone_number, client_id, sender_type, message_text, wamid, sent_by, sent_manual)
+           VALUES ($1,$2,'bot',$3,$4,$5,TRUE)`,
+          [t.phone_number, clientId, `${SENT_TAG}\n${body?.text || ''}`, wamid, req.user?.uid ?? null]
+        ).catch(() => {});
+        sent.push(t.order_id);
+      } catch (e) {
+        const err = e?.response?.data?.error;
+        failed.push({ order_id: t.order_id, error: err?.error_data?.details || err?.message || e.message });
+      }
+      // A pause between sends. A burst reads as a blast, to Meta and to people.
+      await new Promise(r => setTimeout(r, 1200));
+    }
+
+    res.json({ sent: sent.length, failed, skipped, note: skipped ? `${skipped} already had this template` : undefined });
+  } catch (e) {
+    res.status(500).json({ error: e?.response?.data?.error?.message || e.message });
+  }
+}
+
+/**
  * GET /api/plugins/meta/statuses?order_ids=a,b,c — one answer per order.
  *
  * The orders page shows fifty rows and each one wants to know whether its sale
@@ -2241,6 +2391,8 @@ async function downloadPorondamPdf(req, res) {
 }
 
 module.exports = {
+  listWhatsAppTemplates,
+  sendWhatsAppTemplate,
   metaEventsForOrder,
   metaStatusesForOrders,
   metaSummaryForCustomer,

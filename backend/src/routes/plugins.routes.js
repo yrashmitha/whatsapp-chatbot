@@ -50,6 +50,8 @@ const {
   generateFollowUpMessage,
   syncMetaAudience,
   createMetaAudience,
+  listWhatsAppTemplates,
+  sendWhatsAppTemplate,
   metaEventsForOrder,
   metaStatusesForOrders,
   metaSummaryForCustomer,
@@ -106,6 +108,11 @@ router.get('/meta/recent-events',                       jwtAuth, requirePermissi
 // Readable by anyone who can see the order it belongs to - it reports on that
 // order and nothing else, and hiding it behind the key permission would keep it
 // from the operators who work the orders.
+router.get('/whatsapp/templates',                       jwtAuth, requirePermission('chat.reply'), listWhatsAppTemplates);
+// Sending a paid marketing message to a list of people is a bigger act than
+// replying to one who just wrote in, so it sits behind the media permission
+// rather than plain reply.
+router.post('/whatsapp/send-template',                  jwtAuth, requirePermission('chat.send_media'), sendWhatsAppTemplate);
 router.get('/meta/statuses',                            jwtAuth, requirePermission('orders.view'), metaStatusesForOrders);
 router.get('/meta/summary',                             jwtAuth, requirePermission('orders.view'), metaSummaryForCustomer);
 router.get('/meta/events/:orderId',                     jwtAuth, requirePermission('orders.view'), metaEventsForOrder);

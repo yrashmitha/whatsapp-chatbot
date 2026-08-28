@@ -18,6 +18,11 @@ export default function MarriageEditorDrawer({ order, clientId, open, onClose })
   const [outerTab, setOuterTab]   = useState('edit');
   const [activeTab, setActiveTab] = useState(null);
   const [sections, setSections]   = useState([]);
+  const [questions, setQuestions] = useState([]);
+  const [answers, setAnswers]     = useState([]);
+  const [newQuestion, setNewQuestion] = useState('');
+  const [expandedQIdx, setExpandedQIdx] = useState(null);
+  const [savingQuestions, setSavingQuestions] = useState(false);
   const [waMessage, setWaMessage] = useState('');
   const [savedWa, setSavedWa]     = useState('');
   const [saving, setSaving]                           = useState(false);
@@ -63,6 +68,8 @@ export default function MarriageEditorDrawer({ order, clientId, open, onClose })
     setRegenerating(!!hd.marriage_generating);
     setWaMessage(hd.marriage_wa_message || '');
     setSavedWa(hd.marriage_wa_message || '');
+    setQuestions(Array.isArray(hd.marriage_special_questions) ? hd.marriage_special_questions.map(q => ({ ...q })) : []);
+    setAnswers(Array.isArray(hd.marriage_special_answers) ? hd.marriage_special_answers.map(a => ({ ...a })) : []);
     loadSections();
   }, [open, order?.order_id]);
 
@@ -72,6 +79,7 @@ export default function MarriageEditorDrawer({ order, clientId, open, onClose })
     setRegenerating(false);
     setWaMessage(hd.marriage_wa_message || '');
     setSavedWa(hd.marriage_wa_message || '');
+    setAnswers(Array.isArray(hd.marriage_special_answers) ? hd.marriage_special_answers.map(a => ({ ...a })) : []);
     loadSections();
   }, [hd.marriage_generating, open]);
 
@@ -124,6 +132,23 @@ export default function MarriageEditorDrawer({ order, clientId, open, onClose })
       toast.error(e?.response?.data?.error || 'Failed to save');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveQuestions = async () => {
+    setSavingQuestions(true);
+    try {
+      await api.patch(`/plugins/horoscope/marriage-sections/${order.order_id}${params}`, {
+        marriage_sections_data: sections,
+        marriage_special_questions: questions.filter(q => (q.question || '').trim()),
+        marriage_special_answers: answers,
+      });
+      toast.success('Saved. Use "Regenerate All" to answer newly added questions.');
+      qc.invalidateQueries({ queryKey: ['orders'] });
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Failed to save');
+    } finally {
+      setSavingQuestions(false);
     }
   };
 
@@ -236,6 +261,7 @@ export default function MarriageEditorDrawer({ order, clientId, open, onClose })
         {/* Outer tabs */}
         <div style={{ display: 'flex', borderBottom: '2px solid #e2e8f0', flexShrink: 0, paddingLeft: 8 }}>
           <p style={outerTabCls(outerTab === 'edit')}    onClick={() => setOuterTab('edit')}>✏ Edit Sections</p>
+          <p style={outerTabCls(outerTab === 'questions')} onClick={() => setOuterTab('questions')}>❓ Special Questions{questions.length ? ` (${questions.length})` : ''}</p>
           <p style={outerTabCls(outerTab === 'wa')}      onClick={() => setOuterTab('wa')}>💬 WhatsApp Message</p>
           <p style={outerTabCls(outerTab === 'preview')} onClick={() => setOuterTab('preview')}>👁 Preview Word File</p>
         </div>
@@ -298,6 +324,120 @@ export default function MarriageEditorDrawer({ order, clientId, open, onClose })
                 </p>
               )}
             </div>
+          </div>
+        )}
+
+        {/* ── Special Questions tab ── */}
+        {outerTab === 'questions' && (
+          <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div>
+              <p style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 700, color: '#db2777' }}>
+                Customer&apos;s own questions ({questions.length})
+              </p>
+              <p style={{ margin: '0 0 10px', fontSize: 12, color: '#94a3b8' }}>
+                Each is answered individually after the main sections. Add or edit here, then use
+                &nbsp;<b>Regenerate All</b>&nbsp;to produce the answers.
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {questions.map((q, i) => (
+                  <div key={i} style={{ border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 10px', background: '#f8fafc' }}>
+                      <span style={{ fontSize: 12, color: '#94a3b8', marginTop: 6 }}>{i + 1}.</span>
+                      <input
+                        style={{ flex: 1, padding: '6px 8px', fontSize: 13, background: '#fff', border: '1px solid #cbd5e1', borderRadius: 6, outline: 'none' }}
+                        value={q.question || ''}
+                        placeholder="Question (shown in the report)"
+                        onChange={e => setQuestions(qs => qs.map((x, j) => (j === i ? { ...x, question: e.target.value } : x)))}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setExpandedQIdx(expandedQIdx === i ? null : i)}
+                        title="Edit the detailed AI-only instruction"
+                        style={{ padding: '4px 8px', fontSize: 12, color: '#db2777', background: '#fff', border: '1px solid #f9a8d4', borderRadius: 6, cursor: 'pointer' }}
+                      >
+                        {expandedQIdx === i ? '▲' : '✎ prompt'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setQuestions(qs => qs.filter((_, j) => j !== i))}
+                        style={{ padding: '4px 8px', fontSize: 12, color: '#ef4444', background: '#fff', border: '1px solid #fecaca', borderRadius: 6, cursor: 'pointer' }}
+                      >×</button>
+                    </div>
+                    {expandedQIdx === i && (
+                      <textarea
+                        rows={4}
+                        value={q.prompt || ''}
+                        placeholder="Detailed instruction for the AI (the customer never sees this). Leave blank to use the question as-is."
+                        onChange={e => setQuestions(qs => qs.map((x, j) => (j === i ? { ...x, prompt: e.target.value } : x)))}
+                        style={{ width: '100%', padding: '8px 10px', fontSize: 12, fontFamily: 'monospace', border: 0, borderTop: '1px solid #e2e8f0', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }}
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <input
+                  style={{ flex: 1, padding: '8px 10px', fontSize: 13, border: '1px solid #cbd5e1', borderRadius: 8, outline: 'none' }}
+                  value={newQuestion}
+                  onChange={e => setNewQuestion(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && newQuestion.trim()) {
+                      e.preventDefault();
+                      setQuestions(qs => [...qs, { question: newQuestion.trim(), prompt: '' }]);
+                      setNewQuestion('');
+                    }
+                  }}
+                  placeholder="Add a question the customer asked…"
+                />
+                <button
+                  type="button"
+                  disabled={!newQuestion.trim()}
+                  onClick={() => { setQuestions(qs => [...qs, { question: newQuestion.trim(), prompt: '' }]); setNewQuestion(''); }}
+                  style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, color: '#be185d', background: '#fce7f3', border: 0, borderRadius: 8, cursor: newQuestion.trim() ? 'pointer' : 'not-allowed', opacity: newQuestion.trim() ? 1 : 0.5 }}
+                >+ Add</button>
+              </div>
+
+              <button
+                onClick={handleSaveQuestions}
+                disabled={savingQuestions || sections.length === 0}
+                style={{ marginTop: 12, padding: '8px 18px', fontSize: 13, fontWeight: 600, background: '#db2777', color: '#fff', border: 0, borderRadius: 8, cursor: (savingQuestions || sections.length === 0) ? 'not-allowed' : 'pointer', opacity: (savingQuestions || sections.length === 0) ? 0.6 : 1 }}
+              >
+                {savingQuestions ? 'Saving…' : '💾 Save Questions'}
+              </button>
+            </div>
+
+            {answers.length > 0 && (
+              <div>
+                <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: '#db2777' }}>Answers</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                  {answers.map((qa, i) => (
+                    <div key={i}>
+                      <p style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 700, color: '#db2777' }}>{i + 1}. {qa.question}</p>
+                      {qa.error && !(qa.answer || '').trim() && (
+                        <p style={{ margin: '0 0 6px', fontSize: 12, fontWeight: 600, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: '6px 8px' }}>
+                          ⚠ Not answered — {qa.error}
+                        </p>
+                      )}
+                      <textarea
+                        style={{ width: '100%', padding: '10px 12px', fontSize: 13, fontFamily: 'monospace', border: '1px solid #cbd5e1', borderRadius: 8, outline: 'none', background: '#fff', color: '#1e293b', resize: 'vertical', lineHeight: 1.6, boxSizing: 'border-box' }}
+                        value={qa.answer || ''}
+                        onChange={e => setAnswers(prev => prev.map((x, j) => (j === i ? { ...x, answer: e.target.value } : x)))}
+                        rows={12}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <button
+                  onClick={handleSaveQuestions}
+                  disabled={savingQuestions}
+                  style={{ marginTop: 12, padding: '8px 18px', fontSize: 13, fontWeight: 600, background: '#db2777', color: '#fff', border: 0, borderRadius: 8, cursor: savingQuestions ? 'not-allowed' : 'pointer', opacity: savingQuestions ? 0.6 : 1 }}
+                >
+                  {savingQuestions ? 'Saving…' : '💾 Save Answers'}
+                </button>
+              </div>
+            )}
           </div>
         )}
 

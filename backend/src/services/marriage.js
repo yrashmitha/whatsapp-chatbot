@@ -12,15 +12,19 @@
  *   marriage_sections       — [{ label, guide }]        (blank → no sections generated)
  *   marriage_special_note   — closing note appended to the document
  *   marriage_wa_prompt      — system prompt for the WhatsApp summary message
+ *   marriage_questions_title        — heading above the customer's own questions
+ *   marriage_question_instructions  — appended when answering those questions
  *
  * Results are saved on orders.horoscope_data:
- *   marriage_sections_data  — [{ label, content }]
- *   marriage_wa_message     — string
+ *   marriage_sections_data     — [{ label, content }]
+ *   marriage_special_questions — [{ question, prompt }]  (entered in the editor drawer)
+ *   marriage_special_answers   — [{ question, prompt, answer }]
+ *   marriage_wa_message        — string
  */
 
 const db        = require('../db');
 const { getGenAI } = require('./clientKeys');
-const { sendRequired } = require('./aiRetry');
+const { sendRequired, sendChecked } = require('./aiRetry');
 const { buildSectionsDoc } = require('./horoscope');
 const { todayContextBlock } = require('./dateContext');
 
@@ -40,6 +44,13 @@ function buildMarriageSectionPrompt(label, guide, fixedInstructions) {
   );
 }
 
+function buildMarriageQuestionPrompt(questionText, questionInstructions) {
+  return (
+    `මෙම විශේෂ ප්‍රශ්නයට සෘජු සහ සවිස්තරාත්මක පිළිතුරක් ලබා දෙන්න: '${questionText}'\n\n` +
+    (questionInstructions || '')
+  );
+}
+
 /**
  * Resolve the effective marriage config for a client (falling back to built-in defaults).
  */
@@ -54,6 +65,8 @@ function resolveMarriageConfig(config) {
     specialNote:       (config.marriage_special_note || '').trim(),
     reportTitle:       (config.marriage_report_title || '').trim(),
     fixedInstructions: (config.marriage_fixed_instructions || '').trim(),
+    questionsTitle:       (config.marriage_questions_title || '').trim(),
+    questionInstructions: (config.marriage_question_instructions || '').trim(),
   };
 }
 
@@ -125,7 +138,7 @@ async function generateMarriageReading(clientId, orderId) {
   }
 
   const config = await db.getPluginConfig(clientId, 'horoscope_reading');
-  const { sections, systemPrompt, fixedInstructions } = resolveMarriageConfig(config);
+  const { sections, systemPrompt, fixedInstructions, questionInstructions } = resolveMarriageConfig(config);
   if (!systemPrompt) {
     const err = new Error('No marriage system prompt configured for this client. Set it in Plugins > Horoscope Reading before generating.');
     err.statusCode = 422;
@@ -157,10 +170,34 @@ async function generateMarriageReading(clientId, orderId) {
     out.push({ label: sec.label, content });
   }
 
+  // The customer's own questions, answered in the same session so the answers
+  // do not restate what the sections already covered.
+  const questions = Array.isArray(hd.marriage_special_questions) ? hd.marriage_special_questions : [];
+  const answers = [];
+  for (const q of questions) {
+    const questionText = (q.prompt && q.prompt.trim()) ? q.prompt : (q.question || '');
+    if (!questionText.trim()) continue;
+    console.log(`[MARRIAGE-Q] ── REQUEST: "${q.question || questionText}"`);
+    const { text: answer, finishReason } = await sendChecked(
+      chat, buildMarriageQuestionPrompt(questionText, questionInstructions), `question: ${q.question || questionText}`);
+    console.log(`[MARRIAGE-Q] ── RESPONSE: chars=${answer.length}`);
+    const entry = { question: q.question || questionText, prompt: q.prompt || '', answer };
+    if (!answer) {
+      // Saved rather than thrown: losing every generated section over one
+      // unanswered question is the worse outcome. The flag makes the gap visible.
+      entry.error = finishReason === 'SAFETY'
+        ? 'Declined on safety grounds — try rewording this question.'
+        : `No answer returned (${finishReason || 'unknown reason'}) — regenerate this question.`;
+      console.error(`[MARRIAGE-Q] !! UNANSWERED: "${q.question || questionText}" — ${entry.error}`);
+    }
+    answers.push(entry);
+  }
+
   const updated = {
     ...hd,
-    marriage_sections_data: out,
-    marriage_generated_at:  new Date().toISOString(),
+    marriage_sections_data:   out,
+    marriage_special_answers: answers,
+    marriage_generated_at:    new Date().toISOString(),
   };
   delete updated.marriage_generating;
   delete updated.marriage_error;
@@ -209,7 +246,7 @@ async function generateMarriageWaMessage(clientId, orderId, sectionsData, waProm
 /**
  * Build the marriage Word document.
  */
-async function buildMarriageDoc({ customerName, sections, specialNote, birthDate, birthTime, sectionOrder, brand, reportTitle }) {
+async function buildMarriageDoc({ customerName, sections, specialNote, birthDate, birthTime, sectionOrder, brand, reportTitle, specialAnswers, questionsTitle }) {
   // Order by plugin config if provided; saved data may predate a reorder.
   let ordered = Array.isArray(sections) ? sections.map(s => ({ ...s })) : [];
   if (Array.isArray(sectionOrder) && sectionOrder.length > 0) {
@@ -228,6 +265,8 @@ async function buildMarriageDoc({ customerName, sections, specialNote, birthDate
     specialNote,
     birthDate,
     birthTime,
+    specialAnswers,
+    ...(questionsTitle ? { specialQuestionsTitle: questionsTitle } : {}),
   });
 }
 

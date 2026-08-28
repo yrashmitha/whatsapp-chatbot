@@ -280,6 +280,7 @@ async function getPluginConfig(req, res) {
         marriage_system_prompt: '', marriage_sections: [],
         marriage_special_note: '', marriage_wa_prompt: '',
         marriage_report_title: '', marriage_fixed_instructions: '',
+        marriage_questions_title: '', marriage_question_instructions: '',
         match_system_prompt: '', match_sections: [],
         match_special_note: '', match_report_title: '',
         match_questions_title: '', match_fixed_instructions: '',
@@ -331,7 +332,7 @@ async function updatePluginConfig(req, res) {
   }
   const { pluginId } = req.params;
   const { name, prompt, prompt2, api_key, system_prompt, quantum_system_prompt, aura_system_prompt, horoscope_sections, quantum_sections, section_guides, special_note, wa_message_prompt, ai_fill_prompt, greeting, tts_voice, stt_language, verification_prompt, extraction_prompt, expected_account, expected_bank, expected_names, page1_body, page2_body, page4_body, quantum_enabled, pixel_id, ad_account_id, audience_id, marriage_system_prompt, marriage_sections, marriage_special_note, marriage_wa_prompt, match_system_prompt, match_sections, match_special_note, match_ai_fill_prompt,
-    fixed_instructions, vip_section_label, remedies_section_label, special_questions_title, quantum_report_title, porondam_report_title, porondam_special_note, marriage_report_title, marriage_fixed_instructions, match_report_title, match_questions_title, match_fixed_instructions, match_question_instructions, page1_heading, page2_heading, page4_heading } = req.body;
+    fixed_instructions, vip_section_label, remedies_section_label, special_questions_title, quantum_report_title, porondam_report_title, porondam_special_note, marriage_report_title, marriage_fixed_instructions, marriage_questions_title, marriage_question_instructions, match_report_title, match_questions_title, match_fixed_instructions, match_question_instructions, page1_heading, page2_heading, page4_heading } = req.body;
   try {
     const existing = await db.getPluginConfig(clientId, pluginId);
     const update = { ...existing };
@@ -381,6 +382,8 @@ async function updatePluginConfig(req, res) {
     if (porondam_special_note !== undefined) update.porondam_special_note = porondam_special_note;
     if (marriage_report_title !== undefined) update.marriage_report_title = marriage_report_title;
     if (marriage_fixed_instructions !== undefined) update.marriage_fixed_instructions = marriage_fixed_instructions;
+    if (marriage_questions_title !== undefined) update.marriage_questions_title = marriage_questions_title;
+    if (marriage_question_instructions !== undefined) update.marriage_question_instructions = marriage_question_instructions;
     if (match_report_title !== undefined) update.match_report_title = match_report_title;
     if (match_questions_title !== undefined) update.match_questions_title = match_questions_title;
     if (match_fixed_instructions !== undefined) update.match_fixed_instructions = match_fixed_instructions;
@@ -1929,17 +1932,20 @@ async function regenerateMarriageSectionHandler(req, res) {
  */
 async function updateMarriageSections(req, res) {
   const { orderId } = req.params;
-  const { marriage_sections_data } = req.body;
+  const { marriage_sections_data, marriage_special_questions, marriage_special_answers } = req.body;
   if (!Array.isArray(marriage_sections_data)) {
     return res.status(400).json({ error: 'marriage_sections_data array required' });
   }
   try {
     const order = await loadOrderReport(orderId);
     if (!order) return res.status(404).json({ error: 'Order not found' });
-    await db.pgQuery(
-      `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), '{marriage_sections_data}', $1::jsonb) WHERE order_id=$2`,
-      [JSON.stringify(marriage_sections_data), orderId]
-    );
+    const updated = {
+      ...order.hd,
+      marriage_sections_data,
+      ...(Array.isArray(marriage_special_questions) && { marriage_special_questions }),
+      ...(Array.isArray(marriage_special_answers) && { marriage_special_answers }),
+    };
+    await db.pgQuery('UPDATE orders SET horoscope_data=$1 WHERE order_id=$2', [JSON.stringify(updated), orderId]);
     res.json({ ok: true });
   } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
@@ -1953,17 +1959,19 @@ async function marriageDocxFor(orderId, clientId) {
     const e = new Error('No marriage reading generated yet'); e.status = 404; throw e;
   }
   const config = clientId ? await db.getPluginConfig(clientId, 'horoscope_reading') : {};
-  const { sections, specialNote, reportTitle } = resolveMarriageConfig(config);
+  const { sections, specialNote, reportTitle, questionsTitle } = resolveMarriageConfig(config);
 
   const buffer = await buildMarriageDoc({
     reportTitle,
-    customerName: order.cf.customer_name || '',
-    sections:     data,
+    questionsTitle,
+    customerName:   order.cf.customer_name || '',
+    sections:       data,
     specialNote,
-    birthDate:    order.cf.birth_date || '',
-    birthTime:    order.cf.birth_time || '',
-    sectionOrder: sections,
-    brand:        await getBrand(clientId),
+    birthDate:      order.cf.birth_date || '',
+    birthTime:      order.cf.birth_time || '',
+    sectionOrder:   sections,
+    specialAnswers: order.hd.marriage_special_answers || [],
+    brand:          await getBrand(clientId),
   });
   return { buffer, order: { ...order, reportTitle } };
 }

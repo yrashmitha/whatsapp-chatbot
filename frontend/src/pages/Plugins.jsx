@@ -32,6 +32,10 @@ const HOROSCOPE_EXTRAS = [
     hint: 'Cover title of the marriage report.' },
   { key: 'marriage_fixed_instructions', label: 'Marriage Fixed Instructions', rows: 6,
     hint: 'Appended to every marriage section prompt.' },
+  { key: 'marriage_questions_title', label: 'Marriage Questions Heading', rows: 2,
+    hint: 'Heading above the customer’s own questions in the marriage report.' },
+  { key: 'marriage_question_instructions', label: 'Marriage Question Instructions', rows: 6,
+    hint: 'Appended when answering the customer’s own questions.' },
 ];
 
 const MATCH_EXTRAS = [

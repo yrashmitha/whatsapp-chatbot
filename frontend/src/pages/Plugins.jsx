@@ -104,6 +104,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
   const [marriageSections, setMarriageSections]         = useState([]);
   const [marriageSpecialNote, setMarriageSpecialNote]   = useState('');
   const [marriageWaPrompt, setMarriageWaPrompt]         = useState('');
+  const [marriageAiFillPrompt, setMarriageAiFillPrompt] = useState('');
   const [matchSystemPrompt, setMatchSystemPrompt]       = useState('');
   const [matchSections, setMatchSections]               = useState([]);
   const [matchSpecialNote, setMatchSpecialNote]         = useState('');
@@ -157,6 +158,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
         setMarriageSections(Array.isArray(r.data.marriage_sections) ? r.data.marriage_sections : []);
         setMarriageSpecialNote(r.data.marriage_special_note || '');
         setMarriageWaPrompt(r.data.marriage_wa_prompt || '');
+        setMarriageAiFillPrompt(r.data.marriage_ai_fill_prompt || '');
         setMatchSystemPrompt(r.data.match_system_prompt || '');
         setMatchSections(Array.isArray(r.data.match_sections) ? r.data.match_sections : []);
         setMatchSpecialNote(r.data.match_special_note || '');
@@ -234,6 +236,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
         body.marriage_sections      = marriageSections;
         body.marriage_special_note  = marriageSpecialNote;
         body.marriage_wa_prompt     = marriageWaPrompt;
+        body.marriage_ai_fill_prompt = marriageAiFillPrompt;
         if (showMatch) {
           body.match_system_prompt  = matchSystemPrompt;
           body.match_sections       = matchSections;
@@ -988,6 +991,19 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
               rows={6}
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-pink-400 focus:ring-2 focus:ring-pink-100 resize-y font-mono"
               placeholder="e.g. ලබාදෙන විවාහ පලාපල වාර්තාව පදනම් කරගෙන කෙටි WhatsApp පණිවිඩයක් ලියන්න…"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Marriage AI Fill Prompt</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              Used by the “AI Fill from chat” button on the marriage report’s Special Questions tab. Must keep {'{{chat_log}}'} and return the JSON schema. Leave blank for the built-in default.
+            </p>
+            <textarea
+              value={marriageAiFillPrompt}
+              onChange={e => setMarriageAiFillPrompt(e.target.value)}
+              rows={6}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-pink-400 focus:ring-2 focus:ring-pink-100 resize-y font-mono"
+              placeholder="(not set — built-in default is used)"
             />
           </div>
           <div>

@@ -201,6 +201,32 @@ A special question is ONLY valid if it targets something SPECIFIC this couple pe
 
 If the chat contains no such specific concern, return an EMPTY array. Do not invent questions.`;
 
+const DEFAULT_MARRIAGE_AI_FILL_PROMPT = `You are an expert Vedic astrology assistant and Sinhala language expert preparing a MARRIAGE (විවාහ) reading for ONE person.
+
+## Full Customer Chat Conversation
+{{chat_log}}
+
+## Your Task
+Read the chat and extract the specific marriage-related things THIS customer asked about, so an astrologer can answer each one individually. Return the exact JSON schema below, nothing else.
+
+### special_questions
+Two fields each:
+- "question": the SHORT, polished Sinhala question shown to the customer in the final PDF. One clear sentence they will recognise as their own concern.
+- "prompt": a DETAILED Sinhala instruction written FOR GEMINI ONLY (the customer never sees it). Spell out the customer's exact situation from the chat, the angle to analyse, and what the answer must cover.
+
+The following are ALREADY covered by the report's standard sections — do NOT create questions duplicating them:
+- general marriage timing and yoga
+- spouse's likely nature, appearance and background
+- love vs arranged marriage
+- married life happiness and longevity
+- doshas (කුජ, ශනි) and their cancellation
+- childbirth prospects (දරු පල)
+- remedies
+
+A special question is ONLY valid if it targets something SPECIFIC this person personally mentioned — a partner they already have and want checked, family opposition, an age gap, a divorce or broken engagement, a specific proposed wedding date, a second marriage, a foreign spouse, a health or financial worry tied to marriage, and so on.
+
+If the chat contains no such specific concern, return an EMPTY array. Do not invent questions.`;
+
 const { exec } = require('child_process');
 const fs   = require('fs');
 const os   = require('os');
@@ -281,6 +307,7 @@ async function getPluginConfig(req, res) {
         marriage_special_note: '', marriage_wa_prompt: '',
         marriage_report_title: '', marriage_fixed_instructions: '',
         marriage_questions_title: '', marriage_question_instructions: '',
+        marriage_ai_fill_prompt: DEFAULT_MARRIAGE_AI_FILL_PROMPT,
         match_system_prompt: '', match_sections: [],
         match_special_note: '', match_report_title: '',
         match_questions_title: '', match_fixed_instructions: '',
@@ -332,7 +359,7 @@ async function updatePluginConfig(req, res) {
   }
   const { pluginId } = req.params;
   const { name, prompt, prompt2, api_key, system_prompt, quantum_system_prompt, aura_system_prompt, horoscope_sections, quantum_sections, section_guides, special_note, wa_message_prompt, ai_fill_prompt, greeting, tts_voice, stt_language, verification_prompt, extraction_prompt, expected_account, expected_bank, expected_names, page1_body, page2_body, page4_body, quantum_enabled, pixel_id, ad_account_id, audience_id, marriage_system_prompt, marriage_sections, marriage_special_note, marriage_wa_prompt, match_system_prompt, match_sections, match_special_note, match_ai_fill_prompt,
-    fixed_instructions, vip_section_label, remedies_section_label, special_questions_title, quantum_report_title, porondam_report_title, porondam_special_note, marriage_report_title, marriage_fixed_instructions, marriage_questions_title, marriage_question_instructions, match_report_title, match_questions_title, match_fixed_instructions, match_question_instructions, page1_heading, page2_heading, page4_heading } = req.body;
+    fixed_instructions, vip_section_label, remedies_section_label, special_questions_title, quantum_report_title, porondam_report_title, porondam_special_note, marriage_report_title, marriage_fixed_instructions, marriage_questions_title, marriage_question_instructions, marriage_ai_fill_prompt, match_report_title, match_questions_title, match_fixed_instructions, match_question_instructions, page1_heading, page2_heading, page4_heading } = req.body;
   try {
     const existing = await db.getPluginConfig(clientId, pluginId);
     const update = { ...existing };
@@ -384,6 +411,7 @@ async function updatePluginConfig(req, res) {
     if (marriage_fixed_instructions !== undefined) update.marriage_fixed_instructions = marriage_fixed_instructions;
     if (marriage_questions_title !== undefined) update.marriage_questions_title = marriage_questions_title;
     if (marriage_question_instructions !== undefined) update.marriage_question_instructions = marriage_question_instructions;
+    if (marriage_ai_fill_prompt !== undefined) update.marriage_ai_fill_prompt = marriage_ai_fill_prompt;
     if (match_report_title !== undefined) update.match_report_title = match_report_title;
     if (match_questions_title !== undefined) update.match_questions_title = match_questions_title;
     if (match_fixed_instructions !== undefined) update.match_fixed_instructions = match_fixed_instructions;
@@ -1950,6 +1978,73 @@ async function updateMarriageSections(req, res) {
   } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
+/**
+ * POST /api/plugins/horoscope/ai-prepare-marriage/:orderId
+ * Reads the WhatsApp thread and extracts the customer's marriage-specific questions.
+ * Returns { special_questions: [{ question, prompt }] } — nothing is saved; the drawer
+ * merges the result into its editor and the operator saves.
+ */
+async function aiPrepareMarriageQuestions(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  const { orderId } = req.params;
+
+  try {
+    const orderRes = await db.pgQuery('SELECT * FROM orders WHERE order_id=$1', [orderId]);
+    if (!orderRes.rows.length) return res.status(404).json({ error: 'Order not found' });
+    const order = orderRes.rows[0];
+
+    const messages = await db.getMessagesByPhone(order.phone_number, clientId);
+    const chatLog = messages.map(m =>
+      `[${m.sender_type === 'user' ? 'Customer' : 'Agent'}]: ${m.message_text || ''}`
+    ).filter(l => l.length > 12).join('\n');
+
+    const config = await db.getPluginConfig(clientId, 'horoscope_reading');
+    const template = (config.marriage_ai_fill_prompt && config.marriage_ai_fill_prompt.trim())
+      ? config.marriage_ai_fill_prompt
+      : DEFAULT_MARRIAGE_AI_FILL_PROMPT;
+    const prompt = template.replace(/\{\{chat_log\}\}/g, chatLog || '(no messages found)');
+
+    const geminiModel = (await getGenAI(clientId)).getGenerativeModel({
+      model: 'gemini-2.5-flash',
+      generationConfig: {
+        temperature: 0.2,
+        topP: 0.9,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: 'object',
+          properties: {
+            special_questions: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  question: { type: 'string' },
+                  prompt:   { type: 'string' },
+                },
+                required: ['question', 'prompt'],
+              },
+            },
+          },
+          required: ['special_questions'],
+        },
+      },
+    });
+
+    const result = await geminiModel.generateContent(prompt);
+    const raw = result.response.text().trim();
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch { return res.status(500).json({ error: 'Gemini returned invalid JSON', raw }); }
+
+    res.json({
+      special_questions: Array.isArray(parsed.special_questions) ? parsed.special_questions : [],
+    });
+  } catch (e) {
+    console.error('[AI-PREPARE-MARRIAGE]', e.message);
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
+}
+
 /** Build the marriage .docx buffer for an order, or throw a 404-ish error. */
 async function marriageDocxFor(orderId, clientId) {
   const order = await loadOrderReport(orderId);
@@ -2500,7 +2595,7 @@ module.exports = {
   downloadHoroscope, downloadHoroscopePdf, downloadQuantumPdf,
   generateMarriageHandler, regenerateMarriageSectionHandler, updateMarriageSections,
   downloadMarriageDocx, downloadMarriagePdf,
-  generateMarriageWaHandler, saveMarriageWaHandler,
+  generateMarriageWaHandler, saveMarriageWaHandler, aiPrepareMarriageQuestions,
   aiPrepareMatch, saveMatchPeople, generateMatchHandler, regenerateMatchSectionHandler,
   updateMatchSections, downloadMatchDocx, downloadMatchPdf,
   downloadPorondamDocx, downloadPorondamPdf,

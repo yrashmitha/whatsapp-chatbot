@@ -23,6 +23,7 @@ export default function MarriageEditorDrawer({ order, clientId, open, onClose })
   const [newQuestion, setNewQuestion] = useState('');
   const [expandedQIdx, setExpandedQIdx] = useState(null);
   const [savingQuestions, setSavingQuestions] = useState(false);
+  const [aiFilling, setAiFilling] = useState(false);
   const [waMessage, setWaMessage] = useState('');
   const [savedWa, setSavedWa]     = useState('');
   const [saving, setSaving]                           = useState(false);
@@ -149,6 +150,30 @@ export default function MarriageEditorDrawer({ order, clientId, open, onClose })
       toast.error(e?.response?.data?.error || 'Failed to save');
     } finally {
       setSavingQuestions(false);
+    }
+  };
+
+  const handleAiFill = async () => {
+    setAiFilling(true);
+    try {
+      const res = await api.post(`/plugins/horoscope/ai-prepare-marriage/${order.order_id}${params}`);
+      const found = Array.isArray(res.data?.special_questions) ? res.data.special_questions : [];
+      if (found.length === 0) {
+        toast.info('No marriage-specific questions found in the chat.');
+        return;
+      }
+      setQuestions(prev => {
+        const seen = new Set(prev.map(q => (q.question || '').trim().toLowerCase()));
+        const additions = found
+          .filter(q => (q.question || '').trim() && !seen.has(q.question.trim().toLowerCase()))
+          .map(q => ({ question: q.question.trim(), prompt: (q.prompt || '').trim() }));
+        return [...prev, ...additions];
+      });
+      toast.success(`AI added ${found.length} question${found.length === 1 ? '' : 's'} — review, then Save.`);
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'AI Fill failed');
+    } finally {
+      setAiFilling(false);
     }
   };
 
@@ -338,6 +363,14 @@ export default function MarriageEditorDrawer({ order, clientId, open, onClose })
                 Each is answered individually after the main sections. Add or edit here, then use
                 &nbsp;<b>Regenerate All</b>&nbsp;to produce the answers.
               </p>
+
+              <button
+                onClick={handleAiFill}
+                disabled={aiFilling}
+                style={{ marginBottom: 10, padding: '6px 14px', fontSize: 13, fontWeight: 600, background: '#faf5ff', color: '#7c3aed', border: '1px solid #ddd6fe', borderRadius: 8, cursor: aiFilling ? 'not-allowed' : 'pointer', opacity: aiFilling ? 0.6 : 1 }}
+              >
+                {aiFilling ? '⏳ Reading chat…' : '✨ AI Fill from chat'}
+              </button>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {questions.map((q, i) => (

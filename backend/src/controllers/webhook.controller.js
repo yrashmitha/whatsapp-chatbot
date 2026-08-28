@@ -284,7 +284,8 @@ function receiveWebhook(req, res) {
             : msg.type === 'audio'
               ? '[Voice message]'
               : (msg.text?.body || msg.interactive?.list_reply?.title
-                 || msg.interactive?.button_reply?.title || `[${msg.type}]`);
+                 || msg.interactive?.button_reply?.title
+                 || msg.button?.text || `[${msg.type}]`);
         const mediaType = msg.type === 'image' ? 'image'
           : msg.type === 'document' ? 'pdf'
           : msg.type === 'audio' ? 'audio' : null;
@@ -631,6 +632,16 @@ function receiveWebhook(req, res) {
           userMessage = choice.title || choice.id;
           log.info(`[WEBHOOK] Interactive reply: id="${choice.id}" title="${choice.title || ''}"`);
         }
+      }
+
+      // A quick reply tapped on a *template* arrives as its own type, not as an
+      // interactive reply, and carries the button's words in msg.button.text.
+      // Without this the reply to a re-engagement template is dropped as an
+      // unsupported type: the customer taps the offer and hears nothing back,
+      // which is the worst possible outcome for a message we paid to send.
+      if (msg.type === 'button') {
+        userMessage = msg.button?.text || msg.button?.payload;
+        log.info(`[WEBHOOK] Template button: "${userMessage || ''}"`);
       }
 
       // ── Text messages ───────────────────────────────────────────────────────

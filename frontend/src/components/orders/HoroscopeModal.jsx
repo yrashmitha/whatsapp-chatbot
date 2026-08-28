@@ -4,6 +4,7 @@ import { useToast } from '../ui/Toast';
 import { customerNameFrom } from '../../lib/utils';
 import ChatThread from '../chat/ChatThread';
 import MatchMakingPanel from './MatchMakingPanel';
+import MarriagePanel from './MarriagePanel';
 
 const HOURS   = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
 const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
@@ -46,11 +47,12 @@ function auraScoreColor(score) {
   return '#dc2626';
 }
 
-export default function HoroscopeModal({ order, clientId, onClose, onGenerated, showMatch = false, initialTab = 'horoscope' }) {
+export default function HoroscopeModal({ order, clientId, onClose, onGenerated, showMatch = false, showMarriage = false, initialTab = 'horoscope' }) {
   const toast  = useToast();
   // Which report the right-hand pane is editing. The chat stays mounted on the left in
-  // both tabs — reading the thread is exactly what you need while filling either form.
-  const [tab, setTab] = useState(showMatch ? initialTab : 'horoscope');
+  // every tab — reading the thread is exactly what you need while filling any form.
+  const hasTabs = showMatch || showMarriage;
+  const [tab, setTab] = useState(hasTabs ? initialTab : 'horoscope');
   const geoRef = useRef();
   const auraFileRef = useRef();
   const [showOrderDetails, setShowOrderDetails] = useState(true);
@@ -361,7 +363,9 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 shrink-0">
           <div>
             <h2 className="text-base font-semibold text-slate-800">
-              {tab === 'match' ? '💑 Generate Match Making Report' : '🔮 Generate Horoscope Reading'}
+              {tab === 'match' ? '💑 Generate Match Making Report'
+                : tab === 'marriage' ? '💍 Generate Marriage Report'
+                : '🔮 Generate Horoscope Reading'}
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">#{order?.order_id}</p>
           </div>
@@ -383,11 +387,12 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
           <div className="flex flex-1 flex-col overflow-hidden min-w-0">
 
         {/* Report tabs */}
-        {showMatch && (
+        {hasTabs && (
           <div className="flex gap-1 px-5 pt-3 border-b border-slate-100 shrink-0">
             {[
-              { key: 'horoscope', label: '🔮 Horoscope' },
-              { key: 'match',     label: '💑 Match Making' },
+              { key: 'horoscope', label: '🔮 Horoscope', accent: '#6366f1' },
+              ...(showMatch    ? [{ key: 'match',    label: '💑 Match Making', accent: '#0d9488' }] : []),
+              ...(showMarriage ? [{ key: 'marriage', label: '💍 Marriage',     accent: '#db2777' }] : []),
             ].map(t => (
               <button
                 key={t.key}
@@ -395,8 +400,8 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
                 onClick={() => setTab(t.key)}
                 className="px-4 py-2 text-sm font-medium bg-transparent border-0 cursor-pointer"
                 style={{
-                  color: tab === t.key ? (t.key === 'match' ? '#0d9488' : '#6366f1') : '#94a3b8',
-                  borderBottom: `2px solid ${tab === t.key ? (t.key === 'match' ? '#0d9488' : '#6366f1') : 'transparent'}`,
+                  color: tab === t.key ? t.accent : '#94a3b8',
+                  borderBottom: `2px solid ${tab === t.key ? t.accent : 'transparent'}`,
                   marginBottom: '-1px',
                 }}
               >
@@ -408,6 +413,14 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
 
         {tab === 'match' ? (
           <MatchMakingPanel
+            order={order}
+            clientId={clientId}
+            existingHd={existingHd}
+            onClose={onClose}
+            onGenerated={onGenerated}
+          />
+        ) : tab === 'marriage' ? (
+          <MarriagePanel
             order={order}
             clientId={clientId}
             existingHd={existingHd}

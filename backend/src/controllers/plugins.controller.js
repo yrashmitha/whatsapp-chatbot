@@ -203,11 +203,34 @@ If the chat contains no such specific concern, return an EMPTY array. Do not inv
 
 const DEFAULT_MARRIAGE_AI_FILL_PROMPT = `You are an expert Vedic astrology assistant and Sinhala language expert preparing a MARRIAGE (විවාහ) reading for ONE person.
 
+## Order Details
+- Customer name: {{customer_name}}
+- Birth date (raw): {{birth_date}}
+- Birth time (raw): {{birth_time}}
+- Birth place (raw): {{birth_place}}
+
 ## Full Customer Chat Conversation
 {{chat_log}}
 
-## Your Task
-Read the chat and extract the specific marriage-related things THIS customer asked about, so an astrologer can answer each one individually. Return the exact JSON schema below, nothing else.
+## Your Task — return the exact JSON schema below, nothing else.
+
+### birth_date_iso
+Normalize the birth date to exactly "YYYY-MM-DD" (e.g. "1990-03-15").
+Sinhala month names: ජනවාරි=01 පෙබරවාරි=02 මාර්තු=03 අප්‍රේල්=04 මැයි=05 ජූනි=06 ජූලි=07 අගෝස්තු=08 සැප්තැම්බර්=09 ඔක්තෝබර්=10 නොවැම්බර්=11 දෙසැම්බර්=12
+Return null if genuinely unknown.
+
+### birth_time_24h
+Normalize to exactly "HH:MM" 24-hour format.
+CRITICAL: "ප.ව" means afternoon/PM. Add 12 to hours 1–11 for PM. Examples: "ප.ව 3.30" → "15:30", "ප.ව 9.00" → "21:00", "ප.ව 12.00" → "12:00".
+"පෙ.ව" or "උදෑසන" or "උදේ" = AM (do NOT add 12). Examples: "පෙ.ව 6.30" → "06:30".
+"සවස" or "රාත්‍රී" or "රාත්රී" or "දහවල්" = PM.
+Midnight = "00:00". Noon = "12:00". Return null if genuinely unknown.
+
+### birth_place_en
+The English name of the birth place (translated from Sinhala if needed). Just the place name, no country suffix.
+
+### lat / lng
+Latitude and longitude (decimal degrees) of the birth place. Use your geographic knowledge and return precise coordinates with a minimum of 4 decimal places. Return numbers, not strings. Example: 8.4983 / 80.6015 — not 8.5 / 80.6.
 
 ### special_questions
 Two fields each:
@@ -1980,11 +2003,12 @@ async function updateMarriageSections(req, res) {
 
 /**
  * POST /api/plugins/horoscope/ai-prepare-marriage/:orderId
- * Reads the WhatsApp thread and extracts the customer's marriage-specific questions.
- * Returns { special_questions: [{ question, prompt }] } — nothing is saved; the drawer
- * merges the result into its editor and the operator saves.
+ * Reads the WhatsApp thread and returns the customer's birth details plus the
+ * marriage-specific questions they asked. Nothing is saved — the Marriage panel
+ * fills its form from the result and the operator reviews before generating.
+ * Returns { birth_date_iso, birth_time_24h, birth_place_en, lat, lng, special_questions }.
  */
-async function aiPrepareMarriageQuestions(req, res) {
+async function aiPrepareMarriage(req, res) {
   const clientId = resolveClientId(req);
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
   const { orderId } = req.params;
@@ -1993,6 +2017,9 @@ async function aiPrepareMarriageQuestions(req, res) {
     const orderRes = await db.pgQuery('SELECT * FROM orders WHERE order_id=$1', [orderId]);
     if (!orderRes.rows.length) return res.status(404).json({ error: 'Order not found' });
     const order = orderRes.rows[0];
+    const cf = (typeof order.custom_fields === 'string')
+      ? JSON.parse(order.custom_fields || '{}')
+      : (order.custom_fields || {});
 
     const messages = await db.getMessagesByPhone(order.phone_number, clientId);
     const chatLog = messages.map(m =>
@@ -2003,7 +2030,12 @@ async function aiPrepareMarriageQuestions(req, res) {
     const template = (config.marriage_ai_fill_prompt && config.marriage_ai_fill_prompt.trim())
       ? config.marriage_ai_fill_prompt
       : DEFAULT_MARRIAGE_AI_FILL_PROMPT;
-    const prompt = template.replace(/\{\{chat_log\}\}/g, chatLog || '(no messages found)');
+    const prompt = template
+      .replace(/\{\{customer_name\}\}/g, customerNameFrom(cf))
+      .replace(/\{\{birth_date\}\}/g,    cf.birth_date || '')
+      .replace(/\{\{birth_time\}\}/g,    cf.birth_time || '')
+      .replace(/\{\{birth_place\}\}/g,   cf.birth_place || '')
+      .replace(/\{\{chat_log\}\}/g,      chatLog || '(no messages found)');
 
     const geminiModel = (await getGenAI(clientId)).getGenerativeModel({
       model: 'gemini-2.5-flash',
@@ -2014,6 +2046,11 @@ async function aiPrepareMarriageQuestions(req, res) {
         responseSchema: {
           type: 'object',
           properties: {
+            birth_date_iso:  { type: 'string', nullable: true },
+            birth_time_24h:  { type: 'string', nullable: true },
+            birth_place_en:  { type: 'string', nullable: true },
+            lat:             { type: 'number', nullable: true },
+            lng:             { type: 'number', nullable: true },
             special_questions: {
               type: 'array',
               items: {
@@ -2026,7 +2063,7 @@ async function aiPrepareMarriageQuestions(req, res) {
               },
             },
           },
-          required: ['special_questions'],
+          required: ['birth_date_iso', 'birth_time_24h', 'birth_place_en', 'lat', 'lng', 'special_questions'],
         },
       },
     });
@@ -2037,12 +2074,37 @@ async function aiPrepareMarriageQuestions(req, res) {
     try { parsed = JSON.parse(raw); } catch { return res.status(500).json({ error: 'Gemini returned invalid JSON', raw }); }
 
     res.json({
+      birth_date_iso:    parsed.birth_date_iso || null,
+      birth_time_24h:    parsed.birth_time_24h || null,
+      birth_place_en:    parsed.birth_place_en || null,
+      lat:               parsed.lat ?? null,
+      lng:               parsed.lng ?? null,
       special_questions: Array.isArray(parsed.special_questions) ? parsed.special_questions : [],
     });
   } catch (e) {
     console.error('[AI-PREPARE-MARRIAGE]', e.message);
     res.status(e.statusCode || 500).json({ error: e.message });
   }
+}
+
+/**
+ * PATCH /api/plugins/horoscope/marriage-questions/:orderId
+ * Lightweight save of just the customer's special questions, before any report
+ * exists (updateMarriageSections requires a sections array). Merges into horoscope_data.
+ */
+async function saveMarriageQuestions(req, res) {
+  const { orderId } = req.params;
+  const { marriage_special_questions } = req.body;
+  if (!Array.isArray(marriage_special_questions)) {
+    return res.status(400).json({ error: 'marriage_special_questions array required' });
+  }
+  try {
+    const order = await loadOrderReport(orderId);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    const updated = { ...order.hd, marriage_special_questions };
+    await db.pgQuery('UPDATE orders SET horoscope_data=$1 WHERE order_id=$2', [JSON.stringify(updated), orderId]);
+    res.json({ ok: true });
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
 /** Build the marriage .docx buffer for an order, or throw a 404-ish error. */
@@ -2595,7 +2657,7 @@ module.exports = {
   downloadHoroscope, downloadHoroscopePdf, downloadQuantumPdf,
   generateMarriageHandler, regenerateMarriageSectionHandler, updateMarriageSections,
   downloadMarriageDocx, downloadMarriagePdf,
-  generateMarriageWaHandler, saveMarriageWaHandler, aiPrepareMarriageQuestions,
+  generateMarriageWaHandler, saveMarriageWaHandler, aiPrepareMarriage, saveMarriageQuestions,
   aiPrepareMatch, saveMatchPeople, generateMatchHandler, regenerateMatchSectionHandler,
   updateMatchSections, downloadMatchDocx, downloadMatchPdf,
   downloadPorondamDocx, downloadPorondamPdf,

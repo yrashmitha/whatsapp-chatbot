@@ -38,7 +38,8 @@ const {
   downloadMarriagePdf,
   generateMarriageWaHandler,
   saveMarriageWaHandler,
-  aiPrepareMarriageQuestions,
+  aiPrepareMarriage,
+  saveMarriageQuestions,
   aiPrepareMatch,
   saveMatchPeople,
   generateMatchHandler,
@@ -95,7 +96,8 @@ router.get('/horoscope/download-marriage-docx/:orderId',        jwtAuth, require
 router.get('/horoscope/download-marriage-pdf/:orderId',         jwtAuth, requirePermission('reports.download'), orderScope, downloadMarriagePdf);
 router.post('/horoscope/generate-marriage-wa/:orderId',         jwtAuth, requirePermission('ai.generate_report'), orderScope, generateMarriageWaHandler);
 router.patch('/horoscope/marriage-wa/:orderId',                 jwtAuth, requirePermission('reports.edit'), orderScope, saveMarriageWaHandler);
-router.post('/horoscope/ai-prepare-marriage/:orderId',          jwtAuth, requirePermission('ai.fill'), orderScope, aiPrepareMarriageQuestions);
+router.post('/horoscope/ai-prepare-marriage/:orderId',          jwtAuth, requirePermission('ai.fill'), orderScope, aiPrepareMarriage);
+router.patch('/horoscope/marriage-questions/:orderId',          jwtAuth, requirePermission('orders.edit'), orderScope, saveMarriageQuestions);
 router.post('/horoscope/ai-prepare-match/:orderId',              jwtAuth, requirePermission('ai.fill'), orderScope, aiPrepareMatch);
 router.patch('/horoscope/match-people/:orderId',                jwtAuth, requirePermission('orders.edit'), orderScope, saveMatchPeople);
 router.post('/horoscope/generate-match/:orderId',               jwtAuth, requirePermission('ai.generate_report'), orderScope, generateMatchHandler);

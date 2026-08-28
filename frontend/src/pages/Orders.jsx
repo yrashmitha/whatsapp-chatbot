@@ -64,6 +64,7 @@ export default function Orders() {
   const [tarotOrder, setTarotOrder]           = useState(null);  // tarot generate modal
   const [tarotEditorOrder, setTarotEditorOrder] = useState(null); // tarot editor drawer
   const [marriageOrder, setMarriageOrder]       = useState(null); // marriage editor drawer
+  const [marriageModalOrder, setMarriageModalOrder] = useState(null); // order modal opened on the marriage tab
   const [matchOrder, setMatchOrder]             = useState(null); // match making editor drawer
   const [matchModalOrder, setMatchModalOrder]   = useState(null); // order modal opened on the match tab
   const toast = useToast();
@@ -140,18 +141,6 @@ export default function Orders() {
     mutationFn: ({ orderId, status }) => api.patch(`/orders/${orderId}/status`, { status }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['orders'] }); toast.success('Status updated'); },
     onError: () => toast.error('Failed to update status'),
-  });
-
-  const startMarriage = useMutation({
-    mutationFn: (orderId) => api.post(
-      `/plugins/horoscope/generate-marriage/${orderId}`, {},
-      { params: clientId ? { client_id: clientId } : {} }
-    ),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['orders'] });
-      toast.success('Marriage reading started — takes ~2 min.');
-    },
-    onError: (e) => toast.error(e?.response?.data?.error || 'Failed to start marriage reading'),
   });
 
   const updateFields = useMutation({
@@ -355,7 +344,6 @@ export default function Orders() {
                   const paymentIdentified = cf?.payment_identified || null;
                   const horoscopeError = hd?.error || null;
                   const horoscopeDone = hd?.sections && Object.keys(hd.sections).length > 0;
-                  const hasChart           = !!hd?.chart_data;
                   const marriageGenerating = hd?.marriage_generating === true;
                   const marriageError      = hd?.marriage_error || null;
                   const marriageDone       = Array.isArray(hd?.marriage_sections_data) && hd.marriage_sections_data.length > 0;
@@ -515,23 +503,11 @@ export default function Orders() {
                                         <span title={marriageError} className="text-xs px-1.5 py-0.5 rounded border-0 bg-red-100 text-red-600 cursor-default">⚠</span>
                                       )}
                                       <button
-                                        onClick={() => {
-                                          if (marriageDone) return setMarriageOrder(o);
-                                          if (!hasChart) {
-                                            return toast.error('No birth chart yet — open 🔮, fill the birth details, and click "Check Lagna" to fetch the chart. Then click 💍. (You do not need to generate the horoscope.)');
-                                          }
-                                          startMarriage.mutate(o.order_id);
-                                        }}
-                                        title={
-                                          marriageDone ? 'View/edit marriage reading'
-                                          : hasChart   ? 'Generate marriage reading'
-                                          : 'Needs the birth chart first — open 🔮 and click "Check Lagna"'
-                                        }
-                                        disabled={startMarriage.isPending}
+                                        onClick={guard('horoscope_reading', () => (marriageDone ? setMarriageOrder(o) : setMarriageModalOrder(o)))}
+                                        title={marriageDone ? 'View/edit marriage reading' : 'Prepare & generate marriage reading'}
                                         className={`text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 ${
                                           marriageDone ? 'bg-pink-200 text-pink-800 hover:bg-pink-300'
-                                          : hasChart   ? 'bg-pink-100 text-pink-700 hover:bg-pink-200'
-                                          : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                                          : 'bg-pink-100 text-pink-700 hover:bg-pink-200'
                                         }`}
                                       >{marriageDone ? '💍 ✏' : '💍'}</button>
                                     </>
@@ -821,6 +797,16 @@ export default function Orders() {
           showMatch
           initialTab="match"
           onClose={() => setMatchModalOrder(null)}
+          onGenerated={() => qc.invalidateQueries({ queryKey: ['orders'] })}
+        />
+      )}
+      {marriageModalOrder && (
+        <HoroscopeModal
+          order={marriageModalOrder}
+          clientId={clientId}
+          showMarriage
+          initialTab="marriage"
+          onClose={() => setMarriageModalOrder(null)}
           onGenerated={() => qc.invalidateQueries({ queryKey: ['orders'] })}
         />
       )}

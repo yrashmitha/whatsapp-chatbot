@@ -111,10 +111,13 @@ async function creditIfPaid(clientId, orderId, status) {
  * sent. items[] is the older shape and nothing writes it any more, but
  * historical orders carry it.
  *
- * The payment slip is deliberately not consulted. What arrived in the bank is a
- * payment, not a price, and the two part company whenever somebody pays short,
- * pays for two people at once, or rounds up and leaves the change - which is
- * exactly when a commission must not follow it.
+ * The slip sits second, not first. What arrived in the bank is a payment rather
+ * than a price, and the two part company whenever somebody pays short, pays for
+ * two people at once, or rounds up and leaves the change. But dropping it
+ * altogether took Rs 36,530 off one month's reported income, because the price
+ * field only began being filled on 27 August and 83 of that month's 88 paid
+ * orders predate it. For those, the slip is the only evidence of what the sale
+ * was worth, and zero is a worse answer than an imperfect one.
  *
  * Two dialects of one rule. The income page has to aggregate in SQL and Meta has
  * to be told a number per event in JS, and until now those were separate pieces
@@ -130,6 +133,13 @@ const VALUE_SQL = `(
     -- what the sale was sold for, recorded when the order was taken
     NULLIF(regexp_replace(COALESCE(
       substring(o.custom_fields->>'price' from '[0-9][0-9, ]*(?:[.][0-9]+)?'), ''),
+      '[, ]', '', 'g'), '')::numeric,
+    -- failing that, what actually arrived in the bank. Not a price, and not
+    -- the first choice, but for an order taken before the bot recorded a
+    -- price it is the only evidence of what the sale was worth - and zero is
+    -- a worse answer than an imperfect one.
+    NULLIF(regexp_replace(COALESCE(
+      substring(o.custom_fields->'payment_identified'->>'amount' from '[0-9][0-9, ]*(?:[.][0-9]+)?'), ''),
       '[, ]', '', 'g'), '')::numeric,
     -- the older line-item shape, kept because historical orders carry it
     NULLIF((
@@ -162,6 +172,12 @@ function orderValue(customFields) {
 
   const quoted = numeric(cf.price);
   if (quoted) return quoted;
+
+  // Failing that, what arrived in the bank. Not a price, and not the first
+  // choice, but for an order taken before the bot recorded a price it is the
+  // only evidence of what the sale was worth.
+  const slip = numeric(cf.payment_identified && cf.payment_identified.amount);
+  if (slip) return slip;
 
   if (Array.isArray(cf.items)) {
     const sum = cf.items.reduce((total, item) => {

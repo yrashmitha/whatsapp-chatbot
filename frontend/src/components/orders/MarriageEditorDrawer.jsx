@@ -15,6 +15,16 @@ export default function MarriageEditorDrawer({ order, clientId, open, onClose })
     try { return JSON.parse(order.horoscope_data); } catch { return {}; }
   })();
 
+  const cf = (() => {
+    if (!order?.custom_fields) return {};
+    if (typeof order.custom_fields === 'object') return order.custom_fields;
+    try { return JSON.parse(order.custom_fields); } catch { return {}; }
+  })();
+  const cfEntries = Object.entries(cf).filter(([, v]) => v && typeof v !== 'object' && String(v).trim());
+  const customerName = cf.customer_name || order?.customer_name || order?.phone_number || '';
+  const birthLine = [cf.birth_date, cf.birth_time, cf.birth_place].filter(Boolean).join('  ·  ');
+
+  const [showDetails, setShowDetails] = useState(false);
   const [outerTab, setOuterTab]   = useState('edit');
   const [activeTab, setActiveTab] = useState(null);
   const [sections, setSections]   = useState([]);
@@ -282,6 +292,35 @@ export default function MarriageEditorDrawer({ order, clientId, open, onClose })
   return (
     <Drawer open={open} onClose={onClose} title={`💍 Marriage Reading: #${order?.order_id}`} width="800px">
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+
+        {/* Order details */}
+        <div style={{ flexShrink: 0, background: '#fdf2f8', borderBottom: '1px solid #fbcfe8' }}>
+          <button
+            type="button"
+            onClick={() => setShowDetails(v => !v)}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                     padding: '8px 16px', background: 'none', border: 0, cursor: 'pointer', textAlign: 'left' }}
+          >
+            <span style={{ fontSize: 13, color: '#be185d', minWidth: 0 }}>
+              <span style={{ fontWeight: 700 }}>{customerName}</span>
+              {birthLine && <span style={{ color: '#db2777', marginLeft: 8 }}>{birthLine}</span>}
+            </span>
+            <span style={{ color: '#db2777', fontSize: 14, flexShrink: 0 }}>{showDetails ? '▲' : '▼'}</span>
+          </button>
+          {showDetails && (
+            <div style={{ padding: '4px 16px 12px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 20px' }}>
+              {cfEntries.map(([k, v]) => (
+                <div key={k} style={{ display: 'flex', flexDirection: 'column', fontSize: 12, minWidth: 0 }}>
+                  <span style={{ color: '#9d174d', textTransform: 'capitalize', marginBottom: 1 }}>{k.replace(/_/g, ' ')}</span>
+                  <span style={{ color: '#334155', wordBreak: 'break-word' }}>{String(v)}</span>
+                </div>
+              ))}
+              {cfEntries.length === 0 && (
+                <span style={{ fontSize: 12, color: '#9d174d' }}>No order details on file.</span>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* Outer tabs */}
         <div style={{ display: 'flex', borderBottom: '2px solid #e2e8f0', flexShrink: 0, paddingLeft: 8 }}>

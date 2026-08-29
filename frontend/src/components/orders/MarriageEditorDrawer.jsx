@@ -20,11 +20,10 @@ export default function MarriageEditorDrawer({ order, clientId, open, onClose })
     if (typeof order.custom_fields === 'object') return order.custom_fields;
     try { return JSON.parse(order.custom_fields); } catch { return {}; }
   })();
-  const cfEntries = Object.entries(cf).filter(([, v]) => v && typeof v !== 'object' && String(v).trim());
-  const customerName = cf.customer_name || order?.customer_name || order?.phone_number || '';
-  const birthLine = [cf.birth_date, cf.birth_time, cf.birth_place].filter(Boolean).join('  ·  ');
+  const hasChart = !!hd.chart_data;
 
-  const [showDetails, setShowDetails] = useState(false);
+  const [showOrderDetails, setShowOrderDetails] = useState(true);
+  const [showChartData, setShowChartData]       = useState(false);
   const [outerTab, setOuterTab]   = useState('edit');
   const [activeTab, setActiveTab] = useState(null);
   const [sections, setSections]   = useState([]);
@@ -293,34 +292,59 @@ export default function MarriageEditorDrawer({ order, clientId, open, onClose })
     <Drawer open={open} onClose={onClose} title={`💍 Marriage Reading: #${order?.order_id}`} width="800px">
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
 
-        {/* Order details */}
-        <div style={{ flexShrink: 0, background: '#fdf2f8', borderBottom: '1px solid #fbcfe8' }}>
-          <button
-            type="button"
-            onClick={() => setShowDetails(v => !v)}
-            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-                     padding: '8px 16px', background: 'none', border: 0, cursor: 'pointer', textAlign: 'left' }}
-          >
-            <span style={{ fontSize: 13, color: '#be185d', minWidth: 0 }}>
-              <span style={{ fontWeight: 700 }}>{customerName}</span>
-              {birthLine && <span style={{ color: '#db2777', marginLeft: 8 }}>{birthLine}</span>}
-            </span>
-            <span style={{ color: '#db2777', fontSize: 14, flexShrink: 0 }}>{showDetails ? '▲' : '▼'}</span>
-          </button>
-          {showDetails && (
-            <div style={{ padding: '4px 16px 12px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 20px' }}>
-              {cfEntries.map(([k, v]) => (
-                <div key={k} style={{ display: 'flex', flexDirection: 'column', fontSize: 12, minWidth: 0 }}>
-                  <span style={{ color: '#9d174d', textTransform: 'capitalize', marginBottom: 1 }}>{k.replace(/_/g, ' ')}</span>
-                  <span style={{ color: '#334155', wordBreak: 'break-word' }}>{String(v)}</span>
+        {/* Customer details — same panel as the horoscope generate modal */}
+        {Object.keys(cf).length > 0 && (
+          <div className="border-b border-slate-100 shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowOrderDetails(v => !v)}
+              className="w-full flex items-center justify-between px-5 py-2.5 bg-violet-50 text-xs font-semibold text-violet-700 hover:bg-violet-100 border-0 cursor-pointer"
+            >
+              <span>📋 Customer Order Details</span>
+              <span className="text-violet-400 text-base leading-none">{showOrderDetails ? '▲' : '▼'}</span>
+            </button>
+            {showOrderDetails && (
+              <div className="px-5 py-3 flex flex-col gap-2 bg-slate-50 max-h-48 overflow-y-auto">
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+                  {Object.entries(cf).map(([k, v]) => {
+                    if (!v || typeof v === 'object') return null;
+                    return (
+                      <div key={k} className="flex flex-col text-xs">
+                        <span className="text-slate-400 capitalize mb-0.5">{k.replace(/_/g, ' ')}</span>
+                        <span className="text-slate-700 break-all">{String(v)}</span>
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
-              {cfEntries.length === 0 && (
-                <span style={{ fontSize: 12, color: '#9d174d' }}>No order details on file.</span>
-              )}
-            </div>
-          )}
-        </div>
+                {order?.ai_summary && (
+                  <div className="bg-violet-50 border border-violet-200 rounded-lg px-3 py-2 text-xs text-slate-700 leading-relaxed whitespace-pre-wrap mt-1">
+                    <span className="text-violet-600 font-semibold block mb-1">✨ Summary</span>
+                    {order.ai_summary}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Chart data panel — same as the horoscope generate modal */}
+        {hasChart && (
+          <div className="border-b border-slate-100 shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowChartData(v => !v)}
+              className="w-full flex items-center justify-between px-5 py-2.5 bg-emerald-50 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 border-0 cursor-pointer"
+            >
+              <span>📊 Saved Chart Data (freeastroapi)</span>
+              <span className="text-emerald-400 text-base leading-none">{showChartData ? '▲' : '▼'}</span>
+            </button>
+            {showChartData && (
+              <pre className="px-5 py-3 bg-slate-950 text-emerald-300 text-xs overflow-auto max-h-72 leading-relaxed font-mono whitespace-pre-wrap">
+                {JSON.stringify(hd.chart_data, null, 2)}
+              </pre>
+            )}
+          </div>
+        )}
 
         {/* Outer tabs */}
         <div style={{ display: 'flex', borderBottom: '2px solid #e2e8f0', flexShrink: 0, paddingLeft: 8 }}>

@@ -29,13 +29,13 @@
     {
       "id": "faq_does_full_report_cover_marriage",
       "intent": "scope",
-      "aliases": "vivahaya gathath, marriage included, 1500 ta vivahaya, විවාහය ගැනත්, ඔක්කොම එනවද, sියල්ල එනවද",
+      "aliases": "vivahaya gathath, marriage included, 2990 ta vivahaya, විවාහය ගැනත්, ඔක්කොම එනවද, sියල්ල එනවද",
       "body": "ඔව්. සම්පූර්ණ ජීවන වාර්තාවට විවාහයත් ඇතුළත් වෙනවා.\n\nඒකෙන් ජීවිතේ ප්‍රධාන අංශ 11ම — විවාහය, රැකියාව, ධන යෝග, දේපළ, සෞඛ්‍යය ඇතුළුව — බලනවා. විවාහය ගැන විතරක් ගැඹුරින්ම ඕන නම් ඒකට වෙනම වාර්තාවකුත් තියෙනවා."
     },
     {
       "id": "faq_how_to_pay",
       "intent": "payment",
-      "aliases": "salli danne kohomda, salli denna komada, kohomada gewanne, how to pay, payment kohomd, gewanne kohomada, මුදල් ගෙවන්නේ කොහොමද, ගෙවන්නේ කොහොමද, salli denna komada, salli danne kohomda, salli danna, salli denna, 1500 denne kohomada",
+      "aliases": "salli danne kohomda, salli denna komada, kohomada gewanne, how to pay, payment kohomd, gewanne kohomada, මුදල් ගෙවන්නේ කොහොමද, ගෙවන්නේ කොහොමද, salli denna komada, salli danne kohomda, salli danna, salli denna, 2990 denne kohomada",
       "send": "payment-howto",
       "body": "බැංකු ට්‍රාන්ස්ෆර් එකකින් හෝ බැංකුවට ගිහින් තැන්පත් කරන්නත් පුළුවන්.\n\nගිණුම් අංකය ඔයාගේ ඇණවුම එක්කම එවනවා — ගෙවීම ඔයාගේම වාර්තාවට හරියටම ගැලපෙන්න ඕන නිසා."
     },

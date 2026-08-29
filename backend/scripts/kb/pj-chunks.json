@@ -230,8 +230,14 @@
     {
       "id": "faq_contact_details",
       "intent": "trust",
-      "aliases": "call karanna puluwanda, phone number, office, adress, link ekak, කතා කරන්න, කන්තෝරුව",
-      "body": "සේවාව සම්පූර්ණයෙන්ම මේ WhatsApp නම්බර් එකෙන් තමයි කරන්නේ.\n\nඔයාට ඕන දේ මෙතනට ලියන්න, මම උදව් කරන්නම්. 🙏"
+      "aliases": "call karanna puluwanda, phone number, number ekak, adress, link ekak, කතා කරන්න, අංකය, hotline",
+      "body": "සේවාව මේ WhatsApp නම්බර් එකෙන් කරගන්න පුළුවන් — ඔයාට ඕන දේ මෙතනට ලියන්න, මම උදව් කරන්නම්.\n\nකතා කරන්න ඕන නම් 0755073452. කාර්යාලයට ඇවිත් හමුවෙන්න ඕන නම් ඒක appointment එකකින් විතරයි. 🙏"
+    },
+    {
+      "id": "faq_office_visit",
+      "intent": "trust",
+      "aliases": "koheda oyala, kohedha, oyala koheda, koheda office, office koheda, awilla balanna, apita awilla balanna, apita enna puluwanda, balanna enna puluwanda, meet karanna, hamuwenna, direct hamuwenna, physically enna, appointment ekak, walpola, කොහෙද, කාර්යාලය කොහෙද, ඇවිත් හම්බවෙන්න පුළුවන්ද, එන්න පුළුවන්ද, හමුවෙන්න",
+      "body": "අපේ කාර්යාලය තියෙන්නේ වල්පොල දුම්රිය ස්ථානයට ළඟ — ස්ථානයේ ඉඳන් විනාඩි 5ක් විතරයි.\n\nහැබැයි අපි සේවාදායකයන් හමුවෙන්නේ පෙර වෙලාවක් වෙන් කරගත්තොත් (appointment) විතරයි. හදිසි කාරණයක් නෙවෙයි නම් appointment එකක් දාගන්න පුළුවන් — දැනට appointment ලැබෙන්නේ මාසයකට විතර පස්සෙට.\n\nවැඩි විස්තර සඳහා 0755073452 අංකයට කතා කරන්න. 🙏"
     },
     {
       "id": "faq_unknown_fallback",

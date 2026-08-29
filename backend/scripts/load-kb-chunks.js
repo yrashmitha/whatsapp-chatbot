@@ -88,8 +88,10 @@ function render(c) {
     if (seen.has(c.id)) problems.push(`duplicate id: ${c.id}`);
     seen.add(c.id);
     if (!c.body || c.body.trim().length < 20) problems.push(`${c.id}: body too short`);
-    // A figure in a chunk is the bug this whole exercise exists to stop.
-    const digits = (c.body.match(/\b\d{3,}\b/g) || []);
+    // A figure in a chunk is the bug this whole exercise exists to stop. A
+    // local phone number (0 + 9 digits) is not a figure of that kind, so it is
+    // stripped before the check rather than forced into a quick-reply block.
+    const digits = (c.body.replace(/\b0\d{9}\b/g, '').match(/\b\d{3,}\b/g) || []);
     if (digits.length) problems.push(`${c.id}: contains a figure (${digits.join(', ')}) — prices belong in blocks`);
     if (render(c).length > 1400) problems.push(`${c.id}: over 1400 chars, split it`);
   }

@@ -995,6 +995,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
           currency: 'LKR',
           value:    slipAmount || 0,
         }).catch(() => {});
+        require('./followUpReminders').autoResolveForOrder(client?.id, order.order_id).catch(() => {});
       } else {
         log.warn(`[ORDER] PAYMENT_IDENTIFIED: no matching order`);
       }

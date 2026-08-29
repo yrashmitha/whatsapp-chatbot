@@ -11,6 +11,7 @@ const resolveClientId = require('../middleware/resolveClientId');
 const { sendWhatsAppMessage } = require('../services/whatsapp');
 const { buildQueue, DEFAULT_SYSTEM } = require('../services/followUpQueue');
 const scheduled = require('../services/scheduledFollowUps');
+const reminders = require('../services/followUpReminders');
 
 /**
  * GET /api/follow-ups — who to message now, and what to say.
@@ -72,6 +73,7 @@ async function sendFollowUp(req, res) {
       `INSERT INTO follow_up_sends (client_id, order_id, phone_number, angle, temp, message, edited)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [clientId, orderId, phone, angle, temp, text, !!edited]);
+    reminders.autoResolveForOrder(clientId, orderId).catch(() => {});
 
     res.json({ ok: true });
   } catch (e) {
@@ -230,4 +232,58 @@ async function savePrompt(req, res) {
   }
 }
 
-module.exports = { listFollowUps, sendFollowUp, followUpStats, scheduleFollowUp, listScheduled, cancelScheduled, getPrompt, savePrompt };
+/**
+ * POST /api/follow-ups/reminders — pin a date to a chat.
+ * Body: { order_id, remind_on: "YYYY-MM-DD", note? }
+ */
+async function createReminder(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    const row = await reminders.create({
+      clientId,
+      orderId:      req.body?.order_id,
+      remindOn:     req.body?.remind_on,
+      note:         req.body?.note,
+      createdByUid: req.user?.uid ?? null,
+    });
+    res.json({ ok: true, reminder: row });
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
+}
+
+/**
+ * GET /api/follow-ups/reminders — open reminders, due first.
+ * ?order_id=… returns just the pending one on that order (for the chat button).
+ */
+async function listReminders(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    if (req.query.order_id) {
+      return res.json({ reminder: await reminders.forOrder(clientId, String(req.query.order_id)) });
+    }
+    res.json({ items: await reminders.listOpen(clientId) });
+  } catch (e) {
+    console.error('[REMINDER] list failed:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+}
+
+/**
+ * PATCH /api/follow-ups/reminders/:id — close it. Body: { status: 'done'|'dismissed' }
+ */
+async function resolveReminder(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    const ok = await reminders.resolve(clientId, parseInt(req.params.id, 10), req.body?.status);
+    if (!ok) return res.status(404).json({ error: 'Not found, or already closed' });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
+
+module.exports = { listFollowUps, sendFollowUp, followUpStats, scheduleFollowUp, listScheduled, cancelScheduled, getPrompt, savePrompt, createReminder, listReminders, resolveReminder };

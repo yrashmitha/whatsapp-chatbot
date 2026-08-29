@@ -387,6 +387,11 @@ async function updateStatus(req, res) {
     res.json({ ok: true });
     // Freeze whose sale this is, once, the first time it reads as paid.
     creditIfPaid(clientId, req.params.id, status);
+    // An order that is no longer pending should not keep nagging from the
+    // Follow-ups reminders list.
+    if (status !== 'pending') {
+      require('../services/followUpReminders').autoResolveForOrder(clientId, req.params.id).catch(() => {});
+    }
     // Fire CAPI Purchase event when an admin manually marks an order as paid
     if (status === 'payment_received' || status === 'paid') {
       db.pgQuery('SELECT phone_number, client_id FROM orders WHERE order_id=$1', [req.params.id])

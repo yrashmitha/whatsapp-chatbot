@@ -299,6 +299,28 @@ async function init() {
         resolved_at  TIMESTAMPTZ
       )`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_sched_due ON scheduled_follow_ups (status, send_at)`);
+
+    // An operator flags a chat with a day the customer named ("Monday",
+    // "heta"). Unlike scheduled_follow_ups this never sends on its own and is
+    // not bound to the 24-hour window — it only resurfaces the customer on the
+    // Follow-ups screen on that date, with an AI-suggested draft.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS follow_up_reminders (
+        id             SERIAL PRIMARY KEY,
+        client_id      TEXT NOT NULL,
+        order_id       TEXT NOT NULL,
+        phone_number   TEXT NOT NULL,
+        remind_on      DATE NOT NULL,
+        note           TEXT,
+        draft          TEXT,
+        draft_at       TIMESTAMPTZ,
+        status         TEXT NOT NULL DEFAULT 'pending',
+        created_by_uid INT,
+        created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        resolved_at    TIMESTAMPTZ
+      )`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_fu_reminders_open ON follow_up_reminders (client_id, status, remind_on)`);
+
     // Customers are read in their own local time, not the server's.
     await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS timezone TEXT`);
     await pool.query(`

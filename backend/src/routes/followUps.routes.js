@@ -11,12 +11,16 @@ const jwtAuth = require('../middleware/jwtAuth');
 const orderScope = require('../middleware/orderScope');
 const { listFollowUps, sendFollowUp, followUpStats,
         scheduleFollowUp, listScheduled, cancelScheduled,
-        getPrompt, savePrompt } = require('../controllers/followUps.controller');
+        getPrompt, savePrompt,
+        createReminder, listReminders, resolveReminder } = require('../controllers/followUps.controller');
 
 router.get('/',                  jwtAuth, requirePermission('followups.view'), listFollowUps);
 router.get('/stats',             jwtAuth, requirePermission('followups.view'), followUpStats);
 router.get('/prompt',             jwtAuth, requirePermission('followups.prompt'), getPrompt);
 router.put('/prompt',             jwtAuth, requirePermission('followups.prompt'), savePrompt);
+router.get('/reminders',          jwtAuth, requirePermission('followups.view'), listReminders);
+router.post('/reminders',         jwtAuth, requirePermission('followups.schedule'), createReminder);
+router.patch('/reminders/:id',    jwtAuth, requirePermission('followups.schedule'), resolveReminder);
 router.get('/scheduled',          jwtAuth, requirePermission('followups.view'), listScheduled);
 router.delete('/scheduled/:id',   jwtAuth, requirePermission('followups.schedule'), cancelScheduled);
 router.post('/:orderId/send',     jwtAuth, requirePermission('followups.send'), orderScope, sendFollowUp);

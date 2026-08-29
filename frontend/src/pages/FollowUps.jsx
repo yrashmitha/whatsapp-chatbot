@@ -325,6 +325,97 @@ function Card({ item, onOpen }) {
   );
 }
 
+/**
+ * A reminder that has come due — a day the operator pinned to this chat because
+ * the customer named one. No message has been queued; the operator sends by hand.
+ */
+function ReminderCard({ item, clientId, onOpen }) {
+  const toast = useToast();
+  const qc = useQueryClient();
+  const [text, setText] = useState(item.draft || '');
+  const [done, setDone] = useState('');
+  const params = clientId ? { client_id: clientId } : {};
+
+  const send = useMutation({
+    mutationFn: () => api.post(`/follow-ups/${item.orderId}/send`,
+      { message: text.trim(), angle: 'reminder', temp: 'warm', edited: text.trim() !== (item.draft || '').trim() },
+      { params }).then(r => r.data),
+    onSuccess: () => {
+      setDone('Sent');
+      toast.success('Sent');
+      qc.invalidateQueries({ queryKey: ['follow-up-reminders'] });
+      qc.invalidateQueries({ queryKey: ['follow-up-stats'] });
+    },
+    onError: (e) => toast.error(e?.response?.data?.error || 'Could not send'),
+  });
+
+  const resolve = useMutation({
+    mutationFn: (status) => api.patch(`/follow-ups/reminders/${item.id}`, { status }, { params }),
+    onSuccess: () => { setDone('Closed'); qc.invalidateQueries({ queryKey: ['follow-up-reminders'] }); },
+    onError: () => toast.error('Could not update'),
+  });
+
+  return (
+    <div className={`border rounded-xl p-3 flex flex-col gap-2 ${done ? 'bg-slate-50 border-slate-200 opacity-70' : 'bg-white border-violet-300'}`}>
+      <div className="flex items-start gap-2">
+        <span className="text-base leading-none mt-0.5">🔔</span>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold text-slate-800 truncate">{item.name || item.phone}</div>
+          <div className="text-xs text-slate-400">
+            {item.phone} · {item.orderId}{item.package ? ` · Rs. ${item.package}` : ''}
+          </div>
+        </div>
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 font-medium shrink-0">
+          {item.remindOnLocal}
+        </span>
+      </div>
+
+      {item.note && (
+        <div className="text-xs text-slate-700 bg-violet-50 border border-violet-100 rounded-lg px-2.5 py-1.5">
+          <span className="text-violet-400">your note </span>{item.note}
+        </div>
+      )}
+      <div className="text-xs text-slate-600 bg-slate-50 rounded-lg px-2.5 py-1.5 break-words">
+        <span className="text-slate-400">they said </span>“{item.lastFromThem || '—'}”
+      </div>
+
+      {item.windowOpen ? (
+        <>
+          <textarea
+            value={text}
+            onChange={e => setText(e.target.value)}
+            rows={3}
+            disabled={!!done}
+            placeholder={item.draft ? '' : 'No draft — write the message'}
+            className="w-full text-xs text-slate-700 border border-violet-200 bg-violet-50/40 rounded-lg px-2.5 py-2 outline-none focus:border-violet-400 resize-y disabled:opacity-60"
+          />
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => send.mutate()}
+              disabled={!!done || send.isPending || !text.trim()}
+              className="text-xs px-3 py-1.5 rounded-lg border-0 bg-violet-600 text-white cursor-pointer hover:bg-violet-700 disabled:opacity-40"
+            >{done || (send.isPending ? 'Sending…' : 'Send now')}</button>
+            <button onClick={() => onOpen(item)} className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:border-violet-300 cursor-pointer">Open chat</button>
+            <button onClick={() => resolve.mutate('done')} disabled={!!done} className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 cursor-pointer ml-auto">Done</button>
+            <button onClick={() => resolve.mutate('dismissed')} disabled={!!done} className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-400 cursor-pointer">Dismiss</button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+            Their 24-hour window is closed — send an approved template from the order (Orders page).
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => onOpen(item)} className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:border-violet-300 cursor-pointer">Open chat</button>
+            <button onClick={() => resolve.mutate('done')} disabled={!!done} className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 cursor-pointer ml-auto">Done</button>
+            <button onClick={() => resolve.mutate('dismissed')} disabled={!!done} className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-400 cursor-pointer">Dismiss</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function FollowUps() {
   const { user, selectedClientId } = useAuthStore();
   const navigate = useNavigate();
@@ -361,6 +452,21 @@ export default function FollowUps() {
   const cancelQueued = useMutation({
     mutationFn: (id) => api.delete(`/follow-ups/scheduled/${id}`, { params: clientId ? { client_id: clientId } : {} }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['follow-ups-scheduled'] }),
+  });
+
+  const { data: reminders } = useQuery({
+    queryKey: ['follow-up-reminders', clientId],
+    queryFn: () => api.get('/follow-ups/reminders', { params: clientId ? { client_id: clientId } : {} }).then(r => r.data),
+    enabled: !!clientId,
+    refetchInterval: 5 * 60_000,
+    refetchIntervalInBackground: false,
+  });
+  const remDue = (reminders?.items || []).filter(r => r.due);
+  const remUpcoming = (reminders?.items || []).filter(r => !r.due);
+
+  const cancelReminder = useMutation({
+    mutationFn: (id) => api.patch(`/follow-ups/reminders/${id}`, { status: 'dismissed' }, { params: clientId ? { client_id: clientId } : {} }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['follow-up-reminders'] }),
   });
 
   const all = data?.items || [];
@@ -428,6 +534,43 @@ export default function FollowUps() {
             {onlyDue ? 'Nothing due right now.'
               : all.length > 0 ? 'All caught up — everyone reachable has been followed up. Tick “show done” to see them.'
               : 'Nobody is waiting. Everyone who ordered has either paid or fallen outside the window.'}
+          </div>
+        )}
+
+        {remDue.length > 0 && (
+          <div className="mb-4">
+            <div className="text-xs font-semibold text-violet-700 mb-2">
+              🔔 Reminders due ({remDue.length}) — you pinned these dates
+            </div>
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {remDue.map(r => (
+                <ReminderCard key={r.id} item={r} clientId={clientId}
+                  onOpen={() => navigate(`/chat?phone=${encodeURIComponent(r.phone)}`)} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {remUpcoming.length > 0 && (
+          <div className="mb-4 bg-white border border-slate-200 rounded-xl p-3">
+            <div className="text-xs font-semibold text-slate-600 mb-2">
+              🔔 Upcoming reminders ({remUpcoming.length})
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {remUpcoming.map(r => (
+                <div key={r.id} className="flex items-start gap-2 text-xs">
+                  <span className="font-mono text-violet-700 shrink-0">{r.remindOnLocal}</span>
+                  <span className="text-slate-400 shrink-0">{r.name || r.phone}</span>
+                  <span className="text-slate-600 flex-1 min-w-0 truncate">{r.note || '—'}</span>
+                  <button
+                    onClick={() => cancelReminder.mutate(r.id)}
+                    disabled={cancelReminder.isPending}
+                    className="text-slate-300 hover:text-red-500 bg-transparent border-0 cursor-pointer px-1 shrink-0"
+                    title="Clear it"
+                  >✕</button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

@@ -95,7 +95,15 @@ async function loadPromptConfig(clientId) {
  * @param {string} clientId
  * @returns {Promise<Array<Object>>} raw rows, newest activity first
  */
-async function loadCandidates(clientId) {
+async function loadCandidates(clientId, { orderId = null } = {}) {
+  // A named order is loaded regardless of the 24-hour window (the reminders
+  // feature points at customers who have long since dropped out of the queue);
+  // the queue itself always keeps the window filter.
+  const scope = orderId
+    ? { where: 'AND o.order_id = $2', params: [clientId, orderId] }
+    : { where: `AND o.status = 'pending'
+       AND c.last_customer_message_at IS NOT NULL
+       AND c.last_customer_message_at > NOW() - ($2 || ' hours')::interval`, params: [clientId, WINDOW_HOURS] };
   const { rows } = await db.pgQuery(
     `SELECT
        o.order_id,
@@ -162,13 +170,37 @@ async function loadCandidates(clientId) {
         ORDER BY s.send_at ASC LIMIT 1
      ) sch ON TRUE
      WHERE o.client_id = $1
-       AND o.status = 'pending'
-       AND c.last_customer_message_at IS NOT NULL
-       AND c.last_customer_message_at > NOW() - ($2 || ' hours')::interval
+       ${scope.where}
      ORDER BY c.last_customer_message_at DESC`,
-    [clientId, WINDOW_HOURS]
+    scope.params
   );
   return rows;
+}
+
+/**
+ * A suggested follow-up message for one order, drafted the same way the queue
+ * drafts the auto ones — but with no window filter, so it works for a customer
+ * an operator set a reminder on days ago. Not cached: called only when a
+ * reminder first comes due.
+ *
+ * @param {string} clientId
+ * @param {string} orderId
+ * @returns {Promise<{draft:string, why:string, angle:string, temp:string}|null>}
+ */
+async function draftForOrder(clientId, orderId) {
+  const rows = await loadCandidates(clientId, { orderId });
+  if (!rows.length) return null;
+  const tz = await timezoneFor(clientId);
+  const f = factsFor(rows[0]);
+  const closes = windowClosesAt(f.lastInAt);
+  f.nowLocal = formatLocal(new Date(), tz);
+  f.windowClosesLocal = closes ? formatLocal(closes, tz) : 'unknown';
+  f.timezone = tz;
+  const cfg = await loadPromptConfig(clientId);
+  const apiKey = await getGeminiKey(clientId);
+  const j = await classifyOne(f, apiKey, cfg.prompt);
+  if (!j) return null;
+  return { draft: j.draft || '', why: j.why || '', angle: j.angle || '', temp: j.temp || 'warm' };
 }
 
 /**
@@ -563,4 +595,4 @@ async function buildQueue(clientId) {
   return { items, counts, generatedAt: new Date().toISOString() };
 }
 
-module.exports = { buildQueue, DEFAULT_SYSTEM, WINDOW_HOURS, QUIET_MINUTES, CLOSING_SOON_HOURS };
+module.exports = { buildQueue, draftForOrder, DEFAULT_SYSTEM, WINDOW_HOURS, QUIET_MINUTES, CLOSING_SOON_HOURS };

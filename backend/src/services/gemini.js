@@ -15,6 +15,8 @@ const { buildOrderFieldsInstruction, buildContactInstruction } = require('./buil
 const pluginLoader = require('./pluginLoader');
 const { embedText } = require('./embedder');
 const { makeLogger } = require('../utils/logger');
+const { DELIVERY_BASE_URL } = require('../config/env');
+const { ensureToken: ensureDeliveryToken, deliveryUrl } = require('./reportDelivery');
 
 // ─── Gemini client ────────────────────────────────────────────────────────────
 const systemInstruction = buildSystemInstruction();
@@ -103,16 +105,26 @@ async function buildOrderStatusNote(phoneNumber, clientId) {
   const all = await db.getOrdersByPhone(phoneNumber, clientId);
   if (!all.length) return null;
   const orders = all.slice(0, 5);
+  let anyLink = false;
   const lines = orders.map(o => {
     const cf = o.custom_fields
       ? (typeof o.custom_fields === 'string' ? (() => { try { return JSON.parse(o.custom_fields); } catch { return {}; } })() : o.custom_fields)
       : {};
     const cfStr = Object.entries(cf).map(([k, v]) => `${k}: ${v}`).join(', ');
-    return `[ORDER ${o.order_id}: status=${o.status}, date=${String(o.created_at).split('T')[0]}${cfStr ? ', ' + cfStr : ''}${o.notes ? ', notes: ' + o.notes : ''}]`;
+    let linkStr = '';
+    if (o.delivery_token) {
+      anyLink = true;
+      const ready = o.delivery_released_at ? 'READY to download now' : 'NOT ready yet (still being prepared)';
+      linkStr = `, report_link: ${DELIVERY_BASE_URL}/r/${o.delivery_token} (${ready})`;
+    }
+    return `[ORDER ${o.order_id}: status=${o.status}, date=${String(o.created_at).split('T')[0]}${cfStr ? ', ' + cfStr : ''}${linkStr}${o.notes ? ', notes: ' + o.notes : ''}]`;
   });
   const note = lines.join('\n');
-  const suffix = all.length > 5 ? `\n[NOTE: Showing last 5 orders only. Customer has ${all.length} orders total.]` : '';
-  return note + suffix;
+  const countSuffix = all.length > 5 ? `\n[NOTE: Showing last 5 orders only. Customer has ${all.length} orders total.]` : '';
+  const deliverySuffix = anyLink
+    ? '\n[REPORT DELIVERY: The customer collects their report themselves from the "report_link" above — it is NOT sent over WhatsApp. When you confirm a new order, give them that link and say the report will be ready there in 2-3 days. If they ask where their report is: send the link. Say "READY" only if the link above says READY; otherwise tell them it is still being prepared and will appear at that same link in 2-3 days. Never say the report was already sent on WhatsApp.]'
+    : '';
+  return note + countSuffix + deliverySuffix;
 }
 
 /**
@@ -677,7 +689,13 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
             if (details.summary) await db.updateOrderAISummary(toolOrderId, details.summary);
             const name = details.customer_name || details.b || details.name;
             if (name) await db.upsertCustomer(phoneNumber, name, client?.id);
-            functionResponses.push({ functionResponse: { name: 'place_order', response: { ok: true, order_id: toolOrderId } } });
+            let reportLink = null;
+            try { reportLink = deliveryUrl(await ensureDeliveryToken(toolOrderId, client?.id)); } catch (_) {}
+            functionResponses.push({ functionResponse: { name: 'place_order', response: {
+              ok: true,
+              order_id: toolOrderId,
+              ...(reportLink && { report_link: reportLink, report_link_note: 'Give this link to the customer. Their report will be ready there in 2-3 days — it is not sent on WhatsApp.' }),
+            } } });
           } catch (e) {
             log.error('[ORDER] place_order failed:', e.message);
             functionResponses.push({ functionResponse: { name: 'place_order', response: { ok: false, error: 'Could not record the order' } } });
@@ -896,6 +914,10 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
         log.info(`[DB] Updated customer name: ${details.customer_name}`);
       }
       botReply += `\n\n✅ *ඔබේ Order ID: ${orderId}*`;
+      try {
+        const link = deliveryUrl(await ensureDeliveryToken(orderId, client?.id));
+        if (link) botReply += `\n\n📄 ඔබේ වාර්තාව දින 2-3කින් මෙම link එකෙන් ලබාගත හැක:\n${link}`;
+      } catch (_) {}
     } else {
       log.warn(`[ORDER] ORDER_COMPLETE marker found but JSON parse failed`);
     }

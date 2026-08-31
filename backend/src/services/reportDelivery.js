@@ -16,7 +16,7 @@
 'use strict';
 
 const crypto = require('crypto');
-const { pgQuery } = require('../db/connection');
+const { pgQuery, IS_PG } = require('../db/connection');
 const { DELIVERY_BASE_URL } = require('../config/env');
 
 const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
@@ -107,11 +107,19 @@ async function getDeliveryRow(orderId, clientId) {
   return rows[0] || null;
 }
 
-/** Guarded UPDATE: only touches the row when it exists and (if given) is owned by clientId. */
-async function updateDeliveryRow(orderId, clientId, setClause, params) {
-  const where = clientId ? 'order_id = $1 AND client_id = $2' : 'order_id = $1';
-  const base = clientId ? [orderId, clientId] : [orderId];
-  await pgQuery(`UPDATE orders SET ${setClause} WHERE ${where}`, [...base, ...params]);
+/**
+ * Guarded UPDATE: only touches the row when it exists and (if given) is owned by
+ * clientId. `setClause` uses $1..$k for its own params; the WHERE params are
+ * numbered after them. Placeholders are laid out in textual order so the SQLite
+ * shim in db/connection.js (which rewrites $n → ? positionally) binds correctly.
+ */
+async function updateDeliveryRow(orderId, clientId, setClause, setParams = []) {
+  const k = setParams.length;
+  const where = clientId
+    ? `order_id = $${k + 1} AND client_id = $${k + 2}`
+    : `order_id = $${k + 1}`;
+  const whereParams = clientId ? [orderId, clientId] : [orderId];
+  await pgQuery(`UPDATE orders SET ${setClause} WHERE ${where}`, [...setParams, ...whereParams]);
 }
 
 /**
@@ -146,26 +154,32 @@ async function ensureToken(orderId, clientId) {
 
 async function setReleased(orderId, clientId, released, kind) {
   const k = VALID_KINDS.includes(kind) ? kind : null;
-  const n = clientId ? 3 : 2; // first free placeholder after the WHERE params
   if (released) {
-    const set = k
-      ? `delivery_released_at = NOW(), delivery_kind = $${n}`
-      : `delivery_released_at = NOW()`;
-    await updateDeliveryRow(orderId, clientId, set, k ? [k] : []);
+    const now = new Date().toISOString();
+    const set = k ? `delivery_released_at = $1, delivery_kind = $2` : `delivery_released_at = $1`;
+    await updateDeliveryRow(orderId, clientId, set, k ? [now, k] : [now]);
   } else {
     await updateDeliveryRow(orderId, clientId, `delivery_released_at = NULL`, []);
   }
 }
 
 async function setPhoneGate(orderId, clientId, on) {
-  const n = clientId ? 3 : 2;
-  await updateDeliveryRow(orderId, clientId, `delivery_phone_gate = $${n}`, [!!on]);
+  // PG wants a real boolean; the node:sqlite driver rejects JS booleans, so
+  // pass 1/0 there.
+  const val = IS_PG ? !!on : (on ? 1 : 0);
+  await updateDeliveryRow(orderId, clientId, `delivery_phone_gate = $1`, [val]);
+}
+
+/** Column comes back as a JS boolean on PG, an integer on SQLite. */
+function phoneGateOn(order) {
+  const v = order.delivery_phone_gate;
+  return !(v === false || v === 0 || v === '0');
 }
 
 async function markOpened(orderId) {
   await pgQuery(
-    `UPDATE orders SET delivery_opened_at = COALESCE(delivery_opened_at, NOW()) WHERE order_id = $1`,
-    [orderId]
+    `UPDATE orders SET delivery_opened_at = COALESCE(delivery_opened_at, $1) WHERE order_id = $2`,
+    [new Date().toISOString(), orderId]
   );
 }
 
@@ -207,7 +221,7 @@ function projectStatus(order) {
     kind,
     released,
     hasContent,
-    phoneGate: order.delivery_phone_gate !== false,
+    phoneGate: phoneGateOn(order),
   };
 }
 

@@ -7,6 +7,7 @@
 'use strict';
 
 const { pool, db, IS_PG } = require('./connection');
+const { newToken } = require('../services/reportDelivery');
 
 /**
  * Insert a new order record into the database.
@@ -18,15 +19,18 @@ const { pool, db, IS_PG } = require('./connection');
  * @returns {Promise<void>}
  */
 async function insertOrder(orderId, phoneNumber, clientId, customFields) {
+  // Mint the self-service delivery token up front so the confirmation message
+  // can hand the customer their www.puranajothirwedaya.com/r/<token> link immediately.
+  const deliveryToken = newToken();
   if (IS_PG) {
     await pool.query(
-      'INSERT INTO orders (order_id, phone_number, client_id, custom_fields) VALUES ($1,$2,$3,$4)',
-      [orderId, phoneNumber, clientId || null, customFields || null]
+      'INSERT INTO orders (order_id, phone_number, client_id, custom_fields, delivery_token) VALUES ($1,$2,$3,$4,$5)',
+      [orderId, phoneNumber, clientId || null, customFields || null, deliveryToken]
     );
   } else {
     db.prepare(
-      'INSERT INTO orders (order_id, phone_number, client_id, custom_fields) VALUES (?,?,?,?)'
-    ).run(orderId, phoneNumber, clientId || null, customFields ? JSON.stringify(customFields) : null);
+      'INSERT INTO orders (order_id, phone_number, client_id, custom_fields, delivery_token) VALUES (?,?,?,?,?)'
+    ).run(orderId, phoneNumber, clientId || null, customFields ? JSON.stringify(customFields) : null, deliveryToken);
   }
 }
 

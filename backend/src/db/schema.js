@@ -796,6 +796,19 @@ async function init() {
         created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
     `);
+
+    // ── Self-service report delivery ─────────────────────────────────────────
+    // The customer is handed www.puranajothirwedaya.com/r/<delivery_token> at order time.
+    // The report only becomes downloadable once an operator presses "Report is
+    // ready" in the editor drawer (delivery_released_at). Generated-but-not-
+    // released still shows the "come back later" page.
+    await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_token       TEXT`);
+    await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_kind        TEXT`);
+    await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_released_at TIMESTAMPTZ`);
+    await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_phone_gate  BOOLEAN NOT NULL DEFAULT TRUE`);
+    await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_opened_at   TIMESTAMPTZ`);
+    await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_downloads   INT NOT NULL DEFAULT 0`);
+    await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_delivery_token ON orders (delivery_token) WHERE delivery_token IS NOT NULL`);
   } else {
     db.exec(`PRAGMA foreign_keys = ON;`);
     db.exec(`
@@ -965,6 +978,15 @@ async function init() {
     try { db.exec(`ALTER TABLE orders ADD COLUMN horoscope_data TEXT`); } catch (_) {}
     // ── Tarot reading data (SQLite) ───────────────────────────────────────────
     try { db.exec(`ALTER TABLE orders ADD COLUMN tarot_data TEXT`); } catch (_) {}
+
+    // ── Self-service report delivery (SQLite) ────────────────────────────────
+    try { db.exec(`ALTER TABLE orders ADD COLUMN delivery_token TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE orders ADD COLUMN delivery_kind TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE orders ADD COLUMN delivery_released_at TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE orders ADD COLUMN delivery_phone_gate INTEGER NOT NULL DEFAULT 1`); } catch (_) {}
+    try { db.exec(`ALTER TABLE orders ADD COLUMN delivery_opened_at TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE orders ADD COLUMN delivery_downloads INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
+    try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_delivery_token ON orders (delivery_token) WHERE delivery_token IS NOT NULL`); } catch (_) {}
 
     // ── Astro chart cache (dedupe freeastroapi calls by birth params) ─────────
     db.exec(`

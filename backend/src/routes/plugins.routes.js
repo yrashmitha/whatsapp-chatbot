@@ -62,6 +62,14 @@ const {
   recentMetaEvents,
 } = require('../controllers/plugins.controller');
 
+const {
+  getDeliveryInfo,
+  ensureDeliveryLink,
+  releaseDelivery,
+  unreleaseDelivery,
+  patchDeliverySettings,
+} = require('../controllers/delivery.controller');
+
 // Memory-storage upload for aura selfie (max 10 MB, images only)
 const auraUpload = multer({
   storage: multer.memoryStorage(),
@@ -108,6 +116,13 @@ router.get('/horoscope/download-match-pdf/:orderId',            jwtAuth, require
 // Full 20-Porondam report (data comes from the pahantharu_web site) — docx + PDF
 router.get('/horoscope/download-porondam-docx/:orderId',        jwtAuth, requirePermission('reports.download'), orderScope, downloadPorondamDocx);
 router.get('/horoscope/download-porondam-pdf/:orderId',         jwtAuth, requirePermission('reports.download'), orderScope, downloadPorondamPdf);
+// ── Self-service report delivery (www.puranajothirwedaya.com/r/<token>) ──────────────────
+router.get('/delivery/:orderId',            jwtAuth, requirePermission('orders.view'),  orderScope, getDeliveryInfo);
+router.post('/delivery/:orderId/ensure',    jwtAuth, requirePermission('orders.view'),  orderScope, ensureDeliveryLink);
+router.post('/delivery/:orderId/release',   jwtAuth, requirePermission('reports.edit'), orderScope, releaseDelivery);
+router.post('/delivery/:orderId/unrelease', jwtAuth, requirePermission('reports.edit'), orderScope, unreleaseDelivery);
+router.patch('/delivery/:orderId',          jwtAuth, requirePermission('reports.edit'), orderScope, patchDeliverySettings);
+
 router.post('/follow-up',                               jwtAuth, requirePermission('ai.followup_draft'), generateFollowUpMessage);
 router.get('/meta/recent-events',                       jwtAuth, requirePermission('settings.keys'), recentMetaEvents);
 // Readable by anyone who can see the order it belongs to - it reports on that

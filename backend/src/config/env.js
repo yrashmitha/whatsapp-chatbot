@@ -33,6 +33,19 @@ const PUBLIC_URL = process.env.PUBLIC_URL || 'https://whatsapp-chatbot-productio
 /** @type {string} Persistent uploads directory (Railway volume at /data) */
 const UPLOADS_DIR = process.env.UPLOADS_DIR || '/data/uploads';
 
+/**
+ * @type {string} Public base URL of the customer report-delivery site
+ * (the pahantharu_web Next.js app, live at www.puranajothirwedaya.com). The
+ * token link handed to customers is `${DELIVERY_BASE_URL}/r/<token>`.
+ */
+const DELIVERY_BASE_URL = (process.env.DELIVERY_BASE_URL || 'https://www.puranajothirwedaya.com').replace(/\/+$/, '');
+
+/**
+ * @type {string} Shared secret the delivery site presents (X-Delivery-Key) to
+ * reach the /internal/delivery/* endpoints. Fail closed when unset.
+ */
+const DELIVERY_INTERNAL_KEY = process.env.DELIVERY_INTERNAL_KEY || '';
+
 module.exports = {
   IS_TEST,
   META_ACCESS_TOKEN,
@@ -41,4 +54,6 @@ module.exports = {
   PORT,
   PUBLIC_URL,
   UPLOADS_DIR,
+  DELIVERY_BASE_URL,
+  DELIVERY_INTERNAL_KEY,
 };

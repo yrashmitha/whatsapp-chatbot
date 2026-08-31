@@ -535,6 +535,18 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
                       summary on the header above says whether to bother
                       opening this at all. */}
                   <MetaTracking orderId={o.order_id} clientId={clientId} compact />
+                  {o.delivery_url && (
+                    <button
+                      onClick={() => navigator.clipboard.writeText(o.delivery_url).then(
+                        () => toast.success('Report link copied'),
+                        () => toast.error('Copy failed — long-press the link'),
+                      )}
+                      title={`${o.delivery_released_at ? 'READY to download' : 'Not released yet — press "Report is ready" in the editor'}\n${o.delivery_url}`}
+                      className={`shrink-0 text-xs px-1.5 py-0.5 rounded border cursor-pointer ${o.delivery_released_at ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}
+                    >
+                      🔗 {o.delivery_released_at ? 'link' : 'link·hold'}
+                    </button>
+                  )}
                   <div className="ml-auto">
                     <select
                       value={o.status}

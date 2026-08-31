@@ -12,6 +12,7 @@ const { creditIfPaid, TZ, VALUE_SQL } = require('../services/salesCredit');
 const commission = require('../services/commission');
 const { generateOrderId } = require('../services/gemini');
 const clientRouter = require('../services/clientRouter');
+const { DELIVERY_BASE_URL } = require('../config/env');
 
 /**
  * GET /api/orders — paginated order list with optional status and search filters.
@@ -66,7 +67,11 @@ async function listOrders(req, res) {
       db.pgQuery(`SELECT o.*, o.phone_number AS phone, cu.name AS customer_name FROM orders o LEFT JOIN customers cu ON cu.phone_number=o.phone_number ${where} ORDER BY o.created_at DESC LIMIT $${limitIdx} OFFSET $${offsetIdx}`, params),
       db.pgQuery(`SELECT COUNT(*) FROM orders ${countWhere}`, countParams),
     ]);
-    res.json({ orders: rows.rows, total: parseInt(countRes.rows[0].count), page, limit });
+    const orders = rows.rows.map(o => ({
+      ...o,
+      delivery_url: o.delivery_token ? `${DELIVERY_BASE_URL}/r/${o.delivery_token}` : null,
+    }));
+    res.json({ orders, total: parseInt(countRes.rows[0].count), page, limit });
   } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 

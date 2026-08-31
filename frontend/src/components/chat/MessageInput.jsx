@@ -159,10 +159,7 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, followU
 
   const sendReportLink = () => {
     if (!reportLink || sending) return;
-    const msg = reportReleased
-      ? `📄 ඔබේ පලාපල වාර්තාව මෙතැනින් බාගත කරගන්න:\n${reportLink}`
-      : `📄 ඔබේ පලාපල වාර්තාව දින 2-3කින් සූදානම් වේ. එය මෙම link එකෙන් ලබාගත හැක — කරුණාකර මෙය සුරැකීව තබාගන්න:\n${reportLink}`;
-    send(msg);
+    send(reportLink);
   };
 
   const reportLinkBtn = (

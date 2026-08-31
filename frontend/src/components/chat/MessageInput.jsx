@@ -73,7 +73,7 @@ function VoiceClipPickerModal({ open, onClose, phone, clientId, onSent }) {
   );
 }
 
-export default function MessageInput({ phone, clientId, crmMediaEnabled, followUpEnabled, prefill, onPrefillConsumed, onSent }) {
+export default function MessageInput({ phone, clientId, crmMediaEnabled, followUpEnabled, reportLink, reportReleased, prefill, onPrefillConsumed, onSent }) {
   const [text, setText] = useState('');
   // Which follow-up variant is currently drafting ('1' | '2' | null).
   const [drafting, setDrafting] = useState(null);
@@ -156,6 +156,30 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, followU
       setSending(false);
     }
   };
+
+  const sendReportLink = () => {
+    if (!reportLink || sending) return;
+    const msg = reportReleased
+      ? `📄 ඔබේ පලාපල වාර්තාව මෙතැනින් බාගත කරගන්න:\n${reportLink}`
+      : `📄 ඔබේ පලාපල වාර්තාව දින 2-3කින් සූදානම් වේ. එය මෙම link එකෙන් ලබාගත හැක — කරුණාකර මෙය සුරැකීව තබාගන්න:\n${reportLink}`;
+    send(msg);
+  };
+
+  const reportLinkBtn = (
+    <button
+      type="button"
+      onClick={sendReportLink}
+      disabled={sending || !reportLink}
+      title={reportLink
+        ? (reportReleased ? 'Send the customer their report link' : 'Send the report link (report not released yet)')
+        : 'No order with a report link for this customer'}
+      className="shrink-0 w-9 h-9 border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-violet-500 hover:border-violet-300 transition-colors disabled:opacity-40 bg-white cursor-pointer"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
+      </svg>
+    </button>
+  );
 
   const handleChange = (e) => {
     const val = e.target.value;
@@ -291,6 +315,7 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, followU
               ))}
             </div>
           )}
+          {reportLinkBtn}
       </div>
 
       <div className="p-2 md:p-3 border-t border-slate-200 bg-white flex items-end gap-2">
@@ -362,6 +387,7 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, followU
               ))}
             </div>
           )}
+          {reportLinkBtn}
         </div>
         <textarea
           ref={textareaRef}

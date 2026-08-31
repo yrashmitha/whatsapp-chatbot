@@ -589,6 +589,8 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
         clientId={clientId}
         crmMediaEnabled={crmMediaEnabled}
         followUpEnabled={addonsData?.addons?.includes('follow_up_generator') ?? false}
+        reportLink={(customerOrders.find(o => o.delivery_url) || {}).delivery_url || null}
+        reportReleased={!!(customerOrders.find(o => o.delivery_url) || {}).delivery_released_at}
         prefill={messagePrefill}
         onPrefillConsumed={() => setMessagePrefill('')}
         onSent={() => qc.invalidateQueries({ queryKey: ['messages', phone] })}

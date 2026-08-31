@@ -122,7 +122,7 @@ async function buildOrderStatusNote(phoneNumber, clientId) {
   const note = lines.join('\n');
   const countSuffix = all.length > 5 ? `\n[NOTE: Showing last 5 orders only. Customer has ${all.length} orders total.]` : '';
   const deliverySuffix = anyLink
-    ? '\n[REPORT DELIVERY: The customer collects their report themselves from the "report_link" above — it is NOT sent over WhatsApp. When you confirm a new order, give them that link and say the report will be ready there in 2-3 days. If they ask where their report is: send the link. Say "READY" only if the link above says READY; otherwise tell them it is still being prepared and will appear at that same link in 2-3 days. Never say the report was already sent on WhatsApp.]'
+    ? '\n[REPORT DELIVERY: "report_link" on each order above is where that customer downloads their own report; "(READY to download now)" vs "(NOT ready yet)" is its live status. Handle it per your report-delivery instructions.]'
     : '';
   return note + countSuffix + deliverySuffix;
 }

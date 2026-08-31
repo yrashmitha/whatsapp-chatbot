@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import Drawer from '../ui/Drawer';
 import { useToast } from '../ui/Toast';
 import api from '../../lib/api';
+import DeliveryPanel from './DeliveryPanel';
 
 const POSITION_COLORS = { Past: '#8b5cf6', Present: '#3b82f6', Future: '#10b981' };
 
@@ -263,6 +264,8 @@ export default function TarotEditorDrawer({ order, clientId, open, onClose }) {
             <div ref={previewRef} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, minHeight: 400, overflow: 'auto' }} />
           </div>
         )}
+
+        <DeliveryPanel order={order} clientId={clientId} open={open} kind="tarot" />
 
         {/* Footer */}
         <div style={{ flexShrink: 0, padding: '12px 16px', borderTop: '1px solid #e2e8f0', display: 'flex', gap: 8, justifyContent: 'flex-end', background: '#f8fafc' }}>

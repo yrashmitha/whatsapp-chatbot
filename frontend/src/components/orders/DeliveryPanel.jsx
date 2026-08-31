@@ -3,48 +3,45 @@ import api from '../../lib/api';
 import { useToast } from '../ui/Toast';
 
 /**
- * Self-service delivery controls for an order's report.
+ * Compact self-service delivery controls, one line above the drawer footer.
  *
  * The customer holds a permanent link (puranajothirwedaya.com/r/<token>) handed
  * to them at order time. The report only becomes downloadable once someone here
- * presses "Report is ready". A per-order last-4-of-phone gate guards a forwarded
- * link.
+ * presses "ready". A per-order last-4-of-phone gate guards a forwarded link.
+ * Click the row to expand full URL + stats + gate toggle.
  *
- * @param {object}  props.order    - the order row (needs order_id)
+ * @param {object}  props.order    - order row (needs order_id)
  * @param {string}  props.clientId - active tenant
  * @param {boolean} props.open     - parent drawer open state (refetch on open)
  * @param {string}  props.kind     - horoscope | marriage | match | quantum | tarot
  */
 export default function DeliveryPanel({ order, clientId, open, kind }) {
   const toast = useToast();
-  const [info, setInfo]       = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [busy, setBusy]       = useState(false);
+  const [info, setInfo]   = useState(null);
+  const [busy, setBusy]   = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   const qs = clientId ? `?client_id=${clientId}` : '';
   const orderId = order?.order_id;
 
   const load = useCallback(async () => {
     if (!orderId) return;
-    setLoading(true);
     try {
       const res = await api.get(`/plugins/delivery/${orderId}${qs}`);
       setInfo(res.data);
-    } catch (e) {
+    } catch {
       setInfo(null);
-    } finally {
-      setLoading(false);
     }
   }, [orderId, qs]);
 
   useEffect(() => { if (open) load(); }, [open, load]);
 
-  const call = async (fn) => {
+  const call = async (fn, okMsg) => {
     setBusy(true);
     try {
       const res = await fn();
       setInfo(res.data);
-      return res.data;
+      if (okMsg) toast.success(okMsg);
     } catch (e) {
       toast.error(e?.response?.data?.error || 'Something went wrong');
     } finally {
@@ -52,115 +49,125 @@ export default function DeliveryPanel({ order, clientId, open, kind }) {
     }
   };
 
-  const ensure   = () => call(() => api.post(`/plugins/delivery/${orderId}/ensure${qs}`));
-  const release  = () => call(() => api.post(`/plugins/delivery/${orderId}/release${qs}`, { kind }))
-    .then(d => d && toast.success('Customer can now download the report'));
+  const ensure    = () => call(() => api.post(`/plugins/delivery/${orderId}/ensure${qs}`));
+  const release   = () => call(() => api.post(`/plugins/delivery/${orderId}/release${qs}`, { kind }), 'Customer can now download');
   const unrelease = () => call(() => api.post(`/plugins/delivery/${orderId}/unrelease${qs}`));
-  const setGate  = (on) => call(() => api.patch(`/plugins/delivery/${orderId}${qs}`, { phoneGate: on }));
+  const setGate   = (on) => call(() => api.patch(`/plugins/delivery/${orderId}${qs}`, { phoneGate: on }));
 
-  const copyLink = async () => {
-    if (!info?.url) return;
+  const copyLink = async (e) => {
+    e?.stopPropagation();
+    if (!info?.url) return ensure();
     try {
       await navigator.clipboard.writeText(info.url);
       toast.success('Link copied');
     } catch {
-      toast.error('Could not copy — select it manually');
+      setExpanded(true);
+      toast.error('Select the link and copy manually');
     }
-  };
-
-  const box = {
-    flexShrink: 0, padding: '10px 16px', borderTop: '1px solid #e2e8f0',
-    background: '#fbfaff', fontSize: 12, color: '#475569',
-    display: 'flex', flexDirection: 'column', gap: 8,
   };
 
   if (!orderId) return null;
 
   const released   = !!info?.released;
   const hasContent = !!info?.has_content;
+  const ready      = released && hasContent;
+
+  const pill = !info
+    ? { t: '…', bg: '#f1f5f9', fg: '#94a3b8' }
+    : ready
+    ? { t: 'READY', bg: '#dcfce7', fg: '#166534' }
+    : released
+    ? { t: 'RELEASED', bg: '#fef9c3', fg: '#854d0e' }
+    : { t: 'ON HOLD', bg: '#f1f5f9', fg: '#64748b' };
 
   return (
-    <div style={box}>
+    <div
+      onClick={() => setExpanded(v => !v)}
+      style={{
+        flexShrink: 0, borderTop: '1px solid #e2e8f0', background: '#fbfaff',
+        padding: '7px 16px', fontSize: 12, color: '#475569', cursor: 'pointer',
+        display: 'flex', flexDirection: 'column', gap: expanded ? 8 : 0,
+      }}
+    >
+      {/* one-line summary */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <strong style={{ color: '#6d28d9' }}>Customer link</strong>
-        {loading && <span style={{ color: '#94a3b8' }}>loading…</span>}
+        <span style={{ padding: '2px 7px', borderRadius: 999, fontSize: 10, fontWeight: 800, background: pill.bg, color: pill.fg }}>
+          {pill.t}
+        </span>
+        <span style={{ color: '#6d28d9', fontWeight: 600 }}>Customer link</span>
+
         {info && (
-          <span
-            style={{
-              padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700,
-              background: released && hasContent ? '#dcfce7' : '#fef9c3',
-              color:      released && hasContent ? '#166534' : '#854d0e',
-            }}
-          >
-            {released && hasContent ? 'READY — customer can download' : released ? 'RELEASED — report not generated yet' : 'NOT RELEASED — shows “check back later”'}
+          <span style={{ color: '#94a3b8', fontFamily: 'monospace', fontSize: 11 }}>
+            …/r/{info.token ? String(info.token).slice(-6) : '——'}
           </span>
         )}
-      </div>
 
-      {info?.url && (
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-          <input
-            readOnly
-            value={info.url}
-            onFocus={e => e.target.select()}
-            style={{ flex: 1, minWidth: 220, padding: '5px 8px', fontSize: 12, border: '1px solid #cbd5e1', borderRadius: 6, background: '#fff', color: '#334155' }}
-          />
-          <button onClick={copyLink} style={btn('#ffffff', '#334155', '#cbd5e1')}>Copy</button>
-        </div>
-      )}
-
-      {info && !info.url && (
-        <button onClick={ensure} disabled={busy} style={btn('#ffffff', '#6d28d9', '#c4b5fd')}>
-          {busy ? '…' : 'Generate link'}
-        </button>
-      )}
-
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        {!released ? (
-          <button
-            onClick={release}
-            disabled={busy || !hasContent}
-            title={hasContent ? '' : `No generated ${kind} report on this order yet`}
-            style={btn(hasContent ? '#16a34a' : '#e2e8f0', hasContent ? '#fff' : '#94a3b8', 'transparent')}
-          >
-            {busy ? '…' : '📤 Report is ready'}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+          <button onClick={copyLink} disabled={busy} style={mini('#ffffff', '#334155', '#cbd5e1')}>
+            {info?.url ? '⧉ Copy' : 'Generate link'}
           </button>
-        ) : (
-          <>
-            <span style={{ color: '#166534', fontWeight: 600 }}>
-              ✓ Released{info?.released_at ? ` · ${new Date(info.released_at).toLocaleDateString()}` : ''}
-            </span>
-            <button onClick={unrelease} disabled={busy} style={btn('#ffffff', '#b91c1c', '#fecaca')}>
-              {busy ? '…' : 'Undo'}
-            </button>
-          </>
-        )}
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', userSelect: 'none', marginLeft: 'auto' }}>
-          <input
-            type="checkbox"
-            checked={info?.phone_gate !== false}
-            disabled={busy || !info}
-            onChange={e => setGate(e.target.checked)}
-            style={{ cursor: 'pointer' }}
-          />
-          Ask for last 4 digits{info?.phone_last4 ? ` (${info.phone_last4})` : ''}
-        </label>
+          {info && (released ? (
+            <button onClick={(e) => { e.stopPropagation(); unrelease(); }} disabled={busy} style={mini('#ffffff', '#b91c1c', '#fecaca')}>
+              Undo
+            </button>
+          ) : (
+            <button
+              onClick={(e) => { e.stopPropagation(); release(); }}
+              disabled={busy || !hasContent}
+              title={hasContent ? '' : `No generated ${kind} report yet`}
+              style={mini(hasContent ? '#16a34a' : '#e2e8f0', hasContent ? '#fff' : '#94a3b8', 'transparent')}
+            >
+              📤 Report is ready
+            </button>
+          ))}
+
+          <span style={{ color: '#cbd5e1', fontSize: 11 }}>{expanded ? '▾' : '▸'}</span>
+        </div>
       </div>
 
-      {info && (info.opened_at || info.downloads > 0) && (
-        <div style={{ color: '#94a3b8' }}>
-          {info.opened_at && `First opened ${new Date(info.opened_at).toLocaleString()}`}
-          {info.downloads > 0 && ` · ${info.downloads} download${info.downloads === 1 ? '' : 's'}`}
+      {/* expanded detail */}
+      {expanded && info && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }} onClick={(e) => e.stopPropagation()}>
+          {info.url && (
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                readOnly
+                value={info.url}
+                onFocus={(e) => e.target.select()}
+                style={{ flex: 1, minWidth: 0, padding: '4px 8px', fontSize: 11, border: '1px solid #cbd5e1', borderRadius: 6, background: '#fff', color: '#334155' }}
+              />
+            </div>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', userSelect: 'none' }}>
+              <input
+                type="checkbox"
+                checked={info.phone_gate !== false}
+                disabled={busy}
+                onChange={(e) => setGate(e.target.checked)}
+              />
+              Ask for last 4 digits{info.phone_last4 ? ` (${info.phone_last4})` : ''}
+            </label>
+            {released && info.released_at && (
+              <span style={{ color: '#94a3b8' }}>released {new Date(info.released_at).toLocaleDateString()}</span>
+            )}
+            {(info.opened_at || info.downloads > 0) && (
+              <span style={{ color: '#94a3b8' }}>
+                {info.opened_at && `opened ${new Date(info.opened_at).toLocaleDateString()}`}
+                {info.downloads > 0 && ` · ${info.downloads} download${info.downloads === 1 ? '' : 's'}`}
+              </span>
+            )}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-function btn(bg, fg, border) {
+function mini(bg, fg, border) {
   return {
-    padding: '5px 12px', fontSize: 12, fontWeight: 600,
+    padding: '4px 9px', fontSize: 11, fontWeight: 700,
     background: bg, color: fg, border: `1px solid ${border}`,
     borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap',
   };

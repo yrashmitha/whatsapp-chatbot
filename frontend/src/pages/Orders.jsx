@@ -64,7 +64,6 @@ export default function Orders() {
   const [tarotOrder, setTarotOrder]           = useState(null);  // tarot generate modal
   const [tarotEditorOrder, setTarotEditorOrder] = useState(null); // tarot editor drawer
   const [marriageOrder, setMarriageOrder]       = useState(null); // marriage editor drawer
-  const [marriageModalOrder, setMarriageModalOrder] = useState(null); // order modal opened on the marriage tab
   const [matchOrder, setMatchOrder]             = useState(null); // match making editor drawer
   const [matchModalOrder, setMatchModalOrder]   = useState(null); // order modal opened on the match tab
   const toast = useToast();
@@ -491,28 +490,22 @@ export default function Orders() {
                                     className="text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 bg-green-100 text-green-700 hover:bg-green-200"
                                   >💬</button>
                                 )}
-                                {(
-                                  marriageGenerating ? (
-                                    <span className="flex items-center gap-1 text-xs text-pink-600 font-medium">
-                                      <span className="w-3 h-3 border-2 border-pink-300 border-t-pink-600 rounded-full animate-spin inline-block" />
-                                      💍 Generating…
-                                    </span>
-                                  ) : (
-                                    <>
-                                      {marriageError && !marriageDone && (
-                                        <span title={marriageError} className="text-xs px-1.5 py-0.5 rounded border-0 bg-red-100 text-red-600 cursor-default">⚠</span>
-                                      )}
-                                      <button
-                                        onClick={guard('horoscope_reading', () => (marriageDone ? setMarriageOrder(o) : setMarriageModalOrder(o)))}
-                                        title={marriageDone ? 'View/edit marriage reading' : 'Prepare & generate marriage reading'}
-                                        className={`text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 ${
-                                          marriageDone ? 'bg-pink-200 text-pink-800 hover:bg-pink-300'
-                                          : 'bg-pink-100 text-pink-700 hover:bg-pink-200'
-                                        }`}
-                                      >{marriageDone ? '💍 ✏' : '💍'}</button>
-                                    </>
-                                  )
-                                )}
+                                {/* Marriage report is generated from the 🔮 modal's 💍 Marriage tab.
+                                    Here we only show generation progress and — once done — the editor. */}
+                                {marriageGenerating ? (
+                                  <span className="flex items-center gap-1 text-xs text-pink-600 font-medium">
+                                    <span className="w-3 h-3 border-2 border-pink-300 border-t-pink-600 rounded-full animate-spin inline-block" />
+                                    💍 Generating…
+                                  </span>
+                                ) : marriageDone ? (
+                                  <button
+                                    onClick={guard('horoscope_reading', () => setMarriageOrder(o))}
+                                    title="View/edit marriage reading"
+                                    className="text-xs px-1.5 py-0.5 rounded cursor-pointer border-0 bg-pink-200 text-pink-800 hover:bg-pink-300"
+                                  >💍 ✏</button>
+                                ) : marriageError ? (
+                                  <span title={marriageError} className="text-xs px-1.5 py-0.5 rounded border-0 bg-red-100 text-red-600 cursor-default">💍 ⚠</span>
+                                ) : null}
                                 {showMatch && (
                                   matchGenerating ? (
                                     <span
@@ -786,6 +779,7 @@ export default function Orders() {
           order={horoscopeOrder}
           clientId={clientId}
           showMatch={showMatch}
+          showMarriage={showHoroscope}
           onClose={() => setHoroscopeOrder(null)}
           onGenerated={() => qc.invalidateQueries({ queryKey: ['orders'] })}
         />
@@ -797,16 +791,6 @@ export default function Orders() {
           showMatch
           initialTab="match"
           onClose={() => setMatchModalOrder(null)}
-          onGenerated={() => qc.invalidateQueries({ queryKey: ['orders'] })}
-        />
-      )}
-      {marriageModalOrder && (
-        <HoroscopeModal
-          order={marriageModalOrder}
-          clientId={clientId}
-          showMarriage
-          initialTab="marriage"
-          onClose={() => setMarriageModalOrder(null)}
           onGenerated={() => qc.invalidateQueries({ queryKey: ['orders'] })}
         />
       )}

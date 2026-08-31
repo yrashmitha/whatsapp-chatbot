@@ -76,6 +76,7 @@ export default function MarriagePanel({ order, clientId, existingHd = {}, onClos
   const [checking, setChecking]       = useState(false);
   const [saving, setSaving]           = useState(false);
   const [generating, setGenerating]   = useState(false);
+  const [showOrderDetails, setShowOrderDetails] = useState(true);
 
   const hasReport = Array.isArray(existingHd.marriage_sections_data) && existingHd.marriage_sections_data.length > 0;
   const hasChart  = !!detectedLagna || !!existingHd.chart_data;
@@ -209,6 +210,41 @@ export default function MarriagePanel({ order, clientId, existingHd = {}, onClos
 
   return (
     <>
+      {/* Customer details — same panel as the horoscope generate tab */}
+      {Object.keys(cf).length > 0 && (
+        <div className="border-b border-slate-100 shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowOrderDetails(v => !v)}
+            className="w-full flex items-center justify-between px-5 py-2.5 bg-violet-50 text-xs font-semibold text-violet-700 hover:bg-violet-100 border-0 cursor-pointer"
+          >
+            <span>📋 Customer Order Details</span>
+            <span className="text-violet-400 text-base leading-none">{showOrderDetails ? '▲' : '▼'}</span>
+          </button>
+          {showOrderDetails && (
+            <div className="px-5 py-3 flex flex-col gap-2 bg-slate-50 max-h-48 overflow-y-auto">
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+                {Object.entries(cf).map(([k, v]) => {
+                  if (!v || typeof v === 'object') return null;
+                  return (
+                    <div key={k} className="flex flex-col text-xs">
+                      <span className="text-slate-400 capitalize mb-0.5">{k.replace(/_/g, ' ')}</span>
+                      <span className="text-slate-700 break-all">{String(v)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              {order?.ai_summary && (
+                <div className="bg-violet-50 border border-violet-200 rounded-lg px-3 py-2 text-xs text-slate-700 leading-relaxed whitespace-pre-wrap mt-1">
+                  <span className="text-violet-600 font-semibold block mb-1">✨ Summary</span>
+                  {order.ai_summary}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="overflow-y-auto flex-1 px-5 py-4 flex flex-col gap-4">
 
         {hasReport && (

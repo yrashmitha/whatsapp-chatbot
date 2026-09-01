@@ -101,6 +101,29 @@ async function generateOrderId(client) {
  * @param {string} phoneNumber - E.164 customer phone number
  * @returns {Promise<string|null>} Multi-line status note, or null if no orders
  */
+/**
+ * The re-engagement template promises "50% off" but states no figure, so the
+ * bot has to quote the discounted price — but only to customers who actually
+ * received it. Detected from the [template_sent:...] marker left in history.
+ */
+const REENGAGE_OFFER = {
+  templateName: 're_engage_with_offer',
+  note: '\n[RE-ENGAGE OFFER — this customer received the "50% off" re-engagement message and it still applies. Quote these OFFER prices, never the normal ones: රු.990 → රු.495, රු.2,990 → රු.1,495, රු.3,490 → රු.1,745. The "අද හවස 6:00ට පෙර" line in that message is urgency wording only; the 50% still stands whenever they come back. Everything else about the packages is unchanged.]',
+};
+
+async function customerHadReengageOffer(phoneNumber, clientId) {
+  try {
+    const { rows } = await db.pgQuery(
+      `SELECT 1 FROM messages
+        WHERE client_id = $1 AND phone_number = $2
+          AND message_text LIKE $3
+        LIMIT 1`,
+      [clientId, phoneNumber, `%[template_sent:${REENGAGE_OFFER.templateName}]%`]
+    );
+    return rows.length > 0;
+  } catch { return false; }
+}
+
 async function buildOrderStatusNote(phoneNumber, clientId) {
   const all = await db.getOrdersByPhone(phoneNumber, clientId);
   if (!all.length) return null;
@@ -124,7 +147,10 @@ async function buildOrderStatusNote(phoneNumber, clientId) {
   const deliverySuffix = anyLink
     ? '\n[REPORT DELIVERY: "report_link" on each order above is where that customer downloads their own report; "(READY to download now)" vs "(NOT ready yet)" is its live status. Handle it per your report-delivery instructions.]'
     : '';
-  return note + countSuffix + deliverySuffix;
+  const offerSuffix = (await customerHadReengageOffer(phoneNumber, clientId))
+    ? REENGAGE_OFFER.note
+    : '';
+  return note + countSuffix + deliverySuffix + offerSuffix;
 }
 
 /**

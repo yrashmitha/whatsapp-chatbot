@@ -170,10 +170,13 @@ async function setPhoneGate(orderId, clientId, on) {
   await updateDeliveryRow(orderId, clientId, `delivery_phone_gate = $1`, [val]);
 }
 
-/** Column comes back as a JS boolean on PG, an integer on SQLite. */
-function phoneGateOn(order) {
-  const v = order.delivery_phone_gate;
-  return !(v === false || v === 0 || v === '0');
+/**
+ * The last-4-of-phone gate is disabled: opening the link is enough to download.
+ * The column, PATCH endpoint and verify route are kept dormant so the gate can
+ * be brought back without a migration if it is ever needed.
+ */
+function phoneGateOn(_order) {
+  return false;
 }
 
 async function markOpened(orderId) {

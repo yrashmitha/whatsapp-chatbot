@@ -52,7 +52,6 @@ export default function DeliveryPanel({ order, clientId, open, kind }) {
   const ensure    = () => call(() => api.post(`/plugins/delivery/${orderId}/ensure${qs}`));
   const release   = () => call(() => api.post(`/plugins/delivery/${orderId}/release${qs}`, { kind }), 'Customer can now download');
   const unrelease = () => call(() => api.post(`/plugins/delivery/${orderId}/unrelease${qs}`));
-  const setGate   = (on) => call(() => api.patch(`/plugins/delivery/${orderId}${qs}`, { phoneGate: on }));
 
   const copyLink = async (e) => {
     e?.stopPropagation();
@@ -140,15 +139,6 @@ export default function DeliveryPanel({ order, clientId, open, kind }) {
             </div>
           )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', userSelect: 'none' }}>
-              <input
-                type="checkbox"
-                checked={info.phone_gate !== false}
-                disabled={busy}
-                onChange={(e) => setGate(e.target.checked)}
-              />
-              Ask for last 4 digits{info.phone_last4 ? ` (${info.phone_last4})` : ''}
-            </label>
             {released && info.released_at && (
               <span style={{ color: '#94a3b8' }}>released {new Date(info.released_at).toLocaleDateString()}</span>
             )}

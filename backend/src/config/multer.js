@@ -63,4 +63,26 @@ const uploadMedia = multer({
   },
 });
 
-module.exports = { upload, uploadDisk, uploadMedia };
+/**
+ * Voice-clip upload: audio, plus video containers (mp4 / mov / m4a often carry
+ * only an audio track and report a video/* or octet-stream mime). ffmpeg strips
+ * any video and transcodes to ogg/opus afterwards.
+ * @type {multer.Multer}
+ */
+const uploadVoiceClip = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, UPLOADS_DIR),
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase() || '';
+      cb(null, `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${ext}`);
+    },
+  }),
+  limits: { fileSize: 25 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /^(audio\/|video\/(mp4|webm|ogg|quicktime|3gpp|x-m4a)|application\/octet-stream)/.test(file.mimetype)
+      || /\.(mp3|m4a|aac|ogg|oga|opus|wav|flac|amr|mp4|mov|3gp|webm)$/i.test(file.originalname || '');
+    cb(null, ok);
+  },
+});
+
+module.exports = { upload, uploadDisk, uploadMedia, uploadVoiceClip };

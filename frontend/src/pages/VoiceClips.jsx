@@ -88,8 +88,8 @@ function UploadModal({ open, onClose, clientId, onSaved }) {
   const handleClose = () => { reset(); onClose(); };
 
   const handleSave = async () => {
-    if (!name.trim() || !keyword.trim() || !file) {
-      toast.error('Name, trigger keyword, and audio file are all required');
+    if (!name.trim() || !keywordValid || !file) {
+      toast.error('Name, an English trigger keyword, and an audio file are all required');
       return;
     }
     setSaving(true);
@@ -110,7 +110,8 @@ function UploadModal({ open, onClose, clientId, onSaved }) {
     }
   };
 
-  const normalizeKeyword = (v) => v.toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/__+/g, '_');
+  const normalizeKeyword = (v) => v.toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/__+/g, '_').replace(/^_+|_+$/g, '');
+  const keywordValid = /[a-z0-9]/.test(keyword);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
@@ -138,6 +139,9 @@ function UploadModal({ open, onClose, clientId, onSaved }) {
           <p className="text-xs text-slate-400">
             AI uses <code className="bg-slate-100 px-1 rounded">{'[[VOICE:' + (keyword || 'keyword') + ']]'}</code> in replies to trigger this clip.
           </p>
+          {keyword === '' && (
+            <p className="text-xs text-amber-600">Use English letters or numbers — e.g. <code className="bg-amber-50 px-1 rounded">welcome</code>, <code className="bg-amber-50 px-1 rounded">price_990</code>.</p>
+          )}
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -145,7 +149,7 @@ function UploadModal({ open, onClose, clientId, onSaved }) {
           <input
             ref={fileRef}
             type="file"
-            accept="audio/*"
+            accept="audio/*,video/mp4,video/quicktime,.m4a,.mp4,.mov,.opus,.amr"
             className="hidden"
             onChange={e => setFile(e.target.files?.[0] || null)}
           />
@@ -193,7 +197,7 @@ function UploadModal({ open, onClose, clientId, onSaved }) {
           <button onClick={handleClose} className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700 rounded-xl border border-slate-200 cursor-pointer">
             Cancel
           </button>
-          <Button onClick={handleSave} disabled={saving || !name.trim() || !keyword.trim() || !file}>
+          <Button onClick={handleSave} disabled={saving || !name.trim() || !keywordValid || !file}>
             {saving ? 'Uploading…' : 'Add Clip'}
           </Button>
         </div>

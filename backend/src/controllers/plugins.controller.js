@@ -1573,10 +1573,12 @@ async function sendWhatsAppTemplate(req, res) {
           { headers: { Authorization: `Bearer ${cfg.wa_token}`, 'Content-Type': 'application/json' } }
         );
         const wamid = r.data?.messages?.[0]?.id || null;
+        const headerImg = header?.format === 'IMAGE' ? (image_url || null) : null;
         await db.pgQuery(
-          `INSERT INTO messages (phone_number, client_id, sender_type, message_text, wamid, sent_by, sent_manual)
-           VALUES ($1,$2,'bot',$3,$4,$5,TRUE)`,
-          [t.phone_number, clientId, `${SENT_TAG}\n${body?.text || ''}`, wamid, req.user?.uid ?? null]
+          `INSERT INTO messages (phone_number, client_id, sender_type, message_text, wamid, sent_by, sent_manual, media_type, media_url)
+           VALUES ($1,$2,'bot',$3,$4,$5,TRUE,$6,$7)`,
+          [t.phone_number, clientId, `${SENT_TAG}\n${body?.text || ''}`, wamid, req.user?.uid ?? null,
+           headerImg ? 'image' : null, headerImg]
         ).catch(() => {});
         sent.push(t.order_id);
       } catch (e) {

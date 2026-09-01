@@ -46,6 +46,7 @@ export default function Orders() {
   const [statusFilter, setStatusFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [dir, setDir] = useState('desc'); // order date sort direction
   // '' every sale, 'bot' the ones nobody claimed, or a crm_users id.
   const [operator, setOperator] = useState('');
   const [expandedOrder, setExpandedOrder] = useState(null);
@@ -101,7 +102,7 @@ export default function Orders() {
   });
 
   const params = {
-    page, limit: 20,
+    page, limit: 20, dir,
     ...(search && { search }),
     ...(statusFilter && { status: statusFilter }),
     ...(dateFrom && { date_from: dateFrom }),
@@ -325,7 +326,16 @@ export default function Orders() {
                   <th className="py-2 text-left pr-4">Order ID</th>
                   <th className="py-2 text-left pr-4">Customer</th>
                   <th className="py-2 text-left pr-4">Status</th>
-                  <th className="py-2 text-left pr-4">Date</th>
+                  <th className="py-2 text-left pr-4">
+                    <button
+                      type="button"
+                      onClick={() => { setDir(d => (d === 'desc' ? 'asc' : 'desc')); setPage(1); }}
+                      className="flex items-center gap-1 uppercase tracking-wide text-xs text-slate-500 hover:text-slate-800 bg-transparent border-0 cursor-pointer p-0 font-medium"
+                      title="Sort by date & time"
+                    >
+                      Date <span className="text-[10px]">{dir === 'desc' ? '▼' : '▲'}</span>
+                    </button>
+                  </th>
                   <th className="py-2 text-left pr-4">Details</th>
                   {superAdmin && <th className="py-2 text-left pr-4">Client</th>}
                 </tr>

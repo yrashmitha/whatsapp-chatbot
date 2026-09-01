@@ -40,6 +40,9 @@ async function listOrders(req, res) {
   // shared; what is private is the money, and that is scoped in the income
   // summary instead.
   const operator = req.query.operator || '';
+  // Sort direction on the order date. Whitelisted — never interpolate raw input
+  // into SQL. Newest-first stays the default.
+  const dir = String(req.query.dir).toLowerCase() === 'asc' ? 'ASC' : 'DESC';
   try {
     const conditions = [];
     const params = [];
@@ -64,7 +67,7 @@ async function listOrders(req, res) {
     else if (operator)      { countParams.push(parseInt(operator, 10)); countConditions.push(`credited_to=$${countParams.length}`); }
     const countWhere = countConditions.length ? `WHERE ${countConditions.join(' AND ')}` : '';
     const [rows, countRes] = await Promise.all([
-      db.pgQuery(`SELECT o.*, o.phone_number AS phone, cu.name AS customer_name FROM orders o LEFT JOIN customers cu ON cu.phone_number=o.phone_number ${where} ORDER BY o.created_at DESC LIMIT $${limitIdx} OFFSET $${offsetIdx}`, params),
+      db.pgQuery(`SELECT o.*, o.phone_number AS phone, cu.name AS customer_name FROM orders o LEFT JOIN customers cu ON cu.phone_number=o.phone_number ${where} ORDER BY o.created_at ${dir}, o.order_id ${dir} LIMIT $${limitIdx} OFFSET $${offsetIdx}`, params),
       db.pgQuery(`SELECT COUNT(*) FROM orders ${countWhere}`, countParams),
     ]);
     const orders = rows.rows.map(o => ({

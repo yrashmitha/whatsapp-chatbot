@@ -256,6 +256,33 @@
       "intent": "tarot",
       "aliases": "tarot da kendara da, wenasa, which is better, මොකද හොඳ ටැරෝ",
       "body": "කේන්දරය කියන්නේ ඔයා උපන් මොහොතේ පදනමින් මුළු ජීවිතේම බලන එක.\n\nටැරෝ කියන්නේ දැනට තියෙන ප්‍රශ්නයකට, ළඟදී වෙන දේ ගැන ඉක්මන් පිළිතුරක්. දෙකම දෙකක්."
+    },
+    {
+      "id": "faq_tarot_price",
+      "intent": "tarot",
+      "aliases": "tarot price, tarot gana, tarot kiyada, ටැරෝ ගාස්තුව, ටැරෝ මිල, ටැරෝ කීයද, card reading price, tarot eke gana",
+      "send": "tarot",
+      "body": "ටැරෝ කියවීම රු. 500යි.\n\nඑතනින් ඔයාට ජීවිතේ එක අංශයක් ගැන — ආදරය, රැකියාව, මුදල්, සෞඛ්‍යය, පවුල වගේ — ඇත්තටම ඔයාව වදදෙන එක ප්‍රශ්නයකට පිළිතුරක් ලැබෙනවා. ගෙවීම තහවුරු වුණාට පස්සේ පැය 3ක් ඇතුළත එවනවා."
+    },
+    {
+      "id": "faq_tarot_one_question",
+      "intent": "tarot",
+      "aliases": "tarot prashna kiyak, how many questions, ekak da, tarot walin kiyak ahanna, ප්‍රශ්න කීයක්, එක ප්‍රශ්නයක් ද, tarot eken kiyak",
+      "exact": true,
+      "body": "ටැරෝ කියවීමකින් අහන්න පුළුවන් එක ප්‍රශ්නයයි. 🙏\n\nඑම නිසා ඔයාට දැන් වඩාත්ම වැදගත් — ඔයාව වැඩිපුරම කරදර කරන — ප්‍රශ්නය මොකක්ද කියලා තෝරගෙන ඒක අහන්න."
+    },
+    {
+      "id": "faq_tarot_how_to_ask",
+      "intent": "tarot",
+      "aliases": "tarot prashnaya kohomada, how to ask, mokakda ahanne, monawada liyanne, ප්‍රශ්නය කොහොමද අහන්නේ, මොනවද ලියන්නේ, tarot ekata mokakda liyanne",
+      "body": "ඔයාගේ ප්‍රශ්නය ඇත්ත, පැහැදිලි එකක් වෙන්න ඕන. \"මම දැන් යන රැකියාවේ ම ඉන්නද, නැත්නම් අලුත් එකක් හොයන්නද?\" වගේ — නිශ්චිතව.\n\nප්‍රශ්නය කොච්චර ඇත්තටම ඔයාගේ ඇත්ත තත්ත්වයට සම්බන්ධද, කියවීම එච්චරටම නිවැරදියි. පොදු ප්‍රශ්නයකට වඩා ඔයාව දැන් වදදෙන ඇත්ත ප්‍රශ්නය ලියන්න."
+    },
+    {
+      "id": "faq_tarot_delivery_time",
+      "intent": "tarot",
+      "aliases": "tarot kawada, tarot delivery, tarot kiyata denne, ටැරෝ කවදාද, ටැරෝ කීයටද, tarot eka kawada, how long tarot",
+      "exact": true,
+      "body": "ගෙවීම තහවුරු වුණාට පස්සේ පැය 3ක් ඇතුළත ටැරෝ කියවීම මේ WhatsApp එකටම PDF එකක් විදිහට එවනවා. 🙏"
     }
   ]
 }

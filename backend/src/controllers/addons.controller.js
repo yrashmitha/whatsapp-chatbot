@@ -295,7 +295,7 @@ async function triggerTarotReading(req, res) {
     } catch { /* no config */ }
 
     console.log(`[TAROT] Background generation for ${phone} | order=${order_id} | client=${clientId}`);
-    generateTarotReading(clientId, question, customPrompt).then(async ({ reading, cards }) => {
+    generateTarotReading(clientId, question, customPrompt, order_id).then(async ({ reading, cards }) => {
       const tarotData = { question, reading, cards, generated_at: new Date().toISOString() };
       await db.pgQuery(
         `UPDATE orders SET tarot_data=$1 WHERE order_id=$2`,

@@ -10,6 +10,7 @@
 
 const { getGenAI } = require('./clientKeys');
 const { DEFAULT_BRAND, footerText } = require('./branding');
+const { makeMeter, recordOrderGenCost } = require('./genCost');
 
 let Document, Packer, Paragraph, TextRun, AlignmentType, PageBreak, Footer, PageNumber, NumberFormat;
 function ensureDocx() {
@@ -34,11 +35,35 @@ const REVERSAL_CHANCE = 0.3;
 const SPREAD_POSITIONS = ['Past', 'Present', 'Future'];
 
 /**
- * Default Gemini prompt template.
+ * Default Gemini prompt template, used when a client has not written their own
+ * in Plugins → Tarot Reading.
+ *
  * Placeholders replaced at runtime:
- *   {question}   — the customer's question / problem
- *   {spread}     — formatted card spread text
+ *   {question}   — the customer's one real problem
+ *   {spread}     — formatted 3-card spread (Past / Present / Future)
+ *
+ * The product rule: one paid reading answers ONE real question about one area of
+ * the customer's life (love, money, work, health, family, a decision). The more
+ * honest and specific that question is, the more useful the reading — so the
+ * reading is written to take the stated problem seriously and answer it
+ * directly, not to give a vague all-purpose fortune.
  */
+const DEFAULT_TAROT_PROMPT = `You are an experienced tarot reader. The customer below has asked ONE real question about the single issue affecting their life most right now. Answer only that question — do not drift into other topics.
+
+Customer's question:
+{question}
+
+The 3 cards drawn (interpret ONLY these, invent no others):
+{spread}
+
+How to write the reading:
+- Treat the question as a real, personal problem and answer it directly and honestly. No vague, both-ways answers.
+- Past card: the root of this problem / how it came about.
+- Present card: where the customer stands now and the forces currently at play.
+- Future card: the direction things are heading, and the concrete things the customer must do to change it.
+- End with 3-4 short, clear pieces of advice — what to do and what to avoid.
+- Compassionate but truthful tone; the customer should feel understood.
+- Reply in the same language the customer used in their question. About 8-14 lines.`;
 
 /**
  * Randomly draw N unique cards from the deck, each with a chance of reversal.
@@ -79,13 +104,17 @@ function formatSpread(drawn) {
  * @param {string}      clientId - Multi-tenant client ID
  * @param {string}      question - The customer's question or problem
  * @param {string|null} customPrompt - Optional prompt override from plugin config
+ * @param {string|null} orderId - Order to bill the Gemini cost to (optional)
  * @returns {Promise<{ reading: string, cards: Array }>}
  */
-async function generateTarotReading(clientId, question, customPrompt = null) {
-  if (!(customPrompt || '').trim()) {
-    const err = new Error('No tarot reading prompt configured for this client. Set it in Plugins > Tarot Reading before generating.');
-    err.statusCode = 422;
-    throw err;
+async function generateTarotReading(clientId, question, customPrompt = null, orderId = null) {
+  // Fall back to the built-in prompt rather than refusing — a client that
+  // enabled the addon but never opened Plugins should still get a usable
+  // reading, and the default already encodes the "one real problem" framing.
+  const usingDefault = !(customPrompt || '').trim();
+  if (usingDefault) {
+    console.log(`[TAROT] client=${clientId} has no custom prompt — using DEFAULT_TAROT_PROMPT`);
+    customPrompt = DEFAULT_TAROT_PROMPT;
   }
   const drawn = drawCards(3);
   const spreadText = formatSpread(drawn);
@@ -122,6 +151,10 @@ STRICT RULES:
   });
 
   const result = await model.generateContent(prompt);
+
+  const meter = makeMeter();
+  meter.add(result.response.usageMetadata);
+  await recordOrderGenCost(orderId, 'tarot', meter);
 
   // Filter out thought/thinking parts — same pattern as gemini.js
   // result.response.text() includes thinking tokens; we want only the final response
@@ -359,4 +392,4 @@ async function buildTarotDoc({ question, reading, cards, page1_body, page2_body,
   return Packer.toBuffer(doc);
 }
 
-module.exports = { generateTarotReading, buildTarotDoc };
+module.exports = { generateTarotReading, buildTarotDoc, DEFAULT_TAROT_PROMPT };

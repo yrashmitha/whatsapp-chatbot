@@ -10,7 +10,7 @@
 const axios  = require('axios');
 const fs     = require('fs');
 const path   = require('path');
-const { META_ACCESS_TOKEN, PHONE_NUMBER_ID } = require('../config/env');
+const { META_ACCESS_TOKEN, PHONE_NUMBER_ID, UPLOADS_DIR } = require('../config/env');
 
 const TEMPLATES_DIR    = path.join(__dirname, '../../public', 'templates');
 
@@ -424,14 +424,6 @@ async function sendTypingIndicator(to, client) {
 }
 
 /**
- * Send an audio file to a WhatsApp recipient.
- *
- * @param {string}      to       - Recipient E.164 phone number
- * @param {string}      audioUrl - Publicly accessible audio file URL
- * @param {Object|null} client   - Client config object
- * @returns {Promise<string|null>} WhatsApp message ID or null
- */
-/**
  * Upload audio bytes to WhatsApp and return a media_id.
  * @throws if Meta rejects the upload
  */
@@ -447,22 +439,54 @@ async function uploadAudioToMeta(buffer, mime, filename, client) {
   return data.id;
 }
 
+const AUDIO_MIME = {
+  ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg',
+  mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', amr: 'audio/amr',
+};
+
+/**
+ * Get the audio bytes: read from the local uploads dir when the URL points
+ * there (a container fetching its own public domain can hairpin-fail on
+ * Railway), otherwise fetch the URL.
+ *
+ * @returns {Promise<{buffer: Buffer, mime: string, name: string}>}
+ */
+async function loadAudioBytes(audioUrl) {
+  const name = (audioUrl.split('?')[0].split('/').pop()) || 'audio.ogg';
+  const ext  = name.split('.').pop().toLowerCase();
+  const mime = AUDIO_MIME[ext] || 'audio/ogg';
+
+  if (audioUrl.includes('/uploads/')) {
+    const local = path.join(UPLOADS_DIR, name);
+    if (fs.existsSync(local)) {
+      return { buffer: fs.readFileSync(local), mime, name };
+    }
+  }
+  const r = await fetch(audioUrl);
+  if (!r.ok) throw new Error(`fetch ${r.status}`);
+  return { buffer: Buffer.from(await r.arrayBuffer()), mime, name };
+}
+
+/**
+ * Send an audio file to a WhatsApp recipient.
+ *
+ * @param {string}      to       - Recipient E.164 phone number
+ * @param {string}      audioUrl - Audio file URL (a /uploads/ path is read from disk)
+ * @param {Object|null} client   - Client config object
+ * @returns {Promise<string|null>} WhatsApp message ID or null
+ */
 async function sendWhatsAppAudio(to, audioUrl, client) {
   console.log(`[WA-AUDIO] Sending audio to ${to}: ${audioUrl}`);
   try {
-    // Prefer uploading the bytes and sending by media_id. A bare `link` makes
-    // Meta re-fetch the file itself and it fails intermittently with 131053
-    // ("media upload error") even when the URL is perfectly reachable.
+    // Upload the bytes and send by media_id. A bare `link` makes Meta re-fetch
+    // the file itself and fails with 131053 ("media upload error") even when
+    // the URL is perfectly reachable.
     let audio;
     try {
-      const r = await fetch(audioUrl);
-      if (!r.ok) throw new Error(`fetch ${r.status}`);
-      const buf  = Buffer.from(await r.arrayBuffer());
-      const mime = (r.headers.get('content-type') || 'audio/ogg').split(';')[0];
-      const name = audioUrl.split('/').pop() || 'audio.ogg';
-      const id   = await uploadAudioToMeta(buf, mime, name, client);
+      const { buffer, mime, name } = await loadAudioBytes(audioUrl);
+      const id = await uploadAudioToMeta(buffer, mime, name, client);
       audio = { id };
-      console.log(`[WA-AUDIO] uploaded ${buf.length}B (${mime}) → media_id=${id}`);
+      console.log(`[WA-AUDIO] uploaded ${buffer.length}B (${mime}) → media_id=${id}`);
     } catch (upErr) {
       console.warn(`[WA-AUDIO] upload failed, falling back to link:`, upErr.message);
       audio = { link: audioUrl };

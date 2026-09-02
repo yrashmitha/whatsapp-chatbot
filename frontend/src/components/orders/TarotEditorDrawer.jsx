@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import Drawer from '../ui/Drawer';
 import { useToast } from '../ui/Toast';
 import api from '../../lib/api';
+import DeleteReportButton from './DeleteReportButton';
 import DeliveryPanel from './DeliveryPanel';
 
 const POSITION_COLORS = { Past: '#8b5cf6', Present: '#3b82f6', Future: '#10b981' };
@@ -269,6 +270,8 @@ export default function TarotEditorDrawer({ order, clientId, open, onClose }) {
 
         {/* Footer */}
         <div style={{ flexShrink: 0, padding: '12px 16px', borderTop: '1px solid #e2e8f0', display: 'flex', gap: 8, justifyContent: 'flex-end', background: '#f8fafc' }}>
+          <DeleteReportButton order={order} clientId={clientId} kind="tarot" visible={!!(td.reading && td.cards)} onDone={onClose} />
+          <div style={{ marginRight: 'auto' }} />
           <button
             onClick={handleDownload}
             disabled={downloading}

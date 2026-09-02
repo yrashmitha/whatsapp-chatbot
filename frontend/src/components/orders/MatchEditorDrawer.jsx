@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import Drawer from '../ui/Drawer';
 import { useToast } from '../ui/Toast';
 import api from '../../lib/api';
+import DeleteReportButton from './DeleteReportButton';
 import DeliveryPanel from './DeliveryPanel';
 
 const ACCENT = '#0d9488';
@@ -350,6 +351,7 @@ export default function MatchEditorDrawer({ order, clientId, open, onClose }) {
 
         {/* Footer */}
         <div style={{ flexShrink: 0, padding: '12px 16px', borderTop: '1px solid #e2e8f0', display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center', background: '#f8fafc', flexWrap: 'wrap' }}>
+          <DeleteReportButton order={order} clientId={clientId} kind="match" visible={sections.length > 0} onDone={onClose} />
           <button
             onClick={handleRegenerateAll}
             disabled={regenerating}

@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import Drawer from '../ui/Drawer';
 import { useToast } from '../ui/Toast';
 import api from '../../lib/api';
+import DeleteReportButton from './DeleteReportButton';
 import DeliveryPanel from './DeliveryPanel';
 
 export default function QuantumEditorDrawer({ order, clientId, open, onClose }) {
@@ -306,6 +307,14 @@ export default function QuantumEditorDrawer({ order, clientId, open, onClose }) 
 
         {/* Footer */}
         <div style={{ flexShrink: 0, padding: '12px 16px', borderTop: '1px solid #e2e8f0', display: 'flex', gap: 8, justifyContent: 'flex-end', background: '#f8fafc' }}>
+          <DeleteReportButton
+            order={order}
+            clientId={clientId}
+            kind="quantum"
+            visible={!!(hd.quantum_reading || (Array.isArray(hd.quantum_sections_data) && hd.quantum_sections_data.length > 0) || hd.quantum_data)}
+            onDone={onClose}
+          />
+          <div style={{ marginRight: 'auto' }} />
           <button
             onClick={handleRegenerate}
             disabled={regenerating || !hd.aura_analysis || !hd.quantum_data}

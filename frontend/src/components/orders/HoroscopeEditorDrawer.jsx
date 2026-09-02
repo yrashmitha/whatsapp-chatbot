@@ -91,6 +91,28 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
     }
   };
 
+  const [deletingReport, setDeletingReport] = useState(false);
+  const handleDeleteReport = async () => {
+    if (!window.confirm(
+      `Delete the generated horoscope for #${order.order_id}?\n\n`
+      + 'The sections, answers and WhatsApp message are removed. Chart data and '
+      + 'birth details are kept, so you can regenerate without re-entering anything. '
+      + `The recorded cost ($${Number(order.gen_cost_usd || 0).toFixed(4)}) is kept.`
+    )) return;
+    setDeletingReport(true);
+    try {
+      const params = clientId ? `?client_id=${clientId}&kind=horoscope` : '?kind=horoscope';
+      await api.delete(`/plugins/horoscope/report/${order.order_id}${params}`);
+      toast.success('Generated report deleted');
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      onClose?.();
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Failed to delete report');
+    } finally {
+      setDeletingReport(false);
+    }
+  };
+
   // Derive ordered section keys from config
   const rawKeys = Object.keys(savedSections);
   const sectionKeys = rawKeys.length > 0 ? applyHoroscopeOrder(rawKeys, configSectionOrder) : [];
@@ -431,6 +453,15 @@ export default function HoroscopeEditorDrawer({ order, clientId, open, onClose }
                 Re-fetch chart
               </label>
             </div>
+          )}
+          {rawKeys.length > 0 && (
+            <button
+              onClick={handleDeleteReport}
+              disabled={deletingReport || !!hd.generating}
+              style={{ padding: '8px 14px', fontSize: 13, background: '#ffffff', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: 8, cursor: deletingReport ? 'not-allowed' : 'pointer', opacity: deletingReport ? 0.6 : 1 }}
+            >
+              {deletingReport ? 'Deleting…' : '🗑 Delete Report'}
+            </button>
           )}
           <button
             onClick={handleDownload}

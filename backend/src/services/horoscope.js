@@ -893,15 +893,17 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
 
     let fastReading = null;
     let fastSectionsData = null;
+    const fastMeter = makeMeter();
     if (fastHasConfigSections) {
       fastSectionsData = await generateQuantumSections(
         fastQR, existingHd.aura_analysis,
         fastConfig.quantum_sections, await getGeminiKey(clientId),
         fastConfig.quantum_system_prompt || '',
-        existingHd.chart_data?.vimshottari_dasha || null
+        existingHd.chart_data?.vimshottari_dasha || null,
+        fastMeter
       );
     } else {
-      fastReading = await generateQuantumReading(fastQR, existingHd.aura_analysis, await getGeminiKey(clientId), fastConfig.quantum_system_prompt || '');
+      fastReading = await generateQuantumReading(fastQR, existingHd.aura_analysis, await getGeminiKey(clientId), fastConfig.quantum_system_prompt || '', fastMeter);
     }
 
     const fastUpdated = {
@@ -917,6 +919,7 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
       [JSON.stringify(fastUpdated), orderId]
     );
     console.log('[HOROSCOPE] Fast path: QC + reading saved for', orderId, fastQR.quantum_id);
+    await recordOrderGenCost(orderId, 'quantum', fastMeter);
     return fastUpdated;
   }
 
@@ -1143,11 +1146,12 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
         quantumResult, savedAuraForQ,
         config.quantum_sections, await getGeminiKey(clientId),
         quantumSystemPrompt,
-        chartData?.vimshottari_dasha || null
+        chartData?.vimshottari_dasha || null,
+        meter
       );
     } else {
       // No UI sections configured — fall back to the legacy single reading
-      quantumResult._reading = await generateQuantumReading(quantumResult, savedAuraForQ, await getGeminiKey(clientId), quantumSystemPrompt);
+      quantumResult._reading = await generateQuantumReading(quantumResult, savedAuraForQ, await getGeminiKey(clientId), quantumSystemPrompt, meter);
     }
   }
 
@@ -1177,8 +1181,8 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
   );
   console.log('[HOROSCOPE] All sections saved for', orderId);
 
-  // Add this run's Gemini spend onto the order's accumulated cost. Quantum
-  // sub-calls above are not yet metered; the WA message below meters itself.
+  // Add this run's Gemini spend (sections + special questions + quantum) onto
+  // the order's accumulated cost. The WA message below meters itself.
   await recordOrderGenCost(orderId, 'horoscope', meter, {
     agent: useAgent,
     sections: activeSections.length,

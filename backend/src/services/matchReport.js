@@ -29,7 +29,8 @@
 
 const db        = require('../db');
 const { getGenAI } = require('./clientKeys');
-const { sendChecked, sendRequired } = require('./aiRetry');
+const { sendChecked, sendRequired, sendRequiredMeta } = require('./aiRetry');
+const { makeMeter, recordOrderGenCost } = require('./genCost');
 const { buildSectionsDoc } = require('./horoscope');
 const { todayContextBlock } = require('./dateContext');
 
@@ -147,7 +148,7 @@ function historyFromSections(sectionsData, excludeLabel) {
  * a one-off session is built from `coupleContext` + optional `history`.
  * @returns {Promise<string>} the section text
  */
-async function generateMatchSectionText({ clientId, coupleContext, systemPrompt, label, guide, chat, history, fixedInstructions }) {
+async function generateMatchSectionText({ clientId, coupleContext, systemPrompt, label, guide, chat, history, fixedInstructions, meter }) {
   const prompt = buildMatchSectionPrompt(label, guide, fixedInstructions);
 
   console.log(`[MATCH] ── REQUEST: "${label}"`);
@@ -155,8 +156,8 @@ async function generateMatchSectionText({ clientId, coupleContext, systemPrompt,
 
   const activeChat = chat
     || (await buildMatchModel({ clientId, coupleContext, systemPrompt })).startChat({ history: history || [] });
-  const text = await sendRequired(activeChat, prompt, label);
-  const usage = undefined;
+  const { text, usage } = await sendRequiredMeta(activeChat, prompt, label);
+  if (meter) meter.add(usage);
   console.log(`[MATCH] ── RESPONSE: "${label}" tokens in=${usage?.promptTokenCount ?? '?'} out=${usage?.candidatesTokenCount ?? '?'} chars=${text.length}`);
   return text;
 }
@@ -232,6 +233,7 @@ async function generateMatchReading(clientId, orderId) {
   // ONE session for the whole run (see module docstring).
   const chat = (await buildMatchModel({ clientId, coupleContext, systemPrompt })).startChat({});
 
+  const meter = makeMeter();
   const totalSteps = sections.length + (Array.isArray(hd.match_special_questions) ? hd.match_special_questions.length : 0);
   let doneSteps = 0;
   const out = [];
@@ -242,6 +244,7 @@ async function generateMatchReading(clientId, orderId) {
       label: sec.label,
       guide: sec.guide || '',
       chat,
+      meter,
     });
     out.push({ label: sec.label, content });
     await publishMatchProgress(orderId, ++doneSteps, totalSteps, sec.label);
@@ -256,8 +259,9 @@ async function generateMatchReading(clientId, orderId) {
     if (!questionText.trim()) continue;
     console.log(`[MATCH-Q] ── REQUEST: "${q.question || questionText}"`);
     const label = `question: ${q.question || questionText}`;
-    const { text: answer, finishReason } = await sendChecked(
+    const { text: answer, finishReason, usage } = await sendChecked(
       chat, buildMatchQuestionPrompt(questionText, questionInstructions), label);
+    meter.add(usage);
     console.log(`[MATCH-Q] ── RESPONSE: chars=${answer.length}`);
     const entry = { question: q.question || questionText, prompt: q.prompt || '', answer };
     if (!answer) {
@@ -285,6 +289,8 @@ async function generateMatchReading(clientId, orderId) {
 
   await db.pgQuery('UPDATE orders SET horoscope_data=$1 WHERE order_id=$2', [JSON.stringify(updated), orderId]);
   console.log(`[MATCH] Saved ${out.length} sections + ${answers.length} answers for order ${orderId}`);
+
+  await recordOrderGenCost(orderId, 'match', meter, { sections: out.length, questions: answers.length });
 
   return out;
 }

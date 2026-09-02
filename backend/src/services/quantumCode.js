@@ -231,7 +231,7 @@ ${isImbalanced
  * @param {string} [apiKey]
  * @returns {Promise<string>}    The Sinhala narrative text
  */
-async function generateQuantumReading(quantumData, auraAnalysis, apiKey, systemPromptOverride) {
+async function generateQuantumReading(quantumData, auraAnalysis, apiKey, systemPromptOverride, meter) {
   // Supplied by the caller from the client's own configuration.
   const key = apiKey;
   if (!key) throw new Error('No Gemini API key supplied for quantum analysis');
@@ -264,6 +264,7 @@ async function generateQuantumReading(quantumData, auraAnalysis, apiKey, systemP
 
   const result = await model.generateContent(prompt);
   const usage  = result.response.usageMetadata;
+  if (meter) meter.add(usage);
   const text   = result.response.text().trim();
 
   console.log('[QR] ── RAW OUTPUT ──────────────────────────────────────');
@@ -440,7 +441,7 @@ Detected Blockages : ${blockages}${hint ? `\nRecommendation     : ${hint}` : ''}
  * @param {object}   [vimshottariDasha] vimshottari_dasha object from the freeastroapi chart response
  * @returns {Promise<Array<{label:string,content:string}>>}
  */
-async function generateQuantumSections(quantumData, auraAnalysis, sections, apiKey, systemPrompt, vimshottariDasha) {
+async function generateQuantumSections(quantumData, auraAnalysis, sections, apiKey, systemPrompt, vimshottariDasha, meter) {
   // Supplied by the caller from the client's own configuration.
   const key = apiKey;
   if (!key) throw new Error('No Gemini API key supplied for quantum analysis');
@@ -501,6 +502,7 @@ async function generateQuantumSections(quantumData, auraAnalysis, sections, apiK
     console.log('[QS] ──────────────────────────────────────────────────────────');
     const result  = await model.generateContent(userPrompt);
     const usage   = result.response.usageMetadata;
+    if (meter) meter.add(usage);
     const content = result.response.text().trim();
     console.log(`[QS] ── RESPONSE: "${label}" ${'─'.repeat(Math.max(0, 51 - label.length))}`);
     console.log(content);

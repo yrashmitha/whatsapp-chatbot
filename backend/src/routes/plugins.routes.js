@@ -20,6 +20,7 @@ const {
   fetchChartData,
   generateHoroscopeReading,
   horoscopeProgress,
+  deleteReport,
   updateHoroscopeSections,
   updateQuantumSections,
   regenerateQuantumSections,
@@ -86,6 +87,7 @@ router.post('/horoscope/ai-prepare/:orderId',     jwtAuth, requirePermission('ai
 router.post('/horoscope/fetch-chart',             jwtAuth, requirePermission('ai.astro_chart'), orderScope, fetchChartData);
 router.post('/horoscope/generate',                jwtAuth, requirePermission('ai.generate_report'), orderScope, generateHoroscopeReading);
 router.get('/horoscope/progress/:orderId',        jwtAuth, requirePermission('orders.view'), orderScope, horoscopeProgress);
+router.delete('/horoscope/report/:orderId',       jwtAuth, requirePermission('ai.generate_report'), orderScope, deleteReport);
 router.patch('/horoscope/sections/:orderId',         jwtAuth, requirePermission('reports.edit'), orderScope, updateHoroscopeSections);
 router.patch('/horoscope/quantum-sections/:orderId',    jwtAuth, requirePermission('reports.edit'), orderScope, updateQuantumSections);
 router.post('/horoscope/regenerate-quantum/:orderId',         jwtAuth, requirePermission('ai.generate_report'), orderScope, regenerateQuantumSections);

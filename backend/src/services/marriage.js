@@ -24,7 +24,8 @@
 
 const db        = require('../db');
 const { getGenAI } = require('./clientKeys');
-const { sendRequired, sendChecked } = require('./aiRetry');
+const { sendRequired, sendChecked, sendRequiredMeta } = require('./aiRetry');
+const { makeMeter, recordOrderGenCost } = require('./genCost');
 const { buildSectionsDoc } = require('./horoscope');
 const { todayContextBlock } = require('./dateContext');
 
@@ -104,7 +105,7 @@ function historyFromSections(sectionsData, excludeLabel) {
  * omit it and a one-off session is built instead.
  * @returns {Promise<string>} the section text
  */
-async function generateMarriageSectionText({ clientId, chartData, systemPrompt, label, guide, chat, history, fixedInstructions }) {
+async function generateMarriageSectionText({ clientId, chartData, systemPrompt, label, guide, chat, history, fixedInstructions, meter }) {
   const prompt = buildMarriageSectionPrompt(label, guide, fixedInstructions);
 
   console.log(`[MARRIAGE] ── REQUEST: "${label}"`);
@@ -112,7 +113,8 @@ async function generateMarriageSectionText({ clientId, chartData, systemPrompt, 
 
   const activeChat = chat
     || (await buildMarriageModel({ clientId, chartData, systemPrompt })).startChat({ history: history || [] });
-  const text = await sendRequired(activeChat, prompt, label);
+  const { text, usage } = await sendRequiredMeta(activeChat, prompt, label);
+  if (meter) meter.add(usage);
   console.log(`[MARRIAGE] ── RESPONSE: "${label}" chars=${text.length}`);
   return text;
 }
@@ -158,6 +160,7 @@ async function generateMarriageReading(clientId, orderId) {
   // Scoped to this call: created per order, discarded when the run ends.
   const chat = (await buildMarriageModel({ clientId, chartData: hd.chart_data, systemPrompt })).startChat({});
 
+  const meter = makeMeter();
   const out = [];
   for (const sec of sections) {
     const content = await generateMarriageSectionText({
@@ -166,6 +169,7 @@ async function generateMarriageReading(clientId, orderId) {
       label: sec.label,
       guide: sec.guide || '',
       chat,
+      meter,
     });
     out.push({ label: sec.label, content });
   }
@@ -178,8 +182,9 @@ async function generateMarriageReading(clientId, orderId) {
     const questionText = (q.prompt && q.prompt.trim()) ? q.prompt : (q.question || '');
     if (!questionText.trim()) continue;
     console.log(`[MARRIAGE-Q] ── REQUEST: "${q.question || questionText}"`);
-    const { text: answer, finishReason } = await sendChecked(
+    const { text: answer, finishReason, usage } = await sendChecked(
       chat, buildMarriageQuestionPrompt(questionText, questionInstructions), `question: ${q.question || questionText}`);
+    meter.add(usage);
     console.log(`[MARRIAGE-Q] ── RESPONSE: chars=${answer.length}`);
     const entry = { question: q.question || questionText, prompt: q.prompt || '', answer };
     if (!answer) {
@@ -204,6 +209,8 @@ async function generateMarriageReading(clientId, orderId) {
 
   await db.pgQuery('UPDATE orders SET horoscope_data=$1 WHERE order_id=$2', [JSON.stringify(updated), orderId]);
   console.log(`[MARRIAGE] Saved ${out.length} sections for order ${orderId}`);
+
+  await recordOrderGenCost(orderId, 'marriage', meter, { sections: out.length, questions: answers.length });
 
   // Auto-generate the WhatsApp message if a prompt is configured
   if (config.marriage_wa_prompt && config.marriage_wa_prompt.trim()) {
@@ -233,8 +240,11 @@ async function generateMarriageWaMessage(clientId, orderId, sectionsData, waProm
     systemInstruction: waPrompt,
   });
   const chat = model.startChat({});
-  const message = await sendRequired(chat, contextText, 'marriage WhatsApp message');
+  const meter = makeMeter();
+  const { text: message, usage } = await sendRequiredMeta(chat, contextText, 'marriage WhatsApp message');
+  meter.add(usage);
   console.log(`[MARRIAGE-WA] order=${orderId} chars=${message.length}`);
+  await recordOrderGenCost(orderId, 'wa_message', meter, { report: 'marriage' });
 
   await db.pgQuery(
     `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), '{marriage_wa_message}', $1::jsonb) WHERE order_id=$2`,

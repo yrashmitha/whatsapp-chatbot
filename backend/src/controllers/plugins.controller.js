@@ -23,6 +23,7 @@ const {
   resolveMatchConfig, historyFromSections: matchHistoryFromSections,
 } = require('../services/matchReport');
 const { buildPorondamDoc } = require('../services/porondamReport');
+const { makeMeter, recordOrderGenCost } = require('../services/genCost');
 
 const { generateFollowUp, DEFAULT_FOLLOWUP_PROMPT } = require('../services/followup');
 const { syncAudienceForClient, createAudienceForClient, getRecentEvents } = require('../services/metaConversions');
@@ -666,6 +667,62 @@ async function horoscopeProgress(req, res) {
       error:          stale ? 'The previous run stopped before finishing (likely a restart). Generate again.' : (hd.error || null),
     });
   } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
+}
+
+/**
+ * DELETE /api/plugins/horoscope/report/:orderId?kind=horoscope|match|marriage|quantum|tarot
+ *
+ * Wipes the *generated* content for one report so it can be produced again from
+ * scratch. Inputs are kept — chart data, aura photo analysis, the couple's
+ * charts, the customer's questions — so nothing has to be re-entered.
+ *
+ * The accumulated `gen_cost_usd` / `gen_runs` are left alone: that money was
+ * really spent. Pass `reset_cost=1` to also zero them.
+ */
+const REPORT_KEYS = {
+  horoscope: ['sections', 'special_answers', 'wa_message', 'agent_audit', 'agent_progress',
+              'progress', 'generating', 'generating_at', 'generated_at', 'error'],
+  quantum:   ['quantum_data', 'quantum_id', 'quantum_reading', 'quantum_sections_data',
+              'quantum_generating', 'quantum_generating_at', 'quantum_error'],
+  match:     ['match_sections_data', 'match_special_answers', 'match_generated_at',
+              'match_progress', 'match_generating', 'match_generating_at', 'match_error'],
+  marriage:  ['marriage_sections_data', 'marriage_special_answers', 'marriage_generated_at',
+              'marriage_wa_message', 'marriage_progress', 'marriage_generating',
+              'marriage_generating_at', 'marriage_error'],
+};
+
+async function deleteReport(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  const { orderId } = req.params;
+  const kind = String(req.query.kind || 'horoscope').toLowerCase();
+  const resetCost = req.query.reset_cost === '1' || req.query.reset_cost === 'true';
+
+  try {
+    const owned = await db.getOrderForClient(orderId, clientId, 'order_id');
+    if (!owned) return res.status(404).json({ error: 'Order not found' });
+
+    if (kind === 'tarot') {
+      await db.pgQuery('UPDATE orders SET tarot_data = NULL WHERE order_id=$1', [orderId]);
+    } else {
+      const keys = REPORT_KEYS[kind];
+      if (!keys) return res.status(400).json({ error: `Unknown report kind "${kind}"` });
+      const strip = keys.map(k => `- '${k}'`).join(' ');
+      await db.pgQuery(
+        `UPDATE orders SET horoscope_data = (COALESCE(horoscope_data,'{}'::jsonb) ${strip}) WHERE order_id=$1`,
+        [orderId]
+      );
+    }
+
+    if (resetCost) {
+      await db.pgQuery(`UPDATE orders SET gen_cost_usd = 0, gen_runs = '[]'::jsonb WHERE order_id=$1`, [orderId]);
+    }
+    console.log(`[REPORT] deleted ${kind} report for ${orderId}${resetCost ? ' (+cost reset)' : ''}`);
+    res.json({ ok: true, kind, cost_reset: resetCost });
+  } catch (e) {
+    console.error('[REPORT] delete failed:', e.message);
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
 }
 
 /**
@@ -1969,6 +2026,7 @@ async function regenerateMarriageSectionHandler(req, res) {
 
     // No live session exists any more, so rebuild the conversation from the saved
     // sections (minus this one) — otherwise the regenerated text repeats its neighbours.
+    const regenMeter = makeMeter();
     const content = await generateMarriageSectionText({
       clientId,
       fixedInstructions,
@@ -1977,7 +2035,9 @@ async function regenerateMarriageSectionHandler(req, res) {
       label:        sectionDef.label,
       guide:        sectionDef.guide || '',
       history:      historyFromSections(existing, label.trim()),
+      meter:        regenMeter,
     });
+    await recordOrderGenCost(orderId, 'section', regenMeter, { report: 'marriage', section: label.trim() });
 
     const idx = existing.findIndex(s => s.label === label.trim());
     const updated = idx >= 0
@@ -2460,6 +2520,7 @@ async function regenerateMatchSectionHandler(req, res) {
 
     // The run's session is long gone, so replay the other sections as history — without
     // it the rewrite has no idea what the rest of the report says.
+    const regenMeter = makeMeter();
     const content = await generateMatchSectionText({
       clientId,
       fixedInstructions,
@@ -2468,7 +2529,9 @@ async function regenerateMatchSectionHandler(req, res) {
       label:   sectionDef.label,
       guide:   sectionDef.guide || '',
       history: matchHistoryFromSections(existing, label.trim()),
+      meter:   regenMeter,
     });
+    await recordOrderGenCost(orderId, 'section', regenMeter, { report: 'match', section: label.trim() });
 
     const idx = existing.findIndex(s => s.label === label.trim());
     const updated = idx >= 0
@@ -2667,7 +2730,7 @@ module.exports = {
   analyzeAuraImage,
   aiPrepareHoroscope,
   fetchChartData,
-  generateHoroscopeReading, horoscopeProgress, updateHoroscopeSections, updateQuantumSections,
+  generateHoroscopeReading, horoscopeProgress, deleteReport, updateHoroscopeSections, updateQuantumSections,
   regenerateQuantumSections, regenerateQuantumSection, regenerateHoroscopeSectionHandler,
   saveWaMessageHandler,
   generateWaMessageHandler,

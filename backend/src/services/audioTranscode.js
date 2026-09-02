@@ -38,8 +38,17 @@ function transcodeToOggOpus(inputPath) {
     if (path.extname(inputPath).toLowerCase() === '.ogg') return resolve(inputPath);
     execFile(
       'ffmpeg',
-      // 32k mono opus: voice, not music. Small enough to send instantly.
-      ['-y', '-i', inputPath, '-c:a', 'libopus', '-b:a', '32k', '-ac', '1', '-vn', outputPath],
+      // 32k mono 48kHz opus, voice-tuned. Take only the first audio stream and
+      // drop all metadata/video/chapters — a stray extra stream or odd sample
+      // rate from a source .mp4 produces an .ogg that WhatsApp accepts on
+      // upload but then rejects at delivery with error 131053.
+      [
+        '-y', '-i', inputPath,
+        '-map', '0:a:0?', '-map_metadata', '-1', '-vn', '-dn',
+        '-c:a', 'libopus', '-b:a', '32k', '-ar', '48000', '-ac', '1',
+        '-application', 'voip',
+        '-f', 'ogg', outputPath,
+      ],
       { timeout: 30000 },
       (err) => {
         if (err) {

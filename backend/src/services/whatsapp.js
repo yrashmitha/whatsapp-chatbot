@@ -431,12 +431,45 @@ async function sendTypingIndicator(to, client) {
  * @param {Object|null} client   - Client config object
  * @returns {Promise<string|null>} WhatsApp message ID or null
  */
+/**
+ * Upload audio bytes to WhatsApp and return a media_id.
+ * @throws if Meta rejects the upload
+ */
+async function uploadAudioToMeta(buffer, mime, filename, client) {
+  const form = new FormData();
+  form.append('messaging_product', 'whatsapp');
+  form.append('type', mime);
+  form.append('file', new Blob([buffer], { type: mime }), filename);
+  const res  = await fetch(`https://graph.facebook.com/v18.0/${waPhoneId(client)}/media`,
+    { method: 'POST', headers: { Authorization: `Bearer ${waToken(client)}` }, body: form });
+  const data = await res.json();
+  if (!data.id) throw new Error(JSON.stringify(data));
+  return data.id;
+}
+
 async function sendWhatsAppAudio(to, audioUrl, client) {
   console.log(`[WA-AUDIO] Sending audio to ${to}: ${audioUrl}`);
   try {
+    // Prefer uploading the bytes and sending by media_id. A bare `link` makes
+    // Meta re-fetch the file itself and it fails intermittently with 131053
+    // ("media upload error") even when the URL is perfectly reachable.
+    let audio;
+    try {
+      const r = await fetch(audioUrl);
+      if (!r.ok) throw new Error(`fetch ${r.status}`);
+      const buf  = Buffer.from(await r.arrayBuffer());
+      const mime = (r.headers.get('content-type') || 'audio/ogg').split(';')[0];
+      const name = audioUrl.split('/').pop() || 'audio.ogg';
+      const id   = await uploadAudioToMeta(buf, mime, name, client);
+      audio = { id };
+      console.log(`[WA-AUDIO] uploaded ${buf.length}B (${mime}) → media_id=${id}`);
+    } catch (upErr) {
+      console.warn(`[WA-AUDIO] upload failed, falling back to link:`, upErr.message);
+      audio = { link: audioUrl };
+    }
     const resp = await axios.post(
       `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
-      { messaging_product: 'whatsapp', to, type: 'audio', audio: { link: audioUrl } },
+      { messaging_product: 'whatsapp', to, type: 'audio', audio },
       { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
     );
     console.log(`[WA-AUDIO] Sent successfully to ${to}`);

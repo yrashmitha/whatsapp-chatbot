@@ -42,6 +42,7 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const fs = require('fs');
 const { Pool } = require('pg');
 const db = require('../src/db');
+const { newToken } = require('../src/services/reportDelivery');
 
 const CLIENT = process.env.SYNC_CLIENT || 'pj';
 const APPLY = process.argv.includes('--apply');
@@ -167,15 +168,16 @@ function sourceUrl() {
       await db.pgQuery(
         `INSERT INTO orders
            (order_id, phone_number, status, custom_fields, created_at,
-            client_id, notes, ai_summary, horoscope_data)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+            client_id, notes, ai_summary, horoscope_data, delivery_token)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
          ON CONFLICT (order_id) DO UPDATE SET
            custom_fields  = COALESCE(orders.custom_fields, EXCLUDED.custom_fields),
            notes          = COALESCE(orders.notes, EXCLUDED.notes),
            ai_summary     = COALESCE(orders.ai_summary, EXCLUDED.ai_summary),
-           horoscope_data = COALESCE(orders.horoscope_data, EXCLUDED.horoscope_data)`,
+           horoscope_data = COALESCE(orders.horoscope_data, EXCLUDED.horoscope_data),
+           delivery_token = COALESCE(orders.delivery_token, EXCLUDED.delivery_token)`,
         [o.targetId, o.phone_number, o.status, o.custom_fields ?? null, o.created_at,
-         CLIENT, o.notes ?? null, o.ai_summary ?? null, o.horoscope_data ?? null]
+         CLIENT, o.notes ?? null, o.ai_summary ?? null, o.horoscope_data ?? null, newToken()]
       );
       done++;
       if (done % 50 === 0) process.stdout.write(`\r  orders: ${done}/${tagged.length}`);

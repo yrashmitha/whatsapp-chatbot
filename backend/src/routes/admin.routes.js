@@ -41,6 +41,7 @@ const {
   deletePackage,
   changeClientPackage,
 } = require('../controllers/admin.controller');
+const embeddedSignup = require('../controllers/embeddedSignup.controller');
 
 // Templates
 router.get('/templates',                       adminAuth, listTemplates);
@@ -70,6 +71,10 @@ router.put('/clients/:clientId',               adminAuth, updateClient);
 router.get('/clients/:clientId/branding',      adminAuth, getClientBranding);
 router.put('/clients/:clientId/branding',      adminAuth, updateClientBranding);
 router.get('/report-fonts',                    adminAuth, listReportFonts);
+
+// WhatsApp Embedded Signup onboarding
+router.get('/embedded-signup/config',          adminAuth, embeddedSignup.getConfig);
+router.post('/embedded-signup',                adminAuth, embeddedSignup.complete);
 
 // Products
 router.get('/products',                        adminAuth, listProducts);

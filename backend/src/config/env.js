@@ -24,6 +24,16 @@ const PHONE_NUMBER_ID = IS_TEST
 /** @type {string} JWT signing secret */
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-prod';
 
+/**
+ * Meta app credentials used by the WhatsApp Embedded Signup onboarding flow.
+ * APP_ID is also surfaced to the browser via VITE_META_APP_ID; the secret never is.
+ */
+const META_APP_ID       = process.env.META_APP_ID || '';
+const META_APP_SECRET   = process.env.META_APP_SECRET || '';
+const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v21.0';
+/** Config ID of the "WhatsApp Embedded Signup" Facebook Login configuration. */
+const META_ES_CONFIG_ID = process.env.META_ES_CONFIG_ID || '';
+
 /** @type {number} HTTP listen port */
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 
@@ -50,6 +60,10 @@ module.exports = {
   IS_TEST,
   META_ACCESS_TOKEN,
   PHONE_NUMBER_ID,
+  META_APP_ID,
+  META_APP_SECRET,
+  META_GRAPH_VERSION,
+  META_ES_CONFIG_ID,
   JWT_SECRET,
   PORT,
   PUBLIC_URL,

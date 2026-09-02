@@ -6,6 +6,7 @@ import api, { adminApi } from '../lib/api';
 import Layout from '../components/Layout';
 import Drawer from '../components/ui/Drawer';
 import { useToast } from '../components/ui/Toast';
+import { launchWhatsAppSignup } from '../lib/fbSignup';
 
 /* ── Helpers ─────────────────────────────────────────────── */
 const BRANDING_KEYS = ['report_signature', 'report_footer', 'report_invocation', 'report_divider', 'report_font', 'report_logo_url', 'report_logo_width', 'report_logo_height', 'pdf_title', 'pdf_author', 'pdf_subject', 'pdf_producer'];
@@ -183,6 +184,7 @@ export default function Clients() {
   const [password, setPassword] = useState('');
   const [pwSaving, setPwSaving] = useState(false);
   const [savedInfo, setSavedInfo] = useState(null); // { id, webhookUrl } shown after save
+  const [esBusy, setEsBusy] = useState(false);
 
   /* ── API ─ */
   const { data: clients = [], isLoading } = useQuery({
@@ -205,6 +207,15 @@ export default function Clients() {
   const { data: reportFonts } = useQuery({
     queryKey: ['report-fonts'],
     queryFn: () => adminApi.get('/report-fonts').then(r => r.data),
+    staleTime: 60 * 60 * 1000,
+  });
+
+  // Embedded Signup launch params (appId / configId). 503 when unconfigured —
+  // the button simply stays hidden in that case.
+  const { data: esConfig } = useQuery({
+    queryKey: ['es-config'],
+    queryFn: () => adminApi.get('/embedded-signup/config').then(r => r.data),
+    retry: false,
     staleTime: 60 * 60 * 1000,
   });
 
@@ -330,6 +341,30 @@ export default function Clients() {
     }
   }
 
+  async function handleConnectMeta() {
+    if (!esConfig?.appId || !esConfig?.configId) return;
+    setEsBusy(true);
+    try {
+      const { code, waba_id, phone_number_id } = await launchWhatsAppSignup(esConfig);
+      const { data } = await adminApi.post('/embedded-signup', { code, waba_id, phone_number_id });
+      setForm(f => ({
+        ...f,
+        phone_number_id: data.phone_number_id || f.phone_number_id,
+        use_system_wa_token: true,
+        wa_token: '',
+      }));
+      const n = data.phone_numbers?.[0];
+      showToast(
+        `WhatsApp connected${n?.display_phone_number ? ` (${n.display_phone_number})` : ''}. Review and save the client.`,
+        'success',
+      );
+    } catch (e) {
+      showToast(e?.response?.data?.error || e.message || 'Meta connect failed', 'error');
+    } finally {
+      setEsBusy(false);
+    }
+  }
+
   async function handleSetPassword() {
     if (!password.trim()) return;
     setPwSaving(true);
@@ -376,7 +411,22 @@ export default function Clients() {
       );
       case 1: return ( // WhatsApp
         <div className="flex flex-col gap-4">
-          <Field label="Phone Number ID" hint="From Meta → WhatsApp → API Setup">
+          {esConfig?.appId && esConfig?.configId && (
+            <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
+              <button
+                type="button"
+                onClick={handleConnectMeta}
+                disabled={esBusy}
+                className="w-full px-3 py-2 rounded-lg text-xs font-semibold border-0 cursor-pointer"
+                style={{ background: '#1877f2', color: '#fff', opacity: esBusy ? 0.6 : 1 }}
+              >{esBusy ? 'Connecting…' : 'Connect WhatsApp with Meta'}</button>
+              <p className="text-xs mt-1.5" style={{ color: 'var(--text-3)' }}>
+                Opens Meta's Embedded Signup. The client logs in, picks their number, and
+                Phone Number ID is filled in below automatically.
+              </p>
+            </div>
+          )}
+          <Field label="Phone Number ID" hint="From Meta → WhatsApp → API Setup, or filled by Connect with Meta">
             <Input value={form.phone_number_id} onChange={set('phone_number_id')} placeholder="123456789012345" />
           </Field>
           <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>

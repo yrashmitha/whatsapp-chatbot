@@ -642,13 +642,28 @@ async function horoscopeProgress(req, res) {
     const hd = (typeof r.rows[0].horoscope_data === 'string')
       ? JSON.parse(r.rows[0].horoscope_data || '{}')
       : (r.rows[0].horoscope_data || {});
+
+    // A run that says it is generating but has not touched progress or its
+    // start time in 15 minutes was killed (usually a redeploy mid-run). Report
+    // it as stopped so the UI unsticks, and clear the flags so Generate works.
+    const STALE_MS = 15 * 60 * 1000;
+    const lastBeat = Date.parse(hd.progress?.at || hd.generating_at || 0) || 0;
+    const stale = hd.generating === true && lastBeat && (Date.now() - lastBeat > STALE_MS);
+    if (stale) {
+      db.pgQuery(
+        `UPDATE orders SET horoscope_data = (horoscope_data - 'generating' - 'generating_at' - 'progress')
+           WHERE order_id=$1 AND horoscope_data->>'generating' = 'true'`,
+        [orderId]
+      ).catch(() => {});
+    }
+
     res.json({
-      generating:     hd.generating === true,
-      progress:       hd.progress || null,
+      generating:     hd.generating === true && !stale,
+      progress:       stale ? null : (hd.progress || null),
       agent_progress: hd.agent_progress || null,
       agent_audit:    hd.agent_audit || null,
       has_sections:   !!(hd.sections && Object.keys(hd.sections).length > 0),
-      error:          hd.error || null,
+      error:          stale ? 'The previous run stopped before finishing (likely a restart). Generate again.' : (hd.error || null),
     });
   } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }

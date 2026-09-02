@@ -124,6 +124,38 @@ async function customerHadReengageOffer(phoneNumber, clientId) {
   } catch { return false; }
 }
 
+/**
+ * A one-line note with the customer's local date and time, so the bot stops
+ * guessing whether it is morning or night when it writes "pay tonight" / "start
+ * tomorrow" style lines.
+ *
+ * @param {Object|null} client - client config (may carry a `timezone`)
+ * @returns {string}
+ */
+function nowNote(client) {
+  const tz = (client && client.timezone) || 'Asia/Colombo';
+  const now = new Date();
+  let stamp;
+  try {
+    stamp = new Intl.DateTimeFormat('en-GB', {
+      timeZone: tz, weekday: 'long', day: 'numeric', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(now);
+  } catch { stamp = now.toISOString(); }
+  let hour = now.getUTCHours();
+  try {
+    hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', hour12: false }).format(now).replace(/\D/g, '')) || hour;
+  } catch { /* keep UTC hour */ }
+  const partOfDay =
+    hour < 5  ? 'late night' :
+    hour < 12 ? 'morning'    :
+    hour < 15 ? 'midday'     :
+    hour < 18 ? 'afternoon'  :
+    hour < 21 ? 'evening'    : 'night';
+  const place = tz.split('/').pop().replace(/_/g, ' ');
+  return `[NOW: ${stamp} — ${place} time. It is currently ${partOfDay}. Use this for any "today / tonight / tomorrow / this morning" wording; never assume the time of day.]`;
+}
+
 async function buildOrderStatusNote(phoneNumber, clientId) {
   const all = await db.getOrdersByPhone(phoneNumber, clientId);
   if (!all.length) return null;
@@ -579,6 +611,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   // Inject current order status so AI knows what documents are already received
   const statusNote = await buildOrderStatusNote(phoneNumber, client?.id);
   let messageToSend = statusNote ? `${statusNote}\n\n${userMessage}` : userMessage;
+  messageToSend = `${nowNote(client)}\n\n${messageToSend}`;
   if (retryNote) messageToSend = `${retryNote}\n\n${messageToSend}`;
 
   // For multilingual clients: wrap current message with a clear marker so the system

@@ -1046,6 +1046,7 @@ async function regenerateHoroscopeSectionHandler(req, res) {
 
     const newContent = await regenerateHoroscopeSection({
       clientId,
+      orderId,
       chartData:     hd.chart_data,
       systemPrompt,
       fixedInstructions: config.fixed_instructions || '',

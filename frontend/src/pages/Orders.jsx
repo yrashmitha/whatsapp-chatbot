@@ -34,6 +34,19 @@ function parseCustomFields(raw) {
   try { return JSON.parse(raw); } catch { return null; }
 }
 
+/** Hover text for the per-order generation-cost badge: one line per run. */
+function genCostTooltip(runs) {
+  let list = runs;
+  if (typeof list === 'string') { try { list = JSON.parse(list); } catch { list = []; } }
+  if (!Array.isArray(list) || !list.length) return 'AI report generation cost (accumulates over regenerations)';
+  const total = list.reduce((s, r) => s + (Number(r.cost_usd) || 0), 0);
+  const lines = list.map(r => {
+    const when = r.at ? new Date(r.at).toLocaleString() : '?';
+    return `${when}  ${r.kind || 'run'}  $${(Number(r.cost_usd) || 0).toFixed(6)}  (${r.in_tokens || 0}→${r.out_tokens || 0} tok)`;
+  });
+  return `${list.length} generation run(s) — total $${total.toFixed(6)}\n\n${lines.join('\n')}`;
+}
+
 export default function Orders() {
   const { user, selectedClientId } = useAuthStore();
   const superAdmin = isSuperAdmin(user);
@@ -391,6 +404,13 @@ export default function Orders() {
                                     style={{ background: 'rgba(217,119,6,0.12)', color: '#b45309' }}
                                     title={`Already sent "${templateSends[o.order_id].template}" on ${new Date(templateSends[o.order_id].at).toLocaleString()}. Sending again is refused.`}>
                                 Template sent
+                              </span>
+                            )}
+                            {Number(o.gen_cost_usd) > 0 && (
+                              <span className="text-xs px-1.5 py-0.5 rounded-md font-medium shrink-0"
+                                    style={{ background: 'rgba(99,102,241,0.12)', color: 'var(--accent)' }}
+                                    title={genCostTooltip(o.gen_runs)}>
+                                ${Number(o.gen_cost_usd).toFixed(4)}
                               </span>
                             )}
                           </div>

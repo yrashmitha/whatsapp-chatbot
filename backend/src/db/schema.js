@@ -528,6 +528,10 @@ async function init() {
     // ── Tarot reading data ────────────────────────────────────────────────────
     await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS tarot_data JSONB`);
 
+    // ── Per-order report-generation cost (USD, accumulates over regenerations) ─
+    await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS gen_cost_usd NUMERIC(14,8) NOT NULL DEFAULT 0`);
+    await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS gen_runs JSONB NOT NULL DEFAULT '[]'::jsonb`);
+
     // ── Global AI kill switch per client ─────────────────────────────────────
     await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS ai_enabled BOOLEAN NOT NULL DEFAULT TRUE`);
     // ── Per-client token storage (no restart needed for new clients) ──────────
@@ -978,6 +982,10 @@ async function init() {
     try { db.exec(`ALTER TABLE orders ADD COLUMN horoscope_data TEXT`); } catch (_) {}
     // ── Tarot reading data (SQLite) ───────────────────────────────────────────
     try { db.exec(`ALTER TABLE orders ADD COLUMN tarot_data TEXT`); } catch (_) {}
+
+    // ── Per-order report-generation cost (SQLite) ────────────────────────────
+    try { db.exec(`ALTER TABLE orders ADD COLUMN gen_cost_usd REAL NOT NULL DEFAULT 0`); } catch (_) {}
+    try { db.exec(`ALTER TABLE orders ADD COLUMN gen_runs TEXT NOT NULL DEFAULT '[]'`); } catch (_) {}
 
     // ── Self-service report delivery (SQLite) ────────────────────────────────
     try { db.exec(`ALTER TABLE orders ADD COLUMN delivery_token TEXT`); } catch (_) {}

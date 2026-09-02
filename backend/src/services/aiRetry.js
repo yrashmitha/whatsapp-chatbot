@@ -81,8 +81,24 @@ async function sendChecked(chat, prompt, label, opts = {}) {
  * @throws {Error} With `statusCode` 502 when every attempt came back empty.
  */
 async function sendRequired(chat, prompt, label, opts = {}) {
-  const { text, finishReason, attempts } = await sendChecked(chat, prompt, label, opts);
-  if (text) return text;
+  const { text } = await sendRequiredMeta(chat, prompt, label, opts);
+  return text;
+}
+
+/**
+ * As `sendRequired`, but returns `{ text, usage, finishReason }` so the caller
+ * can meter token spend. Throws identically when every attempt came back empty.
+ *
+ * @param {Object} chat
+ * @param {string} prompt
+ * @param {string} label
+ * @param {Object} [opts]
+ * @returns {Promise<{ text: string, usage: Object|undefined, finishReason: string|null }>}
+ * @throws {Error} With `statusCode` 502 when every attempt came back empty.
+ */
+async function sendRequiredMeta(chat, prompt, label, opts = {}) {
+  const { text, finishReason, usage, attempts } = await sendChecked(chat, prompt, label, opts);
+  if (text) return { text, usage, finishReason };
 
   const reason = finishReason === 'SAFETY'
     ? 'the request was declined on safety grounds'
@@ -97,4 +113,4 @@ async function sendRequired(chat, prompt, label, opts = {}) {
   throw err;
 }
 
-module.exports = { sendChecked, sendRequired };
+module.exports = { sendChecked, sendRequired, sendRequiredMeta };

@@ -54,6 +54,15 @@ const CRITIC_INPUT_CHAR_LIMIT = 600_000; // ≈150k tokens — well under Gemini
  * @param {Object}   [opts.responseSchema]   - JSON schema (enables JSON mode)
  * @returns {Promise<{text: string, usage: Object}>}
  */
+/**
+ * Token meter for the currently-running agent, set by runHoroscopeAgent.
+ * A module-level handle rather than threaded state because callGemini has five
+ * call sites; the trade-off is that two agent runs in the same process at the
+ * same instant would share a meter. Agent runs are long, sequential, and opt-in,
+ * so this is acceptable — the cost total is an estimate either way.
+ */
+let ACTIVE_METER = null;
+
 async function callGemini({ clientId, model, systemInstruction, prompt, generationConfig = {}, responseSchema = null }) {
   const cfg = { temperature: 0.6, topP: 0.9, ...generationConfig };
   if (responseSchema) {
@@ -67,7 +76,9 @@ async function callGemini({ clientId, model, systemInstruction, prompt, generati
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const result = await gm.generateContent(prompt);
-      return { text: result.response.text(), usage: result.response.usageMetadata || {} };
+      const usage = result.response.usageMetadata || {};
+      if (ACTIVE_METER) ACTIVE_METER.add(usage);
+      return { text: result.response.text(), usage };
     } catch (err) {
       lastErr = err;
       const msg = String(err?.message || '');
@@ -404,6 +415,7 @@ function route(state) {
  */
 async function runHoroscopeAgent(input) {
   let state = createInitialState(input);
+  ACTIVE_METER = input.meter || null;
   try {
     state = await generatorNode(state);          // initial full draft
     // eslint-disable-next-line no-constant-condition
@@ -416,6 +428,8 @@ async function runHoroscopeAgent(input) {
     state.status = 'error';
     state.errors.push(`[FATAL] ${err.message}`);
     // Return whatever we have — partial sections still render.
+  } finally {
+    ACTIVE_METER = null;
   }
   state.report = assembleReport(state);
   await emit(state, {

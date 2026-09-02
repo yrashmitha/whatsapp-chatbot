@@ -10,7 +10,8 @@
 const axios  = require('axios');
 const db     = require('../db');
 const { getFreeAstroKey, getGeminiKey, getGenAI } = require('./clientKeys');
-const { sendChecked, sendRequired } = require('./aiRetry');
+const { sendChecked, sendRequired, sendRequiredMeta } = require('./aiRetry');
+const { makeMeter, recordOrderGenCost } = require('./genCost');
 const { DEFAULT_BRAND, footerText } = require('./branding');
 const { extractPlanetDegreesSum, generateQuantumCode, generateQuantumReading, generateQuantumSections } = require('./quantumCode');
 const { todayContextBlock } = require('./dateContext');
@@ -1030,6 +1031,9 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
 
   const sectionsMap = {};
   let agentAudit = null;
+  // Meters every Gemini call in this run; its total is added onto the order's
+  // accumulated generation cost once the report is saved.
+  const meter = makeMeter();
   // Sections plus special questions — the two phases an agent waits through.
   const totalSteps = activeSections.length + (Array.isArray(specialQuestions) ? specialQuestions.length : 0);
   let doneSteps = 0;
@@ -1053,7 +1057,7 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
           } catch (e) { console.warn('[HOROSCOPE] progress write failed:', e.message); }
         }
       : undefined;
-    const agentResult = await runHoroscopeAgent({ clientId, systemPrompt, chartDataJson, sectionDefs, onEvent });
+    const agentResult = await runHoroscopeAgent({ clientId, systemPrompt, chartDataJson, sectionDefs, onEvent, meter });
     Object.assign(sectionsMap, agentResult.sections);
     doneSteps = activeSections.length;
     await publishProgress(orderId, 'progress', doneSteps, totalSteps, 'Sections complete');
@@ -1078,8 +1082,8 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
       console.log(`\n[HORO-CHAT] ── REQUEST: "${sec}" ${'─'.repeat(Math.max(0, 50 - sec.length))}`);
       console.log('[HORO-CHAT] userPrompt:\n' + sectionPrompt);
       console.log('[HORO-CHAT] ──────────────────────────────────────────────────────');
-      const sectionText = await sendRequired(chat, sectionPrompt, sec);
-      const usage = undefined;
+      const { text: sectionText, usage } = await sendRequiredMeta(chat, sectionPrompt, sec);
+      meter.add(usage);
       await publishProgress(orderId, 'progress', ++doneSteps, totalSteps, sec);
       console.log(`[HORO-CHAT] ── RESPONSE: "${sec}" ${'─'.repeat(Math.max(0, 49 - sec.length))}`);
       console.log(sectionText);
@@ -1111,8 +1115,8 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
       console.log(`\n[HORO-SPECIAL] ── REQUEST (display): "${question}"`);
       console.log('[HORO-SPECIAL] userPrompt (AI):\n' + qPrompt);
       console.log('[HORO-SPECIAL] ─────────────────────────────────────────────────');
-      const { text: qText, finishReason: qReason } = await sendChecked(specialChat, qPrompt, `question: ${question}`);
-      const qUsage = undefined;
+      const { text: qText, finishReason: qReason, usage: qUsage } = await sendChecked(specialChat, qPrompt, `question: ${question}`);
+      meter.add(qUsage);
       console.log(`[HORO-SPECIAL] ── RESPONSE: "${question}"`);
       console.log(qText);
       console.log(`[HORO-SPECIAL] tokens in=${qUsage?.promptTokenCount ?? '?'}  out=${qUsage?.candidatesTokenCount ?? '?'}  chars=${qText.length}`);
@@ -1173,6 +1177,14 @@ async function generateHoroscope(clientId, orderId, birthOverrides, lat, lng, bi
   );
   console.log('[HOROSCOPE] All sections saved for', orderId);
 
+  // Add this run's Gemini spend onto the order's accumulated cost. Quantum
+  // sub-calls above are not yet metered; the WA message below meters itself.
+  await recordOrderGenCost(orderId, 'horoscope', meter, {
+    agent: useAgent,
+    sections: activeSections.length,
+    special_questions: normalisedQuestions.length,
+  });
+
   // 10. Auto-generate WA message if prompt is configured
   if (config.wa_message_prompt && config.wa_message_prompt.trim()) {
     try {
@@ -1231,8 +1243,11 @@ async function generateWaMessage(clientId, orderId, horoscopeData, waMessageProm
   });
 
   const chat = model.startChat({});
-  const waMessage = await sendRequired(chat, contextText, 'WhatsApp message');
+  const meter = makeMeter();
+  const { text: waMessage, usage } = await sendRequiredMeta(chat, contextText, 'WhatsApp message');
+  meter.add(usage);
   console.log(`[WA-MESSAGE] order=${orderId} chars=${waMessage.length}`);
+  await recordOrderGenCost(orderId, 'wa_message', meter);
 
   await db.pgQuery(
     `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'), '{wa_message}', $1::jsonb) WHERE order_id=$2`,
@@ -1246,7 +1261,7 @@ async function generateWaMessage(clientId, orderId, horoscopeData, waMessageProm
  * Regenerate a single horoscope section using saved chart data.
  * Returns the new section text.
  */
-async function regenerateHoroscopeSection({ clientId, chartData, systemPrompt, sectionKey, sectionGuide, specialAnswers = [], otherSections = null, fixedInstructions = '' }) {
+async function regenerateHoroscopeSection({ clientId, orderId = null, chartData, systemPrompt, sectionKey, sectionGuide, specialAnswers = [], otherSections = null, fixedInstructions = '' }) {
   const chartDataJson = JSON.stringify(chartData, null, 2) + todayContextBlock();
   // Section regeneration uses only the system prompt + chart data — special questions
   // are never injected into sections (they are answered separately).
@@ -1280,8 +1295,11 @@ async function regenerateHoroscopeSection({ clientId, chartData, systemPrompt, s
   if (history.length) console.log(`[REGEN-SECTION] replaying ${history.length / 2} earlier section(s) as history`);
 
   const chat = model.startChat({ history });
-  const text = await sendRequired(chat, prompt, sectionKey);
+  const meter = makeMeter();
+  const { text, usage } = await sendRequiredMeta(chat, prompt, sectionKey);
+  meter.add(usage);
   console.log(`[REGEN-SECTION] chars=${text.length}`);
+  await recordOrderGenCost(orderId, 'section', meter, { section: sectionKey });
   return text;
 }
 

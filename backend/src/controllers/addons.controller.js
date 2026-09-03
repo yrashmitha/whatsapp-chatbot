@@ -513,15 +513,16 @@ async function triggerTarotReading(req, res) {
  */
 async function updateTarotSections(req, res) {
   const { orderId } = req.params;
-  const { reading, cards } = req.body;
+  const { reading, cards, question } = req.body;
   try {
     const existing = await db.pgQuery('SELECT tarot_data FROM orders WHERE order_id=$1', [orderId]);
     if (!existing.rows.length) return res.status(404).json({ error: 'Order not found' });
     const td = (typeof existing.rows[0].tarot_data === 'string')
       ? JSON.parse(existing.rows[0].tarot_data || '{}')
       : (existing.rows[0].tarot_data || {});
-    if (reading !== undefined) td.reading = reading;
-    if (cards   !== undefined) td.cards   = cards;
+    if (reading  !== undefined) td.reading  = reading;
+    if (cards    !== undefined) td.cards    = cards;
+    if (question !== undefined) td.question = question;
     await db.pgQuery('UPDATE orders SET tarot_data=$1 WHERE order_id=$2', [JSON.stringify(td), orderId]);
     res.json({ ok: true });
   } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }

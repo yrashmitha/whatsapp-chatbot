@@ -24,6 +24,7 @@ export default function TarotEditorDrawer({ order, clientId, open, onClose }) {
   const [outerTab, setOuterTab]           = useState('edit');
   const [activeInnerTab, setActiveInnerTab] = useState('reading');
   const [reading, setReading]             = useState(td.reading || '');
+  const [question, setQuestion]           = useState(td.question || '');
   const [cards, setCards]                 = useState(td.cards ? td.cards.map(c => ({ ...c })) : []);
   const [saving, setSaving]               = useState(false);
   const [downloading, setDownloading]     = useState(false);
@@ -34,6 +35,7 @@ export default function TarotEditorDrawer({ order, clientId, open, onClose }) {
   useEffect(() => {
     const fresh = parseTd();
     setReading(fresh.reading || '');
+    setQuestion(fresh.question || '');
     setCards(fresh.cards ? fresh.cards.map(c => ({ ...c })) : []);
     setActiveInnerTab('reading');
     setOuterTab('edit');
@@ -42,7 +44,7 @@ export default function TarotEditorDrawer({ order, clientId, open, onClose }) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await api.patch(`/crm/tarot-reading/sections/${order.order_id}`, { reading, cards });
+      await api.patch(`/crm/tarot-reading/sections/${order.order_id}`, { reading, cards, question });
       toast.success('Changes saved');
       qc.invalidateQueries({ queryKey: ['orders'] });
     } catch (e) {
@@ -184,11 +186,14 @@ export default function TarotEditorDrawer({ order, clientId, open, onClose }) {
               {/* Reading tab */}
               {activeInnerTab === 'reading' && (
                 <>
-                  {td.question && (
-                    <p style={{ margin: '0 0 10px 0', fontSize: 12, color: '#64748b', fontStyle: 'italic', lineHeight: 1.4 }}>
-                      Question: {td.question}
-                    </p>
-                  )}
+                  <p style={{ margin: '0 0 6px 0', fontSize: 13, fontWeight: 700, color: '#6366f1' }}>Question / Brief</p>
+                  <textarea
+                    style={{ width: '100%', padding: '10px 12px', fontSize: 13, border: '1px solid #cbd5e1', borderRadius: 8, outline: 'none', background: '#ffffff', color: '#1e293b', resize: 'vertical', lineHeight: 1.6, boxSizing: 'border-box', marginBottom: 16 }}
+                    value={question}
+                    onChange={e => setQuestion(e.target.value)}
+                    rows={4}
+                    placeholder="The customer's question / brief (shown on the report cover)…"
+                  />
                   <p style={{ margin: '0 0 8px 0', fontSize: 13, fontWeight: 700, color: '#6366f1' }}>Full Reading</p>
                   <textarea
                     style={{ width: '100%', padding: '10px 12px', fontSize: 13, fontFamily: 'monospace', border: '1px solid #cbd5e1', borderRadius: 8, outline: 'none', background: '#ffffff', color: '#1e293b', resize: 'vertical', lineHeight: 1.6, boxSizing: 'border-box' }}

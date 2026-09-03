@@ -22,13 +22,19 @@ const { parseSinhalaDate, parseSinhalaTime } = require('../services/horoscope');
  * Fill a tarot request from the chat: the customer's one real question plus the
  * birth details needed to attach a chart. Same idea as aiPrepareHoroscope.
  */
-const AI_FILL_TAROT_PROMPT = `You are preparing a single-question tarot reading. Read the WhatsApp conversation and the details already collected, then return JSON.
+const AI_FILL_TAROT_PROMPT = `You are an experienced counsellor preparing the brief for a single-topic tarot reading. Read the WhatsApp conversation and the details collected, then return JSON.
 
-- "question": ONE clear sentence, in the customer's own language, stating the single problem troubling them most right now — the thing they most need an answer to. Be specific to THIS customer, never generic. If they asked an explicit question, use it. Never invent a problem that is not in the chat.
-- "birth_date_iso": birth date as YYYY-MM-DD, or null if not given.
-- "birth_time_24h": birth time as HH:MM (24-hour), or null. A vague "morning"/"උදේ" with no number → null.
-- "birth_place_en": birth town in English, or "".
-- "lat", "lng": coordinates of that town (0 if unknown).
+"question" — NOT a restatement of the customer's words. Turn their situation into a counsellor-grade brief for the tarot reader, in the customer's own language. It must:
+  - name the one real problem they are living with right now (stay on this ONE topic).
+  - lay out the realistic explanations for how it came to this. Think like a counsellor: for most situations only one or two causes are really in play. For example, if a partner suddenly went cold and left "for no reason", the realistic causes are a short list — someone else has entered their life, outside/family pressure or an ultimatum, an untreated mental-health slide (depression, burnout), a long buildup of unspoken resentment that finally broke, or a decision made under someone else's influence. Spell out the shortlist that fits THIS customer's story.
+  - state what the reading must determine: what most likely actually happened, the other person's true emotional state now, whether things can realistically recover, and the timing.
+  - ask for clear, honest guidance on what the customer should and should not do.
+Write it as 3-6 sentences, direct and specific to this person. Never invent facts that are not in the chat, but you SHOULD reason about likely causes the customer did not name.
+
+"birth_date_iso": birth date as YYYY-MM-DD, or null if not given.
+"birth_time_24h": birth time as HH:MM (24-hour), or null. A vague "morning"/"උදේ" with no number → null.
+"birth_place_en": birth town in English, or "".
+"lat", "lng": coordinates of that town (0 if unknown).
 
 Details collected so far:
 name: {{customer_name}}
@@ -39,30 +45,25 @@ birth_place: {{birth_place}}
 Conversation:
 {{chat_log}}`;
 
-/**
- * Fetch (or reuse) the Vedic chart for a tarot order so Gemini can read it as
- * background context. Never throws — a chart is a bonus, the cards are the reading.
- *
- * @returns {Promise<{ chartContext: string, chart: object|null }>}
- */
-async function buildTarotChart(clientId, orderId, body) {
-  let td = {};
-  try {
-    const { rows } = await db.pgQuery('SELECT tarot_data FROM orders WHERE order_id=$1', [orderId]);
-    td = (typeof rows[0]?.tarot_data === 'string') ? JSON.parse(rows[0].tarot_data || '{}') : (rows[0]?.tarot_data || {});
-  } catch { /* ignore */ }
+const LAGNA_SINHALA = {
+  Aries: 'මේෂ', Taurus: 'වෘෂභ', Gemini: 'මිථුන', Cancer: 'කටක',
+  Leo: 'සිංහ', Virgo: 'කන්නියා', Libra: 'තුලා', Scorpio: 'වෘශ්චික',
+  Sagittarius: 'ධනු', Capricorn: 'මකර', Aquarius: 'කුම්භ', Pisces: 'මීන',
+};
 
-  const haveNew = body.lat != null && body.lng != null && body.birth_date && body.birth_time;
-  if (!haveNew) {
-    return { chartContext: td.chart_data ? JSON.stringify(td.chart_data, null, 2) : '', chart: td.chart_data || null };
+/**
+ * Call freeastro for a birth chart. Never throws — a chart is a bonus for a
+ * tarot reading, the cards are the reading.
+ *
+ * @returns {Promise<{ chart: object|null, sign: string|null }>}
+ */
+async function fetchTarotChartData(clientId, body) {
+  const dateInfo = parseSinhalaDate(String(body.birth_date || ''));
+  const timeInfo = parseSinhalaTime(String(body.birth_time || ''));
+  if (!dateInfo || !timeInfo || body.lat == null || body.lng == null) {
+    return { chart: null, sign: null };
   }
   try {
-    const dateInfo = parseSinhalaDate(String(body.birth_date));
-    const timeInfo = parseSinhalaTime(String(body.birth_time));
-    if (!dateInfo || !timeInfo) {
-      console.warn(`[TAROT] could not parse birth date/time for ${orderId} — skipping chart`);
-      return { chartContext: '', chart: null };
-    }
     const apiKey = await getFreeAstroKey(clientId);
     const { data: chartData } = await calculateVedicChart(
       { year: dateInfo.year, month: dateInfo.month, day: dateInfo.day,
@@ -70,11 +71,67 @@ async function buildTarotChart(clientId, orderId, body) {
         lat: parseFloat(body.lat), lng: parseFloat(body.lng) },
       apiKey
     );
-    console.log(`[TAROT] chart fetched for ${orderId}`);
-    return { chartContext: JSON.stringify(chartData, null, 2), chart: chartData };
+    const sign = (chartData.chart ?? chartData).ascendant?.sign || null;
+    return { chart: chartData, sign };
   } catch (e) {
     console.warn('[TAROT] chart fetch failed (non-fatal):', e.message);
-    return { chartContext: '', chart: null };
+    return { chart: null, sign: null };
+  }
+}
+
+/**
+ * Chart to pass Gemini as background context: the one just fetched, or whatever
+ * was cached on the order from an earlier fetch.
+ *
+ * @returns {Promise<{ chartContext: string, chart: object|null }>}
+ */
+async function buildTarotChart(clientId, orderId, body) {
+  let cached = null;
+  try {
+    const { rows } = await db.pgQuery('SELECT tarot_data FROM orders WHERE order_id=$1', [orderId]);
+    const td = (typeof rows[0]?.tarot_data === 'string') ? JSON.parse(rows[0].tarot_data || '{}') : (rows[0]?.tarot_data || {});
+    cached = td.chart_data || null;
+  } catch { /* ignore */ }
+
+  const haveNew = body.lat != null && body.lng != null && body.birth_date && body.birth_time;
+  if (!haveNew) {
+    return { chartContext: cached ? JSON.stringify(cached, null, 2) : '', chart: cached };
+  }
+  const { chart } = await fetchTarotChartData(clientId, body);
+  const use = chart || cached;
+  return { chartContext: use ? JSON.stringify(use, null, 2) : '', chart: use };
+}
+
+/**
+ * POST /api/crm/tarot-reading/fetch-chart/:orderId — fetch the chart, save it on
+ * the order, and return the ascendant sign so the operator can verify the lagna
+ * before generating (mirrors the horoscope fetch-chart step).
+ *
+ * Body: { birth_date, birth_time, lat, lng, birth_place_name }
+ */
+async function fetchTarotChart(req, res) {
+  const clientId = resolveClientId(req);
+  const { orderId } = req.params;
+  try {
+    const { chart, sign } = await fetchTarotChartData(clientId, req.body);
+    if (!chart) return res.status(400).json({ error: 'Could not fetch a chart — need a real birth date, time and place.' });
+
+    let td = {};
+    try {
+      const { rows } = await db.pgQuery('SELECT tarot_data FROM orders WHERE order_id=$1', [orderId]);
+      td = (typeof rows[0]?.tarot_data === 'string') ? JSON.parse(rows[0].tarot_data || '{}') : (rows[0]?.tarot_data || {});
+    } catch { /* ignore */ }
+    td.chart_data = chart;
+    td.birth = {
+      birth_date: req.body.birth_date, birth_time: req.body.birth_time,
+      lat: req.body.lat, lng: req.body.lng, place: req.body.birth_place_name || '',
+    };
+    await db.pgQuery('UPDATE orders SET tarot_data=$1 WHERE order_id=$2', [JSON.stringify(td), orderId]);
+
+    res.json({ ok: true, sign, sign_si: LAGNA_SINHALA[sign] || sign });
+  } catch (e) {
+    console.error('[TAROT-FETCH-CHART]', e.message);
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 }
 
@@ -702,4 +759,4 @@ async function downloadTarotPdf(req, res) {
 }
 
 module.exports = {
-  addonCatalog, ADDON_CATALOG, listAddons, toggleAddon, getAddonsStatus, sendMedia, triggerTarotReading, aiPrepareTarot, updateTarotSections, downloadTarotDocx, downloadTarotPdfByOrder, downloadTarotPdf };
+  addonCatalog, ADDON_CATALOG, listAddons, toggleAddon, getAddonsStatus, sendMedia, triggerTarotReading, aiPrepareTarot, fetchTarotChart, updateTarotSections, downloadTarotDocx, downloadTarotPdfByOrder, downloadTarotPdf };

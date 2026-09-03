@@ -25,13 +25,44 @@ export default function TarotGenerateModal({ order, clientId, onClose, onGenerat
     return parsed.question || '';
   })();
 
+  // Reuse a chart already fetched for this order
+  const existingChart = (() => {
+    const td = order?.tarot_data;
+    if (!td) return null;
+    const p = typeof td === 'string' ? (() => { try { return JSON.parse(td); } catch { return {}; } })() : td;
+    return p.chart_data ? { birth: p.birth || null } : null;
+  })();
+
   const [question, setQuestion]   = useState(existingQuestion);
   const [generating, setGenerating] = useState(false);
   const [aiFilling, setAiFilling]   = useState(false);
+  const [fetchingChart, setFetchingChart] = useState(false);
   // Birth details for the chart Gemini reads as background. Filled by AI Fill.
-  const [birth, setBirth] = useState(null); // { birth_date, birth_time, lat, lng, place }
+  const [birth, setBirth] = useState(existingChart?.birth || null); // { birth_date, birth_time, lat, lng, place }
+  const [lagna, setLagna] = useState(null);          // { sign, sign_si }
+  const [chartFetched, setChartFetched] = useState(!!existingChart);
 
   const params = clientId ? { params: { client_id: clientId } } : {};
+
+  const handleFetchChart = async () => {
+    if (!birth?.birth_date || !birth?.birth_time || !birth?.lat) {
+      return toast.error('Need birth date, time and place first — run AI Fill');
+    }
+    setFetchingChart(true);
+    try {
+      const { data } = await api.post(`/crm/tarot-reading/fetch-chart/${order.order_id}`, {
+        birth_date: birth.birth_date, birth_time: birth.birth_time,
+        lat: birth.lat, lng: birth.lng, birth_place_name: birth.place,
+      }, params);
+      setLagna({ sign: data.sign, sign_si: data.sign_si });
+      setChartFetched(true);
+      toast.success(`Chart fetched — Lagna: ${data.sign_si || data.sign || '?'}`);
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Chart fetch failed');
+    } finally {
+      setFetchingChart(false);
+    }
+  };
 
   const handleAiFill = async () => {
     setAiFilling(true);
@@ -46,6 +77,8 @@ export default function TarotGenerateModal({ order, clientId, onClose, onGenerat
           lng: data.lng,
           place: data.birth_place_en || '',
         });
+        setChartFetched(false);
+        setLagna(null);
       }
       toast.success(data.question ? 'Filled from the chat' : 'No clear question found in the chat');
     } catch (e) {
@@ -64,7 +97,9 @@ export default function TarotGenerateModal({ order, clientId, onClose, onGenerat
         question: question.trim(),
         order_id: order.order_id,
         regenerate: true,
-        ...(birth && birth.birth_time ? {
+        // Only pass birth params when the chart has NOT been fetched yet — a
+        // fetched chart is already cached on the order and reused server-side.
+        ...(birth && birth.birth_time && !chartFetched ? {
           birth_date: birth.birth_date,
           birth_time: birth.birth_time,
           lat: birth.lat,
@@ -128,10 +163,32 @@ export default function TarotGenerateModal({ order, clientId, onClose, onGenerat
             />
           </div>
           {birth && birth.birth_time && (
-            <p className="text-xs" style={{ color: '#7c3aed' }}>
-              🔯 Birth chart will be fetched and given to Gemini as background
-              ({birth.birth_date} {birth.birth_time}{birth.place ? ` · ${birth.place}` : ''})
-            </p>
+            <div className="rounded-xl border border-violet-100 bg-violet-50/50 px-3 py-2 flex flex-col gap-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-violet-700">
+                  🔯 {birth.birth_date} {birth.birth_time}{birth.place ? ` · ${birth.place}` : ''}
+                </span>
+                <button
+                  onClick={handleFetchChart}
+                  disabled={fetchingChart || generating}
+                  className="text-xs font-medium px-2 py-1 rounded-lg border-0 cursor-pointer disabled:opacity-50 shrink-0"
+                  style={{ background: '#7c3aed', color: '#fff' }}
+                >
+                  {fetchingChart ? 'Fetching…' : chartFetched ? '↻ Re-fetch chart' : 'Fetch chart'}
+                </button>
+              </div>
+              {lagna && (
+                <span className="text-xs font-medium text-violet-800">
+                  Lagna: {lagna.sign_si || lagna.sign} — verify before generating
+                </span>
+              )}
+              {chartFetched && !lagna && (
+                <span className="text-xs text-violet-600">Chart on file — will be given to Gemini as background.</span>
+              )}
+              {!chartFetched && (
+                <span className="text-xs text-slate-400">Chart is optional. Fetch it to check the lagna, or just Generate (chart is fetched in the background).</span>
+              )}
+            </div>
           )}
           <p className="text-xs text-slate-400">
             Generation runs in the background (~30 seconds). You can navigate away after clicking Generate.

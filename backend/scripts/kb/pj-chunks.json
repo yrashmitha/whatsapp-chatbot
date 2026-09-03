@@ -285,6 +285,13 @@
       "body": "ඔයාගේ ප්‍රශ්නය ඇත්ත, පැහැදිලි එකක් වෙන්න ඕන. \"මම දැන් යන රැකියාවේ ම ඉන්නද, නැත්නම් අලුත් එකක් හොයන්නද?\" වගේ — නිශ්චිතව.\n\nප්‍රශ්නය කොච්චර ඇත්තටම ඔයාගේ ඇත්ත තත්ත්වයට සම්බන්ධද, කියවීම එච්චරටම නිවැරදියි. පොදු ප්‍රශ්නයකට වඩා ඔයාව දැන් වදදෙන ඇත්ත ප්‍රශ්නය ලියන්න."
     },
     {
+      "id": "faq_tarot_needs_one_problem",
+      "intent": "tarot",
+      "aliases": "mn gana hamadema, mn gena hemadema, everything about me, idiri kaalaya gena, idiri katayuthu gena, mage anagathaya gena, life gena, jeewithe gena, මං ගැන හැමදේම, ඉදිරි කාලය ගැන, ජීවිතේ ගැන, mn gana okkoma, tarot walin okkoma",
+      "exact": true,
+      "body": "\"මං ගැන හැමදේම\" වගේ පොදු ප්‍රශ්නයකට ටැරෝ කියවීමක් කරන්න බෑ. ටැරෝ එක වැඩ කරන්නේ එක් නිශ්චිත ගැටලුවකට අවධානය යොමු කරලා.\n\nඑම නිසා ඔයාව දැන් වැඩිපුරම කරදර කරන එක දෙය — ආදරය, රැකියාව, මුදල්, සෞඛ්‍යය, පවුල වගේ එකක් — විස්තර එක්ක කියන්න. එතකොට තමයි ඒකට පැහැදිලි පිළිතුරක් දෙන්න පුළුවන්."
+    },
+    {
       "id": "faq_tarot_delivery_time",
       "intent": "tarot",
       "aliases": "tarot kawada, tarot delivery, tarot kiyata denne, ටැරෝ කවදාද, ටැරෝ කීයටද, tarot eka kawada, how long tarot",

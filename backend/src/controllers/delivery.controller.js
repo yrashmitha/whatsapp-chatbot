@@ -40,6 +40,7 @@ function adminView(row) {
     token:        row.delivery_token || null,
     url:          delivery.deliveryUrl(row.delivery_token),
     kind:         st.kind,
+    reports:      st.reports,          // [{ kind, label, released, ready }] — every report on the order
     released:     st.released,
     released_at:  row.delivery_released_at || null,
     has_content:  st.hasContent,
@@ -83,7 +84,7 @@ async function releaseDelivery(req, res) {
   }
 
   await delivery.ensureToken(orderId, clientId);
-  await delivery.setReleased(orderId, clientId, true, effectiveKind);
+  await delivery.addReleasedKind(orderId, clientId, effectiveKind);
   const fresh = await delivery.getDeliveryRow(orderId, clientId);
   res.json(adminView(fresh));
 }
@@ -92,7 +93,9 @@ async function unreleaseDelivery(req, res) {
   const clientId = resolveClientId(req);
   const row = await delivery.getDeliveryRow(req.params.orderId, clientId);
   if (!row) return res.status(404).json({ error: 'Order not found' });
-  await delivery.setReleased(req.params.orderId, clientId, false, null);
+  // { kind } → pull just that report from the link; omitted → clear all.
+  const kind = (req.body && req.body.kind) || null;
+  await delivery.removeReleasedKind(req.params.orderId, clientId, kind);
   const fresh = await delivery.getDeliveryRow(req.params.orderId, clientId);
   res.json(adminView(fresh));
 }
@@ -125,7 +128,10 @@ async function internalStatus(req, res) {
 
   res.json({
     status:     st.status,          // 'pending' | 'ready'
-    kind:       st.kind,
+    kind:       st.kind,            // legacy: the primary released report
+    // Every released report on the order. The site renders one download per
+    // entry, each fetched as /:token/file?kind=<kind>.
+    reports:    st.reports.filter(r => r.released).map(r => ({ kind: r.kind, label: r.label })),
     phone_gate: st.phoneGate,
     name_hint:  nameHint,
   });
@@ -152,11 +158,18 @@ async function internalFile(req, res) {
     }
   }
 
+  // ?kind=<kind> picks one of several released reports; without it the primary
+  // one is served, which is what the pre-multi-report site expects.
+  const released = st.reports.filter(r => r.released).map(r => r.kind);
+  const wanted = String(req.query.kind || '').toLowerCase();
+  const kind = released.includes(wanted) ? wanted : st.kind;
+  if (!kind || !released.includes(kind)) return res.status(409).json({ error: 'not_ready' });
+
   let rendered;
   try {
-    rendered = await renderReportPdf(row.order_id, st.kind, row.client_id);
+    rendered = await renderReportPdf(row.order_id, kind, row.client_id);
   } catch (e) {
-    console.error('[DELIVERY] render failed', { order: row.order_id, kind: st.kind, err: e.message });
+    console.error('[DELIVERY] render failed', { order: row.order_id, kind, err: e.message });
     return res.status(502).json({ error: 'render_failed' });
   }
 

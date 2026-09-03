@@ -808,6 +808,10 @@ async function init() {
     // released still shows the "come back later" page.
     await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_token       TEXT`);
     await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_kind        TEXT`);
+    // The set of report kinds released for this order's link. One order can carry
+    // several (a full report + a tarot, say); delivery_kind stays as the legacy
+    // single-value mirror of the most recent release.
+    await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_kinds       JSONB NOT NULL DEFAULT '[]'::jsonb`);
     await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_released_at TIMESTAMPTZ`);
     await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_phone_gate  BOOLEAN NOT NULL DEFAULT TRUE`);
     await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_opened_at   TIMESTAMPTZ`);
@@ -990,6 +994,7 @@ async function init() {
     // ── Self-service report delivery (SQLite) ────────────────────────────────
     try { db.exec(`ALTER TABLE orders ADD COLUMN delivery_token TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE orders ADD COLUMN delivery_kind TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE orders ADD COLUMN delivery_kinds TEXT NOT NULL DEFAULT '[]'`); } catch (_) {}
     try { db.exec(`ALTER TABLE orders ADD COLUMN delivery_released_at TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE orders ADD COLUMN delivery_phone_gate INTEGER NOT NULL DEFAULT 1`); } catch (_) {}
     try { db.exec(`ALTER TABLE orders ADD COLUMN delivery_opened_at TEXT`); } catch (_) {}

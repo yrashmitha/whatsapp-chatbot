@@ -85,11 +85,44 @@ function hasContentForKind(order, kind) {
 
 const VALID_KINDS = ['horoscope', 'marriage', 'match', 'quantum', 'tarot'];
 
+const KIND_LABELS = {
+  horoscope: 'සම්පූර්ණ ජීවන වාර්තාව',
+  marriage:  'විවාහ ජීවිත වාර්තාව',
+  match:     'කේන්දර ගැලපීම වාර්තාව',
+  quantum:   'ක්වොන්ටම් වාර්තාව',
+  tarot:     'ටැරෝ කියවීම',
+};
+
+/** Every report kind this order carries finished content for, in reading order. */
+function availableKinds(order) {
+  return VALID_KINDS.filter(k => hasContentForKind(order, k));
+}
+
+/**
+ * The report kinds released for this order's link.
+ *
+ * Reads the `delivery_kinds` array; falls back to the legacy single
+ * `delivery_kind` / `delivery_released_at` pair so links released before the
+ * multi-report change keep working.
+ */
+function releasedKinds(order) {
+  const arr = parseJson(order.delivery_kinds);
+  const list = Array.isArray(arr) ? arr.filter(k => VALID_KINDS.includes(k)) : [];
+  if (list.length) return list;
+  if (order.delivery_released_at) {
+    const legacy = order.delivery_kind && VALID_KINDS.includes(order.delivery_kind)
+      ? order.delivery_kind
+      : detectKind(order);
+    return legacy ? [legacy] : [];
+  }
+  return [];
+}
+
 // ── Row access ──────────────────────────────────────────────────────────────
 
 const DELIVERY_COLS =
   'order_id, client_id, phone_number, custom_fields, horoscope_data, tarot_data, ' +
-  'delivery_token, delivery_kind, delivery_released_at, delivery_phone_gate, ' +
+  'delivery_token, delivery_kind, delivery_kinds, delivery_released_at, delivery_phone_gate, ' +
   'delivery_opened_at, delivery_downloads';
 
 async function getOrderByToken(token) {
@@ -152,15 +185,55 @@ async function ensureToken(orderId, clientId) {
   return null;
 }
 
-async function setReleased(orderId, clientId, released, kind) {
-  const k = VALID_KINDS.includes(kind) ? kind : null;
-  if (released) {
-    const now = new Date().toISOString();
-    const set = k ? `delivery_released_at = $1, delivery_kind = $2` : `delivery_released_at = $1`;
-    await updateDeliveryRow(orderId, clientId, set, k ? [now, k] : [now]);
-  } else {
-    await updateDeliveryRow(orderId, clientId, `delivery_released_at = NULL`, []);
+/**
+ * Add one report kind to the order's released set. `delivery_released_at` is
+ * stamped on the first release; `delivery_kind` mirrors the most recent one for
+ * legacy readers.
+ */
+async function addReleasedKind(orderId, clientId, kind) {
+  if (!VALID_KINDS.includes(kind)) return;
+  const row = await getDeliveryRow(orderId, clientId);
+  if (!row) return;
+  const set = new Set(releasedKinds(row));
+  set.add(kind);
+  const kinds = VALID_KINDS.filter(k => set.has(k)); // stable order
+  const releasedAt = row.delivery_released_at || new Date().toISOString();
+  await updateDeliveryRow(
+    orderId, clientId,
+    `delivery_kinds = $1, delivery_kind = $2, delivery_released_at = $3`,
+    [JSON.stringify(kinds), kind, releasedAt]
+  );
+}
+
+/**
+ * Remove one released kind, or (kind omitted) clear every release for the order.
+ */
+async function removeReleasedKind(orderId, clientId, kind) {
+  const row = await getDeliveryRow(orderId, clientId);
+  if (!row) return;
+  let kinds = [];
+  if (kind) {
+    kinds = releasedKinds(row).filter(k => k !== kind);
   }
+  if (kinds.length) {
+    await updateDeliveryRow(
+      orderId, clientId,
+      `delivery_kinds = $1, delivery_kind = $2`,
+      [JSON.stringify(kinds), kinds[kinds.length - 1]]
+    );
+  } else {
+    await updateDeliveryRow(
+      orderId, clientId,
+      `delivery_kinds = $1, delivery_kind = NULL, delivery_released_at = NULL`,
+      [JSON.stringify([])]
+    );
+  }
+}
+
+/** @deprecated single-kind shim kept for callers not yet migrated. */
+async function setReleased(orderId, clientId, released, kind) {
+  if (released && VALID_KINDS.includes(kind)) return addReleasedKind(orderId, clientId, kind);
+  if (!released) return removeReleasedKind(orderId, clientId, null);
 }
 
 async function setPhoneGate(orderId, clientId, on) {
@@ -216,15 +289,28 @@ function verifyLast4(order, supplied) {
  *            released:boolean, hasContent:boolean}}
  */
 function projectStatus(order) {
-  const kind = detectKind(order);
-  const released = !!order.delivery_released_at;
-  const hasContent = kind ? hasContentForKind(order, kind) : false;
-  return {
-    status: released && hasContent ? 'ready' : 'pending',
+  const available = availableKinds(order);
+  const released  = releasedKinds(order).filter(k => available.includes(k));
+
+  // Every report on the order, with its released + ready state.
+  const reports = available.map(kind => ({
     kind,
-    released,
-    hasContent,
-    phoneGate: phoneGateOn(order),
+    label:    KIND_LABELS[kind] || kind,
+    released: released.includes(kind),
+    ready:    released.includes(kind), // released implies content (available filter)
+  }));
+
+  // Legacy single-value view: the first released kind, else the detected one.
+  const primary = released[0] || detectKind(order);
+  const anyReady = released.length > 0;
+
+  return {
+    status:     anyReady ? 'ready' : 'pending',
+    kind:       primary,
+    reports,
+    released:   anyReady,
+    hasContent: primary ? hasContentForKind(order, primary) : false,
+    phoneGate:  phoneGateOn(order),
   };
 }
 
@@ -233,10 +319,14 @@ module.exports = {
   deliveryUrl,
   detectKind,
   hasContentForKind,
+  availableKinds,
+  releasedKinds,
   projectStatus,
   getOrderByToken,
   getDeliveryRow,
   ensureToken,
+  addReleasedKind,
+  removeReleasedKind,
   setReleased,
   setPhoneGate,
   markOpened,
@@ -244,4 +334,5 @@ module.exports = {
   phoneLast4,
   verifyLast4,
   VALID_KINDS,
+  KIND_LABELS,
 };

@@ -49,9 +49,9 @@ export default function DeliveryPanel({ order, clientId, open, kind }) {
     }
   };
 
-  const ensure    = () => call(() => api.post(`/plugins/delivery/${orderId}/ensure${qs}`));
-  const release   = () => call(() => api.post(`/plugins/delivery/${orderId}/release${qs}`, { kind }), 'Customer can now download');
-  const unrelease = () => call(() => api.post(`/plugins/delivery/${orderId}/unrelease${qs}`));
+  const ensure      = () => call(() => api.post(`/plugins/delivery/${orderId}/ensure${qs}`));
+  const releaseKind = (k) => call(() => api.post(`/plugins/delivery/${orderId}/release${qs}`, { kind: k }), 'Added to the customer link');
+  const unreleaseKind = (k) => call(() => api.post(`/plugins/delivery/${orderId}/unrelease${qs}`, { kind: k }), 'Removed from the link');
 
   const copyLink = async (e) => {
     e?.stopPropagation();
@@ -67,16 +67,19 @@ export default function DeliveryPanel({ order, clientId, open, kind }) {
 
   if (!orderId) return null;
 
-  const released   = !!info?.released;
-  const hasContent = !!info?.has_content;
-  const ready      = released && hasContent;
+  const reports    = Array.isArray(info?.reports) ? info.reports : [];
+  const thisReport = reports.find(r => r.kind === kind);
+  const hasContent = thisReport ? true : false; // in reports[] means content exists
+  const released   = !!thisReport?.released;    // is THIS drawer's report on the link
+  const ready      = released;
+  const releasedCount = reports.filter(r => r.released).length;
 
   const pill = !info
     ? { t: '…', bg: '#f1f5f9', fg: '#94a3b8' }
     : ready
-    ? { t: 'READY', bg: '#dcfce7', fg: '#166534' }
-    : released
-    ? { t: 'RELEASED', bg: '#fef9c3', fg: '#854d0e' }
+    ? { t: 'ON LINK', bg: '#dcfce7', fg: '#166534' }
+    : releasedCount > 0
+    ? { t: `${releasedCount} ON LINK`, bg: '#fef9c3', fg: '#854d0e' }
     : { t: 'ON HOLD', bg: '#f1f5f9', fg: '#64748b' };
 
   return (
@@ -107,17 +110,17 @@ export default function DeliveryPanel({ order, clientId, open, kind }) {
           </button>
 
           {info && (released ? (
-            <button onClick={(e) => { e.stopPropagation(); unrelease(); }} disabled={busy} style={mini('#ffffff', '#b91c1c', '#fecaca')}>
-              Undo
+            <button onClick={(e) => { e.stopPropagation(); unreleaseKind(kind); }} disabled={busy} style={mini('#ffffff', '#b91c1c', '#fecaca')}>
+              Remove {kind}
             </button>
           ) : (
             <button
-              onClick={(e) => { e.stopPropagation(); release(); }}
+              onClick={(e) => { e.stopPropagation(); releaseKind(kind); }}
               disabled={busy || !hasContent}
               title={hasContent ? '' : `No generated ${kind} report yet`}
               style={mini(hasContent ? '#16a34a' : '#e2e8f0', hasContent ? '#fff' : '#94a3b8', 'transparent')}
             >
-              📤 Report is ready
+              📤 Add {kind} to link
             </button>
           ))}
 
@@ -136,6 +139,28 @@ export default function DeliveryPanel({ order, clientId, open, kind }) {
                 onFocus={(e) => e.target.select()}
                 style={{ flex: 1, minWidth: 0, padding: '4px 8px', fontSize: 11, border: '1px solid #cbd5e1', borderRadius: 6, background: '#fff', color: '#334155' }}
               />
+            </div>
+          )}
+
+          {/* One link, every generated report. Toggle each on/off. */}
+          {reports.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span style={{ color: '#94a3b8', fontSize: 10, fontWeight: 700, letterSpacing: 0.4 }}>REPORTS ON THIS LINK</span>
+              {reports.map(r => (
+                <div key={r.kind} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 999, background: r.released ? '#16a34a' : '#cbd5e1', flexShrink: 0 }} />
+                  <span style={{ flex: 1, color: r.released ? '#166534' : '#64748b' }}>
+                    {r.label} <span style={{ color: '#cbd5e1' }}>({r.kind})</span>
+                  </span>
+                  <button
+                    onClick={() => (r.released ? unreleaseKind(r.kind) : releaseKind(r.kind))}
+                    disabled={busy}
+                    style={mini('#ffffff', r.released ? '#b91c1c' : '#16a34a', r.released ? '#fecaca' : '#bbf7d0')}
+                  >
+                    {r.released ? 'Remove' : 'Add'}
+                  </button>
+                </div>
+              ))}
             </div>
           )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>

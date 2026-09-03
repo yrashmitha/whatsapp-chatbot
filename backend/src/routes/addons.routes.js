@@ -18,6 +18,7 @@ const {
   getAddonsStatus,
   sendMedia,
   triggerTarotReading,
+  aiPrepareTarot,
   updateTarotSections,
   downloadTarotDocx,
   downloadTarotPdfByOrder,
@@ -40,6 +41,8 @@ router.post('/crm/send-media',     jwtAuth, requirePermission('chat.send_media')
 
 // Tarot reading — POST /api/crm/tarot-reading (trigger; background when order_id present)
 router.post('/crm/tarot-reading',                        jwtAuth, requirePermission('ai.generate_report'), orderScope, triggerTarotReading);
+// AI-fill the tarot request from the chat — POST /api/crm/tarot-reading/ai-prepare/:orderId
+router.post('/crm/tarot-reading/ai-prepare/:orderId',   jwtAuth, requirePermission('ai.fill'), orderScope, aiPrepareTarot);
 // Update reading text/cards — PATCH /api/crm/tarot-reading/sections/:orderId
 router.patch('/crm/tarot-reading/sections/:orderId',     jwtAuth, requirePermission('reports.edit'), orderScope, updateTarotSections);
 // Download DOCX — GET /api/crm/tarot-reading/download/:orderId

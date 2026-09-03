@@ -41,6 +41,7 @@ const SPREAD_POSITIONS = ['Past', 'Present', 'Future'];
  * Placeholders replaced at runtime:
  *   {question}   — the customer's one real problem
  *   {spread}     — formatted 3-card spread (Past / Present / Future)
+ *   {chart}      — the customer's Vedic birth chart JSON, or "" when none
  *
  * The product rule: one paid reading answers ONE real question about one area of
  * the customer's life (love, money, work, health, family, a decision). The more
@@ -56,7 +57,11 @@ Customer's question:
 The 3 cards drawn (interpret ONLY these, invent no others):
 {spread}
 
+The customer's Vedic birth chart (background context — may be empty):
+{chart}
+
 How to write the reading:
+- The 3 cards are the reading. Use the birth chart only as supporting background — to ground the timing and the nature of the problem — never to override or replace what the cards say, and never list planetary positions to the customer.
 - Treat the question as a real, personal problem and answer it directly and honestly. No vague, both-ways answers.
 - Past card: the root of this problem / how it came about.
 - Present card: where the customer stands now and the forces currently at play.
@@ -105,9 +110,10 @@ function formatSpread(drawn) {
  * @param {string}      question - The customer's question or problem
  * @param {string|null} customPrompt - Optional prompt override from plugin config
  * @param {string|null} orderId - Order to bill the Gemini cost to (optional)
+ * @param {string}      chartContext - Vedic birth chart JSON to give Gemini as background (optional)
  * @returns {Promise<{ reading: string, cards: Array }>}
  */
-async function generateTarotReading(clientId, question, customPrompt = null, orderId = null) {
+async function generateTarotReading(clientId, question, customPrompt = null, orderId = null, chartContext = '') {
   // Fall back to the built-in prompt rather than refusing — a client that
   // enabled the addon but never opened Plugins should still get a usable
   // reading, and the default already encodes the "one real problem" framing.
@@ -126,15 +132,23 @@ async function generateTarotReading(clientId, question, customPrompt = null, ord
 
   const promptTemplate = (customPrompt || '').trim();
 
-  // Replace {question} and {spread} placeholders
+  const chart = (chartContext || '').trim();
+
+  // Replace {question}, {spread} and {chart} placeholders
   let prompt = promptTemplate
     .replace('{question}', question)
-    .replace('{spread}', spreadText);
+    .replace('{spread}', spreadText)
+    .replace('{chart}', chart || '(no birth chart available)');
 
   // Safety guard: if customPrompt didn't include {spread}, append the cards explicitly
   if (customPrompt && !customPrompt.includes('{spread}')) {
     prompt += `\n\n---\nCUSTOMER'S QUESTION: ${question}\n\nDRAWN CARDS (interpret ONLY these 3, no others):\n${spreadText}`;
     console.log(`[TAROT] WARNING: custom prompt missing {spread} — appended cards explicitly`);
+  }
+  // If the prompt has no {chart} slot but we have one, append it as background.
+  if (chart && !promptTemplate.includes('{chart}')) {
+    prompt += `\n\n---\nCUSTOMER'S VEDIC BIRTH CHART (background context only — the 3 cards remain the reading; do not quote planetary positions to the customer):\n${chart}`;
+    console.log('[TAROT] appended birth chart as background context');
   }
 
   console.log(`[TAROT] Injected spread:\n${spreadText}`);

@@ -14,6 +14,131 @@ const { PUBLIC_URL } = require('../config/env');
 const resolveClientId = require('../middleware/resolveClientId');
 const { generateTarotReading, buildTarotDoc } = require('../services/tarot');
 const { getBrand } = require('../services/branding');
+const { getGenAI, getFreeAstroKey } = require('../services/clientKeys');
+const { calculateVedicChart } = require('../services/vedicChart');
+const { parseSinhalaDate, parseSinhalaTime } = require('../services/horoscope');
+
+/**
+ * Fill a tarot request from the chat: the customer's one real question plus the
+ * birth details needed to attach a chart. Same idea as aiPrepareHoroscope.
+ */
+const AI_FILL_TAROT_PROMPT = `You are preparing a single-question tarot reading. Read the WhatsApp conversation and the details already collected, then return JSON.
+
+- "question": ONE clear sentence, in the customer's own language, stating the single problem troubling them most right now — the thing they most need an answer to. Be specific to THIS customer, never generic. If they asked an explicit question, use it. Never invent a problem that is not in the chat.
+- "birth_date_iso": birth date as YYYY-MM-DD, or null if not given.
+- "birth_time_24h": birth time as HH:MM (24-hour), or null. A vague "morning"/"උදේ" with no number → null.
+- "birth_place_en": birth town in English, or "".
+- "lat", "lng": coordinates of that town (0 if unknown).
+
+Details collected so far:
+name: {{customer_name}}
+birth_date: {{birth_date}}
+birth_time: {{birth_time}}
+birth_place: {{birth_place}}
+
+Conversation:
+{{chat_log}}`;
+
+/**
+ * Fetch (or reuse) the Vedic chart for a tarot order so Gemini can read it as
+ * background context. Never throws — a chart is a bonus, the cards are the reading.
+ *
+ * @returns {Promise<{ chartContext: string, chart: object|null }>}
+ */
+async function buildTarotChart(clientId, orderId, body) {
+  let td = {};
+  try {
+    const { rows } = await db.pgQuery('SELECT tarot_data FROM orders WHERE order_id=$1', [orderId]);
+    td = (typeof rows[0]?.tarot_data === 'string') ? JSON.parse(rows[0].tarot_data || '{}') : (rows[0]?.tarot_data || {});
+  } catch { /* ignore */ }
+
+  const haveNew = body.lat != null && body.lng != null && body.birth_date && body.birth_time;
+  if (!haveNew) {
+    return { chartContext: td.chart_data ? JSON.stringify(td.chart_data, null, 2) : '', chart: td.chart_data || null };
+  }
+  try {
+    const dateInfo = parseSinhalaDate(String(body.birth_date));
+    const timeInfo = parseSinhalaTime(String(body.birth_time));
+    if (!dateInfo || !timeInfo) {
+      console.warn(`[TAROT] could not parse birth date/time for ${orderId} — skipping chart`);
+      return { chartContext: '', chart: null };
+    }
+    const apiKey = await getFreeAstroKey(clientId);
+    const { data: chartData } = await calculateVedicChart(
+      { year: dateInfo.year, month: dateInfo.month, day: dateInfo.day,
+        hour: timeInfo.hour, minute: timeInfo.minute,
+        lat: parseFloat(body.lat), lng: parseFloat(body.lng) },
+      apiKey
+    );
+    console.log(`[TAROT] chart fetched for ${orderId}`);
+    return { chartContext: JSON.stringify(chartData, null, 2), chart: chartData };
+  } catch (e) {
+    console.warn('[TAROT] chart fetch failed (non-fatal):', e.message);
+    return { chartContext: '', chart: null };
+  }
+}
+
+/**
+ * POST /api/crm/tarot-reading/ai-prepare/:orderId — read the chat and fill the
+ * question box + birth details for a tarot reading.
+ */
+async function aiPrepareTarot(req, res) {
+  const clientId = resolveClientId(req);
+  const { orderId } = req.params;
+  try {
+    const oRes = await db.pgQuery('SELECT * FROM orders WHERE order_id=$1', [orderId]);
+    if (!oRes.rows.length) return res.status(404).json({ error: 'Order not found' });
+    const order = oRes.rows[0];
+    const cf = (typeof order.custom_fields === 'string') ? JSON.parse(order.custom_fields || '{}') : (order.custom_fields || {});
+    const messages = await db.getMessagesByPhone(order.phone_number, clientId);
+    const chatLog = messages
+      .map(m => `[${m.sender_type === 'user' ? 'Customer' : 'Agent'}]: ${m.message_text || ''}`)
+      .filter(l => l.length > 12).join('\n');
+
+    const prompt = AI_FILL_TAROT_PROMPT
+      .replace('{{customer_name}}', cf.customer_name || cf.b || cf.name || '')
+      .replace('{{birth_date}}',    cf.birth_date || '')
+      .replace('{{birth_time}}',    cf.birth_time || '')
+      .replace('{{birth_place}}',   cf.birth_place || cf.birth_place_name || '')
+      .replace('{{chat_log}}',      chatLog || '(no messages found)');
+
+    const model = (await getGenAI(clientId)).getGenerativeModel({
+      model: 'gemini-2.5-flash',
+      generationConfig: {
+        temperature: 0.2,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: 'object',
+          properties: {
+            question:       { type: 'string' },
+            birth_date_iso: { type: 'string', nullable: true },
+            birth_time_24h: { type: 'string', nullable: true },
+            birth_place_en: { type: 'string' },
+            lat:            { type: 'number' },
+            lng:            { type: 'number' },
+          },
+          required: ['question', 'birth_place_en', 'lat', 'lng'],
+        },
+      },
+    });
+    const r = await model.generateContent(prompt);
+    let parsed;
+    try { parsed = JSON.parse(r.response.text().trim()); }
+    catch { return res.status(500).json({ error: 'Gemini returned invalid JSON' }); }
+
+    res.json({
+      question:       parsed.question || '',
+      birth_date_iso: parsed.birth_date_iso || null,
+      birth_time_24h: parsed.birth_time_24h || null,
+      birth_place_en: parsed.birth_place_en || null,
+      lat:            parsed.lat || null,
+      lng:            parsed.lng || null,
+    });
+  } catch (e) {
+    console.error('[TAROT-AI-PREPARE]', e.message);
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
+}
 
 /**
  * Catalog of available addons with their metadata.
@@ -278,10 +403,19 @@ async function triggerTarotReading(req, res) {
       }
     }
 
+    // Keep any chart already fetched for this order so the "generating" placeholder
+    // does not wipe it.
+    let priorChart = null;
+    try {
+      const p = await db.pgQuery(`SELECT tarot_data FROM orders WHERE order_id=$1`, [order_id]);
+      const ptd = (typeof p.rows[0]?.tarot_data === 'string') ? JSON.parse(p.rows[0].tarot_data || '{}') : (p.rows[0]?.tarot_data || {});
+      priorChart = ptd.chart_data || null;
+    } catch { /* ignore */ }
+
     // Mark as generating so frontend can show progress
     await db.pgQuery(
       `UPDATE orders SET tarot_data=$1 WHERE order_id=$2`,
-      [JSON.stringify({ generating: true, question }), order_id]
+      [JSON.stringify({ generating: true, question, ...(priorChart && { chart_data: priorChart }) }), order_id]
     ).catch(() => {});
 
     // Return immediately — generation runs in background
@@ -295,8 +429,9 @@ async function triggerTarotReading(req, res) {
     } catch { /* no config */ }
 
     console.log(`[TAROT] Background generation for ${phone} | order=${order_id} | client=${clientId}`);
-    generateTarotReading(clientId, question, customPrompt, order_id).then(async ({ reading, cards }) => {
-      const tarotData = { question, reading, cards, generated_at: new Date().toISOString() };
+    const { chartContext, chart } = await buildTarotChart(clientId, order_id, req.body);
+    generateTarotReading(clientId, question, customPrompt, order_id, chartContext).then(async ({ reading, cards }) => {
+      const tarotData = { question, reading, cards, generated_at: new Date().toISOString(), ...(chart && { chart_data: chart }) };
       await db.pgQuery(
         `UPDATE orders SET tarot_data=$1 WHERE order_id=$2`,
         [JSON.stringify(tarotData), order_id]
@@ -567,4 +702,4 @@ async function downloadTarotPdf(req, res) {
 }
 
 module.exports = {
-  addonCatalog, ADDON_CATALOG, listAddons, toggleAddon, getAddonsStatus, sendMedia, triggerTarotReading, updateTarotSections, downloadTarotDocx, downloadTarotPdfByOrder, downloadTarotPdf };
+  addonCatalog, ADDON_CATALOG, listAddons, toggleAddon, getAddonsStatus, sendMedia, triggerTarotReading, aiPrepareTarot, updateTarotSections, downloadTarotDocx, downloadTarotPdfByOrder, downloadTarotPdf };

@@ -27,17 +27,50 @@ export default function TarotGenerateModal({ order, clientId, onClose, onGenerat
 
   const [question, setQuestion]   = useState(existingQuestion);
   const [generating, setGenerating] = useState(false);
+  const [aiFilling, setAiFilling]   = useState(false);
+  // Birth details for the chart Gemini reads as background. Filled by AI Fill.
+  const [birth, setBirth] = useState(null); // { birth_date, birth_time, lat, lng, place }
+
+  const params = clientId ? { params: { client_id: clientId } } : {};
+
+  const handleAiFill = async () => {
+    setAiFilling(true);
+    try {
+      const { data } = await api.post(`/crm/tarot-reading/ai-prepare/${order.order_id}`, {}, params);
+      if (data.question) setQuestion(data.question);
+      if (data.lat && data.lng && data.birth_date_iso) {
+        setBirth({
+          birth_date: data.birth_date_iso,
+          birth_time: data.birth_time_24h || '',
+          lat: data.lat,
+          lng: data.lng,
+          place: data.birth_place_en || '',
+        });
+      }
+      toast.success(data.question ? 'Filled from the chat' : 'No clear question found in the chat');
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'AI fill failed');
+    } finally {
+      setAiFilling(false);
+    }
+  };
 
   const handleGenerate = async () => {
     if (!question.trim()) return toast.error("Please enter the customer's question or situation");
     setGenerating(true);
     try {
-      const params = clientId ? { params: { client_id: clientId } } : {};
       await api.post('/crm/tarot-reading', {
         phone: order.phone || order.phone_number,
         question: question.trim(),
         order_id: order.order_id,
         regenerate: true,
+        ...(birth && birth.birth_time ? {
+          birth_date: birth.birth_date,
+          birth_time: birth.birth_time,
+          lat: birth.lat,
+          lng: birth.lng,
+          birth_place_name: birth.place,
+        } : {}),
       }, params);
       toast.success('Tarot generation started. Takes about 30 seconds. You can navigate away.');
       onGenerated?.();
@@ -70,9 +103,19 @@ export default function TarotGenerateModal({ order, clientId, onClose, onGenerat
         {/* Body */}
         <div className="px-5 py-4 flex flex-col gap-3">
           <div>
-            <label className="text-xs font-medium text-slate-500 block mb-1">
-              Customer's Question / Situation
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-slate-500">
+                Customer's Question / Situation
+              </label>
+              <button
+                onClick={handleAiFill}
+                disabled={aiFilling || generating}
+                className="text-xs font-medium px-2 py-1 rounded-lg border-0 cursor-pointer disabled:opacity-50"
+                style={{ background: 'rgba(124,58,237,0.1)', color: '#7c3aed' }}
+              >
+                {aiFilling ? 'Reading chat…' : '✨ AI Fill'}
+              </button>
+            </div>
             <textarea
               className={inputCls}
               style={{ resize: 'none', minHeight: 90 }}
@@ -84,6 +127,12 @@ export default function TarotGenerateModal({ order, clientId, onClose, onGenerat
               autoFocus
             />
           </div>
+          {birth && birth.birth_time && (
+            <p className="text-xs" style={{ color: '#7c3aed' }}>
+              🔯 Birth chart will be fetched and given to Gemini as background
+              ({birth.birth_date} {birth.birth_time}{birth.place ? ` · ${birth.place}` : ''})
+            </p>
+          )}
           <p className="text-xs text-slate-400">
             Generation runs in the background (~30 seconds). You can navigate away after clicking Generate.
           </p>

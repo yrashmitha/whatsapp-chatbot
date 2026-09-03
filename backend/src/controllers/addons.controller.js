@@ -24,12 +24,12 @@ const { parseSinhalaDate, parseSinhalaTime } = require('../services/horoscope');
  */
 const AI_FILL_TAROT_PROMPT = `You are an experienced counsellor preparing the brief for a single-topic tarot reading. Read the WhatsApp conversation and the details collected, then return JSON.
 
-"question" — NOT a restatement of the customer's words. Turn their situation into a counsellor-grade brief for the tarot reader, in the customer's own language. It must:
+"question" — WRITE IT IN SINHALA (Unicode script), always, whatever language the customer used. NOT a restatement of the customer's words: turn their situation into a counsellor-grade brief for the tarot reader. It must:
   - name the one real problem they are living with right now (stay on this ONE topic).
   - lay out the realistic explanations for how it came to this. Think like a counsellor: for most situations only one or two causes are really in play. For example, if a partner suddenly went cold and left "for no reason", the realistic causes are a short list — someone else has entered their life, outside/family pressure or an ultimatum, an untreated mental-health slide (depression, burnout), a long buildup of unspoken resentment that finally broke, or a decision made under someone else's influence. Spell out the shortlist that fits THIS customer's story.
   - state what the reading must determine: what most likely actually happened, the other person's true emotional state now, whether things can realistically recover, and the timing.
   - ask for clear, honest guidance on what the customer should and should not do.
-Write it as 3-6 sentences, direct and specific to this person. Never invent facts that are not in the chat, but you SHOULD reason about likely causes the customer did not name.
+Write it as 3-6 Sinhala sentences, direct and specific to this person. Never invent facts that are not in the chat, but you SHOULD reason about likely causes the customer did not name. The whole "question" value must be Sinhala — no English sentences.
 
 "birth_date_iso": birth date as YYYY-MM-DD, or null if not given.
 "birth_time_24h": birth time as HH:MM (24-hour), or null. A vague "morning"/"උදේ" with no number → null.

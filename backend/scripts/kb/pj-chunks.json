@@ -290,6 +290,13 @@
       "aliases": "tarot kawada, tarot delivery, tarot kiyata denne, ටැරෝ කවදාද, ටැරෝ කීයටද, tarot eka kawada, how long tarot",
       "exact": true,
       "body": "ගෙවීම තහවුරු වුණාට පස්සේ පැය 3ක් ඇතුළත ටැරෝ කියවීම මේ WhatsApp එකටම PDF එකක් විදිහට එවනවා. 🙏"
+    },
+    {
+      "id": "faq_tarot_why_fast",
+      "intent": "tarot",
+      "aliases": "tarot ikmanai, tarot mokada ikman, tarot 2 3 days nadda, why tarot fast, ටැරෝ ඉක්මන්, ටැරෝ පැය 3ම, tarot eka ikmanata, tarot 3 hours mokada, tarot kendare hadanawada",
+      "exact": true,
+      "body": "ටැරෝ කියවීමට කේන්දරයක් අලුතෙන් ගණනය කරන්න ඕන නෑ, ඒක කාඩ්පත් හරහා ඔයාගේ ප්‍රශ්නයට දෙන සෘජු කියවීමක්. ඒ නිසා පැය 3ක් ඇතුළත එවන්න පුළුවන්. සම්පූර්ණ හඳහන් වාර්තාවක් වෙනුවෙන් තමයි දවස් 2-3ක් යන්නේ — ඒක අතින්ම ගණනය කරන නිසා. 🙏"
     }
   ]
 }

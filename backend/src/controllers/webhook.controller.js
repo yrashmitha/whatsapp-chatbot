@@ -379,6 +379,19 @@ function receiveWebhook(req, res) {
           await readInboundImage(client, kept.buffer, kept.mime, msg.image?.caption || null, msg.id, from, log)
             .catch(e => log.warn('[WEBHOOK] could not read the image while silent:', e.message));
         }
+        // Transcribe a voice note even while silent, so the operator reads the
+        // words in the CRM instead of playing the clip.
+        if (msg.type === 'audio' && kept?.buffer) {
+          try {
+            const { text } = await extractFromBuffer(kept.buffer, kept.mime || 'audio/ogg', 'voice', null, await getGeminiKey(client.id));
+            if (text && text.trim()) {
+              await db.setMessageExtraction(msg.id, { text: text.trim() })
+                .catch(e => log.warn('[VOICE] could not store transcription while silent:', e.message));
+            }
+          } catch (e) {
+            log.warn('[VOICE] transcription failed while silent:', e.message);
+          }
+        }
 
         // An away message is opt-in and only for the global switch: a chat an
         // operator has taken over is being handled by a person, and telling
@@ -700,6 +713,94 @@ function receiveWebhook(req, res) {
           if (!docExtracted) {
             await sendWhatsAppMessage(from, 'ලිපිය ලැබුණා, ස්තූතියි! 🙏', client);
           }
+        }
+        return;
+      }
+
+      // ── Voice messages ─────────────────────────────────────────────────────
+      // WhatsApp customers routinely send their birth details or their problem
+      // as a voice note. Transcribe it with Gemini and feed the text through as
+      // if they had typed it — otherwise the bot is deaf to the whole message.
+      if (msg.type === 'audio' || msg.type === 'voice') {
+        const audMedia = msg.audio || msg.voice || {};
+        const audMediaId = audMedia.id;
+        let audStoredUrl = null, audBuffer = null, audMime = 'audio/ogg';
+        if (audMediaId) {
+          try {
+            const metaRes = await axios.get(
+              `https://graph.facebook.com/v18.0/${audMediaId}`,
+              { headers: { Authorization: `Bearer ${waToken(client)}` } }
+            );
+            const dlUrl = metaRes.data?.url;
+            if (dlUrl) {
+              const audRes = await axios.get(dlUrl, {
+                responseType: 'arraybuffer',
+                headers: { Authorization: `Bearer ${waToken(client)}` },
+              });
+              audMime = metaRes.data?.mime_type || 'audio/ogg';
+              const ext = (audMime.split('/')[1] || 'ogg').split(';')[0];
+              const fname = `wa-voice-${from}-${Date.now()}.${ext}`;
+              fs.writeFileSync(path.join(UPLOADS_DIR, fname), audRes.data);
+              audStoredUrl = `/uploads/${fname}`;
+              audBuffer = Buffer.from(audRes.data);
+              console.log(`[MEDIA-DL] Customer voice message saved: ${fname}`);
+            }
+          } catch (e) {
+            console.warn('[MEDIA-DL] Failed to download customer voice message:', e.message);
+          }
+        }
+
+        await db.upsertCustomer(from, null, client?.id);
+        await db.insertMessage(from, '[Voice message]', 'user', null, client?.id ?? null, 'audio', audStoredUrl, msg.id);
+
+        let transcript = '';
+        if (audBuffer) {
+          try {
+            const { text } = await extractFromBuffer(audBuffer, audMime, 'voice', null, await getGeminiKey(client.id));
+            transcript = (text || '').trim();
+            if (transcript) {
+              await db.setMessageExtraction(msg.id, { text: transcript })
+                .catch(e => log.warn('[VOICE] could not store transcription:', e.message));
+              log.info(`[VOICE] transcribed ${transcript.length} chars`);
+            }
+          } catch (e) {
+            console.warn('[VOICE] transcription failed:', e.message);
+          }
+        }
+
+        if (!chatSessions.has(sessionKey)) {
+          chatSessions.set(sessionKey, { chat: await buildChatSession(from, client), phoneNumber: from });
+        }
+        const audSession = chatSessions.get(sessionKey);
+        audSession.lastUsed = Date.now();
+
+        const voiceNote = transcript
+          ? `[The customer sent a voice message. Transcription of what they said: "${transcript}"]\n\nReply to this exactly as if they had typed it.`
+          : `[The customer sent a voice message that could not be transcribed. Ask them to type the message, or tell them the team will listen to it.]`;
+
+        const { botReply: vReply, imagesToSend: vImages, isFallback: vFallback } =
+          await handleMessage(from, voiceNote, audSession.chat, { skipUserInsert: true, client, traceId });
+
+        if (vFallback) {
+          log.warn('[WEBHOOK] Fallback triggered on voice message — suppressing reply');
+          db.pgQuery(
+            `UPDATE customers SET needs_attention=TRUE WHERE phone_number=$1 AND client_id=$2`,
+            [from, client.id]
+          ).catch(e => log.warn('[FALLBACK] Failed to set needs_attention:', e.message));
+          if (client.owner_phone) {
+            sendWhatsAppMessage(client.owner_phone, `⚠️ Bot fallback triggered\nCustomer: ${from}\nMessage: [Voice message]${transcript ? ` "${transcript.slice(0, 200)}"` : ''}`, client)
+              .catch(e => log.warn('[FALLBACK-NOTIF] Failed:', e.message));
+          }
+        } else if (vReply.trim()) {
+          await sendBotReply(from, vReply, client);
+        }
+        for (const filename of (vImages || [])) {
+          const cap = filename.toLowerCase().startsWith('horoscope')
+            ? 'ලග්න කොටු 12 සහ නවාංශ කොටු 12 දෙකම පෙනෙන ලෙස photo send කරන්න 🙏'
+            : 'මේවා මම ඉක්මනින්ම හොයාගත්ත කීප දෙනෙකුගේ screenshots 🙏';
+          const w = await sendWhatsAppImage(from, filename, cap, client);
+          const isPdf = filename.toLowerCase().endsWith('.pdf');
+          await db.insertMessage(from, isPdf ? `[PDF: ${filename}]` : `[Image: ${filename}]`, 'bot', null, client?.id ?? null, isPdf ? 'pdf' : 'image', `/templates/${encodeURIComponent(filename)}`, w);
         }
         return;
       }

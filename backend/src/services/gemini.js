@@ -95,18 +95,29 @@ async function generateOrderId(client) {
 }
 
 /** Statuses that mean the order is settled — a new order after one of these is a genuine new order. */
-const CLOSED_ORDER_STATUSES = new Set(['payment_received', 'paid', 'delivered', 'done', 'complete', 'cancelled', 'refunded']);
-/** How recently an open order must have been created for a repeat order to be treated as an edit of it. */
-const REORDER_MERGE_WINDOW_MS = 2 * 60 * 60 * 1000;
+const CLOSED_ORDER_STATUSES = new Set(['payment_received', 'paid', 'delivered', 'done', 'complete', 'cancelled', 'refunded', 'payment_identified']);
+/** Below this age, any open order is treated as the same order (a quick tier/detail change). */
+const REORDER_FAST_WINDOW_MS = 2 * 60 * 60 * 1000;
+/** Above the fast window, an open order is only reused when it's clearly the same person. */
+const REORDER_MAX_WINDOW_MS  = 7 * 24 * 60 * 60 * 1000;
+
+function samePerson(cf, details) {
+  const norm = (v) => String(v || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const name = (o) => norm(o.customer_name || o.b || o.name);
+  const dob  = (o) => norm(o.birth_date).replace(/[.\-/]/g, '');
+  return (name(cf) && name(cf) === name(details)) || (dob(cf) && dob(cf) === dob(details));
+}
 
 /**
- * Record a new order, OR reuse the customer's own open order from this same
- * conversation instead of creating a second one.
+ * Record a new order, OR reuse the customer's own open order instead of
+ * creating a second one.
  *
- * The model tends to call place_order / emit ORDER_COMPLETE again when the
- * customer changes tier or a detail mid-chat, which used to orphan the first
- * order. If an unpaid order for this phone+client exists from the last two
- * hours, merge the new details into it and keep the same order_id.
+ * The model calls place_order / emits ORDER_COMPLETE again when the customer
+ * changes tier or a detail, or re-sends / pastes their details later — which
+ * used to orphan the first order. An unpaid order for this phone+client is
+ * reused when: it is under 2h old (any change), OR under 7 days old AND the
+ * name or birth date matches. A genuinely different person/order still creates
+ * a new row.
  *
  * @returns {Promise<{ orderId: string, reused: boolean }>}
  */
@@ -114,11 +125,16 @@ async function recordOrReuseOrder(phoneNumber, client, details, log) {
   const clientId = client?.id ?? null;
   let recent = null;
   try {
-    const orders = await db.getOrdersByPhone(phoneNumber, clientId);
+    const orders = await db.getOrdersByPhone(phoneNumber, clientId); // newest first
     recent = (orders || []).find(o => {
       if (CLOSED_ORDER_STATUSES.has(String(o.status || '').toLowerCase())) return false;
       const age = Date.now() - new Date(o.created_at).getTime();
-      return age >= 0 && age <= REORDER_MERGE_WINDOW_MS;
+      if (age < 0 || age > REORDER_MAX_WINDOW_MS) return false;
+      if (age <= REORDER_FAST_WINDOW_MS) return true;
+      const cf = (typeof o.custom_fields === 'string')
+        ? (() => { try { return JSON.parse(o.custom_fields || '{}'); } catch { return {}; } })()
+        : (o.custom_fields || {});
+      return samePerson(cf, details || {});
     }) || null;
   } catch (e) {
     (log || console).warn?.('[ORDER] reuse lookup failed:', e.message);
@@ -1125,11 +1141,9 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
             [order.order_id, client?.id ?? null, UNSETTLED]);
           log.info(`[ORDER] ${order.order_id} moved to payment_identified, awaiting a bank check`);
         }
-        require('./metaConversions').fireCAPIEvent(client?.id, 'Purchase', phoneNumber, {
-          order_id: order.order_id,
-          currency: 'LKR',
-          value:    slipAmount || 0,
-        }).catch(() => {});
+        // No Purchase CAPI event here: a slip has been read, not verified. The
+        // Purchase fires when an operator confirms the money arrived and moves
+        // the order to payment_received (orders.controller.js).
         require('./followUpReminders').autoResolveForOrder(client?.id, order.order_id).catch(() => {});
       } else {
         log.warn(`[ORDER] PAYMENT_IDENTIFIED: no matching order`);

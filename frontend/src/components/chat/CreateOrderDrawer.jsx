@@ -16,6 +16,7 @@ export default function CreateOrderDrawer({ open, onClose, customer, clientId })
   // A catalogue product id, 'custom', or '' for no price yet.
   const [productId, setProductId] = useState('');
   const [customPrice, setCustomPrice] = useState('');
+  const [alreadyPaid, setAlreadyPaid] = useState(false);
 
   // Reset form when drawer opens
   const handleOpen = () => {
@@ -24,6 +25,7 @@ export default function CreateOrderDrawer({ open, onClose, customer, clientId })
     setNotes('');
     setProductId('');
     setCustomPrice('');
+    setAlreadyPaid(false);
   };
 
   // Fetch client's order field definitions
@@ -73,6 +75,16 @@ export default function CreateOrderDrawer({ open, onClose, customer, clientId })
         ...(clientId && { client_id: clientId }),
         ...(notes && { notes }),
       });
+      // Fires the Meta Lead event server-side. If the customer already paid,
+      // mark it now so the Purchase event fires too.
+      if (alreadyPaid) {
+        try {
+          await api.patch(`/orders/${res.data.order_id}/status`, { status: 'payment_received' },
+            { params: clientId ? { client_id: clientId } : {} });
+        } catch (e) {
+          toast.error(e?.response?.data?.error || 'Order created, but could not mark it paid');
+        }
+      }
       toast.success(`Order ${res.data.order_id} created`);
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['chat-orders', phoneVal] });
@@ -204,6 +216,16 @@ export default function CreateOrderDrawer({ open, onClose, customer, clientId })
             placeholder="Delivery date, special instructions..."
           />
         </div>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-2)', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={alreadyPaid}
+            onChange={e => setAlreadyPaid(e.target.checked)}
+            style={{ cursor: 'pointer' }}
+          />
+          Customer has already paid (marks it paid + fires the Meta Purchase event)
+        </label>
 
         <button
           type="submit"

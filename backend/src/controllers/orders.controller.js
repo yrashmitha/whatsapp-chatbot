@@ -401,7 +401,7 @@ async function updateStatus(req, res) {
       require('../services/followUpReminders').autoResolveForOrder(clientId, req.params.id).catch(() => {});
     }
     // Fire CAPI Purchase event when an admin manually marks an order as paid
-    if (status === 'payment_received' || status === 'paid') {
+    if (PAID_STATUSES.includes(status)) {
       db.pgQuery('SELECT phone_number, client_id FROM orders WHERE order_id=$1', [req.params.id])
         .then(({ rows }) => {
           if (rows.length) {
@@ -468,6 +468,14 @@ async function createOrder(req, res) {
     await db.insertOrder(orderId, phone_number, clientId || null, custom_fields);
     if (notes) {
       await db.pgQuery(`UPDATE orders SET notes=$1 WHERE order_id=$2`, [notes, orderId]);
+    }
+    // A manually-created order is still a lead — fire it to Meta the same as the
+    // bot's place_order does, so an order typed in by an operator (often for an
+    // ad customer whose chat the bot never handled) is not invisible to Ads.
+    if (clientId) {
+      require('../services/metaConversions')
+        .fireCAPIEvent(clientId, 'Lead', phone_number, { order_id: orderId })
+        .catch(() => {});
     }
     res.json({ ok: true, order_id: orderId });
   } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }

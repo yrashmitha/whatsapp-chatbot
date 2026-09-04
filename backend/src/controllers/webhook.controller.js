@@ -379,6 +379,12 @@ function receiveWebhook(req, res) {
           await readInboundImage(client, kept.buffer, kept.mime, msg.image?.caption || null, msg.id, from, log)
             .catch(e => log.warn('[WEBHOOK] could not read the image while silent:', e.message));
         }
+        // A PDF (a bank slip, a transaction history) gets read the same way, so
+        // the operator sees the amount and bank without opening the file.
+        if (msg.type === 'document' && kept?.buffer) {
+          await readInboundImage(client, kept.buffer, kept.mime || 'application/pdf', msg.document?.caption || null, msg.id, from, log)
+            .catch(e => log.warn('[WEBHOOK] could not read the document while silent:', e.message));
+        }
         // Transcribe a voice note even while silent, so the operator reads the
         // words in the CRM instead of playing the clip.
         if (msg.type === 'audio' && kept?.buffer) {

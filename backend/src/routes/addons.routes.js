@@ -17,6 +17,7 @@ const {
   toggleAddon,
   getAddonsStatus,
   sendMedia,
+  reextractMedia,
   triggerTarotReading,
   aiPrepareTarot,
   fetchTarotChart,
@@ -39,6 +40,9 @@ router.get('/crm/addons-status',   jwtAuth, getAddonsStatus);
 
 // CRM agent send media — POST /api/crm/send-media
 router.post('/crm/send-media',     jwtAuth, requirePermission('chat.send_media'), uploadMedia.single('file'), sendMedia);
+
+// Re-run extraction on a customer's stored media — POST /api/crm/media/reextract  { phone }
+router.post('/crm/media/reextract', jwtAuth, requirePermission('chat.read'), reextractMedia);
 
 // Tarot reading — POST /api/crm/tarot-reading (trigger; background when order_id present)
 router.post('/crm/tarot-reading',                        jwtAuth, requirePermission('ai.generate_report'), orderScope, triggerTarotReading);

@@ -7,16 +7,101 @@
 'use strict';
 
 const axios = require('axios');
+const fs    = require('fs');
+const path  = require('path');
 const db    = require('../db');
 const clientRouter = require('../services/clientRouter');
 const { waToken, waPhoneId } = require('../services/whatsapp');
-const { PUBLIC_URL } = require('../config/env');
+const { PUBLIC_URL, UPLOADS_DIR } = require('../config/env');
 const resolveClientId = require('../middleware/resolveClientId');
 const { generateTarotReading, buildTarotDoc } = require('../services/tarot');
 const { getBrand } = require('../services/branding');
-const { getGenAI, getFreeAstroKey } = require('../services/clientKeys');
+const { getGenAI, getFreeAstroKey, getGeminiKey } = require('../services/clientKeys');
 const { calculateVedicChart } = require('../services/vedicChart');
 const { parseSinhalaDate, parseSinhalaTime } = require('../services/horoscope');
+const { extractFromBuffer } = require('../services/mediaExtractor');
+const { analyzePaymentDocument } = require('../services/imageAnalysis');
+
+/** Best-effort mime type for a stored upload from its extension. */
+function mimeFor(url, mediaType) {
+  const ext = (String(url).split('.').pop() || '').toLowerCase();
+  const byExt = {
+    jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp',
+    pdf: 'application/pdf', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg',
+    mp3: 'audio/mpeg', m4a: 'audio/mp4', amr: 'audio/amr', wav: 'audio/wav',
+  };
+  if (byExt[ext]) return byExt[ext];
+  return mediaType === 'audio' ? 'audio/ogg' : mediaType === 'pdf' ? 'application/pdf' : 'image/jpeg';
+}
+
+/**
+ * POST /api/crm/media/reextract  { phone }
+ *
+ * Re-runs extraction on this customer's stored media messages that have no
+ * `extracted` value yet — voice notes get transcribed, slips/PDFs read. For
+ * media that arrived before extraction was wired up, or while a transient error
+ * skipped it.
+ */
+async function reextractMedia(req, res) {
+  const clientId = resolveClientId(req);
+  const { phone } = req.body || {};
+  if (!phone)    return res.status(400).json({ error: 'phone required' });
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+
+  try {
+    const msgs = await db.getMessagesByPhone(phone, clientId);
+    const targets = (msgs || []).filter(m =>
+      m.sender_type === 'user' &&
+      ['image', 'pdf', 'audio'].includes(m.media_type) &&
+      String(m.media_url || '').startsWith('/uploads/') &&
+      m.wamid &&
+      !m.extracted
+    );
+
+    const key = await getGeminiKey(clientId);
+    const analyzerOn = await db.hasAddon(clientId, 'image_analyzer').catch(() => false);
+    let analyzerCfg = {};
+    if (analyzerOn) analyzerCfg = await db.getPluginConfig(clientId, 'image_analyzer').catch(() => ({}));
+
+    let extracted = 0, missing = 0, failed = 0;
+    for (const m of targets) {
+      const file = path.join(UPLOADS_DIR, path.basename(m.media_url));
+      if (!fs.existsSync(file)) { missing++; continue; }
+      try {
+        const buf = fs.readFileSync(file);
+        const mime = mimeFor(m.media_url, m.media_type);
+        let result = null;
+
+        if (m.media_type === 'audio') {
+          const { text } = await extractFromBuffer(buf, mime, 'voice', null, key);
+          if (text && text.trim()) result = { text: text.trim() };
+        } else if (analyzerOn) {
+          result = await analyzePaymentDocument(buf, mime, analyzerCfg.api_key || key, {
+            account: analyzerCfg.expected_account || null,
+            bank:    analyzerCfg.expected_bank    || null,
+            names:   analyzerCfg.expected_names   || null,
+            prompt:  analyzerCfg.extraction_prompt || null,
+          });
+        } else {
+          const { text } = await extractFromBuffer(buf, mime, 'file', null, key);
+          if (text && text.trim()) result = { text: text.trim() };
+        }
+
+        if (result) { await db.setMessageExtraction(m.wamid, result); extracted++; }
+        else failed++;
+      } catch (e) {
+        console.warn(`[REEXTRACT] ${m.wamid} failed:`, e.message);
+        failed++;
+      }
+    }
+
+    console.log(`[REEXTRACT] ${phone} client=${clientId}: ${extracted}/${targets.length} extracted (${missing} file gone, ${failed} failed)`);
+    res.json({ ok: true, candidates: targets.length, extracted, file_missing: missing, failed });
+  } catch (e) {
+    console.error('[REEXTRACT]', e.message);
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
+}
 
 /**
  * Fill a tarot request from the chat: the customer's one real question plus the
@@ -760,4 +845,4 @@ async function downloadTarotPdf(req, res) {
 }
 
 module.exports = {
-  addonCatalog, ADDON_CATALOG, listAddons, toggleAddon, getAddonsStatus, sendMedia, triggerTarotReading, aiPrepareTarot, fetchTarotChart, updateTarotSections, downloadTarotDocx, downloadTarotPdfByOrder, downloadTarotPdf };
+  addonCatalog, ADDON_CATALOG, listAddons, toggleAddon, getAddonsStatus, sendMedia, reextractMedia, triggerTarotReading, aiPrepareTarot, fetchTarotChart, updateTarotSections, downloadTarotDocx, downloadTarotPdfByOrder, downloadTarotPdf };

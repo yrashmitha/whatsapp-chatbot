@@ -215,6 +215,19 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
     onError: () => toast.error('Failed to update status'),
   });
 
+  const reextractMutation = useMutation({
+    mutationFn: () => api.post('/crm/media/reextract', { phone }, { params: cp }),
+    onSuccess: (r) => {
+      const d = r.data || {};
+      qc.invalidateQueries({ queryKey: ['messages', phone] });
+      toast.success(
+        d.candidates === 0 ? 'Nothing to re-extract'
+        : `${d.extracted}/${d.candidates} media re-read` + (d.file_missing ? ` (${d.file_missing} file gone)` : ''),
+      );
+    },
+    onError: (e) => toast.error(e?.response?.data?.error || 'Re-extract failed'),
+  });
+
   const uploadFile = async (file) => {
     try {
       const form = new FormData();
@@ -427,6 +440,14 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
                 AI {aiEnabled ? 'ON' : 'OFF'}
               </button>
             )}
+            <Button
+              variant="ghost" size="sm"
+              onClick={() => reextractMutation.mutate()}
+              disabled={reextractMutation.isPending}
+              title="Re-read voice notes and PDFs on this chat"
+            >
+              {reextractMutation.isPending ? 'Reading…' : 'Re-extract media'}
+            </Button>
             <Button variant="ghost" size="sm" onClick={handleDeleteHistory}>Clear history</Button>
             <Button variant="danger" size="sm" onClick={handleDeleteCustomer}>Delete</Button>
           </div>

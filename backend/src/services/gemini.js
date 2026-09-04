@@ -94,6 +94,62 @@ async function generateOrderId(client) {
   return id;
 }
 
+/** Statuses that mean the order is settled — a new order after one of these is a genuine new order. */
+const CLOSED_ORDER_STATUSES = new Set(['payment_received', 'paid', 'delivered', 'done', 'complete', 'cancelled', 'refunded']);
+/** How recently an open order must have been created for a repeat order to be treated as an edit of it. */
+const REORDER_MERGE_WINDOW_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * Record a new order, OR reuse the customer's own open order from this same
+ * conversation instead of creating a second one.
+ *
+ * The model tends to call place_order / emit ORDER_COMPLETE again when the
+ * customer changes tier or a detail mid-chat, which used to orphan the first
+ * order. If an unpaid order for this phone+client exists from the last two
+ * hours, merge the new details into it and keep the same order_id.
+ *
+ * @returns {Promise<{ orderId: string, reused: boolean }>}
+ */
+async function recordOrReuseOrder(phoneNumber, client, details, log) {
+  const clientId = client?.id ?? null;
+  let recent = null;
+  try {
+    const orders = await db.getOrdersByPhone(phoneNumber, clientId);
+    recent = (orders || []).find(o => {
+      if (CLOSED_ORDER_STATUSES.has(String(o.status || '').toLowerCase())) return false;
+      const age = Date.now() - new Date(o.created_at).getTime();
+      return age >= 0 && age <= REORDER_MERGE_WINDOW_MS;
+    }) || null;
+  } catch (e) {
+    (log || console).warn?.('[ORDER] reuse lookup failed:', e.message);
+  }
+
+  if (recent) {
+    const existingCf = (typeof recent.custom_fields === 'string')
+      ? (() => { try { return JSON.parse(recent.custom_fields || '{}'); } catch { return {}; } })()
+      : (recent.custom_fields || {});
+    // New values win, but a blank/absent new value never wipes an existing one.
+    const merged = { ...existingCf };
+    for (const [k, v] of Object.entries(details || {})) {
+      if (v !== undefined && v !== null && v !== '') merged[k] = v;
+    }
+    try {
+      await db.updateOrderCustomFields(recent.order_id, merged);
+      if (details?.summary) await db.updateOrderAISummary(recent.order_id, details.summary);
+      const name = details?.customer_name || details?.b || details?.name;
+      if (name) await db.upsertCustomer(phoneNumber, name, clientId);
+    } catch (e) {
+      (log || console).error?.('[ORDER] reuse update failed:', e.message);
+    }
+    (log || console).info?.(`[ORDER] reused open order ${recent.order_id} (customer changed the order in-chat) instead of creating a new one`);
+    return { orderId: recent.order_id, reused: true };
+  }
+
+  const orderId = await generateOrderId(client);
+  await db.insertOrder(orderId, phoneNumber, clientId, details);
+  return { orderId, reused: false };
+}
+
 /**
  * Build a status note string listing the most recent orders for a phone number.
  * Injected at the start of each message so the AI is aware of order state.
@@ -741,19 +797,21 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
         } else {
           try {
             const details = { ...fc.args };
-            toolOrderId = await generateOrderId(client);
-            await db.insertOrder(toolOrderId, phoneNumber, client?.id ?? null, details);
-            log.info(`[ORDER] place_order created ${toolOrderId}`);
-            require('./metaConversions').fireCAPIEvent(client?.id, 'Lead', phoneNumber, { order_id: toolOrderId }).catch(() => {});
-            if (details.summary) await db.updateOrderAISummary(toolOrderId, details.summary);
-            const name = details.customer_name || details.b || details.name;
-            if (name) await db.upsertCustomer(phoneNumber, name, client?.id);
+            const { orderId: recordedId, reused } = await recordOrReuseOrder(phoneNumber, client, details, log);
+            toolOrderId = recordedId;
+            if (reused) {
+              log.info(`[ORDER] place_order merged into existing ${toolOrderId}`);
+            } else {
+              log.info(`[ORDER] place_order created ${toolOrderId}`);
+              require('./metaConversions').fireCAPIEvent(client?.id, 'Lead', phoneNumber, { order_id: toolOrderId }).catch(() => {});
+            }
             let reportLink = null;
             try { reportLink = deliveryUrl(await ensureDeliveryToken(toolOrderId, client?.id)); } catch (_) {}
             functionResponses.push({ functionResponse: { name: 'place_order', response: {
               ok: true,
               order_id: toolOrderId,
-              ...(reportLink && { report_link: reportLink, report_link_note: 'Give this link to the customer. Their report will be ready there in 2-3 days — it is not sent on WhatsApp.' }),
+              ...(reused && { note: 'This customer already had an open order in this conversation, so it was updated, not duplicated.' }),
+              ...(reportLink && { report_link: reportLink, report_link_note: 'Give this link to the customer. Their report will be ready there in 2-3 days, it is not sent on WhatsApp.' }),
             } } });
           } catch (e) {
             log.error('[ORDER] place_order failed:', e.message);
@@ -960,17 +1018,13 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     }
 
     if (details) {
-      orderId = await generateOrderId(client);
-      await db.insertOrder(orderId, phoneNumber, client?.id ?? null, details);
-      log.info(`[ORDER] Saved order ${orderId}`);
-      require('./metaConversions').fireCAPIEvent(client?.id, 'Lead', phoneNumber, { order_id: orderId }).catch(() => {});
-      if (details.summary) {
-        await db.updateOrderAISummary(orderId, details.summary);
-        log.info(`[ORDER] AI summary saved for ${orderId}`);
-      }
-      if (details.customer_name) {
-        await db.upsertCustomer(phoneNumber, details.customer_name, client?.id);
-        log.info(`[DB] Updated customer name: ${details.customer_name}`);
+      const { orderId: recordedId, reused } = await recordOrReuseOrder(phoneNumber, client, details, log);
+      orderId = recordedId;
+      if (reused) {
+        log.info(`[ORDER] ORDER_COMPLETE merged into existing ${orderId}`);
+      } else {
+        log.info(`[ORDER] Saved order ${orderId}`);
+        require('./metaConversions').fireCAPIEvent(client?.id, 'Lead', phoneNumber, { order_id: orderId }).catch(() => {});
       }
       botReply += `\n\n✅ *ඔබේ Order ID: ${orderId}*`;
       try {

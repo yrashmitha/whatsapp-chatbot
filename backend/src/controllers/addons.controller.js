@@ -21,6 +21,7 @@ const { calculateVedicChart } = require('../services/vedicChart');
 const { parseSinhalaDate, parseSinhalaTime } = require('../services/horoscope');
 const { extractFromBuffer } = require('../services/mediaExtractor');
 const { analyzePaymentDocument } = require('../services/imageAnalysis');
+const { formatChatLog } = require('../utils/chatLog');
 
 /** Best-effort mime type for a stored upload from its extension. */
 function mimeFor(url, mediaType) {
@@ -233,9 +234,9 @@ async function aiPrepareTarot(req, res) {
     const order = oRes.rows[0];
     const cf = (typeof order.custom_fields === 'string') ? JSON.parse(order.custom_fields || '{}') : (order.custom_fields || {});
     const messages = await db.getMessagesByPhone(order.phone_number, clientId);
-    const chatLog = messages
-      .map(m => `[${m.sender_type === 'user' ? 'Customer' : 'Agent'}]: ${m.message_text || ''}`)
-      .filter(l => l.length > 12).join('\n');
+    // Fold in transcribed voice notes / read slips so the brief is not built
+    // from a chat full of "[Voice message]" placeholders.
+    const chatLog = formatChatLog(messages);
 
     const prompt = AI_FILL_TAROT_PROMPT
       .replace('{{customer_name}}', cf.customer_name || cf.b || cf.name || '')

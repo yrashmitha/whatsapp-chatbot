@@ -24,6 +24,7 @@ const {
 } = require('../services/matchReport');
 const { buildPorondamDoc } = require('../services/porondamReport');
 const { makeMeter, recordOrderGenCost } = require('../services/genCost');
+const { formatChatLog } = require('../utils/chatLog');
 
 const { generateFollowUp, DEFAULT_FOLLOWUP_PROMPT } = require('../services/followup');
 const { syncAudienceForClient, createAudienceForClient, getRecentEvents } = require('../services/metaConversions');
@@ -1277,9 +1278,7 @@ async function aiPrepareHoroscope(req, res) {
 
     // 2. Fetch chat messages
     const messages = await db.getMessagesByPhone(order.phone_number, clientId);
-    const chatLog = messages.map(m =>
-      `[${m.sender_type === 'user' ? 'Customer' : 'Agent'}]: ${m.message_text || ''}`
-    ).filter(l => l.length > 12).join('\n');
+    const chatLog = formatChatLog(messages);
 
     // 3. Build the prompt — use the per-client editable template, or the built-in default.
     const config = await db.getPluginConfig(clientId, 'horoscope_reading');
@@ -2100,9 +2099,7 @@ async function aiPrepareMarriage(req, res) {
       : (order.custom_fields || {});
 
     const messages = await db.getMessagesByPhone(order.phone_number, clientId);
-    const chatLog = messages.map(m =>
-      `[${m.sender_type === 'user' ? 'Customer' : 'Agent'}]: ${m.message_text || ''}`
-    ).filter(l => l.length > 12).join('\n');
+    const chatLog = formatChatLog(messages);
 
     const config = await db.getPluginConfig(clientId, 'horoscope_reading');
     const template = (config.marriage_ai_fill_prompt && config.marriage_ai_fill_prompt.trim())
@@ -2339,9 +2336,7 @@ async function aiPrepareMatch(req, res) {
     const order = orderRes.rows[0];
 
     const messages = await db.getMessagesByPhone(order.phone_number, clientId);
-    const chatLog = messages.map(m =>
-      `[${m.sender_type === 'user' ? 'Customer' : 'Agent'}]: ${m.message_text || ''}`
-    ).filter(l => l.length > 12).join('\n');
+    const chatLog = formatChatLog(messages);
 
     const config = await db.getPluginConfig(clientId, 'horoscope_reading');
     const template = (config.match_ai_fill_prompt && config.match_ai_fill_prompt.trim())

@@ -274,9 +274,9 @@
     {
       "id": "faq_tarot_one_question",
       "intent": "tarot",
-      "aliases": "tarot prashna kiyak, how many questions, ekak da, tarot walin kiyak ahanna, ප්‍රශ්න කීයක්, එක ප්‍රශ්නයක් ද, tarot eken kiyak",
+      "aliases": "tarot prashna kiyak, how many questions, ekak da, tarot walin kiyak ahanna, ප්‍රශ්න කීයක්, එක ප්‍රශ්නයක් ද, tarot eken kiyak, eka deyak witharada, deyak dekak ahanna, tarot walin dekak, mulu deyak ahanna",
       "exact": true,
-      "body": "ටැරෝ කියවීමකින් අහන්න පුළුවන් එක ප්‍රශ්නයයි. 🙏\n\nඑම නිසා ඔයාට දැන් වඩාත්ම වැදගත් — ඔයාව වැඩිපුරම කරදර කරන — ප්‍රශ්නය මොකක්ද කියලා තෝරගෙන ඒක අහන්න."
+      "body": "ටැරෝ කියවීමකින් හොඳ ප්‍රතිඵලයක් ලබා ගන්න එක පැහැදිලි ප්‍රශ්නයකට විතරයි අවධානය යොමු කරන්නේ. 🙏\n\nප්‍රශ්න කිහිපයකට එකවර යොමු වුණොත් ශක්තිය බෙදිලා යනවා, එකෙන්වත් පැහැදිලි පිළිතුරක් ලැබෙන්නේ නෑ. එක ගැටලුවකට විතරක් සිත යොදනකොට තමයි ඒක ගැඹුරින්, නිවැරදිව කියවන්න පුළුවන්.\n\nඑම නිසා ඔයාව දැන් වැඩිපුරම කරදර කරන එක ගැටලුව — පුළුවන් තරම් විස්තර එක්ක — කියන්න."
     },
     {
       "id": "faq_tarot_how_to_ask",

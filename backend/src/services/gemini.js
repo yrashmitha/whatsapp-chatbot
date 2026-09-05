@@ -163,6 +163,11 @@ async function recordOrReuseOrder(phoneNumber, client, details, log) {
 
   const orderId = await generateOrderId(client);
   await db.insertOrder(orderId, phoneNumber, clientId, details);
+  const name = details?.customer_name || details?.b || details?.name;
+  if (name) {
+    try { await db.upsertCustomer(phoneNumber, name, clientId); }
+    catch (e) { (log || console).warn?.('[ORDER] could not save customer name:', e.message); }
+  }
   return { orderId, reused: false };
 }
 

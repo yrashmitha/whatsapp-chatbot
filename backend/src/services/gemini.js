@@ -238,6 +238,9 @@ async function buildOrderStatusNote(phoneNumber, clientId) {
   if (!all.length) return null;
   const orders = all.slice(0, 5);
   let anyLink = false;
+  const PAID = new Set(['payment_received', 'paid', 'payment_identified']);
+  const DONE = new Set(['delivered', 'done', 'complete']);
+  const DEAD = new Set(['cancelled', 'refunded']);
   const lines = orders.map(o => {
     const cf = o.custom_fields
       ? (typeof o.custom_fields === 'string' ? (() => { try { return JSON.parse(o.custom_fields); } catch { return {}; } })() : o.custom_fields)
@@ -249,7 +252,30 @@ async function buildOrderStatusNote(phoneNumber, clientId) {
       const ready = o.delivery_released_at ? 'READY to download now' : 'NOT ready yet (still being prepared)';
       linkStr = `, report_link: ${DELIVERY_BASE_URL}/r/${o.delivery_token} (${ready})`;
     }
-    return `[ORDER ${o.order_id}: status=${o.status}, date=${String(o.created_at).split('T')[0]}${cfStr ? ', ' + cfStr : ''}${linkStr}${o.notes ? ', notes: ' + o.notes : ''}]`;
+
+    // Live progress verdict so the assistant answers "where is my report?" with
+    // the real state, not a canned "2-3 days" every time.
+    let progress = '';
+    const isTarot = o.tarot_data != null || String(cf.price) === '500';
+    const ageH = (Date.now() - new Date(o.created_at).getTime()) / 3.6e6;
+    const fmtAge = ageH < 24 ? `${Math.round(ageH)}h ago` : `${Math.floor(ageH / 24)}d ${Math.round(ageH % 24)}h ago`;
+    if (DEAD.has(o.status)) {
+      progress = `, PROGRESS: order is ${o.status}`;
+    } else if (DONE.has(o.status) || o.delivery_released_at) {
+      progress = `, PROGRESS: report is DONE and the download link is live, give them the link`;
+    } else if (PAID.has(o.status)) {
+      const sla = isTarot ? 3 : 72;        // tarot 3h, chart reports "2-3 days"
+      const late = isTarot ? 5 : 84;       // past this counts as overdue
+      if (ageH < sla * 0.75) {
+        progress = `, PROGRESS: paid ${fmtAge}, in progress and ON TRACK (${isTarot ? 'due within 3 hours' : 'due within 2-3 days'})`;
+      } else if (ageH < late) {
+        progress = `, PROGRESS: paid ${fmtAge}, DUE VERY SOON. Reassure them it is nearly ready, do not quote a fresh full timeframe`;
+      } else {
+        progress = `, PROGRESS: paid ${fmtAge} and this is OVERDUE. Apologise sincerely, tell them you are checking with the team RIGHT NOW, do NOT just repeat "2-3 days" / "3 hours"`;
+      }
+    }
+
+    return `[ORDER ${o.order_id}: status=${o.status}, date=${String(o.created_at).split('T')[0]}${cfStr ? ', ' + cfStr : ''}${linkStr}${progress}${o.notes ? ', notes: ' + o.notes : ''}]`;
   });
   const note = lines.join('\n');
   const countSuffix = all.length > 5 ? `\n[NOTE: Showing last 5 orders only. Customer has ${all.length} orders total.]` : '';

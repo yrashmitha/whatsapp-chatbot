@@ -42,9 +42,14 @@ async function resolveBlocks(clientId, text) {
   );
   const byTitle = new Map(rows.map(r => [r.title.toLowerCase(), r.text]));
 
+  // A block sitting directly under a line of the model's own text should be
+  // separated from it by a blank line, or the block's heading butts straight
+  // against that sentence.
+  const spaced = text.replace(/([^\n])\n(\[\[QR:[a-z0-9_-]+\]\])/gi, '$1\n\n$2');
+
   const used = [];
   const missing = [];
-  const out = text.replace(QR_REGEX, (_, rawTitle) => {
+  const out = spaced.replace(QR_REGEX, (_, rawTitle) => {
     const title = rawTitle.toLowerCase();
     const body = byTitle.get(title);
     if (body === undefined) {

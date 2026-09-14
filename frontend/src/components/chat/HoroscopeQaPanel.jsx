@@ -119,7 +119,7 @@ export default function HoroscopeQaPanel({ open, onClose, phone, clientId, onDra
             <div className="flex flex-col gap-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-slate-400">
-                  {record.type === 'match' ? 'Compatibility report' : 'Horoscope report'}
+                  {record.type === 'match' ? 'Compatibility report' : record.type === 'tarot' ? 'Tarot reading' : 'Horoscope report'}
                   {record.orderId && ` · ${record.orderId}`}
                 </span>
                 <button
@@ -136,6 +136,25 @@ export default function HoroscopeQaPanel({ open, onClose, phone, clientId, onDra
                     <PersonCard label="Person B" person={record.match?.girl} />
                   </div>
                   <SectionAccordion sections={record.match?.sections} />
+                </>
+              ) : record.type === 'tarot' ? (
+                <>
+                  {record.tarot?.question && (
+                    <div className="border border-slate-200 rounded-lg px-3 py-2.5">
+                      <div className="text-[10px] font-semibold text-violet-600 uppercase tracking-wide mb-1">Customer's question</div>
+                      <div className="text-sm text-slate-700 whitespace-pre-wrap">{record.tarot.question}</div>
+                    </div>
+                  )}
+                  <SectionAccordion
+                    sections={(record.tarot?.cards || []).map(c => ({
+                      label: `${c.position}: ${c.sinhala_name || c.name} (${c.reversed ? 'Reversed' : 'Upright'})`,
+                      content: c.sinhala_meaning || c.meaning,
+                    }))}
+                  />
+                  <div className="border border-slate-200 rounded-lg px-3 py-2.5">
+                    <div className="text-[10px] font-semibold text-violet-600 uppercase tracking-wide mb-1">Reading given</div>
+                    <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{record.tarot?.reading}</div>
+                  </div>
                 </>
               ) : (
                 <>

@@ -5,6 +5,7 @@
  *   - full reading     → horoscope_data.sections (object: title -> text)
  *   - marriage reading → horoscope_data.marriage_sections_data ([{label, content}])
  *   - porondam / match → horoscope_data.match_boy / match_girl + match_sections_data
+ *   - tarot reading    → tarot_data.question / cards / reading
  *
  * Ported from the wwjs service, where this read across to a second database.
  * Here the reports are local, so it queries our own orders table — which means
@@ -77,6 +78,7 @@ function personFromCustomFields(cf) {
 function normalizeOrderRow(row) {
   const cf = parseJsonField(row.custom_fields) || {};
   const hd = parseJsonField(row.horoscope_data) || {};
+  const td = parseJsonField(row.tarot_data) || {};
 
   if (hd.match_boy || hd.match_girl) {
     const sections = Array.isArray(hd.match_sections_data) ? hd.match_sections_data : [];
@@ -109,19 +111,36 @@ function normalizeOrderRow(row) {
     ? sectionsObjectToArray(hd.sections)
     : (Array.isArray(hd.marriage_sections_data) ? hd.marriage_sections_data : []);
 
-  if (!sections.length) return null;
+  if (sections.length) {
+    return {
+      orderId:   row.order_id,
+      fetchedAt: new Date().toISOString(),
+      type:      'single',
+      single: {
+        ...personFromCustomFields(cf),
+        sections,
+        chartData: hd.chart_data || null,
+        answers:   Array.isArray(hd.special_answers) ? hd.special_answers : [],
+      },
+    };
+  }
 
-  return {
-    orderId:   row.order_id,
-    fetchedAt: new Date().toISOString(),
-    type:      'single',
-    single: {
-      ...personFromCustomFields(cf),
-      sections,
-      chartData: hd.chart_data || null,
-      answers:   Array.isArray(hd.special_answers) ? hd.special_answers : [],
-    },
-  };
+  if (td.reading && Array.isArray(td.cards) && td.cards.length) {
+    return {
+      orderId:   row.order_id,
+      fetchedAt: new Date().toISOString(),
+      type:      'tarot',
+      tarot: {
+        ...personFromCustomFields(cf),
+        question: td.question || '',
+        cards:    td.cards,
+        reading:  td.reading,
+        chartData: td.chart_data || null,
+      },
+    };
+  }
+
+  return null;
 }
 
 /**
@@ -140,10 +159,10 @@ async function fetchLatestHoroscopeForPhone(clientId, phone) {
   if (!clientId || key.length < 9) return null;
 
   const { rows } = await pgQuery(
-    `SELECT order_id, custom_fields, horoscope_data
+    `SELECT order_id, custom_fields, horoscope_data, tarot_data
        FROM orders
       WHERE client_id = $1
-        AND horoscope_data IS NOT NULL
+        AND (horoscope_data IS NOT NULL OR tarot_data IS NOT NULL)
         AND RIGHT(regexp_replace(phone_number, '\\D', '', 'g'), 9) = $2
       ORDER BY created_at DESC
       LIMIT 5`,

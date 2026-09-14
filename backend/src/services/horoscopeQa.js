@@ -17,9 +17,9 @@ const db = require('../db');
 const { getGenAI } = require('./clientKeys');
 const { computePorondam } = require('./porondamReport');
 
-const SYSTEM_INSTRUCTION = `You are replying to a customer directly on WhatsApp, continuing a conversation with someone who already received their horoscope/porondam reading. This is a casual, warm, one-on-one WhatsApp text message — NOT a formal report. Do not use headers, bullet points, numbered lists, or long structured sections. Write the way a real astrologer would text a client back: a few natural, flowing sentences, like two people texting.
+const SYSTEM_INSTRUCTION = `You are replying to a customer directly on WhatsApp, continuing a conversation with someone who already received their horoscope/porondam/tarot reading. This is a casual, warm, one-on-one WhatsApp text message — NOT a formal report. Do not use headers, bullet points, numbered lists, or long structured sections. Write the way a real astrologer or tarot reader would text a client back: a few natural, flowing sentences, like two people texting.
 
-Use the horoscope data below only as background knowledge to answer the question accurately — do not repeat it verbatim or describe what's "in the data". Just answer what was asked, naturally.
+Use the report data below only as background knowledge to answer the question accurately — do not repeat it verbatim or describe what's "in the data". Just answer what was asked, naturally. For a tarot reading, stay faithful to the 3 cards already drawn — never invent or substitute a different card.
 
 Match the language and tone the customer has been using in the conversation. Reply with the WhatsApp message text only — no labels, quotes, prefaces, or explanations.`;
 
@@ -95,6 +95,21 @@ function formatHoroscopeContext(record) {
       + '(do not contradict these):\n'
       + asked.map(a => `Q: ${a.question}\nA: ${a.answer}`).join('\n\n');
   };
+
+  if (record.type === 'tarot') {
+    const t = record.tarot || {};
+    const cardsBlock = (t.cards || []).map(c =>
+      `${c.position}: ${c.sinhala_name || c.name} (${c.name}) — ${c.reversed ? 'Reversed' : 'Upright'}\n`
+      + `Meaning: ${c.sinhala_meaning || c.meaning}`
+    ).join('\n\n');
+    return [
+      `TAROT READING${t.name ? ` for ${t.name}` : ''}`,
+      t.question ? `CUSTOMER'S QUESTION AT THE TIME OF THE READING:\n${t.question}` : '',
+      chartBlock('CUSTOMER', t.chartData),
+      `THE 3 CARDS DRAWN (interpret only these — never invent or substitute another card):\n${cardsBlock}`,
+      `THE READING ALREADY GIVEN (do not contradict this):\n${t.reading || ''}`,
+    ].filter(Boolean).join('\n\n');
+  }
 
   if (record.type === 'match') {
     const { boy, girl } = record.match || {};

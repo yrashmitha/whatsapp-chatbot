@@ -18,7 +18,7 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      const res = await authApi.post('/login', { username, password });
+      const res = await authApi.post('/login', { username: username.trim(), password });
       login(res.data.token, res.data.user);
       navigate('/chat', { replace: true });
     } catch (err) {
@@ -86,6 +86,10 @@ export default function Login() {
                 placeholder="Client ID or superadmin"
                 required
                 autoFocus
+                autoCapitalize="none"
+                autoCorrect="off"
+                autoComplete="username"
+                spellCheck="false"
                 style={inputStyle}
                 onFocus={e => e.target.style.borderColor = 'var(--accent)'}
                 onBlur={e => e.target.style.borderColor = 'var(--border)'}
@@ -102,6 +106,10 @@ export default function Login() {
                 onChange={e => setPassword(e.target.value)}
                 placeholder="••••••••"
                 required
+                autoCapitalize="none"
+                autoCorrect="off"
+                autoComplete="current-password"
+                spellCheck="false"
                 style={inputStyle}
                 onFocus={e => e.target.style.borderColor = 'var(--accent)'}
                 onBlur={e => e.target.style.borderColor = 'var(--border)'}

@@ -840,24 +840,48 @@ function receiveWebhook(req, res) {
       // ── Text messages ───────────────────────────────────────────────────────
       userMessage = userMessage || msg.text?.body;
       if (!userMessage) {
-        // A sticker, location pin, contact card, reaction, poll vote, or
-        // anything else Meta calls "unsupported" used to just be logged and
-        // dropped here — nothing was ever written to the messages table, so
-        // the customer's message was invisible in the CRM, not just
-        // unanswered. An operator scrolling the chat saw no gap at all,
-        // because as far as the database was concerned nothing arrived.
-        const UNSUPPORTED_LABELS = {
-          sticker:  'sticker',
-          location: 'location',
-          contacts: 'contact card',
-          reaction: 'reaction',
-          order:    'order',
-          system:   'system message',
-        };
-        const kind = UNSUPPORTED_LABELS[msg.type] || msg.errors?.[0]?.title || msg.type || 'unknown';
-        log.warn(`[WEBHOOK] Unsupported message type "${msg.type}" — storing as [${kind}]`);
+        // A sticker, location pin, contact card, reaction, order, or anything
+        // else Meta calls "unsupported" used to just be logged and dropped
+        // here — nothing was ever written to the messages table, so the
+        // customer's message was invisible in the CRM, not just unanswered.
+        // Pull the actual content per type rather than a bare type label, so
+        // the operator sees what was actually sent, not just that something was.
+        let contentLabel = null;
+        let mediaType = null;
+        let mediaUrl  = null;
+
+        if (msg.type === 'location' && msg.location) {
+          const { latitude, longitude, name, address } = msg.location;
+          const parts = [name, address].filter(Boolean).join(' — ');
+          contentLabel = `[Location]${parts ? ` ${parts}` : ''} https://maps.google.com/?q=${latitude},${longitude}`;
+        } else if (msg.type === 'contacts' && Array.isArray(msg.contacts)) {
+          const people = msg.contacts.map(c => {
+            const name = c.name?.formatted_name || 'Unnamed';
+            const phones = (c.phones || []).map(p => p.phone).filter(Boolean).join(', ');
+            return phones ? `${name} (${phones})` : name;
+          });
+          contentLabel = `[Contact card] ${people.join('; ')}`;
+        } else if (msg.type === 'reaction' && msg.reaction) {
+          contentLabel = `[Reaction] ${msg.reaction.emoji || '(removed)'} on a previous message`;
+        } else if (msg.type === 'order' && msg.order) {
+          const items = (msg.order.product_items || [])
+            .map(i => `${i.product_retailer_id} x${i.quantity}${i.item_price ? ` @ ${i.item_price} ${i.currency || ''}` : ''}`)
+            .join(', ');
+          contentLabel = `[Order] ${items || '(no items)'}`;
+        } else if (msg.type === 'sticker' && msg.sticker?.id) {
+          const kept = await keepInboundMedia(msg.sticker.id, from, client);
+          if (kept) { mediaType = 'image'; mediaUrl = kept.url; contentLabel = msg.sticker.animated ? '[Animated sticker]' : '[Sticker]'; }
+          else contentLabel = '[Sticker] (could not download)';
+        } else {
+          // Genuinely unexpected — show the raw sub-object rather than just a
+          // type name, so nothing is ever silently unreadable again.
+          const raw = msg[msg.type];
+          contentLabel = `[${msg.type || 'unknown'}]${raw ? ' ' + JSON.stringify(raw) : (msg.errors?.[0]?.title ? ` ${msg.errors[0].title}` : '')}`;
+        }
+
+        log.warn(`[WEBHOOK] Unsupported message type "${msg.type}" — storing content: ${contentLabel}`);
         await db.upsertCustomer(from, null, client.id);
-        await db.insertMessage(from, `[Unsupported: ${kind}]`, 'user', null, client.id, null, null, msg.id);
+        await db.insertMessage(from, contentLabel, 'user', null, client.id, mediaType, mediaUrl, msg.id);
         await db.pgQuery(
           `UPDATE customers SET needs_attention=TRUE WHERE phone_number=$1 AND client_id=$2`,
           [from, client.id]

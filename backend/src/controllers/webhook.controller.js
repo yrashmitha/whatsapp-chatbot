@@ -840,7 +840,28 @@ function receiveWebhook(req, res) {
       // ── Text messages ───────────────────────────────────────────────────────
       userMessage = userMessage || msg.text?.body;
       if (!userMessage) {
-        log.warn(`[WEBHOOK] Unsupported message type "${msg.type}" — skipping`);
+        // A sticker, location pin, contact card, reaction, poll vote, or
+        // anything else Meta calls "unsupported" used to just be logged and
+        // dropped here — nothing was ever written to the messages table, so
+        // the customer's message was invisible in the CRM, not just
+        // unanswered. An operator scrolling the chat saw no gap at all,
+        // because as far as the database was concerned nothing arrived.
+        const UNSUPPORTED_LABELS = {
+          sticker:  'sticker',
+          location: 'location',
+          contacts: 'contact card',
+          reaction: 'reaction',
+          order:    'order',
+          system:   'system message',
+        };
+        const kind = UNSUPPORTED_LABELS[msg.type] || msg.errors?.[0]?.title || msg.type || 'unknown';
+        log.warn(`[WEBHOOK] Unsupported message type "${msg.type}" — storing as [${kind}]`);
+        await db.upsertCustomer(from, null, client.id);
+        await db.insertMessage(from, `[Unsupported: ${kind}]`, 'user', null, client.id, null, null, msg.id);
+        await db.pgQuery(
+          `UPDATE customers SET needs_attention=TRUE WHERE phone_number=$1 AND client_id=$2`,
+          [from, client.id]
+        ).catch(e => log.warn('[WEBHOOK] Could not flag needs_attention for unsupported type:', e.message));
         return;
       }
 

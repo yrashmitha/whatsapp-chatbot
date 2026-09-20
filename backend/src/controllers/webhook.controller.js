@@ -551,9 +551,11 @@ function receiveWebhook(req, res) {
         }
 
         for (const filename of imagesToSend) {
-          const imgCaption = filename.toLowerCase().startsWith('horoscope')
-            ? 'ලග්න කොටු 12 සහ නවාංශ කොටු 12 දෙකම පෙනෙන ලෙස photo send කරන්න 🙏'
-            : 'මේවා මම ඉක්මනින්ම හොයාගත්ත කීප දෙනෙකුගේ screenshots 🙏';
+          const imgCaption = filename.toLowerCase().startsWith('review')
+            ? ''
+            : filename.toLowerCase().startsWith('horoscope')
+              ? 'ලග්න කොටු 12 සහ නවාංශ කොටු 12 දෙකම පෙනෙන ලෙස photo send කරන්න 🙏'
+              : 'මේවා මම ඉක්මනින්ම හොයාගත්ත කීප දෙනෙකුගේ screenshots 🙏';
           const imgW = await sendWhatsAppImage(from, filename, imgCaption, client);
           const isPdf = filename.toLowerCase().endsWith('.pdf');
           await db.insertMessage(from, isPdf ? `[PDF: ${filename}]` : `[Image: ${filename}]`, 'bot', null, client?.id ?? null, isPdf ? 'pdf' : 'image', `/templates/${encodeURIComponent(filename)}`, imgW);
@@ -801,9 +803,11 @@ function receiveWebhook(req, res) {
           await sendBotReply(from, vReply, client);
         }
         for (const filename of (vImages || [])) {
-          const cap = filename.toLowerCase().startsWith('horoscope')
-            ? 'ලග්න කොටු 12 සහ නවාංශ කොටු 12 දෙකම පෙනෙන ලෙස photo send කරන්න 🙏'
-            : 'මේවා මම ඉක්මනින්ම හොයාගත්ත කීප දෙනෙකුගේ screenshots 🙏';
+          const cap = filename.toLowerCase().startsWith('review')
+            ? ''
+            : filename.toLowerCase().startsWith('horoscope')
+              ? 'ලග්න කොටු 12 සහ නවාංශ කොටු 12 දෙකම පෙනෙන ලෙස photo send කරන්න 🙏'
+              : 'මේවා මම ඉක්මනින්ම හොයාගත්ත කීප දෙනෙකුගේ screenshots 🙏';
           const w = await sendWhatsAppImage(from, filename, cap, client);
           const isPdf = filename.toLowerCase().endsWith('.pdf');
           await db.insertMessage(from, isPdf ? `[PDF: ${filename}]` : `[Image: ${filename}]`, 'bot', null, client?.id ?? null, isPdf ? 'pdf' : 'image', `/templates/${encodeURIComponent(filename)}`, w);
@@ -977,6 +981,20 @@ function receiveWebhook(req, res) {
       } else if (!botReply.trim()) {
         log.warn(`[WEBHOOK] Empty botReply from Gemini — skipping send`);
       } else {
+        // Images the assistant asked for go out before the words that follow
+        // them: a review screenshot or a sample chart is evidence, and evidence
+        // shown after the sentence that refers to it reads backwards.
+        for (const filename of imagesToSend) {
+          const caption = filename.toLowerCase().startsWith('review')
+            ? ''
+            : filename.toLowerCase().startsWith('horoscope')
+              ? 'ලග්න කොටු 12 සහ නවාංශ කොටු 12 දෙකම පෙනෙන ලෙස photo send කරන්න 🙏'
+              : 'මේවා මම ඉක්මනින්ම හොයාගත්ත කීප දෙනෙකුගේ screenshots 🙏';
+          const imgWamid = await sendWhatsAppImage(from, filename, caption, client);
+          const isPdf = filename.toLowerCase().endsWith('.pdf');
+          await db.insertMessage(from, isPdf ? `[PDF: ${filename}]` : `[Image: ${filename}]`, 'bot', null, client?.id ?? null, isPdf ? 'pdf' : 'image', `/templates/${encodeURIComponent(filename)}`, imgWamid);
+        }
+
         const wamids = await sendBotReply(from, botReply, client);
         await db.attachWamidToLatestBotMessage(from, client.id, wamids[wamids.length - 1])
           .catch(e => log.warn('[WA-STATUS] Could not attach wamid:', e.message));
@@ -1035,14 +1053,7 @@ function receiveWebhook(req, res) {
         }
       }
 
-      for (const filename of imagesToSend) {
-        const caption = filename.toLowerCase().startsWith('horoscope')
-          ? 'ලග්න කොටු 12 සහ නවාංශ කොටු 12 දෙකම පෙනෙන ලෙස photo send කරන්න 🙏'
-          : 'මේවා මම ඉක්මනින්ම හොයාගත්ත කීප දෙනෙකුගේ screenshots 🙏';
-        const imgWamid = await sendWhatsAppImage(from, filename, caption, client);
-        const isPdf = filename.toLowerCase().endsWith('.pdf');
-        await db.insertMessage(from, isPdf ? `[PDF: ${filename}]` : `[Image: ${filename}]`, 'bot', null, client?.id ?? null, isPdf ? 'pdf' : 'image', `/templates/${encodeURIComponent(filename)}`, imgWamid);
-      }
+      // (images already sent above, before the text that refers to them)
 
       // Send product images / PDFs from RAG search or send_image tool
       for (const { url, caption } of (productImagesToSend || [])) {

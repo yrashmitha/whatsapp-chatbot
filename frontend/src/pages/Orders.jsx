@@ -50,9 +50,11 @@ function genCostTooltip(runs) {
 export default function Orders() {
   const { user, selectedClientId } = useAuthStore();
   const superAdmin = isSuperAdmin(user);
-  // Always rendered so the product's flagship feature is discoverable; the
-  // buttons themselves are gated on the horoscope_reading addon below.
-  const showHoroscope = true;
+  const { can, isOwner } = usePermissions();
+  // Report generation (horoscope/match/tarot) is owner-only: an operator's
+  // login never sees these buttons at all, regardless of what permissions
+  // they hold, so there is nothing to click that only 403s on the server.
+  const showHoroscope = isOwner;
 
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -89,9 +91,8 @@ export default function Orders() {
   // happens on click, not whether the control exists — a feature nobody can see
   // is a feature nobody asks for. The backend still enforces entitlement.
   const { isEnabled, guard, showLocked, lockModal } = useFeatureGate(clientId, superAdmin);
-  const showTarot = true;
+  const showTarot = isOwner;
 
-  const { can, isOwner } = usePermissions();
   // Only the owner picks whose sales to look at. An operator has one
   // answer available to them and the server enforces it either way.
   const canPickOperator = isOwner && can('finance.income');

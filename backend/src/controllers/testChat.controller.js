@@ -60,7 +60,7 @@ async function recentMessages(phoneKey, clientId) {
   const { rows } = await db.pgQuery(
     `SELECT sender_type, message_text, media_type, media_url, created_at
        FROM messages WHERE phone_number=$1 AND client_id=$2
-      ORDER BY id ASC LIMIT 100`,
+      ORDER BY created_at ASC, id ASC LIMIT 100`,
     [phoneKey, clientId]
   );
   return rows;
@@ -113,6 +113,21 @@ async function sendTestMessage(req, res) {
       skipUserInsert: false,
       traceId: sessionId,
     });
+
+    // handleMessage already stored the bot's text reply, at the real NOW().
+    // Images belong before that text in the transcript — that's the order
+    // they'd actually reach a customer in (see webhook.controller.js) — so
+    // they're backdated a few seconds to sort ahead of a row that already
+    // exists. Same DB, so this can't drift out of sync with what production
+    // does; it only fakes the one timestamp a real send doesn't need to.
+    for (const filename of (result.imagesToSend || [])) {
+      const isPdf = filename.toLowerCase().endsWith('.pdf');
+      await db.pgQuery(
+        `INSERT INTO messages (phone_number, message_text, sender_type, client_id, media_type, media_url, created_at)
+         VALUES ($1, $2, 'bot', $3, $4, $5, NOW() - INTERVAL '3 seconds')`,
+        [phoneKey, isPdf ? `[PDF: ${filename}]` : `[Image: ${filename}]`, clientId, isPdf ? 'pdf' : 'image', `/templates/${encodeURIComponent(filename)}`]
+      );
+    }
 
     // Everything the debug panel needs about the turn that just ran.
     const order = await db.pgQuery(

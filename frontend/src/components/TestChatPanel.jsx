@@ -1,5 +1,14 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { formatWhatsApp } from '../lib/whatsappFormat';
+
+// In production frontend+backend share the same origin, so relative /templates/
+// paths work as-is. In dev, set VITE_BACKEND_URL to load them from Railway.
+const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL || '').replace(/\/$/, '');
+function resolveMediaUrl(url) {
+  if (!url) return null;
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  return `${BACKEND_URL}${url}`;
+}
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../lib/api';
 import Button from './ui/Button';
@@ -215,6 +224,35 @@ export default function TestChatPanel({ clientId, sessionId, onSessionReset }) {
 
             {messages.flatMap((m, i) => {
               const mine = m.sender_type === 'user';
+
+              // A review screenshot or sample chart the assistant sent — its
+              // own bubble, an actual thumbnail, not text with a [image] tag.
+              if (m.media_type === 'image' && m.media_url) {
+                const url = resolveMediaUrl(m.media_url);
+                return (
+                  <div key={i} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                    <a href={url} target="_blank" rel="noreferrer" className="max-w-[60%]">
+                      <img src={url} alt="" className="rounded-xl border border-slate-200 max-w-full" />
+                    </a>
+                  </div>
+                );
+              }
+              if (m.media_type === 'pdf' && m.media_url) {
+                const url = resolveMediaUrl(m.media_url);
+                return (
+                  <div key={i} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="max-w-[78%] px-3 py-2 rounded-2xl text-sm bg-slate-100 text-slate-800 rounded-bl-sm no-underline"
+                    >
+                      📄 {String(m.message_text || 'document.pdf').replace(/^\[PDF: /, '').replace(/\]$/, '')}
+                    </a>
+                  </div>
+                );
+              }
+
               // The sender splits a reply on [[MSG_BREAK]] and delivers each
               // part as its own WhatsApp message. Test Chat has to do the same
               // or it shows one bubble with the marker in it, which is neither

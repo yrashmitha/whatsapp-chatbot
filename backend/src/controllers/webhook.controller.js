@@ -873,10 +873,15 @@ function receiveWebhook(req, res) {
           if (kept) { mediaType = 'image'; mediaUrl = kept.url; contentLabel = msg.sticker.animated ? '[Animated sticker]' : '[Sticker]'; }
           else contentLabel = '[Sticker] (could not download)';
         } else {
-          // Genuinely unexpected — show the raw sub-object rather than just a
-          // type name, so nothing is ever silently unreadable again.
-          const raw = msg[msg.type];
-          contentLabel = `[${msg.type || 'unknown'}]${raw ? ' ' + JSON.stringify(raw) : (msg.errors?.[0]?.title ? ` ${msg.errors[0].title}` : '')}`;
+          // Genuinely unexpected, or Meta's own catch-all type="unsupported"
+          // (a message its Cloud API itself could not parse — polls, message
+          // edits, view-once media, and other newer client features land
+          // here with no per-type sub-object at all, only an errors array).
+          // Dump the WHOLE message object rather than just msg[msg.type],
+          // which is empty for exactly this case — this is the only way to
+          // ever see what Meta actually sent instead of a bare type name.
+          const { from: _f, id: _id, timestamp: _ts, type: _t, ...rest } = msg;
+          contentLabel = `[${msg.type || 'unknown'}] ${JSON.stringify(rest)}`;
         }
 
         log.warn(`[WEBHOOK] Unsupported message type "${msg.type}" — storing content: ${contentLabel}`);

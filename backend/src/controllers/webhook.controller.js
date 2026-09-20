@@ -992,7 +992,12 @@ function receiveWebhook(req, res) {
               : 'මේවා මම ඉක්මනින්ම හොයාගත්ත කීප දෙනෙකුගේ screenshots 🙏';
           const imgWamid = await sendWhatsAppImage(from, filename, caption, client);
           const isPdf = filename.toLowerCase().endsWith('.pdf');
-          await db.insertMessage(from, isPdf ? `[PDF: ${filename}]` : `[Image: ${filename}]`, 'bot', null, client?.id ?? null, isPdf ? 'pdf' : 'image', `/templates/${encodeURIComponent(filename)}`, imgWamid);
+          // handleMessage already wrote botReply's row, timestamped when the
+          // reply was computed — before any of these images were actually
+          // sent. Backdated so the stored transcript sorts in the order
+          // things actually reached the customer, not the order they were
+          // written to the DB.
+          await db.insertMessage(from, isPdf ? `[PDF: ${filename}]` : `[Image: ${filename}]`, 'bot', null, client?.id ?? null, isPdf ? 'pdf' : 'image', `/templates/${encodeURIComponent(filename)}`, imgWamid, null, { backdateSeconds: 5 });
         }
 
         const wamids = await sendBotReply(from, botReply, client);

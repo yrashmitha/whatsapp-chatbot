@@ -19,15 +19,25 @@ const { pool, db, IS_PG } = require('./connection');
  * @param {string|null} [mediaType] - 'image', 'pdf', 'audio', etc.
  * @param {string|null} [mediaUrl]  - Stored media URL
  * @param {string|null} [wamid]     - WhatsApp message ID (for sent messages)
+ * @param {Object}      [opts]
+ * @param {number}      [opts.backdateSeconds] - Store with created_at this many
+ *   seconds before now. For a message whose row is written after something that
+ *   logically preceded it — an image the caller sent via the WhatsApp API
+ *   before writing this row, say — so the transcript sorts in the order things
+ *   actually happened rather than the order they were written to the DB.
  * @returns {Promise<void>}
  */
 async function insertMessage(phoneNumber, text, senderType, costUsd = null, clientId = null, mediaType = null, mediaUrl = null, wamid = null, interactive = null, opts = {}) {
   const sentBy = opts.sentBy ?? null;
   const sentManual = opts.sentManual === true;
+  const createdAt = opts.backdateSeconds
+    ? new Date(Date.now() - opts.backdateSeconds * 1000)
+    : null;
   if (IS_PG) {
     await pool.query(
-      'INSERT INTO messages (phone_number, message_text, sender_type, cost_usd, client_id, media_type, media_url, wamid, interactive, sent_by, sent_manual) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)',
-      [phoneNumber, text, senderType, costUsd, clientId, mediaType, mediaUrl, wamid, interactive ? JSON.stringify(interactive) : null, sentBy, sentManual]
+      `INSERT INTO messages (phone_number, message_text, sender_type, cost_usd, client_id, media_type, media_url, wamid, interactive, sent_by, sent_manual, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE($12, NOW()))`,
+      [phoneNumber, text, senderType, costUsd, clientId, mediaType, mediaUrl, wamid, interactive ? JSON.stringify(interactive) : null, sentBy, sentManual, createdAt]
     );
     if (senderType === 'user') {
       await pool.query(

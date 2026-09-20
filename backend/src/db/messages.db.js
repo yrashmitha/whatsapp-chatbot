@@ -20,19 +20,29 @@ const { pool, db, IS_PG } = require('./connection');
  * @param {string|null} [mediaUrl]  - Stored media URL
  * @param {string|null} [wamid]     - WhatsApp message ID (for sent messages)
  * @param {Object}      [opts]
- * @param {number}      [opts.backdateSeconds] - Store with created_at this many
- *   seconds before now. For a message whose row is written after something that
- *   logically preceded it — an image the caller sent via the WhatsApp API
- *   before writing this row, say — so the transcript sorts in the order things
- *   actually happened rather than the order they were written to the DB.
+ * @param {number}      [opts.beforeMessageId] - Store this row a few
+ *   milliseconds before the given message id's own created_at, instead of at
+ *   NOW(). For a message written after something that logically preceded it —
+ *   an image the caller sent via the WhatsApp API before writing this row,
+ *   while the reply text it accompanies was already written earlier in the
+ *   same request — so the transcript sorts in the order things actually
+ *   happened. Anchored to the sibling row's real timestamp rather than a
+ *   guessed offset: a fixed "backdate 5 seconds" once overshot far enough to
+ *   land before the customer's own message that started the exchange.
+ * @param {number}      [opts.beforeOffsetMs] - Milliseconds to subtract from
+ *   that anchor row's created_at (default 200). Pass an increasing value
+ *   across a batch (200, 400, 600…) to keep several such rows in order among
+ *   themselves, all still before the anchor.
  * @returns {Promise<void>}
  */
 async function insertMessage(phoneNumber, text, senderType, costUsd = null, clientId = null, mediaType = null, mediaUrl = null, wamid = null, interactive = null, opts = {}) {
   const sentBy = opts.sentBy ?? null;
   const sentManual = opts.sentManual === true;
-  const createdAt = opts.backdateSeconds
-    ? new Date(Date.now() - opts.backdateSeconds * 1000)
-    : null;
+  let createdAt = null;
+  if (opts.beforeMessageId && IS_PG) {
+    const { rows } = await pool.query('SELECT created_at FROM messages WHERE id=$1', [opts.beforeMessageId]);
+    if (rows[0]) createdAt = new Date(rows[0].created_at.getTime() - (opts.beforeOffsetMs ?? 200));
+  }
   if (IS_PG) {
     await pool.query(
       `INSERT INTO messages (phone_number, message_text, sender_type, cost_usd, client_id, media_type, media_url, wamid, interactive, sent_by, sent_manual, created_at)
@@ -51,6 +61,27 @@ async function insertMessage(phoneNumber, text, senderType, costUsd = null, clie
       db.prepare('UPDATE customers SET last_customer_message_at = datetime(\'now\') WHERE phone_number = ? AND client_id = ?').run(phoneNumber, clientId);
     }
   }
+}
+
+/**
+ * The id of the most recently inserted bot message for this phone — the row
+ * handleMessage just wrote for its text reply, at the point a caller is about
+ * to insert rows (images, say) that were actually sent before it. Pass that id
+ * to insertMessage's opts.beforeMessageId so the new row anchors to it instead
+ * of guessing how much real time has passed.
+ *
+ * @param {string} phoneNumber
+ * @param {string} clientId
+ * @returns {Promise<number|null>}
+ */
+async function getLatestBotMessageId(phoneNumber, clientId) {
+  if (!IS_PG) return null;
+  const { rows } = await pool.query(
+    `SELECT id FROM messages WHERE phone_number=$1 AND client_id=$2 AND sender_type='bot'
+      ORDER BY id DESC LIMIT 1`,
+    [phoneNumber, clientId]
+  );
+  return rows[0]?.id ?? null;
 }
 
 /**
@@ -228,4 +259,4 @@ async function setMessageExtraction(wamid, data) {
   return r.changes > 0;
 }
 
-module.exports = { insertMessage, getMessagesByPhone, deleteMessages, deleteMessage, updateMessageStatus, attachWamidToLatestBotMessage, setMessageExtraction };
+module.exports = { insertMessage, getMessagesByPhone, deleteMessages, deleteMessage, updateMessageStatus, attachWamidToLatestBotMessage, setMessageExtraction, getLatestBotMessageId };

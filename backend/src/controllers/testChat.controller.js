@@ -114,20 +114,21 @@ async function sendTestMessage(req, res) {
       traceId: sessionId,
     });
 
-    // handleMessage already stored the bot's text reply, at the real NOW().
-    // Images belong before that text in the transcript — that's the order
-    // they'd actually reach a customer in (see webhook.controller.js) — so
-    // they're backdated a moment to sort ahead of a row that already exists.
-    // One second is comfortably ahead of the text insert (same request, so
-    // really milliseconds apart) without being long enough to leak before an
-    // earlier turn, even when messages are sent back-to-back in a scripted test.
+    // handleMessage already stored the bot's text reply. Images belong before
+    // that text in the transcript — the order they'd actually reach a customer
+    // in (see webhook.controller.js) — so they're anchored a moment before that
+    // specific row's own timestamp, rather than a flat "NOW() - N seconds"
+    // guess: a fixed backdate large enough to clear the text row has, in
+    // production, overshot far enough to land before the customer's own
+    // message that started the exchange. Anchoring to the sibling row itself
+    // can't do that regardless of how fast or slow a turn runs.
+    const anchorId = await db.getLatestBotMessageId(phoneKey, clientId);
+    let imgOffsetMs = 600;
     for (const filename of (result.imagesToSend || [])) {
       const isPdf = filename.toLowerCase().endsWith('.pdf');
-      await db.pgQuery(
-        `INSERT INTO messages (phone_number, message_text, sender_type, client_id, media_type, media_url, created_at)
-         VALUES ($1, $2, 'bot', $3, $4, $5, NOW() - INTERVAL '1 second')`,
-        [phoneKey, isPdf ? `[PDF: ${filename}]` : `[Image: ${filename}]`, clientId, isPdf ? 'pdf' : 'image', `/templates/${encodeURIComponent(filename)}`]
-      );
+      const opts = anchorId ? { beforeMessageId: anchorId, beforeOffsetMs: imgOffsetMs } : {};
+      await db.insertMessage(phoneKey, isPdf ? `[PDF: ${filename}]` : `[Image: ${filename}]`, 'bot', null, clientId, isPdf ? 'pdf' : 'image', `/templates/${encodeURIComponent(filename)}`, null, null, opts);
+      imgOffsetMs -= 200;
     }
 
     // Everything the debug panel needs about the turn that just ran.

@@ -984,6 +984,16 @@ function receiveWebhook(req, res) {
         // Images the assistant asked for go out before the words that follow
         // them: a review screenshot or a sample chart is evidence, and evidence
         // shown after the sentence that refers to it reads backwards.
+        //
+        // handleMessage already wrote botReply's row, timestamped when the
+        // reply was computed — before any of these images were actually sent.
+        // A flat backdate once overshot how long that gap actually was and
+        // landed an image's timestamp before the customer's own message that
+        // started the exchange, which read as the bot replying before it was
+        // asked anything. Anchoring to that specific row's real timestamp
+        // instead fixes it regardless of how fast or slow this turn ran.
+        const anchorId = await db.getLatestBotMessageId(from, client?.id ?? null);
+        let imgOffsetMs = 600;
         for (const filename of imagesToSend) {
           const caption = filename.toLowerCase().startsWith('review')
             ? ''
@@ -992,12 +1002,9 @@ function receiveWebhook(req, res) {
               : 'මේවා මම ඉක්මනින්ම හොයාගත්ත කීප දෙනෙකුගේ screenshots 🙏';
           const imgWamid = await sendWhatsAppImage(from, filename, caption, client);
           const isPdf = filename.toLowerCase().endsWith('.pdf');
-          // handleMessage already wrote botReply's row, timestamped when the
-          // reply was computed — before any of these images were actually
-          // sent. Backdated so the stored transcript sorts in the order
-          // things actually reached the customer, not the order they were
-          // written to the DB.
-          await db.insertMessage(from, isPdf ? `[PDF: ${filename}]` : `[Image: ${filename}]`, 'bot', null, client?.id ?? null, isPdf ? 'pdf' : 'image', `/templates/${encodeURIComponent(filename)}`, imgWamid, null, { backdateSeconds: 5 });
+          const opts = anchorId ? { beforeMessageId: anchorId, beforeOffsetMs: imgOffsetMs } : {};
+          await db.insertMessage(from, isPdf ? `[PDF: ${filename}]` : `[Image: ${filename}]`, 'bot', null, client?.id ?? null, isPdf ? 'pdf' : 'image', `/templates/${encodeURIComponent(filename)}`, imgWamid, null, opts);
+          imgOffsetMs -= 200;
         }
 
         const wamids = await sendBotReply(from, botReply, client);

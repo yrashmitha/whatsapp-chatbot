@@ -117,14 +117,15 @@ async function sendTestMessage(req, res) {
     // handleMessage already stored the bot's text reply, at the real NOW().
     // Images belong before that text in the transcript — that's the order
     // they'd actually reach a customer in (see webhook.controller.js) — so
-    // they're backdated a few seconds to sort ahead of a row that already
-    // exists. Same DB, so this can't drift out of sync with what production
-    // does; it only fakes the one timestamp a real send doesn't need to.
+    // they're backdated a moment to sort ahead of a row that already exists.
+    // One second is comfortably ahead of the text insert (same request, so
+    // really milliseconds apart) without being long enough to leak before an
+    // earlier turn, even when messages are sent back-to-back in a scripted test.
     for (const filename of (result.imagesToSend || [])) {
       const isPdf = filename.toLowerCase().endsWith('.pdf');
       await db.pgQuery(
         `INSERT INTO messages (phone_number, message_text, sender_type, client_id, media_type, media_url, created_at)
-         VALUES ($1, $2, 'bot', $3, $4, $5, NOW() - INTERVAL '3 seconds')`,
+         VALUES ($1, $2, 'bot', $3, $4, $5, NOW() - INTERVAL '1 second')`,
         [phoneKey, isPdf ? `[PDF: ${filename}]` : `[Image: ${filename}]`, clientId, isPdf ? 'pdf' : 'image', `/templates/${encodeURIComponent(filename)}`]
       );
     }

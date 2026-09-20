@@ -58,6 +58,7 @@ export default function MatchMakingPanel({ order, clientId, existingHd, onClose,
   const [checking, setChecking]       = useState({ boy: false, girl: false });
   const [generating, setGenerating]   = useState(false);
   const [saving, setSaving]           = useState(false);
+  const [downloadingPorondam, setDownloadingPorondam] = useState(false);
 
   const hasReport = Array.isArray(existingHd.match_sections_data) && existingHd.match_sections_data.length > 0;
 
@@ -215,6 +216,38 @@ export default function MatchMakingPanel({ order, clientId, existingHd, onClose,
     } catch (e) {
       toast.error(e?.response?.data?.error || 'Failed to save');
     } finally { setSaving(false); }
+  };
+
+  // The 20-Porondam table is deterministic — computed from both people's
+  // saved charts, no AI generation step needed — so it downloads directly
+  // rather than going through the ~3 min background "Generate Match Report"
+  // flow. Details are saved first so the download reads the charts just
+  // entered, not whatever was last saved on the order.
+  const handleDownloadPorondam = async () => {
+    setDownloadingPorondam(true);
+    try {
+      await savePeople();
+      const token = localStorage.getItem('crm_token');
+      const params = clientId ? `?client_id=${clientId}` : '';
+      const url = `/api/plugins/horoscope/download-porondam-pdf/${order?.order_id}${params}`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        throw new Error(errJson?.error || `Server error ${res.status}`);
+      }
+      const blob = await res.blob();
+      const cd = res.headers.get('Content-Disposition') || '';
+      const match = cd.match(/filename="([^"]+)"/);
+      const filename = match ? match[1] : `porondam-${order?.order_id}.pdf`;
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objUrl; a.download = filename; a.click();
+      URL.revokeObjectURL(objUrl);
+    } catch (e) {
+      toast.error(e?.message || 'Failed to download the porondam report');
+    } finally {
+      setDownloadingPorondam(false);
+    }
   };
 
   const handleGenerate = async () => {
@@ -494,6 +527,14 @@ export default function MatchMakingPanel({ order, clientId, existingHd, onClose,
             className="py-2.5 px-5 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl border-0 cursor-pointer disabled:opacity-50"
           >
             {saving ? 'Saving…' : 'Save Details'}
+          </button>
+          <button
+            onClick={handleDownloadPorondam}
+            disabled={downloadingPorondam || !bothCharted}
+            title={bothCharted ? 'විසි පොරොන්දම් only — no graha ගැලපීම, no AI generation needed' : 'Press Check Sign for both people first'}
+            className="py-2.5 px-5 text-sm font-medium text-white bg-violet-600 hover:bg-violet-700 rounded-xl border-0 cursor-pointer disabled:opacity-50"
+          >
+            {downloadingPorondam ? 'Preparing…' : '⬇ Porondam 20 Only'}
           </button>
           <button
             onClick={handleGenerate}

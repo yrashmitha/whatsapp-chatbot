@@ -846,6 +846,18 @@ function receiveWebhook(req, res) {
         // customer's message was invisible in the CRM, not just unanswered.
         // Pull the actual content per type rather than a bare type label, so
         // the operator sees what was actually sent, not just that something was.
+        // Meta's own internal traffic, not a customer: a "from_user_id" field
+        // in Meta's internal id format ("GB.<digits>") instead of a real
+        // phone number, error code 131051, and raw_type "unknown" — Meta's
+        // own webhook layer could not name the type either. Seen landing on
+        // this same webhook unrelated to any customer conversation (likely
+        // OTP/authentication-template infrastructure). No real person is on
+        // the other end, so no customer row and no message — just a log line.
+        if (msg.errors?.[0]?.code === 131051 && msg.unsupported?.raw_type === 'unknown') {
+          log.info(`[WEBHOOK] Meta-internal traffic (code 131051, raw_type unknown) — skipping, not a customer: ${JSON.stringify(msg.unsupported)}`);
+          return;
+        }
+
         let contentLabel = null;
         let mediaType = null;
         let mediaUrl  = null;

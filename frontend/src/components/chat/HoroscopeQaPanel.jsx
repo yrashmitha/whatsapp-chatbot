@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import api from '../../lib/api';
+import TarotGenerateModal from '../orders/TarotGenerateModal';
 import Spinner from '../ui/Spinner';
 import Button from '../ui/Button';
 import { useToast } from '../ui/Toast';
@@ -50,10 +51,19 @@ function PersonCard({ label, person }) {
   );
 }
 
-export default function HoroscopeQaPanel({ open, onClose, phone, clientId, onDraft }) {
+/** tarot_data can arrive as a JSON string or an object. */
+function tarotOf(order) {
+  const td = order?.tarot_data;
+  if (!td) return {};
+  if (typeof td !== 'string') return td;
+  try { return JSON.parse(td); } catch { return {}; }
+}
+
+export default function HoroscopeQaPanel({ open, onClose, phone, clientId, onDraft, orders = [], tarotEnabled = false, onOrdersChanged }) {
   const toast = useToast();
   const [question, setQuestion] = useState('');
   const [draft, setDraft] = useState('');
+  const [tarotOrder, setTarotOrder] = useState(null);
   const params = clientId ? { client_id: clientId } : {};
 
   const { data, isLoading, isFetching, isError, error, refetch } = useQuery({
@@ -73,6 +83,11 @@ export default function HoroscopeQaPanel({ open, onClose, phone, clientId, onDra
 
   if (!open) return null;
 
+  // Orders still waiting for their tarot reading. The generate modal carries
+  // the "Follows on from" picker, so a follow-up can be chained from here.
+  const tarotTargets = tarotEnabled
+    ? orders.filter(o => o.status !== 'cancelled' && !tarotOf(o).reading)
+    : [];
   const record = data?.data;
   const found = data?.found;
 
@@ -192,8 +207,34 @@ export default function HoroscopeQaPanel({ open, onClose, phone, clientId, onDra
               )}
             </div>
           )}
+
+          {tarotEnabled && (
+            <div className="flex flex-col gap-2 border-t border-slate-200 pt-4">
+              <div className="text-xs font-medium text-slate-600">New tarot reading (follow-up)</div>
+              {tarotTargets.length === 0 ? (
+                <div className="text-xs text-slate-400">
+                  No order waiting for a reading. Press + Order in the chat, AI Fill it, then come back here.
+                </div>
+              ) : tarotTargets.map(o => (
+                <div key={o.order_id} className="flex items-center justify-between gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                  <span>#{o.order_id}{o.status ? ` · ${o.status}` : ''}</span>
+                  <Button onClick={() => setTarotOrder(o)}>🃏 Generate tarot</Button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
+      {tarotOrder && (
+        <div onClick={e => e.stopPropagation()}>
+          <TarotGenerateModal
+            order={tarotOrder}
+            clientId={clientId}
+            onClose={() => setTarotOrder(null)}
+            onGenerated={() => onOrdersChanged?.()}
+          />
+        </div>
+      )}
     </div>
   );
 }

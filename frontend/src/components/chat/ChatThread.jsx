@@ -632,6 +632,9 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
         phone={phone}
         clientId={clientId}
         onDraft={(text) => setMessagePrefill(text)}
+        orders={customerOrders}
+        tarotEnabled={!!addonsData?.addons?.includes('tarot_reading') && perms.can('ai.generate_report')}
+        onOrdersChanged={refetchOrders}
       />
 
       {/* Astro Chart Modal */}

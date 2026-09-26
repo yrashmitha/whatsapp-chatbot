@@ -17,6 +17,7 @@ export default function CreateOrderDrawer({ open, onClose, customer, clientId })
   const [productId, setProductId] = useState('');
   const [customPrice, setCustomPrice] = useState('');
   const [alreadyPaid, setAlreadyPaid] = useState(false);
+  const [aiFilling, setAiFilling] = useState(false);
 
   // Reset form when drawer opens
   const handleOpen = () => {
@@ -50,6 +51,29 @@ export default function CreateOrderDrawer({ open, onClose, customer, clientId })
   const price = productId === 'custom' ? Number(customPrice) || 0 : Number(chosen?.price) || 0;
 
   const setField = (key, val) => setFields(prev => ({ ...prev, [key]: val }));
+
+  // Suggests values from the chat. Nothing is created: the operator reviews the
+  // form and presses Create.
+  const handleAiFill = async () => {
+    const phoneVal = (customer?.phone || phone).trim();
+    if (!phoneVal) { toast.error('Phone number required'); return; }
+    setAiFilling(true);
+    try {
+      const { data } = await api.post('/crm/orders/ai-fill-draft', { phone: phoneVal },
+        clientId ? { params: { client_id: clientId } } : {});
+      setFields(prev => ({
+        ...prev,
+        ...(data.customer_name && { customer_name: data.customer_name }),
+        ...data.fields,
+      }));
+      if (data.product_id) setProductId(data.product_id);
+      toast.success('Filled from the chat. Check it, then create the order.');
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'AI fill failed');
+    } finally {
+      setAiFilling(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -122,6 +146,16 @@ export default function CreateOrderDrawer({ open, onClose, customer, clientId })
         className="flex flex-col gap-4 p-4 overflow-y-auto flex-1"
         style={{ minHeight: 0 }}
       >
+        <button
+          type="button"
+          onClick={handleAiFill}
+          disabled={aiFilling || saving}
+          className="self-start text-xs font-medium px-3 py-1.5 rounded-lg border-0 cursor-pointer disabled:opacity-50"
+          style={{ background: 'rgba(124,58,237,0.1)', color: '#7c3aed' }}
+        >
+          {aiFilling ? 'Reading chat…' : '✨ AI Fill from chat'}
+        </button>
+
         {/* Phone */}
         <div>
           <label style={labelStyle}>Phone Number *</label>

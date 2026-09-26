@@ -225,60 +225,139 @@ async function fetchTarotChart(req, res) {
  * POST /api/crm/tarot-reading/ai-prepare/:orderId — read the chat and fill the
  * question box + birth details for a tarot reading.
  */
+async function prepareTarotBrief(clientId, order) {
+  const cf = (typeof order.custom_fields === 'string') ? JSON.parse(order.custom_fields || '{}') : (order.custom_fields || {});
+  const messages = await db.getMessagesByPhone(order.phone_number, clientId);
+  // Fold in transcribed voice notes / read slips so the brief is not built
+  // from a chat full of "[Voice message]" placeholders.
+  const chatLog = formatChatLog(messages);
+
+  const prompt = AI_FILL_TAROT_PROMPT
+    .replace('{{customer_name}}', cf.customer_name || cf.b || cf.name || '')
+    .replace('{{birth_date}}',    cf.birth_date || '')
+    .replace('{{birth_time}}',    cf.birth_time || '')
+    .replace('{{birth_place}}',   cf.birth_place || cf.birth_place_name || '')
+    .replace('{{chat_log}}',      chatLog || '(no messages found)');
+
+  const model = (await getGenAI(clientId)).getGenerativeModel({
+    model: 'gemini-2.5-flash',
+    generationConfig: {
+      temperature: 0.2,
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: 'object',
+        properties: {
+          question:       { type: 'string' },
+          birth_date_iso: { type: 'string', nullable: true },
+          birth_time_24h: { type: 'string', nullable: true },
+          birth_place_en: { type: 'string' },
+          lat:            { type: 'number' },
+          lng:            { type: 'number' },
+        },
+        required: ['question', 'birth_place_en', 'lat', 'lng'],
+      },
+    },
+  });
+  const r = await model.generateContent(prompt);
+  let parsed;
+  try { parsed = JSON.parse(r.response.text().trim()); }
+  catch { throw Object.assign(new Error('Gemini returned invalid JSON'), { statusCode: 500 }); }
+
+  return {
+    question:       parsed.question || '',
+    birth_date_iso: parsed.birth_date_iso || null,
+    birth_time_24h: parsed.birth_time_24h || null,
+    birth_place_en: parsed.birth_place_en || null,
+    lat:            parsed.lat || null,
+    lng:            parsed.lng || null,
+  };
+}
+
 async function aiPrepareTarot(req, res) {
   const clientId = resolveClientId(req);
   const { orderId } = req.params;
   try {
     const oRes = await db.pgQuery('SELECT * FROM orders WHERE order_id=$1', [orderId]);
     if (!oRes.rows.length) return res.status(404).json({ error: 'Order not found' });
-    const order = oRes.rows[0];
-    const cf = (typeof order.custom_fields === 'string') ? JSON.parse(order.custom_fields || '{}') : (order.custom_fields || {});
-    const messages = await db.getMessagesByPhone(order.phone_number, clientId);
-    // Fold in transcribed voice notes / read slips so the brief is not built
-    // from a chat full of "[Voice message]" placeholders.
-    const chatLog = formatChatLog(messages);
+    res.json(await prepareTarotBrief(clientId, oRes.rows[0]));
+  } catch (e) {
+    console.error('[TAROT-AI-PREPARE]', e.message);
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
+}
 
-    const prompt = AI_FILL_TAROT_PROMPT
-      .replace('{{customer_name}}', cf.customer_name || cf.b || cf.name || '')
-      .replace('{{birth_date}}',    cf.birth_date || '')
-      .replace('{{birth_time}}',    cf.birth_time || '')
-      .replace('{{birth_place}}',   cf.birth_place || cf.birth_place_name || '')
-      .replace('{{chat_log}}',      chatLog || '(no messages found)');
+/**
+ * POST /api/orders/ai-fill-draft — read the chat and suggest values for the
+ * Create Order form. Nothing is created: the operator reviews the values in the
+ * drawer and presses Create.
+ *
+ * Body: { phone }. Returns { customer_name, product_id, fields: { key: value } }.
+ */
+async function aiFillOrderDraft(req, res) {
+  const clientId = resolveClientId(req);
+  const phone = String(req.body?.phone || '').trim();
+  if (!phone) return res.status(400).json({ error: 'phone required' });
+  try {
+    const cfg = await db.pgQuery('SELECT order_fields FROM client_configs WHERE client_id=$1', [clientId ?? null]);
+    let orderFields = cfg.rows[0]?.order_fields || [];
+    if (typeof orderFields === 'string') { try { orderFields = JSON.parse(orderFields); } catch { orderFields = []; } }
+    const prods = await db.pgQuery(
+      'SELECT id, name, price FROM client_products WHERE client_id=$1 AND active ORDER BY sort_order, id', [clientId ?? null]);
+
+    const parse = v => (typeof v === 'string' ? JSON.parse(v || '{}') : (v || {}));
+    const earlier = await db.pgQuery(
+      `SELECT order_id, created_at, custom_fields FROM orders
+        WHERE phone_number=$1 AND client_id=$2 ORDER BY created_at DESC LIMIT 3`, [phone, clientId ?? null]);
+    const chatLog = formatChatLog(await db.getMessagesByPhone(phone, clientId));
+
+    const fieldLines = [
+      '- customer_name: full name',
+      ...orderFields.map(f => `- ${f.key}: ${f.label}`),
+    ].join('\n');
+    const prompt = `You fill in an order form for a WhatsApp business from the customer's chat. Return JSON only.
+
+Form fields (use these exact keys inside "fields"):
+${fieldLines}
+
+Services for sale (choose "product_id" from these ids, or null if the customer has not clearly chosen one):
+${prods.rows.map(p => `${p.id}: ${p.name} (Rs ${Number(p.price) || 0})`).join('\n') || '(none)'}
+
+The customer's earlier orders, newest first (their name and birth details are usually unchanged):
+${earlier.rows.map(r => `${r.order_id}: ${JSON.stringify(parse(r.custom_fields))}`).join('\n') || '(none)'}
+
+Rules:
+- This is a NEW order. Base every problem/question/request field on what the customer is asking for in the LATEST messages, not on old requests already handled.
+- Write problem/question fields as a short, specific note in the same language the form uses (Sinhala if the earlier orders are Sinhala). Never invent facts that are not in the chat.
+- Copy name and birth details from the chat, or from earlier orders when the chat does not repeat them. Use "" when unknown.
+- Every key in "fields" must be one of the form keys above.
+
+Return: {"customer_name": string, "product_id": number|null, "fields": {key: string}}
+
+Chat:
+${chatLog || '(no messages found)'}`;
 
     const model = (await getGenAI(clientId)).getGenerativeModel({
       model: 'gemini-2.5-flash',
-      generationConfig: {
-        temperature: 0.2,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: 'object',
-          properties: {
-            question:       { type: 'string' },
-            birth_date_iso: { type: 'string', nullable: true },
-            birth_time_24h: { type: 'string', nullable: true },
-            birth_place_en: { type: 'string' },
-            lat:            { type: 'number' },
-            lng:            { type: 'number' },
-          },
-          required: ['question', 'birth_place_en', 'lat', 'lng'],
-        },
-      },
+      generationConfig: { temperature: 0.2, responseMimeType: 'application/json' },
     });
     const r = await model.generateContent(prompt);
     let parsed;
     try { parsed = JSON.parse(r.response.text().trim()); }
     catch { return res.status(500).json({ error: 'Gemini returned invalid JSON' }); }
 
+    const keys = new Set(orderFields.map(f => f.key));
+    const fields = {};
+    for (const [k, v] of Object.entries(parsed.fields || {})) {
+      if (keys.has(k) && v != null && String(v).trim()) fields[k] = String(v).trim();
+    }
+    const validProduct = prods.rows.find(p => Number(p.id) === Number(parsed.product_id));
     res.json({
-      question:       parsed.question || '',
-      birth_date_iso: parsed.birth_date_iso || null,
-      birth_time_24h: parsed.birth_time_24h || null,
-      birth_place_en: parsed.birth_place_en || null,
-      lat:            parsed.lat || null,
-      lng:            parsed.lng || null,
+      customer_name: String(parsed.customer_name || '').trim(),
+      product_id: validProduct ? String(validProduct.id) : null,
+      fields,
     });
   } catch (e) {
-    console.error('[TAROT-AI-PREPARE]', e.message);
+    console.error('[ORDER-AI-FILL]', e.message);
     res.status(e.statusCode || 500).json({ error: e.message });
   }
 }
@@ -910,4 +989,4 @@ async function downloadTarotPdf(req, res) {
 }
 
 module.exports = {
-  addonCatalog, ADDON_CATALOG, listAddons, toggleAddon, getAddonsStatus, sendMedia, reextractMedia, triggerTarotReading, listLinkableTarot, aiPrepareTarot, fetchTarotChart, updateTarotSections, downloadTarotDocx, downloadTarotPdfByOrder, downloadTarotPdf };
+  addonCatalog, ADDON_CATALOG, listAddons, toggleAddon, getAddonsStatus, sendMedia, reextractMedia, triggerTarotReading, listLinkableTarot, aiFillOrderDraft, aiPrepareTarot, fetchTarotChart, updateTarotSections, downloadTarotDocx, downloadTarotPdfByOrder, downloadTarotPdf };

@@ -20,6 +20,7 @@ const {
   reextractMedia,
   triggerTarotReading,
   listLinkableTarot,
+  aiFillOrderDraft,
   aiPrepareTarot,
   fetchTarotChart,
   updateTarotSections,
@@ -49,6 +50,8 @@ router.post('/crm/media/reextract', jwtAuth, requirePermission('chat.read'), ree
 router.post('/crm/tarot-reading',                        jwtAuth, requirePermission('ai.generate_report'), orderScope, triggerTarotReading);
 // Earlier tarot orders of this customer, for chaining — GET /api/crm/tarot-reading/linkable/:orderId
 router.get('/crm/tarot-reading/linkable/:orderId',       jwtAuth, requirePermission('ai.generate_report'), orderScope, listLinkableTarot);
+// AI-suggest Create Order form values from the chat — POST /api/crm/orders/ai-fill-draft
+router.post('/crm/orders/ai-fill-draft',                 jwtAuth, requirePermission('ai.fill'), aiFillOrderDraft);
 // AI-fill the tarot request from the chat — POST /api/crm/tarot-reading/ai-prepare/:orderId
 router.post('/crm/tarot-reading/ai-prepare/:orderId',   jwtAuth, requirePermission('ai.fill'), orderScope, aiPrepareTarot);
 // Fetch + save the birth chart, return lagna — POST /api/crm/tarot-reading/fetch-chart/:orderId

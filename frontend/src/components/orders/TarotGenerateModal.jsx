@@ -182,12 +182,15 @@ export default function TarotGenerateModal({ order, clientId, onClose, onGenerat
               autoFocus
             />
           </div>
-          {linkable.length > 0 && (
+          {(
             <div>
               <label className="text-xs font-medium text-slate-500 block mb-1">
                 Follows on from (optional, tick the earlier readings Gemini should see)
               </label>
               <div className="flex flex-col gap-1 max-h-40 overflow-y-auto rounded-xl border border-slate-200 p-2">
+                {linkable.length === 0 && (
+                  <span className="text-xs text-slate-400">No earlier tarot readings found for this customer.</span>
+                )}
                 {linkable.map(o => (
                   <label key={o.order_id} className="flex items-start gap-2 text-xs text-slate-600 cursor-pointer">
                     <input

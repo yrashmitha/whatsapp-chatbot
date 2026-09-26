@@ -186,38 +186,10 @@ function buildAnalysisNote(analysis, caption, pendingOrders, verificationPrompt)
     if (analysis.recipient_account) lines.push(`  Recipient account: ${analysis.recipient_account}`);
     if (caption)                   lines.push(`  Caption from customer: "${caption}"`);
 
-    // What the vision pass itself flagged, before the order-date check below.
-    const scamFlags = [];
-    for (const f of (Array.isArray(analysis.scam_flags) ? analysis.scam_flags : [])) {
-      if (f) scamFlags.push(String(f));
-    }
-    if (analysis.transaction_status) lines.push(`  Transaction status: ${analysis.transaction_status}`);
-    if (analysis.notes) lines.push(`  Verification notes: ${analysis.notes}`);
-    if (analysis.scam_risk && analysis.scam_risk !== 'none') {
-      lines.push(`  Risk assessment: ${analysis.scam_risk}`);
-    }
-
-    // Date check against ALL pending orders
-    if (analysis.payment_date && pendingOrders.length > 0) {
-      const payDate = new Date(analysis.payment_date);
-      payDate.setHours(0, 0, 0, 0);
-      for (const order of pendingOrders) {
-        if (!order.created_at) continue;
-        const orderDate = new Date(order.created_at);
-        orderDate.setHours(0, 0, 0, 0);
-        if (payDate < orderDate) {
-          const orderDateStr = orderDate.toISOString().slice(0, 10);
-          scamFlags.push(
-            `⚠️ SUSPICIOUS: Payment date on slip (${analysis.payment_date}) is BEFORE order #${order.order_id} was placed (${orderDateStr}). This customer may be reusing an old payment slip.`
-          );
-        }
-      }
-    }
-
-    if (scamFlags.length) {
-      lines.push(`\n  FRAUD CHECK:`);
-      for (const flag of scamFlags) lines.push(`  ${flag}`);
-    }
+    // Verdicts (flags, notes, risk, date checks) are deliberately NOT shown to
+    // the bot: they are stored with the message for the operator, and the bot
+    // only acknowledges that a slip arrived.
+    lines.push(`  Do not comment on whether the slip is correct. Acknowledge receipt only.`);
 
     // All pending orders — AI checks the amount against each one
     if (pendingOrders.length > 0) {
@@ -230,10 +202,6 @@ function buildAnalysisNote(analysis, caption, pendingOrders, verificationPrompt)
       }
     } else {
       lines.push(`\n  No pending orders found for this customer.`);
-    }
-
-    if (verificationPrompt) {
-      lines.push(`\n  Instructions: ${verificationPrompt}`);
     }
 
     lines.push(`]`);

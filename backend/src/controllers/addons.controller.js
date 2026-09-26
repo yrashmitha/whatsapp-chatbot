@@ -498,6 +498,69 @@ async function sendMedia(req, res) {
 }
 
 /**
+ * Load the earlier tarot readings an operator linked to this order, formatted as
+ * context for Gemini. Only orders of the same customer and client qualify, so a
+ * forged id can never pull in someone else's reading.
+ *
+ * @param {string}   clientId
+ * @param {string}   orderId   The order being generated (excluded from its own chain)
+ * @param {string[]} linkedIds Order ids chosen by the operator
+ * @returns {Promise<{ text: string, ids: string[] }>}
+ */
+async function loadLinkedReadings(clientId, orderId, linkedIds) {
+  const wanted = (Array.isArray(linkedIds) ? linkedIds : []).map(String).filter(id => id && id !== String(orderId));
+  if (!wanted.length) return { text: '', ids: [] };
+  const own = await db.pgQuery('SELECT phone_number FROM orders WHERE order_id=$1 AND client_id=$2', [orderId, clientId ?? null]);
+  const phone = own.rows[0]?.phone_number;
+  if (!phone) return { text: '', ids: [] };
+  const { rows } = await db.pgQuery(
+    `SELECT order_id, created_at, tarot_data FROM orders
+      WHERE order_id = ANY($1) AND phone_number=$2 AND client_id=$3
+      ORDER BY created_at ASC`,
+    [wanted, phone, clientId ?? null]);
+  const parts = [];
+  const ids = [];
+  for (const r of rows) {
+    const td = typeof r.tarot_data === 'string' ? JSON.parse(r.tarot_data || '{}') : (r.tarot_data || {});
+    if (!td.reading) continue;
+    const cards = (td.cards || []).map(c => `${c.position}: ${c.sinhala_name || c.name}${c.reversed ? ' (Reversed)' : ''}`).join(', ');
+    const when = r.created_at ? new Date(r.created_at).toISOString().slice(0, 10) : 'unknown date';
+    parts.push(`### Order ${r.order_id} (${when})\nQuestion: ${td.question || ''}\nCards: ${cards}\nReading:\n${td.reading}`);
+    ids.push(r.order_id);
+  }
+  return { text: parts.join('\n\n'), ids };
+}
+
+/**
+ * GET /api/crm/tarot-reading/linkable/:orderId — the same customer's other tarot
+ * orders that already have a reading, for the "link to previous" picker.
+ */
+async function listLinkableTarot(req, res) {
+  try {
+    const clientId = resolveClientId(req);
+    const orderId = req.params.orderId;
+    const own = await db.pgQuery('SELECT phone_number FROM orders WHERE order_id=$1 AND client_id=$2', [orderId, clientId ?? null]);
+    const phone = own.rows[0]?.phone_number;
+    if (!phone) return res.json({ orders: [] });
+    const { rows } = await db.pgQuery(
+      `SELECT order_id, created_at, tarot_data FROM orders
+        WHERE phone_number=$1 AND client_id=$2 AND order_id<>$3 AND tarot_data IS NOT NULL
+        ORDER BY created_at DESC`,
+      [phone, clientId ?? null, orderId]);
+    const orders = [];
+    for (const r of rows) {
+      const td = typeof r.tarot_data === 'string' ? JSON.parse(r.tarot_data || '{}') : (r.tarot_data || {});
+      if (!td.reading) continue;
+      orders.push({ order_id: r.order_id, created_at: r.created_at, question: td.question || '', linked_order_ids: td.linked_order_ids || [] });
+    }
+    res.json({ orders });
+  } catch (e) {
+    console.error('[TAROT-LINKABLE]', e.message);
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
+}
+
+/**
  * POST /api/crm/tarot-reading — Admin triggers a tarot reading for a customer.
  * Returns the reading text and card draw details; does NOT auto-send to WhatsApp.
  * The admin reviews the reading in the CRM and sends it manually.
@@ -510,7 +573,7 @@ async function sendMedia(req, res) {
  */
 async function triggerTarotReading(req, res) {
   const clientId = resolveClientId(req);
-  const { phone, question, order_id, regenerate } = req.body;
+  const { phone, question, order_id, regenerate, linked_order_ids } = req.body;
 
   if (!phone)    return res.status(400).json({ error: 'phone required' });
   if (!question) return res.status(400).json({ error: 'question required' });
@@ -548,6 +611,7 @@ async function triggerTarotReading(req, res) {
 
     // Keep any chart already fetched for this order so the "generating" placeholder
     // does not wipe it.
+    const linked = await loadLinkedReadings(clientId, order_id, linked_order_ids);
     let priorChart = null;
     try {
       const p = await db.pgQuery(`SELECT tarot_data FROM orders WHERE order_id=$1`, [order_id]);
@@ -558,7 +622,7 @@ async function triggerTarotReading(req, res) {
     // Mark as generating so frontend can show progress
     await db.pgQuery(
       `UPDATE orders SET tarot_data=$1 WHERE order_id=$2`,
-      [JSON.stringify({ generating: true, question, ...(priorChart && { chart_data: priorChart }) }), order_id]
+      [JSON.stringify({ generating: true, question, linked_order_ids: linked.ids, ...(priorChart && { chart_data: priorChart }) }), order_id]
     ).catch(() => {});
 
     // Return immediately — generation runs in background
@@ -573,8 +637,8 @@ async function triggerTarotReading(req, res) {
 
     console.log(`[TAROT] Background generation for ${phone} | order=${order_id} | client=${clientId}`);
     const { chartContext, chart } = await buildTarotChart(clientId, order_id, req.body);
-    generateTarotReading(clientId, question, customPrompt, order_id, chartContext).then(async ({ reading, cards }) => {
-      const tarotData = { question, reading, cards, generated_at: new Date().toISOString(), ...(chart && { chart_data: chart }) };
+    generateTarotReading(clientId, question, customPrompt, order_id, chartContext, linked.text).then(async ({ reading, cards }) => {
+      const tarotData = { question, reading, cards, linked_order_ids: linked.ids, generated_at: new Date().toISOString(), ...(chart && { chart_data: chart }) };
       await db.pgQuery(
         `UPDATE orders SET tarot_data=$1 WHERE order_id=$2`,
         [JSON.stringify(tarotData), order_id]
@@ -584,7 +648,7 @@ async function triggerTarotReading(req, res) {
       console.error('[TAROT] Background generation error:', e.message);
       await db.pgQuery(
         `UPDATE orders SET tarot_data=$1 WHERE order_id=$2`,
-        [JSON.stringify({ error: e.message, question }), order_id]
+        [JSON.stringify({ error: e.message, question, linked_order_ids: linked.ids }), order_id]
       ).catch(() => {});
     });
 
@@ -846,4 +910,4 @@ async function downloadTarotPdf(req, res) {
 }
 
 module.exports = {
-  addonCatalog, ADDON_CATALOG, listAddons, toggleAddon, getAddonsStatus, sendMedia, reextractMedia, triggerTarotReading, aiPrepareTarot, fetchTarotChart, updateTarotSections, downloadTarotDocx, downloadTarotPdfByOrder, downloadTarotPdf };
+  addonCatalog, ADDON_CATALOG, listAddons, toggleAddon, getAddonsStatus, sendMedia, reextractMedia, triggerTarotReading, listLinkableTarot, aiPrepareTarot, fetchTarotChart, updateTarotSections, downloadTarotDocx, downloadTarotPdfByOrder, downloadTarotPdf };

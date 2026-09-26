@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import api from '../../lib/api';
 import { useToast } from '../ui/Toast';
 
@@ -42,7 +42,26 @@ export default function TarotGenerateModal({ order, clientId, onClose, onGenerat
   const [lagna, setLagna] = useState(null);          // { sign, sign_si }
   const [chartFetched, setChartFetched] = useState(!!existingChart);
 
+  // Earlier readings of this customer this one follows on from. Preselect what
+  // the order was last generated with, so a regenerate keeps its chain.
+  const [linkable, setLinkable] = useState([]);
+  const [linkedIds, setLinkedIds] = useState(() => {
+    const td = order?.tarot_data;
+    const p = typeof td === 'string' ? (() => { try { return JSON.parse(td); } catch { return {}; } })() : (td || {});
+    return Array.isArray(p.linked_order_ids) ? p.linked_order_ids : [];
+  });
+  const toggleLink = (id) => setLinkedIds(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]);
+
   const params = clientId ? { params: { client_id: clientId } } : {};
+
+  useEffect(() => {
+    let live = true;
+    api.get(`/crm/tarot-reading/linkable/${order.order_id}`, params)
+      .then(({ data }) => { if (live) setLinkable(data.orders || []); })
+      .catch(() => {});
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order?.order_id]);
 
   const handleFetchChart = async () => {
     if (!birth?.birth_date || !birth?.birth_time || !birth?.lat) {
@@ -97,6 +116,7 @@ export default function TarotGenerateModal({ order, clientId, onClose, onGenerat
         question: question.trim(),
         order_id: order.order_id,
         regenerate: true,
+        linked_order_ids: linkedIds,
         // Only pass birth params when the chart has NOT been fetched yet — a
         // fetched chart is already cached on the order and reused server-side.
         ...(birth && birth.birth_time && !chartFetched ? {
@@ -162,6 +182,31 @@ export default function TarotGenerateModal({ order, clientId, onClose, onGenerat
               autoFocus
             />
           </div>
+          {linkable.length > 0 && (
+            <div>
+              <label className="text-xs font-medium text-slate-500 block mb-1">
+                Follows on from (optional, tick the earlier readings Gemini should see)
+              </label>
+              <div className="flex flex-col gap-1 max-h-40 overflow-y-auto rounded-xl border border-slate-200 p-2">
+                {linkable.map(o => (
+                  <label key={o.order_id} className="flex items-start gap-2 text-xs text-slate-600 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={linkedIds.includes(o.order_id)}
+                      onChange={() => toggleLink(o.order_id)}
+                      disabled={generating}
+                    />
+                    <span>
+                      <span className="font-medium text-slate-700">#{o.order_id}</span>
+                      {o.created_at ? ` · ${new Date(o.created_at).toISOString().slice(0, 10)}` : ''}
+                      <span className="block text-slate-400 line-clamp-2">{o.question}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
           {birth && birth.birth_time && (
             <div className="rounded-xl border border-violet-100 bg-violet-50/50 px-3 py-2 flex flex-col gap-1.5">
               <div className="flex items-center justify-between gap-2">

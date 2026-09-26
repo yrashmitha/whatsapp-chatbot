@@ -112,9 +112,10 @@ function formatSpread(drawn) {
  * @param {string|null} customPrompt - Optional prompt override from plugin config
  * @param {string|null} orderId - Order to bill the Gemini cost to (optional)
  * @param {string}      chartContext - Vedic birth chart JSON to give Gemini as background (optional)
+ * @param {string}      previousReadings - Earlier readings this one follows on from, already formatted (optional)
  * @returns {Promise<{ reading: string, cards: Array }>}
  */
-async function generateTarotReading(clientId, question, customPrompt = null, orderId = null, chartContext = '') {
+async function generateTarotReading(clientId, question, customPrompt = null, orderId = null, chartContext = '', previousReadings = '') {
   // Fall back to the built-in prompt rather than refusing — a client that
   // enabled the addon but never opened Plugins should still get a usable
   // reading, and the default already encodes the "one real problem" framing.
@@ -150,6 +151,18 @@ async function generateTarotReading(clientId, question, customPrompt = null, ord
   if (chart && !promptTemplate.includes('{chart}')) {
     prompt += `\n\n---\nCUSTOMER'S VEDIC BIRTH CHART (background context only — the 3 cards remain the reading; do not quote planetary positions to the customer):\n${chart}`;
     console.log('[TAROT] appended birth chart as background context');
+  }
+
+  // A follow-up in a chain: earlier readings for the same customer, chosen by
+  // the operator. Background only, the new cards are still the reading.
+  const previous = (previousReadings || '').trim();
+  if (previous) {
+    prompt += `
+
+---
+PREVIOUS READINGS FOR THIS CUSTOMER (this reading follows on from them, oldest first). Use them as continuity: refer back to what the customer was told, note what has changed or held, and stay consistent. Do NOT repeat them, and the cards drawn above remain the only cards you interpret:
+${previous}`;
+    console.log('[TAROT] appended previous readings as context');
   }
 
   console.log(`[TAROT] Injected spread:\n${spreadText}`);

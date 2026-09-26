@@ -78,7 +78,7 @@ function parseSlipAmount(raw) {
 }
 
 /** @type {RegExp} Matches [[PAYMENT_IDENTIFIED:{...}]] markers */
-const PAYMENT_IDENTIFIED_REGEX = /\[\[PAYMENT_IDENTIFIED:([\s\S]*?)\]\]/;
+const PAYMENT_IDENTIFIED_REGEX = /\[\[PAYMENT_IDENTIFIED(?::([\s\S]*?))?\]\]/;
 /**
  * Generate a unique order ID in the format <PREFIX><YEAR>-<NNNN>.
  *
@@ -1129,11 +1129,19 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     } catch (e) { log.error('[ORDER] UPDATE_SUMMARY failed:', e.message); }
   }
 
+  // Only a turn where the vision pass read a payment document may claim a
+  // payment. Anything else (an ID card, a photo, plain text) must not.
+  const isSlipTurn = typeof userMessage === 'string' && userMessage.startsWith('[Customer sent a payment document');
+
   const paymentMatch = botReply.match(PAYMENT_IDENTIFIED_REGEX);
-  if (paymentMatch) {
+  if (paymentMatch && !isSlipTurn) {
+    log.warn('[PAYMENT-GATE] payment claimed on a non-slip turn, marker and receipt block dropped');
+    botReply = botReply.replace(PAYMENT_IDENTIFIED_REGEX, '')
+      .replace(/\[\[QR:payment_received(?:_tarot)?\]\]/gi, '').trim();
+  } else if (paymentMatch) {
     botReply = botReply.replace(PAYMENT_IDENTIFIED_REGEX, '').trim();
     try {
-      const paymentData = JSON.parse(paymentMatch[1]);
+      const paymentData = JSON.parse(paymentMatch[1] || '{}');
       const targetOrderId = paymentData.order_id;
       const slipAmount = parseSlipAmount(paymentData.amount);
       if (paymentData.amount != null && slipAmount === null) {
@@ -1183,6 +1191,15 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   }
 
   let paymentReceived = false;
+
+  // Hard gate: a payment slip turn gets the acknowledgement block and nothing
+  // else. Whatever the model wrote (a verdict, a mismatch, a request to resend)
+  // is discarded; a person checks the slip afterwards.
+  if (isSlipTurn) {
+    const tarot = /\[\[QR:payment_received_tarot\]\]/i.test(botReply);
+    botReply = tarot ? '[[QR:payment_received_tarot]]' : '[[QR:payment_received]]';
+    log.info(`[PAYMENT-GATE] slip turn, reply forced to ${botReply}`);
+  }
 
   // Plugin hook: process custom markers
   const _pluginForMarkers = pluginLoader.loadPlugin(client?.id, client?.plugin_enabled);

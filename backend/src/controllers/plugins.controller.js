@@ -1844,7 +1844,7 @@ async function retryMetaEvents(req, res) {
 
   try {
     const { rows } = await db.pgQuery(
-      `SELECT order_id, phone_number, status FROM orders WHERE order_id=$1 AND client_id=$2`,
+      `SELECT order_id, phone_number, status, created_at, credited_at FROM orders WHERE order_id=$1 AND client_id=$2`,
       [req.params.orderId, clientId]
     );
     if (!rows.length) return res.status(404).json({ error: 'Order not found' });
@@ -1863,7 +1863,9 @@ async function retryMetaEvents(req, res) {
     const sent = [];
     const failed = [];
     for (const eventName of wanted) {
-      const r = await fireCAPIEvent(clientId, eventName, order.phone_number, { order_id: order.order_id })
+      // Lead happened when the order was placed, Purchase when it was first paid.
+      const eventTime = eventName === 'Purchase' ? (order.credited_at || null) : order.created_at;
+      const r = await fireCAPIEvent(clientId, eventName, order.phone_number, { order_id: order.order_id }, { eventTime })
         .catch(e => ({ ok: false, error: e.message }));
       if (r?.ok) sent.push({ event: eventName, value: r.value, messaging: r.messaging, test: r.test });
       else failed.push({ event: eventName, error: r?.error || 'unknown' });

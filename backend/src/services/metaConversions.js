@@ -9,6 +9,45 @@ function hashStr(s) {
   return crypto.createHash('sha256').update(s).digest('hex');
 }
 
+const MONTHS = {
+  'ජනවාරි': 1, 'පෙබරවාරි': 2, 'මාර්තු': 3, 'අප්‍රේල්': 4, 'මැයි': 5, 'ජූනි': 6, 'ජුනි': 6,
+  'ජූලි': 7, 'ජුලි': 7, 'අගෝස්තු': 8, 'සැප්තැම්බර්': 9, 'ඔක්තෝබර්': 10, 'ඔක්තෝම්බර්': 10,
+  'නොවැම්බර්': 11, 'දෙසැම්බර්': 12,
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+};
+
+/**
+ * A customer's birth date as Meta's `db` wants it (YYYYMMDD), or null.
+ *
+ * The date is typed by customers, so the same day arrives as 1990.03.15,
+ * 1990/3/15, 15/03/1990, "1990 මාර්තු 15" or "1990 March 15". Anything with two
+ * dates in it (a couple's), or that does not read as one real date, is dropped:
+ * a wrong date only lowers the match score.
+ */
+function parseBirthDate(raw) {
+  const s = String(raw || '').trim();
+  if (!s || (s.match(/\d{4}/g) || []).length !== 1) return null;
+  let y, m, d, x;
+  if ((x = s.match(/^\D{0,2}(\d{4})\s*[./\-,\s]\s*(\d{1,2})\s*[./\-,\s]\s*(\d{1,2})\.?\s*$/))) {
+    [y, m, d] = [x[1], x[2], x[3]];
+  } else if ((x = s.match(/^(\d{1,2})\s*[./\-]\s*(\d{1,2})\s*[./\-]\s*(\d{4})$/))) {
+    [d, m, y] = [x[1], x[2], x[3]];
+  } else if ((x = s.match(/^(\d{4})\s*[.\-\s]*\s*([^\d\s./\-,]+)\s*[.\-\s]*\s*(\d{1,2})(?:\s|$)/))) {
+    y = x[1]; d = x[3];
+    const name = x[2].toLowerCase();
+    m = MONTHS[name] || MONTHS[name.slice(0, 3)];
+    if (!m) return null;
+  } else {
+    return null;
+  }
+  y = +y; m = +m; d = +d;
+  if (m > 12 && d <= 12) [m, d] = [d, m];
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (y < 1900 || y > new Date().getUTCFullYear() - 10
+      || dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null;
+  return `${y}${String(m).padStart(2, '0')}${String(d).padStart(2, '0')}`;
+}
+
 function hashPhone(phone) {
   return hashStr((phone || '').replace(/\D/g, ''));
 }
@@ -28,7 +67,7 @@ function hashPhone(phone) {
  * never match add nothing and pull the Event Match Quality score down, so they
  * are not sent.
  */
-function buildUserData(phone) {
+function buildUserData(phone, birthDate) {
   const digits = (phone || '').replace(/\D/g, '');
   const userData = { ph: [hashPhone(phone)] };
 
@@ -43,6 +82,10 @@ function buildUserData(phone) {
   // already say.
   if (digits.startsWith('94')) userData.country = [hashStr('lk')];
   if (digits) userData.external_id = [hashStr(digits)];
+
+  // Date of birth, when the order has one Meta can read.
+  const dob = parseBirthDate(birthDate);
+  if (dob) userData.db = [hashStr(dob)];
 
   return userData;
 }
@@ -172,10 +215,23 @@ async function _logEvent(clientId, eventName, phone, status, detail, extra = {})
 }
 
 /**
+ * Unix seconds for event_time. A send made when the thing happened uses now; a
+ * retry passes when it really happened so the sale stays next to its click.
+ * Meta drops events more than 7 days old, and a wrong time still counts where a
+ * dropped event does not, so anything older (or unusable) falls back to now.
+ */
+function _eventTime(when) {
+  const now = Math.floor(Date.now() / 1000);
+  const t = when ? Math.floor(new Date(when).getTime() / 1000) : NaN;
+  if (!Number.isFinite(t) || t > now || now - t > 7 * 24 * 3600 - 300) return now;
+  return t;
+}
+
+/**
  * Fire a Meta Conversions API event. Looks up customer name automatically.
  * Silent no-op if the addon isn't enabled or config is missing.
  */
-async function fireCAPIEvent(clientId, eventName, phone, customData = {}) {
+async function fireCAPIEvent(clientId, eventName, phone, customData = {}, opts = {}) {
   if (!clientId || !phone) return { ok: false, error: 'no client or phone' };
 
   // Callers in the message path ignore this and must keep doing so - a failed
@@ -213,24 +269,30 @@ async function fireCAPIEvent(clientId, eventName, phone, customData = {}) {
       wabaId = w.rows[0]?.waba_id || null;
     }
 
-    const userData = buildUserData(phone);
-    if (ctwaClid) userData.ctwa_clid = ctwaClid;
-    if (wabaId) userData.whatsapp_business_account_id = wabaId;
-
-    // What the sale was worth. Without it Meta is told a purchase happened and
-    // nothing about its size, which counts conversions but cannot optimise for
-    // the valuable ones or report a return on spend. A caller that already
-    // holds the figure - the slip it just read - keeps it; otherwise the order
-    // is priced by the same rule the income page uses.
+    // The order's stored fields: the sale's value, and the customer's birth date.
     const data = { ...customData };
-    if (!(parseFloat(data.value) > 0) && data.order_id && db.IS_PG) {
+    let birthDate = null;
+    if (data.order_id && db.IS_PG) {
       const r = await db.pgQuery(
         `SELECT custom_fields FROM orders WHERE order_id=$1 AND client_id=$2 LIMIT 1`,
         [data.order_id, clientId]
       ).catch(() => ({ rows: [] }));
-      const v = orderValue(r.rows[0]?.custom_fields);
-      if (v > 0) data.value = v;
+      const cf = r.rows[0]?.custom_fields;
+      birthDate = (typeof cf === 'string' ? (() => { try { return JSON.parse(cf); } catch (_) { return {}; } })() : cf)?.birth_date || null;
+      // What the sale was worth. Without it Meta is told a purchase happened and
+      // nothing about its size. A caller that already holds the figure - the slip
+      // it just read - keeps it; otherwise the order is priced by the same rule
+      // the income page uses.
+      if (!(parseFloat(data.value) > 0)) {
+        const v = orderValue(cf);
+        if (v > 0) data.value = v;
+      }
     }
+
+    const userData = buildUserData(phone, birthDate);
+    if (ctwaClid) userData.ctwa_clid = ctwaClid;
+    if (wabaId) userData.whatsapp_business_account_id = wabaId;
+
     // Meta requires a currency on every Purchase, including one worth nothing:
     // "Your purchase event doesn't include a currency parameter." Attaching it
     // only alongside a known value meant that an order with no price on record
@@ -259,7 +321,7 @@ async function fireCAPIEvent(clientId, eventName, phone, customData = {}) {
         // Confirmed that LeadSubmitted is accepted with action_source 'other'
         // as well, so there is no reason to keep both.
         event_name:    eventName === 'Lead' ? 'LeadSubmitted' : eventName,
-        event_time:    Math.floor(Date.now() / 1000),
+        event_time:    _eventTime(opts.eventTime),
         // Meta deduplicates on event_id, and without one every send counts as
         // another sale. A webhook retry, a status set twice, or a re-fire while
         // testing would each invent a purchase that never happened and teach
@@ -486,4 +548,4 @@ async function getRecentEvents(clientId) {
   return r.rows;
 }
 
-module.exports = { fireCAPIEvent, syncAudienceForClient, createAudienceForClient, getRecentEvents, hashPhone };
+module.exports = { parseBirthDate, fireCAPIEvent, syncAudienceForClient, createAudienceForClient, getRecentEvents, hashPhone };

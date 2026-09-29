@@ -6,6 +6,12 @@ import Spinner from '../ui/Spinner';
 
 const WINDOW_MS = 24 * 3600_000;
 
+/** Cut a long ad name down for the badge; the full name stays in the tooltip. */
+function trimAdName(name, max = 22) {
+  if (!name || name.length <= max) return name;
+  return name.slice(0, max - 1).trimEnd() + '…';
+}
+
 /**
  * How long before the bot takes this chat back.
  *
@@ -170,8 +176,16 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
                       {c.last_message && (
                         <div className="text-xs truncate mt-0.5" style={{ color: 'var(--text-2)' }}>{c.last_message}</div>
                       )}
-                      {(c.has_image || c.has_document || c.has_voice || c.latest_order_status || c.owned_by || c.ai_enabled === false || c.client_id) && (
+                      {(c.has_image || c.has_document || c.has_voice || c.latest_order_status || c.owned_by || c.ai_enabled === false || c.client_id || c.first_ad_name) && (
                         <div className="flex gap-1 mt-1 flex-wrap items-center">
+                          {/* Which ad this customer clicked to start the chat, if any. */}
+                          {c.first_ad_name && (
+                            <span
+                              className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                              style={{ background: 'rgba(59,130,246,0.15)', color: '#60a5fa' }}
+                              title={`Came from the ad "${c.first_ad_name}"`}
+                            >📣 {trimAdName(c.first_ad_name)}</span>
+                          )}
                           {c.has_image && (
                             <span
                               className="text-[10px] px-1.5 py-0.5 rounded font-medium"

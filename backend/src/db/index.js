@@ -36,6 +36,9 @@ const { insertCall, appendTranscriptTurn,
         listCalls, getCall }                        = require('./calls.db');
 const { getVoiceClips, getVoiceClipByKeyword,
         insertVoiceClip, deleteVoiceClip }          = require('./voice_clips.db');
+const { getAdRule, listAdRules, listSeenAds,
+        upsertAdRule, deleteAdRule,
+        setOwedOneReply, consumeOwedReply }         = require('./adRules.db');
 
 module.exports = {
   // Schema
@@ -104,4 +107,12 @@ module.exports = {
   getVoiceClipByKeyword,
   insertVoiceClip,
   deleteVoiceClip,
+  // Per-ad bot rules
+  getAdRule,
+  listAdRules,
+  listSeenAds,
+  upsertAdRule,
+  deleteAdRule,
+  setOwedOneReply,
+  consumeOwedReply,
 };

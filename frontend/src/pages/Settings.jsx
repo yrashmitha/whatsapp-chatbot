@@ -3,12 +3,13 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { useAuthStore, isSuperAdmin } from '../stores/auth';
 import Layout from '../components/Layout';
 import MenusPanel from '../components/MenusPanel';
+import AdRulesPanel from '../components/AdRulesPanel';
 import Button from '../components/ui/Button';
 import { useToast } from '../components/ui/Toast';
 import api, { authApi } from '../lib/api';
 
-const TABS = ['Assistant', 'Menus', 'API Keys', 'Password', 'Quick Replies'];
-const ADMIN_TABS = ['Assistant', 'Menus', 'API Keys', 'Password', 'Quick Replies', 'Consultation'];
+const TABS = ['Assistant', 'Menus', 'Ads', 'API Keys', 'Password', 'Quick Replies'];
+const ADMIN_TABS = ['Assistant', 'Menus', 'Ads', 'API Keys', 'Password', 'Quick Replies', 'Consultation'];
 
 function TokenInput({ value, onChange, placeholder }) {
   const [show, setShow] = useState(false);
@@ -520,9 +521,21 @@ export default function Settings() {
             </div>
           )}
 
-          {/* ── API Keys tab ── */}
           {activeTab === 'Menus' && <MenusPanel clientId={clientId} />}
 
+          {/* ── Ads tab ── */}
+          {activeTab === 'Ads' && (
+            <div className="bg-white border border-slate-200 rounded-xl p-6">
+              <h2 className="text-sm font-semibold text-slate-700 mb-1">Ad-based bot rules</h2>
+              <p className="text-xs text-slate-400 mb-4">
+                Give a specific ad a welcome message and tell the bot to stay off it, so an
+                operator replies to that ad's chats instead.
+              </p>
+              <AdRulesPanel clientId={clientId} />
+            </div>
+          )}
+
+          {/* ── API Keys tab ── */}
           {activeTab === 'API Keys' && (
             <div className="bg-white border border-slate-200 rounded-xl p-6">
               <h2 className="text-sm font-semibold text-slate-700 mb-1">API Keys</h2>

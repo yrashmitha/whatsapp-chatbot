@@ -61,6 +61,11 @@ const {
   metaSummaryForCustomer,
   retryMetaEvents,
   recentMetaEvents,
+  listSeenAds,
+  listAdRules,
+  setAdRule,
+  removeAdRule,
+  syncAds,
 } = require('../controllers/plugins.controller');
 
 const {
@@ -144,5 +149,13 @@ router.get('/meta/events/:orderId',                     jwtAuth, requirePermissi
 router.post('/meta/retry/:orderId',                     jwtAuth, requirePermission('orders.status'), retryMetaEvents);
 router.post('/meta/sync-audience',                      jwtAuth, requirePermission('settings.keys'), syncMetaAudience);
 router.post('/meta/create-audience',                    jwtAuth, requirePermission('settings.keys'), createMetaAudience);
+
+// Deciding a customer never hears from the bot is a settings-level call, same
+// tier as the API keys that make the rest of this file work.
+router.get('/ads/seen',                                 jwtAuth, requirePermission('settings.keys'), listSeenAds);
+router.get('/ads/rules',                                jwtAuth, requirePermission('settings.keys'), listAdRules);
+router.put('/ads/rules/:adId',                          jwtAuth, requirePermission('settings.keys'), setAdRule);
+router.delete('/ads/rules/:adId',                       jwtAuth, requirePermission('settings.keys'), removeAdRule);
+router.post('/ads/sync',                                jwtAuth, requirePermission('settings.keys'), syncAds);
 
 module.exports = router;

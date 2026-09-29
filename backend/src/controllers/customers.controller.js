@@ -68,12 +68,19 @@ async function listCustomers(req, res) {
              -- from whichever is later and any reply pushes it out again.
              (SELECT cs.paused_at FROM customer_settings cs
                WHERE cs.phone_number=cu.phone_number AND cs.client_id=cu.client_id) AS paused_at,
-             MAX(m.created_at) FILTER (WHERE m.sender_type = 'bot') AS last_outbound_at
+             MAX(m.created_at) FILTER (WHERE m.sender_type = 'bot') AS last_outbound_at,
+             -- The ad that brought this customer in the first time, by name when
+             -- ad_details knows it, otherwise the referral's own headline (the
+             -- page name, better than nothing on an ad we have not synced yet).
+             cu.first_ad_id,
+             COALESCE(ad.name, cu.first_ad_headline) AS first_ad_name
       FROM customers cu
       LEFT JOIN messages m ON m.phone_number=cu.phone_number AND m.client_id=cu.client_id
       LEFT JOIN orders   o ON o.phone_number=cu.phone_number AND o.client_id=cu.client_id
+      LEFT JOIN ad_details ad ON ad.ad_id = cu.first_ad_id
       ${where}
-      GROUP BY cu.phone_number, cu.name, cu.client_id, cu.updated_at, cu.last_read_at, cu.last_customer_message_at, cu.needs_attention
+      GROUP BY cu.phone_number, cu.name, cu.client_id, cu.updated_at, cu.last_read_at, cu.last_customer_message_at, cu.needs_attention,
+               cu.first_ad_id, cu.first_ad_headline, ad.name
       ORDER BY GREATEST(cu.last_customer_message_at, MAX(m.created_at)) DESC NULLS LAST
       LIMIT ${clientId ? '$2' : '$1'} OFFSET ${clientId ? '$3' : '$2'}`;
     const countQ = clientId

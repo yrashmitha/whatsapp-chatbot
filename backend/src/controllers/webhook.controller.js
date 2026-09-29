@@ -244,6 +244,47 @@ async function recordReferral(clientId, phone, referral) {
 }
 
 /**
+ * Apply a configured ad's override, if this ad has one.
+ *
+ * Unconfigured ads (the overwhelming majority) do nothing here — getAdRule
+ * returns null and the normal bot flow runs exactly as it would for a
+ * customer who arrived with no ad at all.
+ *
+ * @param {object} client
+ * @param {string} phone
+ * @param {string|null} adId - referral.source_id
+ * @param {object} log
+ */
+async function applyAdRule(client, phone, adId, log) {
+  if (!adId) return;
+  try {
+    const rule = await db.getAdRule(client.id, adId);
+    if (!rule) return;
+
+    const welcome = (rule.welcome_message || '').trim();
+    if (welcome) {
+      const wamid = await sendWhatsAppMessage(phone, welcome, client);
+      await db.insertMessage(phone, welcome, 'bot', null, client.id, null, null, wamid);
+    }
+
+    // Either the welcome message just sent was the one reply this ad owes, or
+    // the ad is off_immediately and owes nothing at all. Either way the chat
+    // goes manual now. Only 'off_after_reply' with no welcome message leaves
+    // the bot free to answer this turn — see consumeOwedReply below.
+    if (welcome || rule.off_mode === 'off_immediately') {
+      await require('../services/chatOwnership').pauseForManualReply(client.id, phone, null);
+      log.info(`[AD-RULE] ad ${adId}: ${welcome ? 'sent welcome message, ' : ''}chat is now manual`);
+    } else {
+      await db.setOwedOneReply(client.id, phone);
+      log.info(`[AD-RULE] ad ${adId}: bot may answer once more, then this chat goes manual`);
+    }
+  } catch (e) {
+    // Never let an ad override break a conversation.
+    log.warn('[AD-RULE] could not apply:', e.message);
+  }
+}
+
+/**
  * POST /webhook — process incoming WhatsApp messages (text, image, document).
  * Responds 200 immediately and handles the message asynchronously.
  *
@@ -328,6 +369,7 @@ function receiveWebhook(req, res) {
       if (msg.referral) {
         await db.upsertCustomer(from, null, client.id);
         await recordReferral(client.id, from, msg.referral);
+        await applyAdRule(client, from, msg.referral.source_id, log);
       }
 
       // Deliberately not marking it read yet. A blue tick says somebody read
@@ -963,6 +1005,15 @@ function receiveWebhook(req, res) {
       session.lastUsed = Date.now();
 
       const { botReply: rawBotReply, imagesToSend, productImagesToSend, isFallback } = await handleMessage(from, userMessage, session.chat, { client, traceId });
+
+      // An 'off_after_reply' ad with no welcome message: this reply, the one
+      // just computed, is the one reply that ad is owed. Pausing here rather
+      // than waiting for it to be sent is safe — this turn's reply was already
+      // decided and goes out regardless; only the next turn is affected.
+      if (await db.consumeOwedReply(client.id, from)) {
+        await require('../services/chatOwnership').pauseForManualReply(client.id, from, null);
+        log.info(`[AD-RULE] one reply sent for the ad that referred this chat — now manual`);
+      }
 
       // Extract [[VOICE:keyword]] tokens before sending text
       const voiceTokenRegex = /\[\[VOICE:([a-z0-9_]+)\]\]/gi;

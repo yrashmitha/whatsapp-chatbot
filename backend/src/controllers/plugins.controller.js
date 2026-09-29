@@ -27,7 +27,7 @@ const { makeMeter, recordOrderGenCost } = require('../services/genCost');
 const { formatChatLog } = require('../utils/chatLog');
 
 const { generateFollowUp, DEFAULT_FOLLOWUP_PROMPT } = require('../services/followup');
-const { syncAudienceForClient, createAudienceForClient, getRecentEvents } = require('../services/metaConversions');
+const { syncAudienceForClient, createAudienceForClient, getRecentEvents, syncAdDetails } = require('../services/metaConversions');
 const resolveClientId = require('../middleware/resolveClientId');
 const { customerNameFrom } = require('../utils/customerName');
 
@@ -1465,6 +1465,71 @@ async function recentMetaEvents(req, res) {
 }
 
 /**
+ * GET /api/plugins/ads/seen — every ad this client has had a click from,
+ * whether or not it has a rule yet. The pool a settings page picks from.
+ */
+async function listSeenAds(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    res.json({ ads: await db.listSeenAds(clientId) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+/**
+ * GET /api/plugins/ads/rules — every ad currently overridden for this client.
+ */
+async function listAdRules(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    res.json({ rules: await db.listAdRules(clientId) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+/**
+ * PUT /api/plugins/ads/rules/:adId — set or replace one ad's override.
+ */
+async function setAdRule(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  const { adId } = req.params;
+  const { welcome_message, off_mode } = req.body || {};
+  if (!['off_immediately', 'off_after_reply'].includes(off_mode)) {
+    return res.status(400).json({ error: "off_mode must be 'off_immediately' or 'off_after_reply'" });
+  }
+  try {
+    await db.upsertAdRule(clientId, adId, { welcomeMessage: welcome_message, offMode: off_mode });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+/**
+ * DELETE /api/plugins/ads/rules/:adId — remove an ad's override, returning it
+ * to the normal bot flow.
+ */
+async function removeAdRule(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    await db.deleteAdRule(clientId, req.params.adId);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+/**
+ * POST /api/plugins/ads/sync — pull ad names, campaigns and spend from Meta
+ * into ad_details, so the Ads settings tab and the chat list show real names.
+ */
+async function syncAds(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    res.json(await syncAdDetails(clientId));
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
+}
+
+/**
  * POST /api/plugins/meta/sync-audience — upload all paid customer phones to the Meta Custom Audience.
  */
 async function syncMetaAudience(req, res) {
@@ -2743,5 +2808,10 @@ module.exports = {
   syncMetaAudience,
   createMetaAudience,
   recentMetaEvents,
+  listSeenAds,
+  listAdRules,
+  setAdRule,
+  removeAdRule,
+  syncAds,
   DEFAULT_AI_FILL_PROMPT,
 };

@@ -817,6 +817,33 @@ async function init() {
     await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_opened_at   TIMESTAMPTZ`);
     await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_downloads   INT NOT NULL DEFAULT 0`);
     await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_delivery_token ON orders (delivery_token) WHERE delivery_token IS NOT NULL`);
+
+    // ── Per-ad bot override ──────────────────────────────────────────────────
+    // Some ads need a human from the first reply — a mentorship pitch, say,
+    // that the bot's normal flow was never written to sell. Unconfigured ads
+    // are untouched: this table only ever narrows, never changes, the default
+    // conversation.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ad_rules (
+        client_id       TEXT NOT NULL,
+        ad_id           TEXT NOT NULL,
+        welcome_message TEXT,
+        -- 'off_immediately': the bot never answers this customer, not even once.
+        -- 'off_after_reply': one reply goes out (the welcome message, or the
+        -- bot's own normal first reply if none is set), then the chat goes
+        -- manual, same as an operator taking it over by hand.
+        off_mode        TEXT NOT NULL DEFAULT 'off_after_reply'
+                          CHECK (off_mode IN ('off_immediately','off_after_reply')),
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (client_id, ad_id)
+      );
+    `);
+    // One more reply is owed to this customer before the bot goes silent, for
+    // an 'off_after_reply' ad with no welcome message: the bot's own generated
+    // reply counts as the one reply, so the pause has to happen just after it
+    // is sent rather than before the bot is asked to answer at all.
+    await pool.query(`ALTER TABLE customer_settings ADD COLUMN IF NOT EXISTS ad_off_after_reply BOOLEAN NOT NULL DEFAULT FALSE`);
   } else {
     db.exec(`PRAGMA foreign_keys = ON;`);
     db.exec(`
@@ -1089,6 +1116,20 @@ async function init() {
     try { db.exec(`ALTER TABLE client_configs ADD COLUMN bonus_messages   INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
     try { db.exec(`ALTER TABLE client_configs ADD COLUMN overage_limit    INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
     try { db.exec(`ALTER TABLE client_configs ADD COLUMN per_message_cost REAL NOT NULL DEFAULT 0`); } catch (_) {}
+
+    // ── Per-ad bot override (SQLite) ──────────────────────────────────────────
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS ad_rules (
+        client_id       TEXT NOT NULL,
+        ad_id           TEXT NOT NULL,
+        welcome_message TEXT,
+        off_mode        TEXT NOT NULL DEFAULT 'off_after_reply',
+        created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (client_id, ad_id)
+      );
+    `);
+    try { db.exec(`ALTER TABLE customer_settings ADD COLUMN ad_off_after_reply INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
   }
 }
 

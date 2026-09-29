@@ -548,4 +548,63 @@ async function getRecentEvents(clientId) {
   return r.rows;
 }
 
-module.exports = { parseBirthDate, fireCAPIEvent, syncAudienceForClient, createAudienceForClient, getRecentEvents, hashPhone };
+/**
+ * Pull every ad's name, campaign and spend from the client's configured ad
+ * account and cache it in ad_details.
+ *
+ * The referral WhatsApp sends carries an ad id and the page name, which is the
+ * same on every ad, so nothing tells one ad from another until this has run.
+ * Safe to call repeatedly: it always overwrites with what Meta says now.
+ *
+ * @param {string} clientId
+ * @returns {Promise<{synced: number}>}
+ */
+async function syncAdDetails(clientId) {
+  const config = await db.getPluginConfig(clientId, 'meta_conversions');
+  const accessToken = config.api_key;
+  let adAccountId   = config.ad_account_id || '';
+  if (!accessToken) throw new Error('api_key (Ads access token) not configured');
+  if (!adAccountId) throw new Error('ad_account_id not configured');
+  if (!adAccountId.startsWith('act_')) adAccountId = `act_${adAccountId}`;
+
+  let synced = 0;
+  let url = `https://graph.facebook.com/v18.0/${adAccountId}/ads`;
+  let params = {
+    fields: 'id,name,effective_status,campaign{id,name},adset_id,insights.date_preset(maximum){spend,impressions,clicks}',
+    limit: 200,
+    access_token: accessToken,
+  };
+
+  try {
+    while (url) {
+      const r = await axios.get(url, { params });
+      for (const ad of r.data.data || []) {
+        const insight = ad.insights?.data?.[0] || {};
+        await db.pgQuery(
+          `INSERT INTO ad_details (ad_id, client_id, name, campaign_id, campaign_name, adset_id, effective_status, amount_spent, impressions, clicks, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())
+           ON CONFLICT (ad_id) DO UPDATE SET
+             client_id=EXCLUDED.client_id, name=EXCLUDED.name, campaign_id=EXCLUDED.campaign_id,
+             campaign_name=EXCLUDED.campaign_name, adset_id=EXCLUDED.adset_id,
+             effective_status=EXCLUDED.effective_status, amount_spent=EXCLUDED.amount_spent,
+             impressions=EXCLUDED.impressions, clicks=EXCLUDED.clicks, updated_at=NOW()`,
+          [ad.id, clientId, ad.name || null, ad.campaign?.id || null, ad.campaign?.name || null,
+           ad.adset_id || null, ad.effective_status || null, insight.spend || null,
+           insight.impressions || null, insight.clicks || null]
+        );
+        synced++;
+      }
+      // Meta paginates with a full next URL that already carries every param,
+      // including the token, so it is followed as-is with no params of its own.
+      url = r.data.paging?.next || null;
+      params = undefined;
+    }
+  } catch (e) {
+    throw metaError(e, `Could not list ads for ${adAccountId}`);
+  }
+
+  console.log(`[AD-SYNC] ${clientId}: synced ${synced} ad(s) from ${adAccountId}`);
+  return { synced };
+}
+
+module.exports = { parseBirthDate, fireCAPIEvent, syncAudienceForClient, createAudienceForClient, getRecentEvents, syncAdDetails, hashPhone };

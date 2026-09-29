@@ -39,17 +39,39 @@ const model = genAI.getGenerativeModel({
 });
 
 // ─── Cost calculation (Gemini 2.5 Flash pricing) ─────────────────────────────
-const PRICE_INPUT  = 0.075 / 1_000_000;
-const PRICE_OUTPUT = 0.30  / 1_000_000;
+// These were 0.075 / 0.30 for a long time, which are 1.5/2.0 Flash prices, and
+// under-reported every reply by roughly 8x on the output side.
+const PRICE_INPUT  = 0.15 / 1_000_000;
+const PRICE_OUTPUT = 2.50 / 1_000_000;
 
 /**
  * Calculate the approximate cost of a Gemini API call.
  *
  * @param {number} i - Input token count
- * @param {number} o - Output token count
+ * @param {number} o - Output token count, thinking included
  * @returns {number} Cost in USD
  */
 function calcCost(i, o) { return i * PRICE_INPUT + o * PRICE_OUTPUT; }
+
+/**
+ * What Google actually bills for one call, from its usageMetadata.
+ *
+ * thoughtsTokenCount is the model's hidden reasoning. It never reaches the
+ * customer, so it is easy to leave out, but it bills at the full output rate
+ * and this model runs with an 8192-token thinking budget - on a short reply it
+ * is routinely several times the visible answer. Leaving it out was most of the
+ * reason the reported spend read a fraction of the real bill.
+ *
+ * @param {object|undefined} usage - result.response.usageMetadata
+ * @returns {{ inputTokens: number, outputTokens: number }}
+ */
+function billableTokens(usage) {
+  const u = usage || {};
+  return {
+    inputTokens:  u.promptTokenCount     || u.inputTokenCount  || 0,
+    outputTokens: (u.candidatesTokenCount || u.outputTokenCount || 0) + (u.thoughtsTokenCount || 0),
+  };
+}
 
 // ─── Order marker definitions ─────────────────────────────────────────────────
 /** @type {RegExp} Matches [[ORDER_COMPLETE:{...}]] markers */
@@ -932,9 +954,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   // nudge / fallback so it is never sent and never flagged as a failed reply.
   if (/^\[\[SILENT\]\]$/i.test(botReply)) {
     log.info('[GEMINI] [[SILENT]] token received — suppressing reply');
-    const usage        = result.response.usageMetadata || {};
-    const inputTokens  = usage.promptTokenCount     || usage.inputTokenCount  || 0;
-    const outputTokens = usage.candidatesTokenCount || usage.outputTokenCount || 0;
+    const { inputTokens, outputTokens } = billableTokens(result.response.usageMetadata);
     const callCostUSD  = calcCost(inputTokens, outputTokens);
     return { botReply: '', orderId: null, paymentReceived: false, callCostUSD, inputTokens, outputTokens, imagesToSend: [], productImagesToSend: [], isFallback: false, toolCalls };
   }
@@ -1024,9 +1044,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
       } catch (_) { /* flagging is best-effort; suppression is the guarantee */ }
       // Usage is tallied further down, past this early return — compute it here
       // so a suppressed turn is still billed and counted like any other.
-      const leakUsage  = result.response.usageMetadata || {};
-      const leakIn     = leakUsage.promptTokenCount     || leakUsage.inputTokenCount  || 0;
-      const leakOut    = leakUsage.candidatesTokenCount || leakUsage.outputTokenCount || 0;
+      const { inputTokens: leakIn, outputTokens: leakOut } = billableTokens(result.response.usageMetadata);
       return { botReply: '', orderId: null, paymentReceived: false, callCostUSD: calcCost(leakIn, leakOut), inputTokens: leakIn, outputTokens: leakOut, imagesToSend: [], productImagesToSend: [], isFallback: false, toolCalls };
     }
   }
@@ -1043,8 +1061,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
 
   const usage        = result.response.usageMetadata || {};
   log.info(`[GEMINI] usageMetadata raw: ${JSON.stringify(usage)}`);
-  const inputTokens  = usage.promptTokenCount     || usage.inputTokenCount  || 0;
-  const outputTokens = usage.candidatesTokenCount || usage.outputTokenCount || 0;
+  const { inputTokens, outputTokens } = billableTokens(usage);
   const callCostUSD  = calcCost(inputTokens, outputTokens);
   log.info(`[OUT] "${botReply.substring(0, 120)}" | tokens in=${inputTokens} out=${outputTokens} cost=$${callCostUSD.toFixed(6)}`);
 

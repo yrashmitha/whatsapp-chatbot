@@ -17,8 +17,10 @@
 const db = require('../db');
 
 // gemini-2.5-flash pricing (USD per token). Mirror of gemini.js:PRICE_*.
-const PRICE_INPUT  = 0.075 / 1_000_000;
-const PRICE_OUTPUT = 0.30  / 1_000_000;
+// Were 0.075 / 0.30 until 2026-09-29, which are 1.5/2.0 Flash prices: every
+// report before that date is recorded at roughly a quarter of what it cost.
+const PRICE_INPUT  = 0.15 / 1_000_000;
+const PRICE_OUTPUT = 2.50 / 1_000_000;
 
 /**
  * A running tally of token usage across the many model calls in one report run.

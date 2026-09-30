@@ -22,6 +22,7 @@ const {
   listLinkableTarot,
   aiFillOrderDraft,
   aiPrepareTarot,
+  splitTarotPack,
   fetchTarotChart,
   updateTarotSections,
   downloadTarotDocx,
@@ -54,6 +55,9 @@ router.get('/crm/tarot-reading/linkable/:orderId',       jwtAuth, requirePermiss
 router.post('/crm/orders/ai-fill-draft',                 jwtAuth, requirePermission('ai.fill'), aiFillOrderDraft);
 // AI-fill the tarot request from the chat — POST /api/crm/tarot-reading/ai-prepare/:orderId
 router.post('/crm/tarot-reading/ai-prepare/:orderId',   jwtAuth, requirePermission('ai.fill'), orderScope, aiPrepareTarot);
+// Split a confirmed multi-problem pack into one order per problem — POST /api/crm/tarot-reading/split-pack/:orderId
+// Creating orders, so it needs the same permission as creating one by hand.
+router.post('/crm/tarot-reading/split-pack/:orderId',   jwtAuth, requirePermission('orders.create'), orderScope, splitTarotPack);
 // Fetch + save the birth chart, return lagna — POST /api/crm/tarot-reading/fetch-chart/:orderId
 router.post('/crm/tarot-reading/fetch-chart/:orderId',  jwtAuth, requirePermission('ai.astro_chart'), orderScope, fetchTarotChart);
 // Update reading text/cards — PATCH /api/crm/tarot-reading/sections/:orderId

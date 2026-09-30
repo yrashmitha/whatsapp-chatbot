@@ -22,6 +22,7 @@ const { parseSinhalaDate, parseSinhalaTime } = require('../services/horoscope');
 const { extractFromBuffer } = require('../services/mediaExtractor');
 const { analyzePaymentDocument } = require('../services/imageAnalysis');
 const { formatChatLog } = require('../utils/chatLog');
+const { generateOrderId } = require('../services/gemini');
 
 /** Best-effort mime type for a stored upload from its extension. */
 function mimeFor(url, mediaType) {
@@ -105,12 +106,27 @@ async function reextractMedia(req, res) {
 }
 
 /**
- * Fill a tarot request from the chat: the customer's one real question plus the
- * birth details needed to attach a chart. Same idea as aiPrepareHoroscope.
+ * Fill a tarot request from the chat: every problem the customer actually
+ * raised, plus the birth details needed to attach a chart.
+ *
+ * "problems" is the real output. A Rs 1490 pack is three readings sold at once
+ * and the customer states three separate problems, historically all typed into
+ * one free-text needs box and then collapsed into a single reading, so two of
+ * the three were paid for and never answered. One entry per problem, each a
+ * complete brief in its own right, and the operator confirms the split before
+ * any order is created.
+ *
+ * "question" is kept as the first problem's brief so older callers and any
+ * half-open drawer keep working unchanged.
  */
-const AI_FILL_TAROT_PROMPT = `You are an experienced counsellor preparing the brief for a single-topic tarot reading. Read the WhatsApp conversation and the details collected, then return JSON.
+const AI_FILL_TAROT_PROMPT = `You are an experienced counsellor preparing the briefs for a tarot session. Read the WhatsApp conversation and the details collected, then return JSON.
 
-"question" — WRITE IT IN SINHALA (Unicode script), always, whatever language the customer used. NOT a restatement of the customer's words: turn their situation into a counsellor-grade brief for the tarot reader. It must:
+"problems" — an ARRAY, one entry per SEPARATE matter this customer is asking about. Most customers raise one. A customer who bought a multi-reading pack usually raises two or three, often written as one run-on line, or numbered "1. … 2. … 3. …", or separated by question marks. Split them. Two questions about the same matter are ONE entry. Two questions about genuinely different areas of life are separate entries. Never invent an entry to reach three, and never merge two unrelated ones. If the chat supports only one, return exactly one entry.
+Each entry has:
+  "topic" — 2 to 5 words in Sinhala naming the area, e.g. "පවුල හා දරුවා", "නිවස විකිණීම", "ණය ගෙවීම".
+  "question" — the full brief for that one matter, written to the rules below.
+
+"question" (inside each entry) — WRITE IT IN SINHALA (Unicode script), always, whatever language the customer used. NOT a restatement of the customer's words: turn their situation into a counsellor-grade brief for the tarot reader. It must:
   - name the one real problem they are living with right now (stay on this ONE topic).
   - lay out the realistic explanations for how it came to this. Think like a counsellor: for most situations only one or two causes are really in play. For example, if a partner suddenly went cold and left "for no reason", the realistic causes are a short list — someone else has entered their life, outside/family pressure or an ultimatum, an untreated mental-health slide (depression, burnout), a long buildup of unspoken resentment that finally broke, or a decision made under someone else's influence. Spell out the shortlist that fits THIS customer's story.
   - state what the reading must determine: what most likely actually happened, the other person's true emotional state now, whether things can realistically recover, and the timing.
@@ -247,14 +263,24 @@ async function prepareTarotBrief(clientId, order) {
       responseSchema: {
         type: 'object',
         properties: {
-          question:       { type: 'string' },
+          problems: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                topic:    { type: 'string' },
+                question: { type: 'string' },
+              },
+              required: ['topic', 'question'],
+            },
+          },
           birth_date_iso: { type: 'string', nullable: true },
           birth_time_24h: { type: 'string', nullable: true },
           birth_place_en: { type: 'string' },
           lat:            { type: 'number' },
           lng:            { type: 'number' },
         },
-        required: ['question', 'birth_place_en', 'lat', 'lng'],
+        required: ['problems', 'birth_place_en', 'lat', 'lng'],
       },
     },
   });
@@ -263,8 +289,15 @@ async function prepareTarotBrief(clientId, order) {
   try { parsed = JSON.parse(r.response.text().trim()); }
   catch { throw Object.assign(new Error('Gemini returned invalid JSON'), { statusCode: 500 }); }
 
+  // Drop blanks rather than letting an empty brief become an order nobody can read.
+  const problems = (Array.isArray(parsed.problems) ? parsed.problems : [])
+    .map(p => ({ topic: String(p?.topic || '').trim(), question: String(p?.question || '').trim() }))
+    .filter(p => p.question);
+
   return {
-    question:       parsed.question || '',
+    problems,
+    // The first brief, so callers that only know about one question are unaffected.
+    question:       problems[0]?.question || '',
     birth_date_iso: parsed.birth_date_iso || null,
     birth_time_24h: parsed.birth_time_24h || null,
     birth_place_en: parsed.birth_place_en || null,
@@ -282,6 +315,89 @@ async function aiPrepareTarot(req, res) {
     res.json(await prepareTarotBrief(clientId, oRes.rows[0]));
   } catch (e) {
     console.error('[TAROT-AI-PREPARE]', e.message);
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
+}
+
+/**
+ * POST /api/crm/tarot-reading/split-pack/:orderId — turn the problems the
+ * operator confirmed into one order per problem.
+ *
+ * A multi-reading pack is sold and paid once, so the money stays on the order
+ * that already carries it and every sibling is created at price 0. Three orders
+ * appear on the board and in the delivery queue; income is still counted once.
+ * Getting this wrong would report Rs 2,980 that nobody paid.
+ *
+ * Siblings inherit the parent's status: a pack paid for in full is not three
+ * unpaid orders, and showing it that way would inflate the pending pipeline.
+ *
+ * Body: { problems: [{ topic, question }] } — index 0 stays on this order.
+ */
+async function splitTarotPack(req, res) {
+  const clientId = resolveClientId(req);
+  const { orderId } = req.params;
+  const problems = Array.isArray(req.body?.problems) ? req.body.problems : [];
+
+  const clean = problems
+    .map(p => ({ topic: String(p?.topic || '').trim(), question: String(p?.question || '').trim() }))
+    .filter(p => p.question);
+  if (clean.length < 2) {
+    return res.status(400).json({ error: 'Need at least two problems to split into separate orders' });
+  }
+
+  try {
+    const oRes = clientId
+      ? await db.pgQuery('SELECT * FROM orders WHERE order_id=$1 AND client_id=$2', [orderId, clientId])
+      : await db.pgQuery('SELECT * FROM orders WHERE order_id=$1', [orderId]);
+    const parent = oRes.rows[0];
+    if (!parent) return res.status(404).json({ error: 'Order not found' });
+
+    const pcf = typeof parent.custom_fields === 'string'
+      ? JSON.parse(parent.custom_fields || '{}') : (parent.custom_fields || {});
+
+    // Splitting twice would create duplicate siblings for the same problems.
+    if (pcf.tarot_pack?.pack_id) {
+      return res.status(409).json({
+        error: `This order is already part of pack ${pcf.tarot_pack.pack_id} (reading ${pcf.tarot_pack.seq} of ${pcf.tarot_pack.of}). Delete the sibling orders first if you need to re-split.`,
+      });
+    }
+
+    const packId = `${parent.order_id}-P`;
+    const client = clientId ? await clientRouter.getClientById(clientId) : null;
+    const created = [];
+
+    // Siblings first. If one fails the parent is untouched and the operator can
+    // retry, rather than being left with a parent that claims siblings that do
+    // not exist.
+    for (let i = 1; i < clean.length; i++) {
+      const sibId = await generateOrderId(client);
+      const cf = {
+        ...pcf,
+        needs: clean[i].question,
+        // The pack was paid once, on the parent. A sibling priced at its share
+        // would report income that never arrived.
+        price: '0',
+        items: [],
+        tarot_pack: { pack_id: packId, seq: i + 1, of: clean.length, parent: parent.order_id, topic: clean[i].topic },
+      };
+      delete cf.price_backfilled;
+      await db.insertOrder(sibId, parent.phone_number, clientId || null, cf);
+      await db.pgQuery('UPDATE orders SET status=$1 WHERE order_id=$2', [parent.status, sibId]);
+      created.push({ order_id: sibId, seq: i + 1, topic: clean[i].topic });
+    }
+
+    const parentCf = {
+      ...pcf,
+      needs: clean[0].question,
+      tarot_pack: { pack_id: packId, seq: 1, of: clean.length, parent: parent.order_id, topic: clean[0].topic },
+    };
+    await db.pgQuery('UPDATE orders SET custom_fields=$2::jsonb WHERE order_id=$1',
+      [parent.order_id, JSON.stringify(parentCf)]);
+
+    console.log(`[TAROT-PACK] ${packId}: ${clean.length} readings, created ${created.map(c => c.order_id).join(', ')}`);
+    res.json({ ok: true, pack_id: packId, of: clean.length, parent: parent.order_id, created });
+  } catch (e) {
+    console.error('[TAROT-SPLIT-PACK]', e.message);
     res.status(e.statusCode || 500).json({ error: e.message });
   }
 }
@@ -618,21 +734,51 @@ async function listLinkableTarot(req, res) {
   try {
     const clientId = resolveClientId(req);
     const orderId = req.params.orderId;
-    const own = await db.pgQuery('SELECT phone_number FROM orders WHERE order_id=$1 AND client_id=$2', [orderId, clientId ?? null]);
+    const own = await db.pgQuery('SELECT phone_number, custom_fields FROM orders WHERE order_id=$1 AND client_id=$2', [orderId, clientId ?? null]);
     const phone = own.rows[0]?.phone_number;
-    if (!phone) return res.json({ orders: [] });
+    if (!phone) return res.json({ orders: [], pack: null });
+    // Siblings of the same pack come back even with no reading yet. Until now
+    // the picker listed only orders that already carried a generated reading,
+    // so the second reading of a pack saw nothing and the operator was told
+    // "no earlier tarot readings found" while looking at a customer who had
+    // clearly bought three. A sibling that is not generated cannot be fed to
+    // Gemini, but the operator has to be able to see it exists.
     const { rows } = await db.pgQuery(
-      `SELECT order_id, created_at, tarot_data FROM orders
-        WHERE phone_number=$1 AND client_id=$2 AND order_id<>$3 AND tarot_data IS NOT NULL
-        ORDER BY created_at DESC`,
+      `SELECT order_id, created_at, tarot_data, custom_fields FROM orders
+        WHERE phone_number=$1 AND client_id=$2 AND order_id<>$3
+          AND (tarot_data IS NOT NULL OR custom_fields->'tarot_pack' IS NOT NULL)
+        ORDER BY created_at`,
       [phone, clientId ?? null, orderId]);
+
+    const ownCf = typeof own.rows[0].custom_fields === 'string'
+      ? JSON.parse(own.rows[0].custom_fields || '{}') : (own.rows[0].custom_fields || {});
+    const ownPack = ownCf.tarot_pack?.pack_id || null;
+
     const orders = [];
     for (const r of rows) {
       const td = typeof r.tarot_data === 'string' ? JSON.parse(r.tarot_data || '{}') : (r.tarot_data || {});
-      if (!td.reading) continue;
-      orders.push({ order_id: r.order_id, created_at: r.created_at, question: td.question || '', linked_order_ids: td.linked_order_ids || [] });
+      const cf = typeof r.custom_fields === 'string' ? JSON.parse(r.custom_fields || '{}') : (r.custom_fields || {});
+      const pack = cf.tarot_pack || null;
+      const samePack = !!(ownPack && pack?.pack_id === ownPack);
+      if (!td.reading && !samePack) continue;
+      orders.push({
+        order_id:  r.order_id,
+        created_at: r.created_at,
+        // Before generation there is no reading, so show what it is going to be about.
+        question:  td.question || cf.needs || '',
+        has_reading: !!td.reading,
+        same_pack: samePack,
+        pack_seq:  pack?.seq || null,
+        pack_of:   pack?.of  || null,
+        topic:     pack?.topic || '',
+        linked_order_ids: td.linked_order_ids || [],
+      });
     }
-    res.json({ orders });
+    // Same pack first and in reading order, then everything else newest first.
+    orders.sort((a, b) =>
+      (b.same_pack - a.same_pack) ||
+      (a.same_pack ? a.pack_seq - b.pack_seq : new Date(b.created_at) - new Date(a.created_at)));
+    res.json({ orders, pack: ownPack ? { pack_id: ownPack, seq: ownCf.tarot_pack.seq, of: ownCf.tarot_pack.of } : null });
   } catch (e) {
     console.error('[TAROT-LINKABLE]', e.message);
     res.status(e.statusCode || 500).json({ error: e.message });
@@ -989,4 +1135,4 @@ async function downloadTarotPdf(req, res) {
 }
 
 module.exports = {
-  addonCatalog, ADDON_CATALOG, listAddons, toggleAddon, getAddonsStatus, sendMedia, reextractMedia, triggerTarotReading, listLinkableTarot, aiFillOrderDraft, aiPrepareTarot, fetchTarotChart, updateTarotSections, downloadTarotDocx, downloadTarotPdfByOrder, downloadTarotPdf };
+  addonCatalog, ADDON_CATALOG, listAddons, toggleAddon, getAddonsStatus, sendMedia, reextractMedia, triggerTarotReading, listLinkableTarot, aiFillOrderDraft, aiPrepareTarot, splitTarotPack, fetchTarotChart, updateTarotSections, downloadTarotDocx, downloadTarotPdfByOrder, downloadTarotPdf };

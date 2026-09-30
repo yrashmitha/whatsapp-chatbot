@@ -15,21 +15,22 @@ import { useToast } from '../ui/Toast';
 export default function TarotGenerateModal({ order, clientId, onClose, onGenerated }) {
   const toast = useToast();
 
-  // Pre-fill question from any existing tarot_data
-  const existingQuestion = (() => {
-    const td = order?.tarot_data;
-    if (!td) return '';
-    const parsed = typeof td === 'string'
-      ? (() => { try { return JSON.parse(td); } catch { return {}; } })()
-      : td;
-    return parsed.question || '';
-  })();
+  const parseJson = (v) => (typeof v === 'string'
+    ? (() => { try { return JSON.parse(v || '{}'); } catch { return {}; } })()
+    : (v || {}));
+
+  const orderCf = parseJson(order?.custom_fields);
+
+  // Pre-fill the question from a reading that already exists, and failing that
+  // from what the order was taken for. A pack sibling has no tarot_data at all
+  // until it is generated, and its brief is the whole reason it exists, so
+  // without this fallback reading 2 opens with an empty box and the operator
+  // has to go and find the wording again.
+  const existingQuestion = parseJson(order?.tarot_data).question || orderCf.needs || '';
 
   // Reuse a chart already fetched for this order
   const existingChart = (() => {
-    const td = order?.tarot_data;
-    if (!td) return null;
-    const p = typeof td === 'string' ? (() => { try { return JSON.parse(td); } catch { return {}; } })() : td;
+    const p = parseJson(order?.tarot_data);
     return p.chart_data ? { birth: p.birth || null } : null;
   })();
 
@@ -45,9 +46,15 @@ export default function TarotGenerateModal({ order, clientId, onClose, onGenerat
   // Earlier readings of this customer this one follows on from. Preselect what
   // the order was last generated with, so a regenerate keeps its chain.
   const [linkable, setLinkable] = useState([]);
+  const [pack, setPack] = useState(null);       // this order's place in a pack, once split
+  // Problems AI Fill found in the chat. A pack customer states two or three and
+  // they used to be collapsed into one reading, so the rest went unanswered.
+  const [problems, setProblems] = useState([]);
+  const [splitting, setSplitting] = useState(false);
+  const editProblem = (i, v) => setProblems(ps => ps.map((p, j) => (j === i ? { ...p, question: v } : p)));
+  const dropProblem = (i) => setProblems(ps => ps.filter((_, j) => j !== i));
   const [linkedIds, setLinkedIds] = useState(() => {
-    const td = order?.tarot_data;
-    const p = typeof td === 'string' ? (() => { try { return JSON.parse(td); } catch { return {}; } })() : (td || {});
+    const p = parseJson(order?.tarot_data);
     return Array.isArray(p.linked_order_ids) ? p.linked_order_ids : [];
   });
   const toggleLink = (id) => setLinkedIds(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]);
@@ -57,7 +64,20 @@ export default function TarotGenerateModal({ order, clientId, onClose, onGenerat
   useEffect(() => {
     let live = true;
     api.get(`/crm/tarot-reading/linkable/${order.order_id}`, params)
-      .then(({ data }) => { if (live) setLinkable(data.orders || []); })
+      .then(({ data }) => {
+        if (!live) return;
+        const rows = data.orders || [];
+        setLinkable(rows);
+        setPack(data.pack || null);
+        // Reading 2 of a pack should follow on from reading 1 without anybody
+        // having to remember to tick it: the readings are one session and the
+        // later ones are worth much less read cold. Only when the operator has
+        // not already chosen, so a regenerate keeps whatever chain it had.
+        setLinkedIds(ids => (ids.length || !data.pack)
+          ? ids
+          : rows.filter(o => o.same_pack && o.has_reading && o.pack_seq < data.pack.seq)
+                .map(o => o.order_id));
+      })
       .catch(() => {});
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -87,7 +107,18 @@ export default function TarotGenerateModal({ order, clientId, onClose, onGenerat
     setAiFilling(true);
     try {
       const { data } = await api.post(`/crm/tarot-reading/ai-prepare/${order.order_id}`, {}, params);
-      if (data.question) setQuestion(data.question);
+      const found = Array.isArray(data.problems) ? data.problems : [];
+      // On a pack sibling, AI Fill re-reads the same chat and finds the same
+      // list, so problem 1 would land in the box of reading 2. Take the one
+      // this order is actually for. If the split does not line up any more,
+      // leave what is already there rather than overwriting it with the wrong
+      // brief, which the operator would have no reason to notice.
+      const mine = pack ? found[pack.seq - 1]?.question : found[0]?.question || data.question;
+      if (mine) setQuestion(mine);
+      // Only offer a split when there is more than one problem and this order is
+      // not already part of a pack. The first problem stays on this order, so it
+      // is shown in the question box above rather than repeated in the list.
+      setProblems(!pack && found.length > 1 ? found : []);
       if (data.lat && data.lng && data.birth_date_iso) {
         setBirth({
           birth_date: data.birth_date_iso,
@@ -99,11 +130,44 @@ export default function TarotGenerateModal({ order, clientId, onClose, onGenerat
         setChartFetched(false);
         setLagna(null);
       }
-      toast.success(data.question ? 'Filled from the chat' : 'No clear question found in the chat');
+      toast.success(
+        !mine ? 'No clear question found in the chat'
+          : pack ? `Filled from the chat — problem ${pack.seq} of ${pack.of}`
+          : found.length > 1 ? `Filled from the chat — ${found.length} separate problems found`
+          : 'Filled from the chat');
     } catch (e) {
       toast.error(e?.response?.data?.error || 'AI fill failed');
     } finally {
       setAiFilling(false);
+    }
+  };
+
+  /**
+   * Turn the confirmed problems into one order per problem. The first stays on
+   * this order (with whatever the operator has edited in the question box), the
+   * rest become siblings at price 0 so the pack's income is still counted once.
+   */
+  const handleSplit = async () => {
+    const payload = [
+      { topic: problems[0]?.topic || '', question: question.trim() },
+      ...problems.slice(1),
+    ].filter(p => p.question.trim());
+    if (payload.length < 2) return toast.error('Need at least two problems to split');
+    if (!window.confirm(
+      `Create ${payload.length - 1} extra order(s) for this customer?\n\n` +
+      `This order keeps the full price and problem 1. The others are created at Rs 0 ` +
+      `so the pack is not counted as income twice.`)) return;
+    setSplitting(true);
+    try {
+      const { data } = await api.post(`/crm/tarot-reading/split-pack/${order.order_id}`, { problems: payload }, params);
+      toast.success(`Created ${data.created.length} order(s): ${data.created.map(c => c.order_id).join(', ')}`);
+      setProblems([]);
+      setPack({ pack_id: data.pack_id, seq: 1, of: data.of });
+      onGenerated?.();
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Split failed');
+    } finally {
+      setSplitting(false);
     }
   };
 
@@ -150,6 +214,11 @@ export default function TarotGenerateModal({ order, clientId, onClose, onGenerat
             <h2 className="text-base font-semibold text-slate-800">🃏 Generate Tarot Reading</h2>
             <p className="text-xs text-slate-400 mt-0.5">
               #{order?.order_id} · 3-card spread · Past · Present · Future
+              {pack && (
+                <span className="ml-1 font-medium text-violet-500">
+                  · reading {pack.seq} of {pack.of}
+                </span>
+              )}
             </p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 bg-transparent border-0 cursor-pointer text-xl leading-none">×</button>
@@ -182,6 +251,66 @@ export default function TarotGenerateModal({ order, clientId, onClose, onGenerat
               autoFocus
             />
           </div>
+
+          {problems.length > 1 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-2.5 flex flex-col gap-2">
+              <div className="text-xs font-semibold text-amber-800">
+                ⚠ This customer asked about {problems.length} separate things
+              </div>
+              <p className="text-xs text-amber-700 leading-relaxed">
+                One order produces one reading. Problem 1 is in the box above and stays on
+                this order. Split to create an order for each of the rest, so none of them
+                goes unanswered. Check the wording first, and remove anything that is not a
+                real separate problem.
+              </p>
+              {problems.slice(1).map((p, i) => (
+                <div key={i + 1} className="flex flex-col gap-1 rounded-lg bg-white/70 p-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-amber-900">
+                      {i + 2}. {p.topic || 'Problem ' + (i + 2)}
+                    </span>
+                    <button
+                      onClick={() => dropProblem(i + 1)}
+                      disabled={splitting || generating}
+                      className="text-xs text-amber-700 bg-transparent border-0 cursor-pointer disabled:opacity-50"
+                    >
+                      remove
+                    </button>
+                  </div>
+                  <textarea
+                    className="w-full px-2 py-1.5 text-xs border border-amber-200 rounded-lg outline-none focus:border-amber-400 bg-white"
+                    style={{ resize: 'none', minHeight: 60 }}
+                    rows={3}
+                    value={p.question}
+                    onChange={e => editProblem(i + 1, e.target.value)}
+                    disabled={splitting || generating}
+                  />
+                </div>
+              ))}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleSplit}
+                  disabled={splitting || generating}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg border-0 cursor-pointer disabled:opacity-50"
+                  style={{ background: '#b45309', color: '#fff' }}
+                >
+                  {splitting ? 'Creating…' : `Create ${problems.length - 1} more order${problems.length > 2 ? 's' : ''}`}
+                </button>
+                <button
+                  onClick={() => setProblems([])}
+                  disabled={splitting || generating}
+                  className="text-xs text-amber-800 bg-transparent border-0 cursor-pointer disabled:opacity-50"
+                >
+                  It is one problem, dismiss
+                </button>
+              </div>
+              <span className="text-[11px] text-amber-600">
+                The extra orders are created at Rs 0. This order keeps the full price, so the
+                pack is not counted as income twice.
+              </span>
+            </div>
+          )}
+
           {(
             <div>
               <label className="text-xs font-medium text-slate-500 block mb-1">
@@ -192,17 +321,31 @@ export default function TarotGenerateModal({ order, clientId, onClose, onGenerat
                   <span className="text-xs text-slate-400">No earlier tarot readings found for this customer.</span>
                 )}
                 {linkable.map(o => (
-                  <label key={o.order_id} className="flex items-start gap-2 text-xs text-slate-600 cursor-pointer">
+                  <label
+                    key={o.order_id}
+                    className={`flex items-start gap-2 text-xs text-slate-600 ${o.has_reading ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
+                    title={o.has_reading ? '' : 'Not generated yet — there is no reading for Gemini to read'}
+                  >
                     <input
                       type="checkbox"
                       className="mt-0.5"
                       checked={linkedIds.includes(o.order_id)}
                       onChange={() => toggleLink(o.order_id)}
-                      disabled={generating}
+                      /* Nothing to feed Gemini until this sibling has been generated. */
+                      disabled={generating || !o.has_reading}
                     />
                     <span>
                       <span className="font-medium text-slate-700">#{o.order_id}</span>
+                      {o.same_pack && (
+                        <span className="ml-1 px-1 rounded bg-violet-100 text-violet-700 font-medium">
+                          same pack · {o.pack_seq}/{o.pack_of}
+                        </span>
+                      )}
+                      {!o.has_reading && (
+                        <span className="ml-1 px-1 rounded bg-slate-100 text-slate-500">not generated yet</span>
+                      )}
                       {o.created_at ? ` · ${new Date(o.created_at).toISOString().slice(0, 10)}` : ''}
+                      {o.topic ? <span className="block text-slate-500 font-medium">{o.topic}</span> : null}
                       <span className="block text-slate-400 line-clamp-2">{o.question}</span>
                     </span>
                   </label>

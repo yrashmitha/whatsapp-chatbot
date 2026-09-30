@@ -203,13 +203,17 @@ export default function TarotGenerateModal({ order, clientId, onClose, onGenerat
   const inputCls = 'w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden flex flex-col"
+        /* Capped to the viewport with the body scrolling inside, so Generate is
+           always reachable. Three briefs plus the picker are far taller than
+           one question, and the drawer used to simply run off the bottom of the
+           screen with the button below the fold. */
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-full overflow-hidden flex flex-col"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+        <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b border-slate-100">
           <div>
             <h2 className="text-base font-semibold text-slate-800">🃏 Generate Tarot Reading</h2>
             <p className="text-xs text-slate-400 mt-0.5">
@@ -225,7 +229,7 @@ export default function TarotGenerateModal({ order, clientId, onClose, onGenerat
         </div>
 
         {/* Body */}
-        <div className="px-5 py-4 flex flex-col gap-3">
+        <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 flex flex-col gap-3">
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="text-xs font-medium text-slate-500">
@@ -387,7 +391,7 @@ export default function TarotGenerateModal({ order, clientId, onClose, onGenerat
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t border-slate-100 flex gap-2">
+        <div className="shrink-0 px-5 py-4 border-t border-slate-100 flex gap-2">
           <button
             onClick={onClose}
             className="px-4 py-2.5 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl border-0 cursor-pointer"

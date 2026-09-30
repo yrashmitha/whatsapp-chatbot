@@ -133,6 +133,12 @@ Each entry has:
   - ask for clear, honest guidance on what the customer should and should not do.
 Write it as 3-6 Sinhala sentences, direct and specific to this person. Never invent facts that are not in the chat, but you SHOULD reason about likely causes the customer did not name. The whole "question" value must be Sinhala — no English sentences.
 
+WHO IS SPEAKING, AND ABOUT WHOM. The brief is written BY the office FOR the astrologer who will read the cards, and it is ABOUT the customer. It is never the customer speaking. Do not write it in the customer's voice: no "මගේ", "මට", "මම", "අපේ". Do not address the customer either: no "ඔබේ", "ඔබට".
+  - Name the customer. Use the given name from the details collected, not the full string of family names — from "Kodi marakkalage nilanthi fernando" write "නිලන්ති".
+  - When no name is on record, write "පාරිභෝගිකයා".
+  - Use ඇය or ඔහු only when the conversation itself makes clear which applies. Never infer it from the name alone; when it is not clear, keep using the name or "පාරිභෝගිකයා".
+  - Everyone else in the story is described by their relation to the customer: "නිලන්තිගේ ලොකු පුතා", "ඔහුගේ බිරිඳ".
+
 "birth_date_iso": birth date as YYYY-MM-DD, or null if not given.
 "birth_time_24h": birth time as HH:MM (24-hour), or null. A vague "morning"/"උදේ" with no number → null.
 "birth_place_en": birth town in English, or "".

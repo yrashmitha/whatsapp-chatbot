@@ -190,6 +190,15 @@ async function init() {
       CREATE INDEX IF NOT EXISTS idx_customers_client ON customers (client_id);
       CREATE INDEX IF NOT EXISTS idx_messages_client  ON messages  (client_id);
       CREATE INDEX IF NOT EXISTS idx_orders_client    ON orders    (client_id);
+      -- Everything reads these two by conversation, never by client alone: the
+      -- chat history, the unread badge, the wamid attach, the latest order on
+      -- the chat list. The foreign key on phone_number creates no index, so
+      -- each of those read the whole table. messages had reached 23 billion
+      -- rows read sequentially off 56k live rows, which is where the CPU went
+      -- and why unrelated requests queued behind the connection pool.
+      -- created_at is on the end so the ORDER BY is served by the index too.
+      CREATE INDEX IF NOT EXISTS idx_messages_phone_client ON messages (client_id, phone_number, created_at);
+      CREATE INDEX IF NOT EXISTS idx_orders_phone_client   ON orders   (client_id, phone_number, created_at DESC);
 
       -- Backfill orders.client_id from customers table where null
       UPDATE orders o SET client_id = c.client_id

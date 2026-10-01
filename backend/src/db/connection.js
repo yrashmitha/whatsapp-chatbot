@@ -38,6 +38,15 @@ if (IS_PG) {
   pool = new Pool({
     connectionString: rawDbUrl,
     ssl: needsSsl ? { rejectUnauthorized: false } : false,
+    // node-postgres defaults to 10. The chat list fires six correlated
+    // subqueries per row, so one page load holds a connection for far longer
+    // than a single statement, and ten drained under ordinary use: requests
+    // queued behind the pool rather than the database, waited out
+    // connectionTimeoutMillis and came back 502. A trivial one-row lookup
+    // taking five seconds is the signature of waiting for a connection, not of
+    // a slow query. Postgres here allows 100, and the backend is the only
+    // client, so 20 leaves ample headroom for psql and for migrations.
+    max: 20,
     connectionTimeoutMillis: 8000,
     idleTimeoutMillis: 10000,
   });

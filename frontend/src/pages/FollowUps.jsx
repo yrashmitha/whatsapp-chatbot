@@ -47,6 +47,9 @@ export default function FollowUps() {
   const [status, setStatus]     = useState('');   // '' | new | interested | ...
   const [callback, setCallback] = useState('');   // '' | today | overdue | upcoming | none
   const [outcome, setOutcome]   = useState('');
+  const [dateField, setDateField] = useState('callback');   // callback | called
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo]     = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch]     = useState('');
   const [page, setPage]         = useState(1);
@@ -57,7 +60,7 @@ export default function FollowUps() {
     const t = setTimeout(() => setSearch(searchInput.trim()), 300);
     return () => clearTimeout(t);
   }, [searchInput]);
-  useEffect(() => { setPage(1); }, [status, callback, outcome, search, clientId]);
+  useEffect(() => { setPage(1); }, [status, callback, outcome, search, clientId, dateField, dateFrom, dateTo]);
 
   const { data: summary } = useQuery({
     queryKey: ['leads-summary', clientId],
@@ -68,9 +71,10 @@ export default function FollowUps() {
   });
 
   const { data, isFetching } = useQuery({
-    queryKey: ['leads', clientId, status, callback, outcome, search, page],
+    queryKey: ['leads', clientId, status, callback, outcome, search, dateField, dateFrom, dateTo, page],
     queryFn: () => api.get('/leads', {
-      params: { ...cp, status, callback, outcome, search, page, limit: PAGE_SIZE },
+      params: { ...cp, status, callback, outcome, search, page, limit: PAGE_SIZE,
+        ...(dateFrom || dateTo ? { date_field: dateField, date_from: dateFrom, date_to: dateTo } : {}) },
     }).then(r => r.data),
     enabled: !!clientId,
     placeholderData: keepPreviousData,
@@ -82,7 +86,15 @@ export default function FollowUps() {
   const pages = Math.max(1, Math.ceil((data?.total || 0) / PAGE_SIZE));
   const counts = summary?.counts || {};
   const today = todayStr();
-  const filtered = !!(status || callback || outcome || search);
+  const filtered = !!(status || callback || outcome || search || dateFrom || dateTo);
+
+  // Shortcuts set both ends of the range at once.
+  const addDays = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  const setRange = (from, to) => { setDateFrom(from); setDateTo(to); };
+  // Looking back is natural for "called", looking ahead for "call back".
+  const presets = dateField === 'called'
+    ? [['Today', today, today], ['Yesterday', addDays(-1), addDays(-1)], ['Last 7 days', addDays(-6), today]]
+    : [['Today', today, today], ['Tomorrow', addDays(1), addDays(1)], ['Next 7 days', today, addDays(6)]];
 
   // Status chips and the callback chips are separate filters that combine.
   const pickStatus = (k) => setStatus(s => (s === k ? '' : k));
@@ -132,9 +144,32 @@ export default function FollowUps() {
           </select>
           {filtered && (
             <button
-              onClick={() => { setStatus(''); setCallback(''); setOutcome(''); setSearchInput(''); }}
+              onClick={() => { setStatus(''); setCallback(''); setOutcome(''); setSearchInput(''); setRange('', ''); }}
               className="text-xs px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-500 cursor-pointer"
             >Clear filters</button>
+          )}
+        </div>
+
+        {/* Date filter: which date, a range, and one-tap shortcuts. */}
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <select value={dateField} onChange={e => setDateField(e.target.value)}
+            className="text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-600">
+            <option value="callback">Call-back date</option>
+            <option value="called">Last called</option>
+          </select>
+          <input type="date" value={dateFrom} max={dateTo || undefined} onChange={e => setDateFrom(e.target.value)}
+            aria-label="From" className="text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-600" />
+          <span className="text-xs text-slate-400">to</span>
+          <input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)}
+            aria-label="To" className="text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-600" />
+          {presets.map(([label, f, t]) => (
+            <button key={label} onClick={() => setRange(f, t)}
+              className={`text-xs px-2.5 py-1.5 rounded-full border cursor-pointer ${
+                dateFrom === f && dateTo === t ? 'bg-violet-600 text-white border-violet-600' : 'bg-white text-slate-600 border-slate-200 hover:border-violet-300'}`}
+            >{label}</button>
+          ))}
+          {(dateFrom || dateTo) && (
+            <button onClick={() => setRange('', '')} className="text-xs text-slate-400 bg-transparent border-0 cursor-pointer">Clear dates</button>
           )}
         </div>
 

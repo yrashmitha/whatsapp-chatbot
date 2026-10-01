@@ -9,7 +9,7 @@ import AstroChartModal from './AstroChartModal';
 import HoroscopeQaPanel from './HoroscopeQaPanel';
 import TarotModal from './TarotModal';
 import CreateOrderDrawer from './CreateOrderDrawer';
-import { LeadStatusSelect, LogCallButton, LeadStrip } from '../leads/LeadControls';
+import { LeadPanel } from '../leads/LeadControls';
 import Spinner from '../ui/Spinner';
 import Button from '../ui/Button';
 import { useToast } from '../ui/Toast';
@@ -322,12 +322,7 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
                 🔮 Report Q&A
               </button>
             )}
-            {canLead && (
-              <>
-                <LeadStatusSelect phone={phone} clientId={clientId} value={lead?.lead_status} />
-                <LogCallButton phone={phone} clientId={clientId} nextCallAt={lead?.next_call_at} />
-              </>
-            )}
+            {canLead && <LeadPanel phone={phone} clientId={clientId} lead={lead} />}
             <button
               onClick={() => setCreateOrderOpen(true)}
               className="text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
@@ -414,13 +409,10 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
             </button>
           </div>
         </div>
-        {/* Mobile lead row: used on every call, so it is not behind the overflow
-            menu. Status on the left, Log call on the right so its panel opens
-            inside the screen. */}
+        {/* Mobile lead row: used on every call, so it is not behind the overflow menu. */}
         {canLead && (
-          <div className="md:hidden flex items-center justify-between gap-2 px-2 pb-1.5">
-            <LeadStatusSelect phone={phone} clientId={clientId} value={lead?.lead_status} />
-            <LogCallButton phone={phone} clientId={clientId} nextCallAt={lead?.next_call_at} />
+          <div className="md:hidden px-2 pb-1.5 flex">
+            <LeadPanel phone={phone} clientId={clientId} lead={lead} />
           </div>
         )}
         {/* Mobile action row — behind the overflow menu, so the thread keeps the screen */}
@@ -461,7 +453,7 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
       </div>
 
       {/* One slim row for orders and the last call, so the chat keeps the screen. */}
-      {(customerOrders.length > 0 || (canLead && (lead?.last_call || lead?.next_call_at))) && (
+      {customerOrders.length > 0 && (
         <div className="shrink-0 border-b border-slate-200 bg-white">
           <div className="flex items-center justify-between gap-2 min-w-0">
             {customerOrders.length > 0 ? (
@@ -480,7 +472,6 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
                 </svg>
               </button>
             ) : <span />}
-            {canLead && <LeadStrip phone={phone} name={name} clientId={clientId} lead={lead} />}
           </div>
           {ordersOpen && (
             <div className="px-3 pb-2 flex flex-col gap-1.5">

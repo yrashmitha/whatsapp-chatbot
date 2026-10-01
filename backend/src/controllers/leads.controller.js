@@ -70,6 +70,18 @@ async function listLeads(req, res) {
     }
     if (CALL_OUTCOMES.includes(outcome)) conds.push(`lc.outcome=${add(outcome)}`);
 
+    // A date range on either the promised call-back day or the day of the last
+    // call. Days are the client's own, so a call at 11pm counts for that evening.
+    const from = cleanDate(req.query.date_from);
+    const to   = cleanDate(req.query.date_to);
+    if (from || to) {
+      const col = req.query.date_field === 'called'
+        ? `(lc.created_at AT TIME ZONE ${add(await timezoneFor(clientId))})::date`
+        : 'cs.next_call_at';
+      if (from) conds.push(`${col} >= ${add(from)}::date`);
+      if (to)   conds.push(`${col} <= ${add(to)}::date`);
+    }
+
     if (search) {
       const like  = add(`%${search}%`);
       // Operators type 0771234567 where the chat is stored as 94771234567.
@@ -81,7 +93,7 @@ async function listLeads(req, res) {
                       AND lx.note ILIKE ${like}))`);
     }
 
-    const from = `
+    const fromSql = `
       FROM customers cu
       LEFT JOIN customer_settings cs
              ON cs.phone_number=cu.phone_number AND cs.client_id=cu.client_id
@@ -106,10 +118,10 @@ async function listLeads(req, res) {
                lc.outcome AS last_outcome, lc.note AS last_note, lc.created_at AS last_call_at,
                (SELECT COUNT(*) FROM lead_call_log lk
                  WHERE lk.client_id=cu.client_id AND lk.phone_number=cu.phone_number) AS call_count
-        ${from}
+        ${fromSql}
         ORDER BY ${order}
         LIMIT $${params.length + 1} OFFSET $${params.length + 2}`, listParams),
-      db.pgQuery(`SELECT COUNT(*) ${from}`, params),
+      db.pgQuery(`SELECT COUNT(*) ${fromSql}`, params),
     ]);
     res.json({ leads: rows.rows, total: parseInt(count.rows[0].count), page, limit });
   } catch (e) { res.status(500).json({ error: e.message }); }

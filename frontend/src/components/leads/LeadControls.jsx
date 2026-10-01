@@ -125,41 +125,6 @@ export function LogCallButton({ phone, clientId, label = '📞 Log call', classN
   );
 }
 
-/**
- * The last call and the promised day, as a compact right-aligned button that
- * sits in the orders row. Clicking it opens the full history, so an operator
- * never needs the Leads page to check what was tried.
- */
-export function LeadStrip({ phone, name, clientId, lead }) {
-  const [open, setOpen] = useState(false);
-  const last = lead?.last_call;
-  if (!last && !lead?.next_call_at) return null;
-  const overdue = lead.next_call_at && lead.next_call_at < todayStr();
-  return (
-    <>
-      <button onClick={() => setOpen(true)} title="View call history"
-        className="min-w-0 flex items-center gap-1.5 pl-2 pr-3 py-1.5 text-xs bg-transparent border-0 cursor-pointer hover:bg-slate-50">
-        <span>📞</span>
-        {last && (
-          <span className="min-w-0 truncate text-slate-600">
-            <span className="font-semibold">{outcomeLabel(last.outcome)}</span>
-            <span className="text-slate-400"> · {shortDate(last.created_at)}</span>
-            {last.note && <span className="hidden md:inline text-slate-500"> · {last.note}</span>}
-          </span>
-        )}
-        {lead.next_call_at && (
-          <span className={`font-medium shrink-0 ${overdue ? 'text-red-600' : 'text-emerald-700'}`}>
-            {overdue ? 'Overdue ' : 'Call '}{shortDate(lead.next_call_at)}
-          </span>
-        )}
-        {lead.call_count > 0 && <span className="shrink-0 text-slate-400">({lead.call_count})</span>}
-      </button>
-      <LeadHistoryModal open={open} onClose={() => setOpen(false)} phone={phone} name={name}
-        clientId={clientId} status={lead?.lead_status} nextCallAt={lead?.next_call_at} />
-    </>
-  );
-}
-
 const OUTCOME_TONE = {
   answered:      { bg: 'rgba(34,197,94,0.16)',   fg: '#16a34a' },
   no_answer:     { bg: 'rgba(239,68,68,0.14)',   fg: '#dc2626' },
@@ -230,5 +195,128 @@ export function LeadHistoryModal({ open, onClose, phone, name, clientId, status,
       </div>
       <CallHistory phone={phone} clientId={clientId} />
     </Modal>
+  );
+}
+
+/**
+ * The one lead control in the chat header.
+ *
+ * The button reads as a summary (status, last call, promised day). Opening it
+ * shows everything in one panel, in the order an operator works: set the
+ * status, log what happened on the call, read what was tried before. Status and
+ * outcome buttons save on one tap and the panel stays open, so the new entry
+ * appears in the history straight away.
+ */
+export function LeadPanel({ phone, clientId, lead, canEdit = true }) {
+  const toast = useToast();
+  const refresh = useRefreshLeads();
+  const [open, setOpen] = useState(false);
+  const [pickingDate, setPickingDate] = useState(false);
+  const [note, setNote] = useState('');
+  const params = clientId ? { client_id: clientId } : {};
+  const base = `/customers/${encodeURIComponent(phone)}`;
+
+  const setStatus = useMutation({
+    mutationFn: (status) => api.patch(`${base}/lead-status`, { status: status === 'new' ? null : status }, { params }),
+    onSuccess: () => refresh(phone),
+    onError: (e) => toast.error(e?.response?.data?.error || 'Could not change status'),
+  });
+  const logCall = useMutation({
+    mutationFn: ({ outcome, callback_on }) => api.post(`${base}/calls`, { outcome, note, callback_on }, { params }),
+    onSuccess: (_r, v) => {
+      toast.success(v.outcome === 'note' ? 'Note saved' : 'Call logged');
+      setNote(''); setPickingDate(false); refresh(phone);
+    },
+    onError: (e) => toast.error(e?.response?.data?.error || 'Could not save'),
+  });
+
+  const m = statusMeta(lead?.lead_status);
+  const last = lead?.last_call;
+  const overdue = lead?.next_call_at && lead.next_call_at < todayStr();
+  const hasNote = note.trim().length > 0;
+
+  return (
+    <div className="relative min-w-0">
+      <button onClick={() => setOpen(v => !v)} title="Lead status, call log and history"
+        className="max-w-full flex items-center gap-1.5 text-xs pl-2.5 pr-2 py-1 rounded-full border-0 cursor-pointer"
+        style={{ background: m.bg, color: m.fg }}>
+        <span className="font-semibold shrink-0">{m.label}</span>
+        {last && <span className="truncate opacity-80">· {outcomeLabel(last.outcome)} {shortDate(last.created_at)}</span>}
+        {lead?.next_call_at && (
+          <span className="shrink-0 font-semibold" style={overdue ? { color: '#dc2626' } : undefined}>
+            · {overdue ? 'Overdue' : 'Call'} {shortDate(lead.next_call_at)}
+          </span>
+        )}
+        <span className="shrink-0 opacity-60">▾</span>
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div className="fixed inset-x-3 top-16 md:absolute md:inset-x-auto md:right-0 md:left-auto md:top-full md:mt-1 md:w-96 z-40 max-h-[75vh] overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl p-3 flex flex-col gap-3 text-left">
+            <div className="flex items-center">
+              <div className="text-sm font-semibold text-slate-700">Lead</div>
+              <button onClick={() => setOpen(false)}
+                className="ml-auto text-sm px-1 border-0 bg-transparent text-slate-400 cursor-pointer" aria-label="Close">✕</button>
+            </div>
+
+            <section>
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1.5">Status</div>
+              <div className="flex flex-wrap gap-1.5">
+                {LEAD_STATUSES.map(st => {
+                  const on = (lead?.lead_status || 'new') === st.key;
+                  return (
+                    <button key={st.key} disabled={!canEdit || setStatus.isPending}
+                      onClick={() => !on && setStatus.mutate(st.key)}
+                      className="text-xs px-2.5 py-1 rounded-full cursor-pointer disabled:opacity-60"
+                      style={on ? { background: st.fg, color: '#fff', border: `1px solid ${st.fg}` }
+                                : { background: 'transparent', color: st.fg, border: `1px solid ${st.bg}` }}
+                    >{st.label}</button>
+                  );
+                })}
+              </div>
+            </section>
+
+            {canEdit && (
+              <section>
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1.5">Log a call (tap to save)</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {CALL_OUTCOMES.map(o => (
+                    <button key={o.key} disabled={logCall.isPending}
+                      onClick={() => (o.key === 'call_back' ? setPickingDate(true) : logCall.mutate({ outcome: o.key }))}
+                      className={`text-xs px-2.5 py-1 rounded-full border cursor-pointer disabled:opacity-50 ${
+                        o.key === 'call_back' && pickingDate
+                          ? 'bg-emerald-600 text-white border-emerald-600'
+                          : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-400'}`}
+                    >{o.label}</button>
+                  ))}
+                </div>
+                {pickingDate && (
+                  <label className="mt-2 text-xs text-slate-500 flex items-center gap-2">
+                    Call on
+                    <input type="date" min={todayStr()} autoFocus
+                      onChange={e => e.target.value && logCall.mutate({ outcome: 'call_back', callback_on: e.target.value })}
+                      className="flex-1 text-xs border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-emerald-400" />
+                  </label>
+                )}
+                <textarea value={note} onChange={e => setNote(e.target.value)} rows={2} maxLength={1000}
+                  placeholder="Note (optional, saved with the call you tap)"
+                  className="mt-2 w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-emerald-400 resize-none" />
+                {hasNote && (
+                  <button onClick={() => logCall.mutate({ outcome: 'note' })} disabled={logCall.isPending}
+                    className="mt-1.5 text-xs px-3 py-1.5 rounded-lg border-0 bg-emerald-600 text-white cursor-pointer disabled:opacity-40"
+                  >{logCall.isPending ? 'Saving…' : 'Save note only'}</button>
+                )}
+              </section>
+            )}
+
+            <section>
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1.5">History</div>
+              <CallHistory phone={phone} clientId={clientId} />
+            </section>
+          </div>
+        </>
+      )}
+    </div>
   );
 }

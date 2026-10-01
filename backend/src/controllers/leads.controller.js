@@ -16,7 +16,7 @@ const { timezoneFor } = require('../services/scheduledFollowUps');
 
 /** null in the database means New: nobody has judged the lead yet. */
 const LEAD_STATUSES = ['interested', 'thinking', 'not_interested', 'wrong_number', 'bought'];
-const CALL_OUTCOMES = ['answered', 'no_answer', 'busy', 'switched_off', 'not_reachable', 'call_back'];
+const CALL_OUTCOMES = ['answered', 'no_answer', 'busy', 'switched_off', 'not_reachable', 'call_back', 'note'];
 
 /** The calendar day it is now on a clock in `timeZone` ("YYYY-MM-DD"). */
 function todayLocal(timeZone) {
@@ -183,10 +183,26 @@ async function getLead(req, res) {
   const clientId = resolveClientId(req);
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
   try {
-    const r = await db.pgQuery(
-      `SELECT lead_status, next_call_at::text AS next_call_at
-         FROM customer_settings WHERE client_id=$1 AND phone_number=$2`, [clientId, req.params.phone]);
-    res.json({ lead_status: r.rows[0]?.lead_status || null, next_call_at: r.rows[0]?.next_call_at || null });
+    const [r, last, n] = await Promise.all([
+      db.pgQuery(
+        `SELECT lead_status, next_call_at::text AS next_call_at
+           FROM customer_settings WHERE client_id=$1 AND phone_number=$2`, [clientId, req.params.phone]),
+      db.pgQuery(
+        `SELECT l.outcome, l.note, l.callback_on::text AS callback_on, l.created_at,
+                COALESCE(u.display_name, u.username) AS by_name
+           FROM lead_call_log l LEFT JOIN crm_users u ON u.id = l.created_by
+          WHERE l.client_id=$1 AND l.phone_number=$2
+          ORDER BY l.created_at DESC LIMIT 1`, [clientId, req.params.phone]),
+      db.pgQuery(
+        `SELECT COUNT(*) FROM lead_call_log WHERE client_id=$1 AND phone_number=$2`,
+        [clientId, req.params.phone]),
+    ]);
+    res.json({
+      lead_status: r.rows[0]?.lead_status || null,
+      next_call_at: r.rows[0]?.next_call_at || null,
+      last_call: last.rows[0] || null,
+      call_count: parseInt(n.rows[0].count),
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 
@@ -223,6 +239,9 @@ async function logCall(req, res) {
   if (!CALL_OUTCOMES.includes(outcome)) {
     return res.status(400).json({ error: `outcome must be one of ${CALL_OUTCOMES.join(', ')}` });
   }
+  // A bare note is not a call: it never touches the promised call-back day.
+  const isNote = outcome === 'note';
+  if (isNote && !note) return res.status(400).json({ error: 'A note cannot be empty' });
   let callbackOn = null;
   if (outcome === 'call_back') {
     callbackOn = cleanDate(req.body.callback_on);
@@ -234,13 +253,15 @@ async function logCall(req, res) {
       `INSERT INTO lead_call_log (client_id, phone_number, outcome, note, callback_on, created_by)
        VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, created_at`,
       [clientId, phone, outcome, note, callbackOn, req.user.uid || null]);
-    await db.pgQuery(
-      `INSERT INTO customer_settings (phone_number, client_id, next_call_at)
-       VALUES ($1,$2,$3)
-       ON CONFLICT (phone_number, client_id) DO UPDATE SET next_call_at=$3`,
-      [phone, clientId, callbackOn]);
-    res.json({ ok: true, id: ins.rows[0].id, next_call_at: callbackOn });
+    if (!isNote) {
+      await db.pgQuery(
+        `INSERT INTO customer_settings (phone_number, client_id, next_call_at)
+         VALUES ($1,$2,$3)
+         ON CONFLICT (phone_number, client_id) DO UPDATE SET next_call_at=$3`,
+        [phone, clientId, callbackOn]);
+    }
+    res.json({ ok: true, id: ins.rows[0].id, next_call_at: isNote ? undefined : callbackOn });
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 
-module.exports = { listLeads, leadsSummary, setLeadStatus, getLead, listCalls, logCall, LEAD_STATUSES, CALL_OUTCOMES };
+module.exports = { todayLocal, listLeads, leadsSummary, setLeadStatus, getLead, listCalls, logCall, LEAD_STATUSES, CALL_OUTCOMES };

@@ -4,7 +4,8 @@ import api from '../../lib/api';
 import { timeAgoShort } from '../../lib/utils';
 import Spinner from '../ui/Spinner';
 import { StatusBadge } from '../leads/LeadControls';
-import { todayStr, shortDate } from '../../lib/leads';
+import { todayStr, shortDate, LEAD_STATUSES } from '../../lib/leads';
+import { usePermissions } from '../../lib/permissions';
 
 const WINDOW_MS = 24 * 3600_000;
 
@@ -94,7 +95,28 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
     return () => clearInterval(id);
   }, []);
 
-  const params = { page, limit: 30, ...(search && { search }), ...(clientId && { client_id: clientId }) };
+  // One active chip at a time: a lead status, or a call-back view.
+  const [chip, setChip] = useState('');
+  const perms = usePermissions();
+  const canLeads = perms.can('followups.view');
+  const chipFilter = !chip ? {}
+    : (chip === 'today' || chip === 'overdue') ? { callback: chip } : { lead_status: chip };
+
+  const { data: summary } = useQuery({
+    queryKey: ['leads-summary', clientId],
+    queryFn: () => api.get('/leads/summary', { params: clientId ? { client_id: clientId } : {} }).then(r => r.data),
+    enabled: canLeads && !!clientId,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+  });
+  const chips = [
+    { key: '', label: 'All', count: summary?.all },
+    { key: 'overdue', label: 'Overdue', count: summary?.overdue, red: true },
+    { key: 'today', label: 'Call today', count: summary?.today },
+    ...LEAD_STATUSES.map(s => ({ key: s.key, label: s.label, count: summary?.counts?.[s.key] ?? 0 })),
+  ];
+
+  const params = { page, limit: 30, ...(search && { search }), ...chipFilter, ...(clientId && { client_id: clientId }) };
 
   const { data, isLoading } = useQuery({
     queryKey: ['customers', params],
@@ -126,6 +148,27 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
           onFocus={e => e.target.style.borderColor = 'var(--accent)'}
           onBlur={e => e.target.style.borderColor = 'var(--border)'}
         />
+        {/* Lead filter chips. Scrolls sideways; the list is a narrow column. */}
+        {canLeads && clientId && (
+          <div className="flex gap-1.5 mt-2 overflow-x-auto pb-1">
+            {chips.map(c => {
+              const active = chip === c.key;
+              const hot = c.red && c.count > 0 && !active;
+              return (
+                <button
+                  key={c.key || 'all'}
+                  onClick={() => { setChip(c.key); setPage(1); }}
+                  className="text-[11px] px-2.5 py-1 rounded-full whitespace-nowrap cursor-pointer shrink-0"
+                  style={{
+                    background: active ? 'var(--accent)' : hot ? 'rgba(239,68,68,0.16)' : 'var(--bg-base)',
+                    color: active ? '#fff' : hot ? '#dc2626' : 'var(--text-2)',
+                    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                  }}
+                >{c.label}{c.count != null ? ` ${c.count}` : ''}</button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* List */}

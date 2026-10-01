@@ -7,7 +7,7 @@ import Spinner from '../components/ui/Spinner';
 import { usePermissions } from '../lib/permissions';
 import api from '../lib/api';
 import { LEAD_STATUSES, CALL_OUTCOMES, outcomeLabel, todayStr, shortDate } from '../lib/leads';
-import { LeadStatusSelect, LogCallButton, CallHistory } from '../components/leads/LeadControls';
+import { LeadStatusSelect, LogCallButton, LeadHistoryModal } from '../components/leads/LeadControls';
 
 /**
  * The lead tracker: how good each lead is, who was called, and who to ring back.
@@ -50,7 +50,7 @@ export default function FollowUps() {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch]     = useState('');
   const [page, setPage]         = useState(1);
-  const [expanded, setExpanded] = useState(null);
+  const [expanded, setExpanded] = useState(null);   // the lead whose history popup is open
 
   // Wait for typing to pause rather than querying on every keystroke.
   useEffect(() => {
@@ -146,11 +146,10 @@ export default function FollowUps() {
           )}
           {leads.map(l => {
             const overdue = l.next_call_at && l.next_call_at < today;
-            const open = expanded === l.phone_number;
-            return (
+                        return (
               <Fragment key={l.phone_number}>
                 <div
-                  onClick={() => setExpanded(open ? null : l.phone_number)}
+                  onClick={() => setExpanded(l)}
                   className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 border-b border-slate-100 cursor-pointer hover:bg-slate-50"
                 >
                   <div className="min-w-40 flex-1">
@@ -177,23 +176,25 @@ export default function FollowUps() {
                     >Call</a>
                     {canEdit && <LogCallButton phone={l.phone_number} clientId={clientId} />}
                     <button
+                      onClick={() => setExpanded(l)}
+                      className="text-xs px-2.5 py-1 rounded-full font-medium bg-violet-100 text-violet-700 hover:bg-violet-200 border-0 cursor-pointer"
+                    >History{l.call_count > 0 ? ` ${l.call_count}` : ''}</button>
+                    <button
                       onClick={() => navigate(`/chat?phone=${encodeURIComponent(l.phone_number)}`)}
                       className="text-xs px-2.5 py-1 rounded-full font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 border-0 cursor-pointer"
                     >Open chat</button>
                   </div>
                 </div>
-                {open && (
-                  <div className="px-4 py-3 bg-slate-50 border-b border-slate-100">
-                    <div className="text-xs font-semibold text-slate-500 mb-1.5">
-                      Call history{l.owned_by_name ? ` · chat with ${l.owned_by_name}` : ''}
-                    </div>
-                    <CallHistory phone={l.phone_number} clientId={clientId} />
-                  </div>
-                )}
               </Fragment>
             );
           })}
         </div>
+
+        <LeadHistoryModal
+          open={!!expanded} onClose={() => setExpanded(null)}
+          phone={expanded?.phone_number} name={expanded?.name} clientId={clientId}
+          status={expanded?.lead_status} nextCallAt={expanded?.next_call_at}
+        />
 
         {pages > 1 && (
           <div className="flex items-center justify-center gap-3 mt-4 text-sm text-slate-600">

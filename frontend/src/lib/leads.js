@@ -22,11 +22,14 @@ export const CALL_OUTCOMES = [
   { key: 'call_back',     label: 'Call back later' },
 ];
 
+/** A note with no call attached; shown in history, never offered as a call button. */
+const NOTE_OUTCOME = { key: 'note', label: 'Note' };
+
 export const statusMeta = (key) =>
   LEAD_STATUSES.find(s => s.key === (key || 'new')) || LEAD_STATUSES[0];
 
 export const outcomeLabel = (key) =>
-  CALL_OUTCOMES.find(o => o.key === key)?.label || key || '';
+  [...CALL_OUTCOMES, NOTE_OUTCOME].find(o => o.key === key)?.label || key || '';
 
 /** Today as YYYY-MM-DD on the viewer's clock (for date inputs and overdue colouring). */
 export const todayStr = () => {

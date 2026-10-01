@@ -9,7 +9,7 @@ import AstroChartModal from './AstroChartModal';
 import HoroscopeQaPanel from './HoroscopeQaPanel';
 import TarotModal from './TarotModal';
 import CreateOrderDrawer from './CreateOrderDrawer';
-import { LeadStatusSelect, LogCallButton } from '../leads/LeadControls';
+import { LeadStatusSelect, LogCallButton, LeadStrip } from '../leads/LeadControls';
 import Spinner from '../ui/Spinner';
 import Button from '../ui/Button';
 import { useToast } from '../ui/Toast';
@@ -508,6 +508,8 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
       )}
 
       {/* Messages */}
+      {canLead && <LeadStrip phone={phone} name={name} clientId={clientId} lead={lead} />}
+
       <div ref={threadRef} className="flex-1 min-h-0 overflow-y-auto px-2 md:px-4 py-2 md:py-3 bg-slate-50">
         {/* Top sentinel for infinite scroll */}
         <div ref={topRef} className="h-1" />

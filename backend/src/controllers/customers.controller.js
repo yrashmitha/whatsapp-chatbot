@@ -15,6 +15,8 @@ const resolveClientId  = require('../middleware/resolveClientId');
 const ownership        = require('../services/chatOwnership');
 const { IDLE_RELEASE_HOURS } = require('../services/chatOwnership');
 const { hasPermission } = require('../services/permissions');
+const { timezoneFor } = require('../services/scheduledFollowUps');
+const { LEAD_STATUSES, todayLocal } = require('./leads.controller');
 
 /**
  * GET /api/customers — paginated customer list with unread badge counts.
@@ -30,12 +32,31 @@ async function listCustomers(req, res) {
   const search = req.query.search || '';
   const offset = (page - 1) * limit;
   try {
-    const where = clientId
-      ? `WHERE cu.client_id=$1 ${search ? "AND (cu.phone_number ILIKE $4 OR cu.name ILIKE $4)" : ''}`
-      : `WHERE 1=1 ${search ? "AND (cu.phone_number ILIKE $3 OR cu.name ILIKE $3)" : ''}`;
-    const params = clientId
-      ? [clientId, limit, offset, ...(search ? [`%${search}%`] : [])]
-      : [limit, offset, ...(search ? [`%${search}%`] : [])];
+    // Filters are collected as conditions with their own placeholders, then
+    // limit and offset go last, so the list and the count cannot disagree.
+    const fparams = [];
+    const conds = [];
+    const add = (v) => { fparams.push(v); return `$${fparams.length}`; };
+    if (clientId) conds.push(`cu.client_id=${add(clientId)}`);
+    if (search) {
+      const like = add(`%${search}%`);
+      conds.push(`(cu.phone_number ILIKE ${like} OR cu.name ILIKE ${like})`);
+    }
+    // Lead filters read customer_settings through its (phone, client) key.
+    const settings = 'FROM customer_settings cs WHERE cs.phone_number=cu.phone_number AND cs.client_id=cu.client_id';
+    const leadStatus = req.query.lead_status;
+    if (leadStatus === 'new') {
+      conds.push(`NOT EXISTS (SELECT 1 ${settings} AND cs.lead_status IS NOT NULL)`);
+    } else if (LEAD_STATUSES.includes(leadStatus)) {
+      conds.push(`EXISTS (SELECT 1 ${settings} AND cs.lead_status=${add(leadStatus)})`);
+    }
+    const callback = req.query.callback;
+    if ((callback === 'today' || callback === 'overdue') && clientId) {
+      const today = add(todayLocal(await timezoneFor(clientId)));
+      conds.push(`EXISTS (SELECT 1 ${settings} AND cs.next_call_at ${callback === 'today' ? '=' : '<'} ${today}::date)`);
+    }
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+    const params = [...fparams, limit, offset];
     const q = `
       SELECT cu.phone_number, cu.phone_number AS phone, cu.name, cu.client_id, cu.updated_at,
              COUNT(DISTINCT m.id) AS message_count,
@@ -86,11 +107,9 @@ async function listCustomers(req, res) {
       GROUP BY cu.phone_number, cu.name, cu.client_id, cu.updated_at, cu.last_read_at, cu.last_customer_message_at, cu.needs_attention,
                cu.first_ad_id, cu.first_ad_headline, ad.name
       ORDER BY GREATEST(cu.last_customer_message_at, MAX(m.created_at)) DESC NULLS LAST
-      LIMIT ${clientId ? '$2' : '$1'} OFFSET ${clientId ? '$3' : '$2'}`;
-    const countQ = clientId
-      ? `SELECT COUNT(*) FROM customers cu ${search ? "WHERE client_id=$1 AND (phone_number ILIKE $2 OR name ILIKE $2)" : "WHERE client_id=$1"}`
-      : `SELECT COUNT(*) FROM customers cu ${search ? "WHERE (phone_number ILIKE $1 OR name ILIKE $1)" : ''}`;
-    const countParams = clientId ? [clientId, ...(search ? [`%${search}%`] : [])] : (search ? [`%${search}%`] : []);
+      LIMIT $${fparams.length + 1} OFFSET $${fparams.length + 2}`;
+    const countQ = `SELECT COUNT(*) FROM customers cu ${where}`;
+    const countParams = fparams;
     const [rows, countRes] = await Promise.all([db.pgQuery(q, params), db.pgQuery(countQ, countParams)]);
     // One source for the window, so the screen cannot disagree with the sweep.
     res.json({

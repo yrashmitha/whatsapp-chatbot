@@ -68,6 +68,10 @@ async function listCustomers(req, res) {
              -- from whichever is later and any reply pushes it out again.
              (SELECT cs.paused_at FROM customer_settings cs
                WHERE cs.phone_number=cu.phone_number AND cs.client_id=cu.client_id) AS paused_at,
+             (SELECT cs.lead_status FROM customer_settings cs
+               WHERE cs.phone_number=cu.phone_number AND cs.client_id=cu.client_id) AS lead_status,
+             (SELECT cs.next_call_at::text FROM customer_settings cs
+               WHERE cs.phone_number=cu.phone_number AND cs.client_id=cu.client_id) AS next_call_at,
              MAX(m.created_at) FILTER (WHERE m.sender_type = 'bot') AS last_outbound_at,
              -- The ad that brought this customer in the first time, by name when
              -- ad_details knows it, otherwise the referral's own headline (the

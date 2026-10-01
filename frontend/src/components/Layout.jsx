@@ -39,7 +39,7 @@ const icons = {
 const ALL_NAV = [
   { to: '/summary',   label: 'Summary',   icon: icons.summary,   perm: 'orders.view' },
   { to: '/chat',      label: 'Chats',     icon: icons.chat,      perm: 'chat.read'   },
-  { to: '/follow-ups', label: 'Follow-ups', icon: icons.chat,    perm: 'followups.view' },
+  { to: '/follow-ups', label: 'Leads', icon: icons.chat,    perm: 'followups.view' },
   { to: '/orders',    label: 'Orders',    icon: icons.orders,    perm: 'orders.view' },
   { to: '/operators', label: 'Operators', icon: icons.clients,   perm: 'users.manage' },
   { to: '/products',  label: 'Products',  icon: icons.products,  key: 'product_catalog_enabled' },

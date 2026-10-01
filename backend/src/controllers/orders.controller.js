@@ -405,6 +405,13 @@ async function updateStatus(req, res) {
       db.pgQuery('SELECT phone_number, client_id FROM orders WHERE order_id=$1', [req.params.id])
         .then(({ rows }) => {
           if (rows.length) {
+            // A paid order settles the lead question: they bought.
+            db.pgQuery(
+              `INSERT INTO customer_settings (phone_number, client_id, lead_status, lead_status_at)
+               VALUES ($1,$2,'bought',NOW())
+               ON CONFLICT (phone_number, client_id)
+               DO UPDATE SET lead_status='bought', lead_status_at=NOW(), next_call_at=NULL`,
+              [rows[0].phone_number, rows[0].client_id]).catch(() => {});
             const { fireCAPIEvent } = require('../services/metaConversions');
             fireCAPIEvent(rows[0].client_id, 'Purchase', rows[0].phone_number, { order_id: req.params.id }).catch(() => {});
           }

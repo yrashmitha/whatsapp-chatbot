@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import api from '../../lib/api';
 import { timeAgoShort } from '../../lib/utils';
 import Spinner from '../ui/Spinner';
+import { StatusBadge } from '../leads/LeadControls';
+import { todayStr, shortDate } from '../../lib/leads';
 
 const WINDOW_MS = 24 * 3600_000;
 
@@ -176,8 +178,19 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
                       {c.last_message && (
                         <div className="text-xs truncate mt-0.5" style={{ color: 'var(--text-2)' }}>{c.last_message}</div>
                       )}
-                      {(c.has_image || c.has_document || c.has_voice || c.latest_order_status || c.owned_by || c.ai_enabled === false || c.client_id || c.first_ad_name) && (
+                      {(c.has_image || c.has_document || c.has_voice || c.latest_order_status || c.owned_by || c.ai_enabled === false || c.client_id || c.first_ad_name || c.lead_status || c.next_call_at) && (
                         <div className="flex gap-1 mt-1 flex-wrap items-center">
+                          {/* Lead quality and the day a call was promised. */}
+                          {c.lead_status && <StatusBadge status={c.lead_status} />}
+                          {c.next_call_at && (
+                            <span
+                              className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                              style={c.next_call_at < todayStr()
+                                ? { background: 'rgba(239,68,68,0.16)', color: '#dc2626' }
+                                : { background: 'rgba(34,197,94,0.16)', color: '#16a34a' }}
+                              title="Call back on this day"
+                            >📞 {shortDate(c.next_call_at)}</span>
+                          )}
                           {/* Which ad this customer clicked to start the chat, if any. */}
                           {c.first_ad_name && (
                             <span

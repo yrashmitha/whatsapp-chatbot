@@ -9,6 +9,7 @@ import AstroChartModal from './AstroChartModal';
 import HoroscopeQaPanel from './HoroscopeQaPanel';
 import TarotModal from './TarotModal';
 import CreateOrderDrawer from './CreateOrderDrawer';
+import { LeadStatusSelect, LogCallButton } from '../leads/LeadControls';
 import Spinner from '../ui/Spinner';
 import Button from '../ui/Button';
 import { useToast } from '../ui/Toast';
@@ -167,46 +168,13 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
   const customerOrders = ordersData?.orders || [];
   const pendingOrder = customerOrders.find(o => o.status === 'pending') || null;
 
-  // ── Follow-up reminder: a day the customer named ("Monday", "heta") ──────────
+  // ── Lead quality and call log ───────────────────────────────────────────────
   const cp = clientId ? { client_id: clientId } : {};
-  const [remindOpen, setRemindOpen] = useState(false);
-  const [remindDate, setRemindDate] = useState('');
-  const [remindNote, setRemindNote] = useState('');
-  const canRemind = perms.can('followups.schedule') && !!pendingOrder;
-
-  const { data: reminder } = useQuery({
-    queryKey: ['reminder', pendingOrder?.order_id, clientId],
-    queryFn: () => api.get('/follow-ups/reminders', { params: { ...cp, order_id: pendingOrder.order_id } }).then(r => r.data.reminder),
-    enabled: !!pendingOrder && perms.can('followups.view'),
-  });
-
-  useEffect(() => {
-    if (!remindOpen) return;
-    setRemindDate(reminder?.remind_on ? String(reminder.remind_on).slice(0, 10) : '');
-    setRemindNote(reminder?.note || '');
-  }, [remindOpen, reminder]);
-
-  const saveReminder = useMutation({
-    mutationFn: () => api.post('/follow-ups/reminders',
-      { order_id: pendingOrder.order_id, remind_on: remindDate, note: remindNote.trim() || null }, { params: cp }),
-    onSuccess: () => {
-      setRemindOpen(false);
-      qc.invalidateQueries({ queryKey: ['reminder', pendingOrder?.order_id] });
-      qc.invalidateQueries({ queryKey: ['follow-up-reminders'] });
-      toast.success('Reminder set');
-    },
-    onError: (e) => toast.error(e?.response?.data?.error || 'Could not set reminder'),
-  });
-
-  const clearReminder = useMutation({
-    mutationFn: () => api.patch(`/follow-ups/reminders/${reminder.id}`, { status: 'dismissed' }, { params: cp }),
-    onSuccess: () => {
-      setRemindOpen(false);
-      qc.invalidateQueries({ queryKey: ['reminder', pendingOrder?.order_id] });
-      qc.invalidateQueries({ queryKey: ['follow-up-reminders'] });
-      toast.success('Reminder cleared');
-    },
-    onError: () => toast.error('Could not clear'),
+  const canLead = perms.can('followups.schedule');
+  const { data: lead } = useQuery({
+    queryKey: ['lead', phone, clientId],
+    queryFn: () => api.get(`/customers/${encodeURIComponent(phone)}/lead`, { params: cp }).then(r => r.data),
+    enabled: perms.can('followups.view'),
   });
 
   const updateStatusMutation = useMutation({
@@ -354,57 +322,11 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
                 🔮 Report Q&A
               </button>
             )}
-            {canRemind && (
-              <div className="relative">
-                <button
-                  onClick={() => setRemindOpen(v => !v)}
-                  title={reminder ? `Reminder set for ${String(reminder.remind_on).slice(0, 10)}` : 'Remind me to follow up on a day the customer named'}
-                  className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${
-                    reminder ? 'bg-violet-600 text-white hover:bg-violet-700' : 'bg-violet-100 text-violet-700 hover:bg-violet-200'}`}
-                >
-                  🔔 {reminder ? String(reminder.remind_on).slice(5, 10) : 'Remind'}
-                </button>
-                {remindOpen && (
-                  <div className="absolute right-0 top-full mt-1 z-30 w-64 bg-white border border-slate-200 rounded-xl shadow-lg p-3 flex flex-col gap-2">
-                    <div className="text-xs font-semibold text-slate-600">Follow up on…</div>
-                    <input
-                      type="date"
-                      value={remindDate}
-                      min={new Date(Date.now() + 864e5).toISOString().slice(0, 10)}
-                      onChange={e => setRemindDate(e.target.value)}
-                      className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-violet-400"
-                    />
-                    <input
-                      type="text"
-                      value={remindNote}
-                      onChange={e => setRemindNote(e.target.value)}
-                      placeholder="note — e.g. said Monday, machine eken"
-                      className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-violet-400"
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => saveReminder.mutate()}
-                        disabled={!remindDate || saveReminder.isPending}
-                        className="text-xs px-3 py-1.5 rounded-lg border-0 bg-violet-600 text-white cursor-pointer disabled:opacity-40"
-                      >{saveReminder.isPending ? 'Saving…' : (reminder ? 'Update' : 'Set')}</button>
-                      {reminder && (
-                        <button
-                          onClick={() => clearReminder.mutate()}
-                          disabled={clearReminder.isPending}
-                          className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 cursor-pointer"
-                        >Clear</button>
-                      )}
-                      <button
-                        onClick={() => setRemindOpen(false)}
-                        className="text-xs px-2 py-1.5 rounded-lg border-0 bg-transparent text-slate-400 cursor-pointer ml-auto"
-                      >✕</button>
-                    </div>
-                    <p className="text-[10px] text-slate-400">
-                      No message goes out — it just puts this chat on the Follow-ups screen that day.
-                    </p>
-                  </div>
-                )}
-              </div>
+            {canLead && (
+              <>
+                <LeadStatusSelect phone={phone} clientId={clientId} value={lead?.lead_status} />
+                <LogCallButton phone={phone} clientId={clientId} nextCallAt={lead?.next_call_at} />
+              </>
             )}
             <button
               onClick={() => setCreateOrderOpen(true)}

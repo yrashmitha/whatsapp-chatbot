@@ -503,6 +503,60 @@ async function init() {
       );
     `);
 
+    // ── Lead tracking ────────────────────────────────────────────────────────
+    // How good a lead is (NULL means nobody has judged it yet) and the day an
+    // operator promised to ring back, kept on the chat row so the list can
+    // filter on both without joining the log. The log beside it is the record
+    // of every call, append only.
+    await pool.query(`
+      ALTER TABLE customer_settings ADD COLUMN IF NOT EXISTS lead_status    TEXT;
+      ALTER TABLE customer_settings ADD COLUMN IF NOT EXISTS lead_status_at TIMESTAMPTZ;
+      ALTER TABLE customer_settings ADD COLUMN IF NOT EXISTS lead_status_by INT;
+      ALTER TABLE customer_settings ADD COLUMN IF NOT EXISTS next_call_at   DATE;
+      CREATE INDEX IF NOT EXISTS idx_cs_lead_status
+        ON customer_settings (client_id, lead_status) WHERE lead_status IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_cs_next_call
+        ON customer_settings (client_id, next_call_at) WHERE next_call_at IS NOT NULL;
+      CREATE TABLE IF NOT EXISTS lead_call_log (
+        id           SERIAL PRIMARY KEY,
+        client_id    TEXT NOT NULL,
+        phone_number TEXT NOT NULL,
+        outcome      TEXT NOT NULL,
+        note         TEXT,
+        callback_on  DATE,
+        created_by   INT,
+        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_call_log_chat
+        ON lead_call_log (client_id, phone_number, created_at DESC);
+      -- The tracker sorts the open list by newest chat and filters one client at a time.
+      CREATE INDEX IF NOT EXISTS idx_customers_client_lastmsg
+        ON customers (client_id, last_customer_message_at DESC NULLS LAST);
+      -- Who logged what, for "my calls" and payroll-style questions later.
+      CREATE INDEX IF NOT EXISTS idx_call_log_user
+        ON lead_call_log (created_by, created_at DESC) WHERE created_by IS NOT NULL;
+      -- Filtering by last outcome and "calls today" style reports.
+      CREATE INDEX IF NOT EXISTS idx_call_log_outcome
+        ON lead_call_log (client_id, outcome, created_at DESC);
+    `);
+
+    // Search is ILIKE '%text%', which a btree cannot serve. Trigram indexes
+    // can. The extension may be unavailable on a managed database, and a
+    // missing search index must never stop the app booting, so it is guarded.
+    try {
+      await pool.query(`
+        CREATE EXTENSION IF NOT EXISTS pg_trgm;
+        CREATE INDEX IF NOT EXISTS idx_customers_name_trgm
+          ON customers USING gin (name gin_trgm_ops);
+        CREATE INDEX IF NOT EXISTS idx_customers_phone_trgm
+          ON customers USING gin (phone_number gin_trgm_ops);
+        CREATE INDEX IF NOT EXISTS idx_call_log_note_trgm
+          ON lead_call_log USING gin (note gin_trgm_ops) WHERE note IS NOT NULL;
+      `);
+    } catch (e) {
+      console.warn('[DB] pg_trgm search indexes skipped:', e.message);
+    }
+
     // ── Media library ─────────────────────────────────────────────────────────
     await pool.query(`
       CREATE TABLE IF NOT EXISTS client_media (

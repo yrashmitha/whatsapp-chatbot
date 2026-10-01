@@ -86,7 +86,7 @@ export function LogCallButton({ phone, clientId, label = '📞 Log call', classN
         title={nextCallAt ? `Call back on ${shortDate(nextCallAt)}` : 'Record a phone call'}
       >{nextCallAt ? `📞 ${shortDate(nextCallAt)}` : label}</button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 z-40 w-72 bg-white border border-slate-200 rounded-xl shadow-lg p-3 flex flex-col gap-2 text-left">
+        <div className="fixed inset-x-3 top-28 md:absolute md:inset-x-auto md:right-0 md:top-full md:mt-1 z-40 md:w-72 bg-white border border-slate-200 rounded-xl shadow-lg p-3 flex flex-col gap-2 text-left">
           <div className="flex items-center">
             <div className="text-xs font-semibold text-slate-600">What happened on the call?</div>
             <button onClick={close}
@@ -126,8 +126,9 @@ export function LogCallButton({ phone, clientId, label = '📞 Log call', classN
 }
 
 /**
- * One line under the chat header: the last call, the promised day, and the
- * history one click away. This is what saves an operator a trip to the Leads page.
+ * The last call and the promised day, as a compact right-aligned button that
+ * sits in the orders row. Clicking it opens the full history, so an operator
+ * never needs the Leads page to check what was tried.
  */
 export function LeadStrip({ phone, name, clientId, lead }) {
   const [open, setOpen] = useState(false);
@@ -135,27 +136,27 @@ export function LeadStrip({ phone, name, clientId, lead }) {
   if (!last && !lead?.next_call_at) return null;
   const overdue = lead.next_call_at && lead.next_call_at < todayStr();
   return (
-    <div className="shrink-0 border-b border-slate-200 bg-white">
-      <button onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center gap-2 px-4 py-1.5 text-xs text-left bg-transparent border-0 cursor-pointer">
+    <>
+      <button onClick={() => setOpen(true)} title="View call history"
+        className="min-w-0 flex items-center gap-1.5 pl-2 pr-3 py-1.5 text-xs bg-transparent border-0 cursor-pointer hover:bg-slate-50">
         <span>📞</span>
         {last && (
-          <span className="text-slate-600 truncate">
+          <span className="min-w-0 truncate text-slate-600">
             <span className="font-semibold">{outcomeLabel(last.outcome)}</span>
-            <span className="text-slate-400"> · {new Date(last.created_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}{last.by_name ? ` · ${last.by_name}` : ''}</span>
-            {last.note && <span className="text-slate-500"> · {last.note}</span>}
+            <span className="text-slate-400"> · {shortDate(last.created_at)}</span>
+            {last.note && <span className="hidden md:inline text-slate-500"> · {last.note}</span>}
           </span>
         )}
         {lead.next_call_at && (
           <span className={`font-medium shrink-0 ${overdue ? 'text-red-600' : 'text-emerald-700'}`}>
-            {overdue ? 'Overdue ' : 'Call back '}{shortDate(lead.next_call_at)}
+            {overdue ? 'Overdue ' : 'Call '}{shortDate(lead.next_call_at)}
           </span>
         )}
-        <span className="ml-auto text-slate-400 shrink-0">{lead.call_count > 1 ? `${lead.call_count} entries ` : ''}View history</span>
+        {lead.call_count > 0 && <span className="shrink-0 text-slate-400">({lead.call_count})</span>}
       </button>
       <LeadHistoryModal open={open} onClose={() => setOpen(false)} phone={phone} name={name}
         clientId={clientId} status={lead?.lead_status} nextCallAt={lead?.next_call_at} />
-    </div>
+    </>
   );
 }
 

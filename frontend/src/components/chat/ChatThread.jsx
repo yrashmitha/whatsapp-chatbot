@@ -414,6 +414,15 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
             </button>
           </div>
         </div>
+        {/* Mobile lead row: used on every call, so it is not behind the overflow
+            menu. Status on the left, Log call on the right so its panel opens
+            inside the screen. */}
+        {canLead && (
+          <div className="md:hidden flex items-center justify-between gap-2 px-2 pb-1.5">
+            <LeadStatusSelect phone={phone} clientId={clientId} value={lead?.lead_status} />
+            <LogCallButton phone={phone} clientId={clientId} nextCallAt={lead?.next_call_at} />
+          </div>
+        )}
         {/* Mobile action row — behind the overflow menu, so the thread keeps the screen */}
         <div className={`md:hidden ${actionsOpen ? 'flex' : 'hidden'} flex-wrap gap-1.5 items-center px-2 pb-2`}>
           {addonsData?.addons?.includes('astro_vedic_chart') && perms.can('ai.astro_chart') && customerOrders.some(o => o.status === 'pending') && (
@@ -451,23 +460,28 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
         </div>
       </div>
 
-      {/* Orders panel */}
-      {customerOrders.length > 0 && (
+      {/* One slim row for orders and the last call, so the chat keeps the screen. */}
+      {(customerOrders.length > 0 || (canLead && (lead?.last_call || lead?.next_call_at))) && (
         <div className="shrink-0 border-b border-slate-200 bg-white">
-          <button
-            onClick={() => setOrdersOpen(o => !o)}
-            className="w-full flex items-center justify-between px-4 py-2 text-xs font-medium text-slate-500 hover:bg-slate-50 transition-colors bg-transparent border-0 cursor-pointer"
-          >
-            <span className="flex items-center gap-2">
-              {customerOrders.length} order{customerOrders.length !== 1 ? 's' : ''}
-              {/* Visible without opening anything — a warning that has to be
-                  looked for is not a warning. */}
-              <MetaTrackingBadge phone={phone} clientId={clientId} />
-            </span>
-            <svg xmlns="http://www.w3.org/2000/svg" className={`w-3.5 h-3.5 transition-transform ${ordersOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
+          <div className="flex items-center justify-between gap-2 min-w-0">
+            {customerOrders.length > 0 ? (
+              <button
+                onClick={() => setOrdersOpen(o => !o)}
+                className="shrink-0 flex items-center gap-2 pl-4 pr-2 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-50 transition-colors bg-transparent border-0 cursor-pointer"
+              >
+                <span className="flex items-center gap-2">
+                  {customerOrders.length} order{customerOrders.length !== 1 ? 's' : ''}
+                  {/* Visible without opening anything. A warning that has to be
+                      looked for is not a warning. */}
+                  <MetaTrackingBadge phone={phone} clientId={clientId} />
+                </span>
+                <svg xmlns="http://www.w3.org/2000/svg" className={`w-3.5 h-3.5 transition-transform ${ordersOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+            ) : <span />}
+            {canLead && <LeadStrip phone={phone} name={name} clientId={clientId} lead={lead} />}
+          </div>
           {ordersOpen && (
             <div className="px-3 pb-2 flex flex-col gap-1.5">
               {customerOrders.map(o => (
@@ -508,8 +522,6 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
       )}
 
       {/* Messages */}
-      {canLead && <LeadStrip phone={phone} name={name} clientId={clientId} lead={lead} />}
-
       <div ref={threadRef} className="flex-1 min-h-0 overflow-y-auto px-2 md:px-4 py-2 md:py-3 bg-slate-50">
         {/* Top sentinel for infinite scroll */}
         <div ref={topRef} className="h-1" />

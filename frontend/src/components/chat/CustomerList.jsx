@@ -109,12 +109,10 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
     refetchInterval: 60_000,
     refetchIntervalInBackground: false,
   });
-  const chips = [
-    { key: '', label: 'All', count: summary?.all },
-    { key: 'overdue', label: 'Overdue', count: summary?.overdue, red: true },
-    { key: 'today', label: 'Call today', count: summary?.today },
-    ...LEAD_STATUSES.map(s => ({ key: s.key, label: s.label, count: summary?.counts?.[s.key] ?? 0 })),
-  ];
+  const [statusOpen, setStatusOpen] = useState(false);
+  const isStatusChip = chip && chip !== 'today' && chip !== 'overdue';
+  const statusMeta = isStatusChip ? LEAD_STATUSES.find(x => x.key === chip) : null;
+  const pick = (key) => { setChip(key); setPage(1); setStatusOpen(false); };
 
   const params = { page, limit: 30, ...(search && { search }), ...chipFilter, ...(clientId && { client_id: clientId }) };
 
@@ -148,17 +146,20 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
           onFocus={e => e.target.style.borderColor = 'var(--accent)'}
           onBlur={e => e.target.style.borderColor = 'var(--border)'}
         />
-        {/* Lead filter chips. Scrolls sideways; the list is a narrow column. */}
+        {/* Lead filters. Two queues an operator works all day sit as one-tap
+            chips; every status lives behind one dropdown, so nothing scrolls
+            sideways and a new status needs no new room. */}
         {canLeads && clientId && (
-          <div className="flex gap-1.5 mt-2 overflow-x-auto pb-1">
-            {chips.map(c => {
+          <div className="relative flex gap-1.5 mt-2">
+            {[
+              { key: 'overdue', label: 'Overdue', count: summary?.overdue, red: true },
+              { key: 'today', label: 'Call today', count: summary?.today },
+            ].map(c => {
               const active = chip === c.key;
               const hot = c.red && c.count > 0 && !active;
               return (
-                <button
-                  key={c.key || 'all'}
-                  onClick={() => { setChip(c.key); setPage(1); }}
-                  className="text-[11px] px-2.5 py-1 rounded-full whitespace-nowrap cursor-pointer shrink-0"
+                <button key={c.key} onClick={() => pick(active ? '' : c.key)}
+                  className="text-[11px] px-2.5 py-1 rounded-full whitespace-nowrap cursor-pointer"
                   style={{
                     background: active ? 'var(--accent)' : hot ? 'rgba(239,68,68,0.16)' : 'var(--bg-base)',
                     color: active ? '#fff' : hot ? '#dc2626' : 'var(--text-2)',
@@ -167,6 +168,43 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
                 >{c.label}{c.count != null ? ` ${c.count}` : ''}</button>
               );
             })}
+            <button onClick={() => setStatusOpen(v => !v)}
+              className="text-[11px] px-2.5 py-1 rounded-full whitespace-nowrap cursor-pointer ml-auto flex items-center gap-1"
+              style={{
+                background: statusMeta ? 'var(--accent)' : 'var(--bg-base)',
+                color: statusMeta ? '#fff' : 'var(--text-2)',
+                border: `1px solid ${statusMeta ? 'var(--accent)' : 'var(--border)'}`,
+              }}
+            >
+              {statusMeta ? statusMeta.label : 'Status'}
+              {statusMeta
+                ? <span onClick={e => { e.stopPropagation(); pick(''); }} aria-label="Clear filter">✕</span>
+                : <span>▾</span>}
+            </button>
+            {statusOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setStatusOpen(false)} />
+                <div className="absolute left-0 right-0 top-full mt-1 z-40 rounded-xl shadow-lg py-1 overflow-hidden"
+                  style={{ background: 'var(--bg-surface, var(--bg-base))', border: '1px solid var(--border)' }}>
+                  {[{ key: '', label: 'All chats', count: summary?.all }, ...LEAD_STATUSES.map(s => ({ ...s, count: summary?.counts?.[s.key] ?? 0 }))].map(o => (
+                    <button key={o.key || 'all'} onClick={() => pick(o.key)}
+                      className="w-full flex items-center justify-between gap-2 px-3 py-2 text-xs text-left cursor-pointer border-0"
+                      style={{
+                        background: chip === o.key ? 'rgba(99,102,241,0.12)' : 'transparent',
+                        color: 'var(--text-1)',
+                        fontWeight: chip === o.key ? 600 : 400,
+                      }}
+                    >
+                      <span className="flex items-center gap-2">
+                        {o.key && <span className="w-2 h-2 rounded-full" style={{ background: o.fg }} />}
+                        {o.label}
+                      </span>
+                      <span style={{ color: 'var(--text-3)' }}>{o.count ?? ''}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>

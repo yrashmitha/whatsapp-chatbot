@@ -15,7 +15,7 @@ const resolveClientId = require('../middleware/resolveClientId');
 const { timezoneFor } = require('../services/scheduledFollowUps');
 
 /** null in the database means New: nobody has judged the lead yet. */
-const LEAD_STATUSES = ['interested', 'thinking', 'not_interested', 'wrong_number', 'bought'];
+const LEAD_STATUSES = ['interested', 'thinking', 'promised_payment', 'not_interested', 'wrong_number', 'bought'];
 const CALL_OUTCOMES = ['answered', 'no_answer', 'busy', 'switched_off', 'not_reachable', 'call_back', 'note'];
 
 /** The calendar day it is now on a clock in `timeZone` ("YYYY-MM-DD"). */

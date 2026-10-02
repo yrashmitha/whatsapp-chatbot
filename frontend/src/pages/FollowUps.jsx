@@ -8,7 +8,8 @@ import { usePermissions } from '../lib/permissions';
 import { timeAgoShort } from '../lib/utils';
 import api from '../lib/api';
 import { LEAD_STATUSES, CALL_OUTCOMES, outcomeLabel, todayStr, shortDate, formatPhone } from '../lib/leads';
-import { LeadPanel } from '../components/leads/LeadControls';
+import useIsWide from '../lib/useIsWide';
+import { LeadPanel, LeadBody, StatusBadge } from '../components/leads/LeadControls';
 
 /**
  * The lead tracker: who to ring, what happened last time, and a way to find
@@ -35,6 +36,18 @@ const EMPTY = {
   today:    'Nothing to ring today.',
   upcoming: 'No calls are scheduled ahead.',
 };
+
+/** A list row's lead fields in the shape the lead controls take. */
+const toLead = (l) => ({
+  lead_status: l.lead_status,
+  next_call_at: l.next_call_at,
+  call_count: parseInt(l.call_count) || 0,
+  last_call: l.last_outcome
+    ? { outcome: l.last_outcome, note: l.last_note, created_at: l.last_call_at }
+    : null,
+});
+
+const telHref = (phone) => `tel:+${String(phone).replace(/\D/g, '')}`;
 
 const addDays = (n) => {
   const d = new Date();
@@ -123,6 +136,8 @@ export default function FollowUps() {
   const clientId = superAdmin ? (selectedClientId || null) : user?.clientId;
   const cp = clientId ? { client_id: clientId } : {};
   const canEdit = perms.can('followups.schedule');
+  const wide = useIsWide();
+  const [selected, setSelected] = useState(null);
 
   const [tab, setTab]           = useState('');   // '' | overdue | today | upcoming
   const [status, setStatus]     = useState('');   // '' | new | interested | ...
@@ -166,6 +181,17 @@ export default function FollowUps() {
   const leads = data?.leads || [];
   const pages = Math.max(1, Math.ceil((data?.total || 0) / PAGE_SIZE));
   const counts = summary?.counts || {};
+  // On a wide screen one lead is always open on the right. Logging a call can
+  // move it out of the queue; the selection then falls to the next one, which
+  // is what working a queue means.
+  const current = wide ? (leads.find(l => l.phone_number === selected) || leads[0] || null) : null;
+  const onListKey = (e) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault();
+    const i = Math.max(0, leads.findIndex(l => l.phone_number === current?.phone_number));
+    const next = leads[Math.min(leads.length - 1, Math.max(0, i + (e.key === 'ArrowDown' ? 1 : -1)))];
+    if (next) setSelected(next.phone_number);
+  };
   const filterCount = (outcome ? 1 : 0) + (dateFrom || dateTo ? 1 : 0);
   const narrowed = !!(status || outcome || search || dateFrom || dateTo);
   const clearAll = () => { setTab(''); setStatus(''); setOutcome(''); setSearchInput(''); setRange('', ''); };
@@ -174,7 +200,8 @@ export default function FollowUps() {
 
   return (
     <Layout>
-      <div className="p-4 md:p-6 overflow-y-auto h-full">
+      <div className={wide ? 'h-full grid grid-cols-[minmax(0,1fr)_400px]' : 'h-full'}>
+      <div className={`overflow-y-auto h-full ${wide ? 'p-6' : 'p-4 md:p-6'}`}>
         <div className="flex items-start justify-between gap-3 mb-4">
           <div>
             <h1 className="text-lg font-bold text-slate-800">Leads</h1>
@@ -249,16 +276,41 @@ export default function FollowUps() {
             )}
           </div>
         ) : (
-          <ul className="m-0 p-0 list-none bg-white border border-slate-200 rounded-xl divide-y divide-slate-100">
+          <ul tabIndex={wide ? 0 : undefined} onKeyDown={wide ? onListKey : undefined} aria-label="Leads"
+            className="m-0 p-0 list-none bg-white border border-slate-200 rounded-xl divide-y divide-slate-100 outline-none focus-visible:ring-2 focus-visible:ring-violet-300">
             {leads.map(l => {
-              const lead = {
-                lead_status: l.lead_status,
-                next_call_at: l.next_call_at,
-                call_count: parseInt(l.call_count) || 0,
-                last_call: l.last_outcome
-                  ? { outcome: l.last_outcome, note: l.last_note, created_at: l.last_call_at }
-                  : null,
-              };
+              const lead = toLead(l);
+              if (wide) {
+                const on = current?.phone_number === l.phone_number;
+                const overdue = l.next_call_at && l.next_call_at < todayStr();
+                return (
+                  <li key={l.phone_number} onClick={() => setSelected(l.phone_number)} aria-selected={on}
+                    className={`grid grid-cols-[minmax(0,1.1fr)_minmax(0,1.5fr)_auto] gap-x-4 items-center px-4 py-2.5 cursor-pointer first:rounded-t-xl last:rounded-b-xl ${on ? 'bg-violet-50' : 'hover:bg-slate-50'}`}>
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-slate-800 truncate">{l.name || formatPhone(l.phone_number)}</div>
+                      <div className="text-xs text-slate-500 tabular-nums truncate">
+                        {l.name && formatPhone(l.phone_number)}
+                        {l.last_message_at && <span>{l.name ? ' · ' : ''}messaged {timeAgoShort(l.last_message_at)} ago</span>}
+                      </div>
+                    </div>
+                    <div className="min-w-0 flex items-center gap-2 text-xs">
+                      <StatusBadge status={l.lead_status} />
+                      <span className="truncate text-slate-600">
+                        {l.last_outcome ? `${outcomeLabel(l.last_outcome)} ${shortDate(l.last_call_at)}` : 'Not called yet'}
+                      </span>
+                      {l.next_call_at && (
+                        <span className={`shrink-0 font-medium ${overdue ? 'text-red-600' : 'text-emerald-700'}`}>
+                          {overdue ? 'Overdue' : 'Call'} {shortDate(l.next_call_at)}
+                        </span>
+                      )}
+                    </div>
+                    <a href={telHref(l.phone_number)} onClick={e => e.stopPropagation()} aria-label={`Call ${l.name || l.phone_number}`}
+                      className="inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium no-underline">
+                      <PhoneIcon />Call
+                    </a>
+                  </li>
+                );
+              }
               return (
                 <li key={l.phone_number}
                   className="grid gap-x-4 gap-y-2.5 px-4 py-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_auto] md:items-center first:rounded-t-xl last:rounded-b-xl">
@@ -278,7 +330,7 @@ export default function FollowUps() {
                   </div>
 
                   <div className="flex gap-2 md:justify-end">
-                    <a href={`tel:+${String(l.phone_number).replace(/\D/g, '')}`}
+                    <a href={telHref(l.phone_number)}
                       className="flex-1 md:flex-none inline-flex items-center justify-center gap-1.5 h-10 md:h-9 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium no-underline">
                       <PhoneIcon />Call
                     </a>
@@ -302,6 +354,36 @@ export default function FollowUps() {
               className="px-4 h-10 md:h-9 rounded-lg border border-slate-200 bg-white cursor-pointer disabled:opacity-40">Next</button>
           </div>
         )}
+      </div>
+
+      {wide && (
+        <aside className="border-l border-slate-200 bg-white overflow-y-auto h-full p-5" aria-label="Selected lead">
+          {current ? (
+            <div className="flex flex-col gap-4">
+              <div>
+                <div className="text-base font-semibold text-slate-800 break-words">{current.name || formatPhone(current.phone_number)}</div>
+                <div className="text-sm text-slate-500 tabular-nums">
+                  {current.name && formatPhone(current.phone_number)}
+                  {current.last_message_at && <span>{current.name ? ' · ' : ''}messaged {timeAgoShort(current.last_message_at)} ago</span>}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <a href={telHref(current.phone_number)}
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 h-10 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium no-underline">
+                  <PhoneIcon />Call
+                </a>
+                <button onClick={() => navigate(`/chat?phone=${encodeURIComponent(current.phone_number)}`)}
+                  className="flex-1 h-10 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 text-sm cursor-pointer">
+                  Open chat
+                </button>
+              </div>
+              <LeadBody key={current.phone_number} phone={current.phone_number} clientId={clientId} lead={toLead(current)} canEdit={canEdit} />
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">Pick a lead to see its history and log a call.</p>
+          )}
+        </aside>
+      )}
       </div>
     </Layout>
   );

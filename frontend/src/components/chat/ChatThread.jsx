@@ -9,7 +9,7 @@ import AstroChartModal from './AstroChartModal';
 import HoroscopeQaPanel from './HoroscopeQaPanel';
 import TarotModal from './TarotModal';
 import CreateOrderDrawer from './CreateOrderDrawer';
-import { LeadPanel } from '../leads/LeadControls';
+import { LeadPanel, LeadBody } from '../leads/LeadControls';
 import Spinner from '../ui/Spinner';
 import { useToast } from '../ui/Toast';
 import { usePermissions } from '../../lib/permissions';
@@ -274,6 +274,19 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
     onSuccess: () => refetchAiMode(),
   });
 
+  // Occasional AI tools. In the actions menu on a narrow screen, listed in the
+  // side rail on a laptop so they cost one click, not two.
+  const toolActions = [
+    addonsData?.addons?.includes('astro_vedic_chart') && perms.can('ai.astro_chart') && customerOrders.some(o => o.status === 'pending')
+      && ['Astrology message', () => setAstroModalOpen(true)],
+    addonsData?.addons?.includes('tarot_reading') && perms.can('ai.generate_report')
+      && ['Tarot reading', () => setTarotModalOpen(true)],
+    addonsData?.addons?.includes('horoscope_followup_qa') && perms.can('ai.generate_report')
+      && ['Report Q&A', () => setHoroscopeQaOpen(true)],
+  ].filter(Boolean);
+  const railHasLead = perms.can('followups.view');
+  const showRail = railHasLead || toolActions.length > 0;
+
   return (
     <div
       className={`chat-thread relative flex flex-col h-full bg-white ${swipe.dragging ? 'shadow-2xl' : ''}`}
@@ -319,7 +332,7 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
 
         {/* Primary controls: second line on a phone, inline on a desk. */}
         <div className="order-4 md:order-3 basis-full md:basis-auto flex items-center gap-1.5 md:gap-2 min-w-0">
-          {canLead && <LeadPanel phone={phone} clientId={clientId} lead={lead} />}
+          {canLead && <div className={`min-w-0 ${railHasLead ? 'xl:hidden' : ''}`}><LeadPanel phone={phone} clientId={clientId} lead={lead} /></div>}
           {perms.isOperator ? (
             <button
               onClick={() => (mineAlready ? releaseMutation.mutate() : claimMutation.mutate())}
@@ -377,18 +390,11 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
                 {(() => {
                   const item = 'w-full text-left px-4 min-h-11 md:min-h-9 flex items-center text-sm text-slate-700 hover:bg-slate-50 border-0 bg-transparent cursor-pointer disabled:opacity-50';
                   const run = (fn) => () => { setActionsOpen(false); fn(); };
-                  const tools = [
-                    addonsData?.addons?.includes('astro_vedic_chart') && perms.can('ai.astro_chart') && customerOrders.some(o => o.status === 'pending')
-                      && ['Astrology message', () => setAstroModalOpen(true)],
-                    addonsData?.addons?.includes('tarot_reading') && perms.can('ai.generate_report')
-                      && ['Tarot reading', () => setTarotModalOpen(true)],
-                    addonsData?.addons?.includes('horoscope_followup_qa') && perms.can('ai.generate_report')
-                      && ['Report Q&A', () => setHoroscopeQaOpen(true)],
-                  ].filter(Boolean);
+                  const tools = toolActions;
                   return (
                     <>
                       {tools.map(([label, fn]) => (
-                        <button key={label} role="menuitem" onClick={run(fn)} className={item}>{label}</button>
+                        <button key={label} role="menuitem" onClick={run(fn)} className={`${item} ${showRail ? 'xl:hidden' : ''}`}>{label}</button>
                       ))}
                       <button role="menuitem" disabled={reextractMutation.isPending}
                         onClick={run(() => reextractMutation.mutate())} className={item}
@@ -412,6 +418,8 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
         </div>
       </header>
 
+      <div className="flex-1 min-h-0 flex">
+        <div className="flex-1 min-w-0 flex flex-col">
       {/* One slim row for orders and the last call, so the chat keeps the screen. */}
       {customerOrders.length > 0 && (
         <div className="shrink-0 border-b border-slate-200 bg-white">
@@ -518,6 +526,28 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
         onPrefillConsumed={() => setMessagePrefill('')}
         onSent={() => qc.invalidateQueries({ queryKey: ['messages', phone] })}
       />
+        </div>
+
+        {/* Laptop and up: the lead, its history and the tools stay open beside
+            the chat, so logging a call is one click and the history is never
+            behind one. */}
+        {showRail && (
+          <aside className="hidden xl:flex flex-col gap-5 w-80 shrink-0 border-l border-slate-200 bg-white overflow-y-auto p-4" aria-label="Lead">
+            {railHasLead && <LeadBody phone={phone} clientId={clientId} lead={lead} canEdit={canLead} />}
+            {toolActions.length > 0 && (
+              <section>
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">Tools</div>
+                <div className="flex flex-col gap-1.5">
+                  {toolActions.map(([label, fn]) => (
+                    <button key={label} onClick={fn}
+                      className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 hover:bg-slate-50 text-left cursor-pointer">{label}</button>
+                  ))}
+                </div>
+              </section>
+            )}
+          </aside>
+        )}
+      </div>
 
       {/* Create Order Drawer */}
       <CreateOrderDrawer

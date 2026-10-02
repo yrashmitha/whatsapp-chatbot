@@ -170,7 +170,7 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, followU
       title={reportLink
         ? (reportReleased ? 'Send the customer their report link' : 'Send the report link (report not released yet)')
         : 'No order with a report link for this customer'}
-      className="shrink-0 w-10 h-10 md:w-9 md:h-9 border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-violet-500 hover:border-violet-300 transition-colors disabled:opacity-40 bg-white cursor-pointer"
+      className="shrink-0 w-10 h-10 @xl:w-9 @xl:h-9 border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-violet-500 hover:border-violet-300 transition-colors disabled:opacity-40 bg-white cursor-pointer"
     >
       <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
@@ -256,14 +256,14 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, followU
 
       {/* Attachments, voice and follow-up drafts. Always on show at a desk;
           behind the + on a phone, where the message itself needs the width. */}
-      <div className={`px-2 pt-2 gap-2 bg-white border-t border-slate-200 ${toolsOpen ? 'flex' : 'hidden'} md:hidden`}>
+      <div className={`px-2 pt-2 gap-2 bg-white border-t border-slate-200 ${toolsOpen ? 'flex' : 'hidden'} @xl:hidden`}>
           {crmMediaEnabled && (
             <>
               <button
                 onClick={() => fileRef.current?.click()}
                 disabled={sending}
                 title="Send image, PDF or audio" aria-label="Send image, PDF or audio"
-                className="shrink-0 w-10 h-10 md:w-9 md:h-9 border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-violet-500 hover:border-violet-300 transition-colors disabled:opacity-50 bg-white cursor-pointer"
+                className="shrink-0 w-10 h-10 @xl:w-9 @xl:h-9 border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-violet-500 hover:border-violet-300 transition-colors disabled:opacity-50 bg-white cursor-pointer"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
@@ -273,7 +273,7 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, followU
                 onClick={() => setShowVoicePicker(true)}
                 disabled={sending}
                 title="Send voice clip" aria-label="Send voice clip"
-                className="shrink-0 w-10 h-10 md:w-9 md:h-9 border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-violet-500 hover:border-violet-300 transition-colors disabled:opacity-50 bg-white cursor-pointer"
+                className="shrink-0 w-10 h-10 @xl:w-9 @xl:h-9 border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-violet-500 hover:border-violet-300 transition-colors disabled:opacity-50 bg-white cursor-pointer"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
@@ -294,7 +294,7 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, followU
                   title={variant === '1'
                     ? 'Draft a follow-up — message 1'
                     : 'Draft a follow-up — message 2'}
-                  className="relative w-10 h-10 md:w-9 md:h-9 border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-violet-500 hover:border-violet-300 transition-colors disabled:opacity-50 bg-white cursor-pointer"
+                  className="relative w-10 h-10 @xl:w-9 @xl:h-9 border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-violet-500 hover:border-violet-300 transition-colors disabled:opacity-50 bg-white cursor-pointer"
                 >
                   {drafting === variant ? (
                     <span className="w-4 h-4 border-2 border-violet-200 border-t-violet-500 rounded-full animate-spin block" />
@@ -315,10 +315,10 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, followU
           {reportLinkBtn}
       </div>
 
-      <div className="p-2 md:p-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] border-t border-slate-200 bg-white flex items-end gap-2">
+      <div className="p-2 @xl:p-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] border-t border-slate-200 bg-white flex items-end gap-2">
         <button
           onClick={() => setToolsOpen(o => !o)}
-          className={`md:hidden shrink-0 w-10 h-10 md:w-9 md:h-9 border border-slate-200 rounded-xl flex items-center justify-center transition-transform bg-white cursor-pointer ${
+          className={`@xl:hidden shrink-0 w-10 h-10 @xl:w-9 @xl:h-9 border border-slate-200 rounded-xl flex items-center justify-center transition-transform bg-white cursor-pointer ${
             toolsOpen ? 'rotate-45 text-violet-500 border-violet-300' : 'text-slate-400'
           }`}
           aria-label="More"
@@ -328,14 +328,14 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, followU
           </svg>
         </button>
 
-        <div className="hidden md:flex items-end gap-2">
+        <div className="hidden @xl:flex items-end gap-2">
           {crmMediaEnabled && (
             <>
               <button
                 onClick={() => fileRef.current?.click()}
                 disabled={sending}
                 title="Send image, PDF or audio" aria-label="Send image, PDF or audio"
-                className="shrink-0 w-10 h-10 md:w-9 md:h-9 border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-violet-500 hover:border-violet-300 transition-colors disabled:opacity-50 bg-white cursor-pointer"
+                className="shrink-0 w-10 h-10 @xl:w-9 @xl:h-9 border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-violet-500 hover:border-violet-300 transition-colors disabled:opacity-50 bg-white cursor-pointer"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
@@ -345,7 +345,7 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, followU
                 onClick={() => setShowVoicePicker(true)}
                 disabled={sending}
                 title="Send voice clip" aria-label="Send voice clip"
-                className="shrink-0 w-10 h-10 md:w-9 md:h-9 border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-violet-500 hover:border-violet-300 transition-colors disabled:opacity-50 bg-white cursor-pointer"
+                className="shrink-0 w-10 h-10 @xl:w-9 @xl:h-9 border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-violet-500 hover:border-violet-300 transition-colors disabled:opacity-50 bg-white cursor-pointer"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
@@ -366,7 +366,7 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, followU
                   title={variant === '1'
                     ? 'Draft a follow-up — message 1'
                     : 'Draft a follow-up — message 2'}
-                  className="relative w-10 h-10 md:w-9 md:h-9 border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-violet-500 hover:border-violet-300 transition-colors disabled:opacity-50 bg-white cursor-pointer"
+                  className="relative w-10 h-10 @xl:w-9 @xl:h-9 border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-violet-500 hover:border-violet-300 transition-colors disabled:opacity-50 bg-white cursor-pointer"
                 >
                   {drafting === variant ? (
                     <span className="w-4 h-4 border-2 border-violet-200 border-t-violet-500 rounded-full animate-spin block" />
@@ -393,14 +393,14 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, followU
           onKeyDown={handleKey}
           rows={1}
           placeholder="Type a message… (/ for quick replies)"
-          className="flex-1 min-w-0 px-3 py-2 text-base md:text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-none overflow-hidden"
+          className="flex-1 min-w-0 px-3 py-2 text-base @xl:text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-none overflow-hidden"
           style={{ lineHeight: '1.5', maxHeight: '200px', overflowY: 'auto' }}
         />
         <button
           onClick={() => send(text)}
           disabled={sending || !text.trim()}
           aria-label="Send message"
-          className="shrink-0 w-10 h-10 md:w-9 md:h-9 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white rounded-xl flex items-center justify-center cursor-pointer border-0 transition-colors"
+          className="shrink-0 w-10 h-10 @xl:w-9 @xl:h-9 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white rounded-xl flex items-center justify-center cursor-pointer border-0 transition-colors"
         >
           {sending ? (
             <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin block" />

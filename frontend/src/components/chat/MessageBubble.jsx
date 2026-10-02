@@ -187,7 +187,7 @@ export default function MessageBubble({ msg, onDelete }) {
   if (msg.is_deleted) {
     return (
       <div className={`flex ${isUser ? 'justify-start' : 'justify-end'} mb-2`}>
-        <div className="max-w-[88%] md:max-w-[75%] rounded-2xl px-3.5 py-2 text-sm bg-white border border-slate-200 text-slate-500 italic">
+        <div className="max-w-[88%] @xl:max-w-[75%] rounded-2xl px-3.5 py-2 text-sm bg-white border border-slate-200 text-slate-500 italic">
           Message hidden from CRM
         </div>
       </div>
@@ -224,7 +224,7 @@ export default function MessageBubble({ msg, onDelete }) {
       )}
 
       <div
-        className={`max-w-[88%] md:max-w-[75%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed
+        className={`max-w-[88%] @xl:max-w-[75%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed
           ${isUser
             ? 'bg-white border border-slate-200 text-slate-800 rounded-tl-sm'
             : isAdmin
@@ -363,7 +363,7 @@ export default function MessageBubble({ msg, onDelete }) {
       {extraParts.map((part, i) => (
         <div key={i} className={`flex ${isUser ? 'justify-start' : 'justify-end'} items-end gap-1 mb-2`}>
           <div
-            className={`max-w-[88%] md:max-w-[75%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words
+            className={`max-w-[88%] @xl:max-w-[75%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words
               ${isUser
                 ? 'bg-white border border-slate-200 text-slate-800'
                 : isAdmin

@@ -308,15 +308,19 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
           </div>
         </div>
       )}
+      {/* The thread's own width decides its layout (the @ variants), because it
+          is also shown in a drawer and a modal on a wide window. Modals sit
+          outside this wrapper so they still cover the screen. */}
+      <div className="@container flex-1 min-h-0 flex flex-col">
       {/* Header. One component for every width: name, the lead, who is
           answering, and the order button, with everything occasional behind one
           menu. On a phone the controls wrap to a second line under the name; on
           a desk they sit on the same line. */}
-      <header className="border-b border-slate-200 bg-white shrink-0 z-10 flex flex-wrap items-center gap-x-2 gap-y-1.5 px-2 py-2 md:px-4 md:py-2.5">
+      <header className="border-b border-slate-200 bg-white shrink-0 z-10 flex flex-wrap items-center gap-x-2 gap-y-1.5 px-2 py-2 @xl:px-4 @xl:py-2.5">
         {onBack && (
           <button
             onClick={onBack}
-            className="order-1 md:hidden shrink-0 w-10 h-10 -ml-1 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 border-0 bg-transparent cursor-pointer"
+            className="order-1 @xl:hidden shrink-0 w-10 h-10 -ml-1 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 border-0 bg-transparent cursor-pointer"
             aria-label="Back to chats"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -331,8 +335,8 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
         </div>
 
         {/* Primary controls: second line on a phone, inline on a desk. */}
-        <div className="order-4 md:order-3 basis-full md:basis-auto flex items-center gap-1.5 md:gap-2 min-w-0">
-          {canLead && <div className={`min-w-0 ${railHasLead ? 'xl:hidden' : ''}`}><LeadPanel phone={phone} clientId={clientId} lead={lead} /></div>}
+        <div className="order-4 @xl:order-3 basis-full @xl:basis-auto flex items-center gap-1.5 @xl:gap-2 min-w-0">
+          {canLead && <div className={`min-w-0 ${railHasLead ? '@4xl:hidden' : ''}`}><LeadPanel phone={phone} clientId={clientId} lead={lead} /></div>}
           {perms.isOperator ? (
             <button
               onClick={() => (mineAlready ? releaseMutation.mutate() : claimMutation.mutate())}
@@ -371,13 +375,13 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
         </div>
 
         {/* Everything occasional, in one menu at every width. */}
-        <div className="order-3 md:order-4 relative shrink-0">
+        <div className="order-3 @xl:order-4 relative shrink-0">
           <button
             onClick={() => setActionsOpen(o => !o)}
             aria-haspopup="menu"
             aria-expanded={actionsOpen}
             aria-label="More actions"
-            className="w-10 h-10 md:w-9 md:h-9 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 border-0 bg-transparent cursor-pointer"
+            className="w-10 h-10 @xl:w-9 @xl:h-9 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 border-0 bg-transparent cursor-pointer"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
               <circle cx="12" cy="5" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="12" cy="19" r="1.6" />
@@ -388,13 +392,13 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
               <div className="fixed inset-0 z-30" onClick={() => setActionsOpen(false)} />
               <div role="menu" className="absolute right-0 top-full mt-1 z-40 w-60 bg-white border border-slate-200 rounded-xl shadow-lg py-1 overflow-hidden">
                 {(() => {
-                  const item = 'w-full text-left px-4 min-h-11 md:min-h-9 flex items-center text-sm text-slate-700 hover:bg-slate-50 border-0 bg-transparent cursor-pointer disabled:opacity-50';
+                  const item = 'w-full text-left px-4 min-h-11 @xl:min-h-9 flex items-center text-sm text-slate-700 hover:bg-slate-50 border-0 bg-transparent cursor-pointer disabled:opacity-50';
                   const run = (fn) => () => { setActionsOpen(false); fn(); };
                   const tools = toolActions;
                   return (
                     <>
                       {tools.map(([label, fn]) => (
-                        <button key={label} role="menuitem" onClick={run(fn)} className={`${item} ${showRail ? 'xl:hidden' : ''}`}>{label}</button>
+                        <button key={label} role="menuitem" onClick={run(fn)} className={`${item} ${showRail ? '@4xl:hidden' : ''}`}>{label}</button>
                       ))}
                       <button role="menuitem" disabled={reextractMutation.isPending}
                         onClick={run(() => reextractMutation.mutate())} className={item}
@@ -481,7 +485,7 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
       )}
 
       {/* Messages */}
-      <div ref={threadRef} className="flex-1 min-h-0 overflow-y-auto px-2 md:px-4 py-2 md:py-3 bg-slate-50">
+      <div ref={threadRef} className="flex-1 min-h-0 overflow-y-auto px-2 @xl:px-4 py-2 @xl:py-3 bg-slate-50">
         {/* Top sentinel for infinite scroll */}
         <div ref={topRef} className="h-1" />
         {(isLoading || isFetchingNextPage) && (
@@ -532,7 +536,7 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
             the chat, so logging a call is one click and the history is never
             behind one. */}
         {showRail && (
-          <aside className="hidden xl:flex flex-col gap-5 w-80 shrink-0 border-l border-slate-200 bg-white overflow-y-auto p-4" aria-label="Lead">
+          <aside className="hidden @4xl:flex flex-col gap-5 w-80 shrink-0 border-l border-slate-200 bg-white overflow-y-auto p-4" aria-label="Lead">
             {railHasLead && <LeadBody phone={phone} clientId={clientId} lead={lead} canEdit={canLead} />}
             {toolActions.length > 0 && (
               <section>
@@ -547,6 +551,7 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
             )}
           </aside>
         )}
+      </div>
       </div>
 
       {/* Create Order Drawer */}

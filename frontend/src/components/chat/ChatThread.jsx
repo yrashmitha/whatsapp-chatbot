@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { Fragment, useEffect, useRef, useCallback, useState } from 'react';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../lib/api';
 import MetaTracking from '../orders/MetaTracking';
@@ -11,11 +11,26 @@ import TarotModal from './TarotModal';
 import CreateOrderDrawer from './CreateOrderDrawer';
 import { LeadPanel } from '../leads/LeadControls';
 import Spinner from '../ui/Spinner';
-import Button from '../ui/Button';
 import { useToast } from '../ui/Toast';
 import { usePermissions } from '../../lib/permissions';
 import { STATUS_OPTIONS, STATUS_COLORS } from '../../lib/utils';
 import useSwipeBack from '../../lib/useSwipeBack';
+
+/** The calendar day of a timestamp on the viewer's clock, for grouping. */
+function dayKey(iso) {
+  const d = iso ? new Date(iso) : null;
+  return d && !Number.isNaN(d.getTime()) ? `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}` : null;
+}
+
+/** "Today", "Yesterday", or "28 Sep" (with the year once it is not this one). */
+function dayLabel(iso) {
+  const d = new Date(iso);
+  const now = new Date();
+  if (dayKey(iso) === dayKey(now.toISOString())) return 'Today';
+  const y = new Date(now); y.setDate(now.getDate() - 1);
+  if (dayKey(iso) === dayKey(y.toISOString())) return 'Yesterday';
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', ...(d.getFullYear() !== now.getFullYear() && { year: 'numeric' }) });
+}
 
 export default function ChatThread({ customer, clientId, onBack, onCustomerDeleted }) {
   const { phone, name } = customer;
@@ -38,6 +53,14 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
   // Swipe right to go back, as on a phone. Only bound when there is somewhere
   // to go back to.
   const swipe = useSwipeBack(onBack, !!onBack);
+
+  // Escape closes the actions menu, as a keyboard user expects of any popover.
+  useEffect(() => {
+    if (!actionsOpen) return;
+    const onKey = (e) => { if (e.key === 'Escape') setActionsOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [actionsOpen]);
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
     queryKey: ['messages', phone, clientId],
@@ -166,7 +189,6 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
     queryFn: () => api.get('/orders', { params: { search: phone, limit: 20, ...(clientId && { client_id: clientId }) } }).then(r => r.data),
   });
   const customerOrders = ordersData?.orders || [];
-  const pendingOrder = customerOrders.find(o => o.status === 'pending') || null;
 
   // ── Lead quality and call log ───────────────────────────────────────────────
   const cp = clientId ? { client_id: clientId } : {};
@@ -254,7 +276,7 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
 
   return (
     <div
-      className={`relative flex flex-col h-full bg-white ${swipe.dragging ? 'shadow-2xl' : ''}`}
+      className={`chat-thread relative flex flex-col h-full bg-white ${swipe.dragging ? 'shadow-2xl' : ''}`}
       style={swipe.style}
       {...swipe.handlers}
       onDragOver={handleDragOver}
@@ -273,184 +295,122 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
           </div>
         </div>
       )}
-      {/* Header */}
-      <div className="border-b border-slate-200 bg-white shrink-0 z-10">
-        {/* Top row: back + name + AI toggle */}
-        <div className="flex items-center gap-2 px-2 py-1.5 md:px-3 md:py-2.5">
-          {/* Back button — mobile only */}
+      {/* Header. One component for every width: name, the lead, who is
+          answering, and the order button, with everything occasional behind one
+          menu. On a phone the controls wrap to a second line under the name; on
+          a desk they sit on the same line. */}
+      <header className="border-b border-slate-200 bg-white shrink-0 z-10 flex flex-wrap items-center gap-x-2 gap-y-1.5 px-2 py-2 md:px-4 md:py-2.5">
+        {onBack && (
           <button
             onClick={onBack}
-            className="md:hidden shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 border-0 bg-transparent cursor-pointer"
-            aria-label="Back to contacts"
+            className="order-1 md:hidden shrink-0 w-10 h-10 -ml-1 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 border-0 bg-transparent cursor-pointer"
+            aria-label="Back to chats"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-          {/* Customer info */}
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold text-slate-800 truncate">{name || phone}</div>
-            {name && <div className="text-xs text-slate-400">{phone}</div>}
-            {totalCost > 0 && <div className="hidden md:block text-xs text-slate-400">${totalCost.toFixed(6)}</div>}
-          </div>
-          {/* Action buttons: inline on desktop, only AI toggle visible on mobile */}
-          <div className="hidden md:flex gap-2 items-center shrink-0">
-            {addonsData?.addons?.includes('astro_vedic_chart') && perms.can('ai.astro_chart') && customerOrders.some(o => o.status === 'pending') && (
-              <button
-                onClick={() => setAstroModalOpen(true)}
-                className="text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-amber-100 text-amber-700 hover:bg-amber-200"
-                title="Generate astrology message for this customer"
-              >
-                ✨ Astro
-              </button>
-            )}
-            {addonsData?.addons?.includes('tarot_reading') && perms.can('ai.generate_report') && (
-              <button
-                onClick={() => setTarotModalOpen(true)}
-                className="text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-purple-100 text-purple-700 hover:bg-purple-200"
-                title="Generate tarot card reading for this customer"
-              >
-                🔮 Tarot
-              </button>
-            )}
-            {addonsData?.addons?.includes('horoscope_followup_qa') && perms.can('ai.generate_report') && (
-              <button
-                onClick={() => setHoroscopeQaOpen(true)}
-                className="text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-violet-100 text-violet-700 hover:bg-violet-200"
-                title="Answer a question about this customer's delivered report"
-              >
-                🔮 Report Q&A
-              </button>
-            )}
-            {canLead && <LeadPanel phone={phone} clientId={clientId} lead={lead} />}
-            <button
-              onClick={() => setCreateOrderOpen(true)}
-              className="text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
-            >
-              + Order
-            </button>
-            {perms.isOperator ? (
-              <button
-                onClick={() => (mineAlready ? releaseMutation.mutate() : claimMutation.mutate())}
-                disabled={claimMutation.isPending || releaseMutation.isPending}
-                title={mineAlready
-                  ? 'Hand this chat back to the bot'
-                  : (ownedBy ? 'Another operator has this chat. Taking over moves it to you.' : 'Reply yourself. The bot stops answering this customer.')}
-                className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${
-                  mineAlready
-                    ? 'bg-violet-100 text-violet-700 hover:bg-violet-200'
-                    : ownedBy
-                      ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                      : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
-                }`}
-              >
-                {mineAlready ? 'Mine · hand back' : (ownedBy ? 'Take over' : 'Take over')}
-              </button>
-            ) : (
-              <button
-                onClick={() => toggleAiMutation.mutate(!aiEnabled)}
-                disabled={toggleAiMutation.isPending}
-                className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${
-                  aiEnabled ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-slate-200 text-slate-500 hover:bg-slate-300'
-                }`}
-              >
-                AI {aiEnabled ? 'ON' : 'OFF'}
-              </button>
-            )}
-            <Button
-              variant="ghost" size="sm"
-              onClick={() => reextractMutation.mutate()}
-              disabled={reextractMutation.isPending}
-              title="Re-read voice notes and PDFs on this chat"
-            >
-              {reextractMutation.isPending ? 'Reading…' : 'Re-extract media'}
-            </Button>
-            <Button variant="ghost" size="sm" onClick={handleDeleteHistory}>Clear history</Button>
-            <Button variant="danger" size="sm" onClick={handleDeleteCustomer}>Delete</Button>
-          </div>
-          {/* Mobile: just AI toggle in top row */}
-          <div className="flex md:hidden items-center gap-1.5 shrink-0">
-            {perms.isOperator ? (
-              <button
-                onClick={() => (mineAlready ? releaseMutation.mutate() : claimMutation.mutate())}
-                disabled={claimMutation.isPending || releaseMutation.isPending}
-                title={mineAlready
-                  ? 'Hand this chat back to the bot'
-                  : (ownedBy ? 'Another operator has this chat. Taking over moves it to you.' : 'Reply yourself. The bot stops answering this customer.')}
-                className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${
-                  mineAlready
-                    ? 'bg-violet-100 text-violet-700 hover:bg-violet-200'
-                    : ownedBy
-                      ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                      : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
-                }`}
-              >
-                {mineAlready ? 'Mine · hand back' : (ownedBy ? 'Take over' : 'Take over')}
-              </button>
-            ) : (
-              <button
-                onClick={() => toggleAiMutation.mutate(!aiEnabled)}
-                disabled={toggleAiMutation.isPending}
-                className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${
-                  aiEnabled ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-slate-200 text-slate-500 hover:bg-slate-300'
-                }`}
-              >
-                AI {aiEnabled ? 'ON' : 'OFF'}
-              </button>
-            )}
-            <button
-              onClick={() => setActionsOpen(o => !o)}
-              aria-label="More actions"
-              className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 border-0 bg-transparent cursor-pointer"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                <circle cx="12" cy="5" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="12" cy="19" r="1.6" />
-              </svg>
-            </button>
-          </div>
-        </div>
-        {/* Mobile lead row: used on every call, so it is not behind the overflow menu. */}
-        {canLead && (
-          <div className="md:hidden px-2 pb-1.5 flex">
-            <LeadPanel phone={phone} clientId={clientId} lead={lead} />
-          </div>
         )}
-        {/* Mobile action row — behind the overflow menu, so the thread keeps the screen */}
-        <div className={`md:hidden ${actionsOpen ? 'flex' : 'hidden'} flex-wrap gap-1.5 items-center px-2 pb-2`}>
-          {addonsData?.addons?.includes('astro_vedic_chart') && perms.can('ai.astro_chart') && customerOrders.some(o => o.status === 'pending') && (
+
+        <div className="order-2 flex-1 min-w-0">
+          <div className="text-[15px] font-semibold text-slate-800 truncate leading-snug">{name || phone}</div>
+          {name && <div className="text-xs text-slate-500 truncate tabular-nums">{phone}</div>}
+        </div>
+
+        {/* Primary controls: second line on a phone, inline on a desk. */}
+        <div className="order-4 md:order-3 basis-full md:basis-auto flex items-center gap-1.5 md:gap-2 min-w-0">
+          {canLead && <LeadPanel phone={phone} clientId={clientId} lead={lead} />}
+          {perms.isOperator ? (
             <button
-              onClick={() => setAstroModalOpen(true)}
-              className="shrink-0 text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-amber-100 text-amber-700 hover:bg-amber-200"
+              onClick={() => (mineAlready ? releaseMutation.mutate() : claimMutation.mutate())}
+              disabled={claimMutation.isPending || releaseMutation.isPending}
+              title={mineAlready
+                ? 'Hand this chat back to the bot'
+                : (ownedBy ? 'Another operator has this chat. Taking over moves it to you.' : 'Reply yourself. The bot stops answering this customer.')}
+              className={`shrink-0 text-xs px-3 py-1.5 rounded-full font-medium transition-colors border-0 cursor-pointer disabled:opacity-60 ${
+                mineAlready
+                  ? 'bg-violet-100 text-violet-700 hover:bg-violet-200'
+                  : ownedBy
+                    ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                    : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+              }`}
             >
-              ✨ Astro
+              {mineAlready ? 'Mine · hand back' : 'Take over'}
             </button>
-          )}
-          {addonsData?.addons?.includes('tarot_reading') && perms.can('ai.generate_report') && (
+          ) : (
             <button
-              onClick={() => setTarotModalOpen(true)}
-              className="shrink-0 text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-purple-100 text-purple-700 hover:bg-purple-200"
+              onClick={() => toggleAiMutation.mutate(!aiEnabled)}
+              disabled={toggleAiMutation.isPending}
+              aria-pressed={aiEnabled}
+              className={`shrink-0 text-xs px-3 py-1.5 rounded-full font-medium transition-colors border-0 cursor-pointer disabled:opacity-60 ${
+                aiEnabled ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-slate-200 text-slate-500 hover:bg-slate-300'
+              }`}
             >
-              🔮 Tarot
-            </button>
-          )}
-          {addonsData?.addons?.includes('horoscope_followup_qa') && perms.can('ai.generate_report') && (
-            <button
-              onClick={() => setHoroscopeQaOpen(true)}
-              className="shrink-0 text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-violet-100 text-violet-700 hover:bg-violet-200"
-            >
-              🔮 Report Q&A
+              AI {aiEnabled ? 'on' : 'off'}
             </button>
           )}
           <button
             onClick={() => setCreateOrderOpen(true)}
-            className="shrink-0 text-xs px-2.5 py-1 rounded-full font-medium transition-colors bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
+            className="shrink-0 text-xs px-3 py-1.5 rounded-full font-medium transition-colors bg-indigo-100 text-indigo-700 hover:bg-indigo-200 border-0 cursor-pointer"
           >
             + Order
           </button>
-          <Button variant="ghost" size="sm" onClick={handleDeleteHistory}>Clear</Button>
-          <Button variant="danger" size="sm" onClick={handleDeleteCustomer}>Delete</Button>
         </div>
-      </div>
+
+        {/* Everything occasional, in one menu at every width. */}
+        <div className="order-3 md:order-4 relative shrink-0">
+          <button
+            onClick={() => setActionsOpen(o => !o)}
+            aria-haspopup="menu"
+            aria-expanded={actionsOpen}
+            aria-label="More actions"
+            className="w-10 h-10 md:w-9 md:h-9 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 border-0 bg-transparent cursor-pointer"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+              <circle cx="12" cy="5" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="12" cy="19" r="1.6" />
+            </svg>
+          </button>
+          {actionsOpen && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setActionsOpen(false)} />
+              <div role="menu" className="absolute right-0 top-full mt-1 z-40 w-60 bg-white border border-slate-200 rounded-xl shadow-lg py-1 overflow-hidden">
+                {(() => {
+                  const item = 'w-full text-left px-4 min-h-11 md:min-h-9 flex items-center text-sm text-slate-700 hover:bg-slate-50 border-0 bg-transparent cursor-pointer disabled:opacity-50';
+                  const run = (fn) => () => { setActionsOpen(false); fn(); };
+                  const tools = [
+                    addonsData?.addons?.includes('astro_vedic_chart') && perms.can('ai.astro_chart') && customerOrders.some(o => o.status === 'pending')
+                      && ['Astrology message', () => setAstroModalOpen(true)],
+                    addonsData?.addons?.includes('tarot_reading') && perms.can('ai.generate_report')
+                      && ['Tarot reading', () => setTarotModalOpen(true)],
+                    addonsData?.addons?.includes('horoscope_followup_qa') && perms.can('ai.generate_report')
+                      && ['Report Q&A', () => setHoroscopeQaOpen(true)],
+                  ].filter(Boolean);
+                  return (
+                    <>
+                      {tools.map(([label, fn]) => (
+                        <button key={label} role="menuitem" onClick={run(fn)} className={item}>{label}</button>
+                      ))}
+                      <button role="menuitem" disabled={reextractMutation.isPending}
+                        onClick={run(() => reextractMutation.mutate())} className={item}
+                        title="Re-read voice notes and PDFs on this chat">
+                        {reextractMutation.isPending ? 'Reading media…' : 'Re-extract media'}
+                      </button>
+                      <div className="my-1 border-t border-slate-100" />
+                      <button role="menuitem" onClick={run(handleDeleteHistory)} className={`${item} text-red-500`}>Clear history</button>
+                      <button role="menuitem" onClick={run(handleDeleteCustomer)} className={`${item} text-red-500`}>Delete customer</button>
+                      {totalCost > 0 && (
+                        <div className="px-4 py-2 text-xs text-slate-500 border-t border-slate-100 tabular-nums">
+                          AI spend on this chat ${totalCost.toFixed(6)}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            </>
+          )}
+        </div>
+      </header>
 
       {/* One slim row for orders and the last call, so the chat keeps the screen. */}
       {customerOrders.length > 0 && (
@@ -520,11 +480,26 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
           <div className="flex justify-center py-4"><Spinner size="sm" /></div>
         )}
         {!hasNextPage && allMessages.length > 0 && (
-          <div className="text-center text-xs text-slate-300 py-2">Beginning of conversation</div>
+          <div className="text-center text-xs text-slate-400 py-2">Beginning of conversation</div>
         )}
-        {allMessages.map((msg, i) => (
-          <MessageBubble key={msg.id ?? i} msg={msg} onDelete={() => handleDeleteMessage(msg.id)} />
-        ))}
+        {allMessages.map((msg, i) => {
+          // A pill whenever the day changes. Operators read back through a
+          // thread to answer "when did they say that", and times alone cannot.
+          const day = dayKey(msg.created_at);
+          const newDay = day && day !== dayKey(allMessages[i - 1]?.created_at);
+          return (
+            <Fragment key={msg.id ?? i}>
+              {newDay && (
+                <div className="flex justify-center my-3">
+                  <span className="text-[11px] font-medium text-slate-500 bg-white border border-slate-200 rounded-full px-3 py-0.5">
+                    {dayLabel(msg.created_at)}
+                  </span>
+                </div>
+              )}
+              <MessageBubble msg={msg} onDelete={() => handleDeleteMessage(msg.id)} />
+            </Fragment>
+          );
+        })}
         {allMessages.length === 0 && !isLoading && (
           <div className="text-center py-12 text-sm text-slate-400">No messages yet</div>
         )}

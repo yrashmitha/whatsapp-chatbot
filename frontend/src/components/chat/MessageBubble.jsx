@@ -187,8 +187,8 @@ export default function MessageBubble({ msg, onDelete }) {
   if (msg.is_deleted) {
     return (
       <div className={`flex ${isUser ? 'justify-start' : 'justify-end'} mb-2`}>
-        <div className="max-w-[75%] rounded-2xl px-3.5 py-2 text-sm bg-white border border-slate-200 text-slate-400 italic">
-          🚫 Message hidden from CRM
+        <div className="max-w-[88%] md:max-w-[75%] rounded-2xl px-3.5 py-2 text-sm bg-white border border-slate-200 text-slate-500 italic">
+          Message hidden from CRM
         </div>
       </div>
     );
@@ -224,7 +224,7 @@ export default function MessageBubble({ msg, onDelete }) {
       )}
 
       <div
-        className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-sm
+        className={`max-w-[88%] md:max-w-[75%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed
           ${isUser
             ? 'bg-white border border-slate-200 text-slate-800 rounded-tl-sm'
             : isAdmin
@@ -264,7 +264,9 @@ export default function MessageBubble({ msg, onDelete }) {
                   ? 'bg-slate-100 text-slate-700 border border-slate-200'
                   : 'bg-white/20 text-white border border-white/30'}`}
             >
-              <span className="text-xl">📄</span>
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+              </svg>
               <div className="flex flex-col min-w-0">
                 <span className="text-xs font-medium truncate">
                   {text.match(/\[PDF:\s*([^\]]+)\]/)
@@ -315,7 +317,7 @@ export default function MessageBubble({ msg, onDelete }) {
 
         {interactive && <InteractiveMenu menu={interactive} />}
 
-        <div className={`text-xs mt-1 ${isUser ? 'text-slate-400' : 'opacity-60'} text-right`}>
+        <div className={`text-xs mt-1 ${isUser ? 'text-slate-500' : 'opacity-75'} text-right`}>
           {/* Three people write into this thread and all three are stored as
               sender_type 'bot'. sent_manual says a person typed it; sent_by says
               which person, when we have an account for them. The owner signs in
@@ -328,9 +330,9 @@ export default function MessageBubble({ msg, onDelete }) {
                 : msg.sent_by ? `Sent by ${msg.sent_by_name || 'an operator'}`
                 : 'Sent by the account owner'}
             >
-              {!msg.sent_manual ? '🤖'
-                : msg.sent_by ? `👤 ${msg.sent_by_name || 'operator'}`
-                : '👤 you'}
+              {!msg.sent_manual ? 'Bot'
+                : msg.sent_by ? (msg.sent_by_name || 'Operator')
+                : 'You'}
             </span>
           )}
           {formatMessageTime(msg.created_at)}
@@ -361,7 +363,7 @@ export default function MessageBubble({ msg, onDelete }) {
       {extraParts.map((part, i) => (
         <div key={i} className={`flex ${isUser ? 'justify-start' : 'justify-end'} items-end gap-1 mb-2`}>
           <div
-            className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-sm whitespace-pre-wrap break-words
+            className={`max-w-[88%] md:max-w-[75%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words
               ${isUser
                 ? 'bg-white border border-slate-200 text-slate-800'
                 : isAdmin

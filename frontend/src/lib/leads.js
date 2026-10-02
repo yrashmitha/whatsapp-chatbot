@@ -44,3 +44,10 @@ export const shortDate = (s) => {
   const d = new Date(`${String(s).slice(0, 10)}T00:00:00`);
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 };
+
+/** 94771234567 as "+94 77 123 4567"; anything else is shown as digits with a plus. */
+export const formatPhone = (p) => {
+  const d = String(p || '').replace(/\D/g, '');
+  if (d.length === 11 && d.startsWith('94')) return `+94 ${d.slice(2, 4)} ${d.slice(4, 7)} ${d.slice(7)}`;
+  return d ? `+${d}` : '';
+};

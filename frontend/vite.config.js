@@ -7,6 +7,8 @@ export default defineConfig({
     proxy: {
       '/api': 'http://localhost:3000',
       '/auth': 'http://localhost:3000',
+      '/consult': 'http://localhost:3000',
+      '/leads': 'http://localhost:3000',
     },
   },
 })

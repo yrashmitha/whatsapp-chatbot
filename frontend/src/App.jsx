@@ -19,7 +19,13 @@ import TestChat from './pages/TestChat';
 import Summary from './pages/Summary';
 import Calls from './pages/Calls';
 import VoiceClips from './pages/VoiceClips';
-import Landing from './pages/Landing';
+import Home from './pages/Home';
+import About from './pages/About';
+import Contact from './pages/Contact';
+import SolutionAiSales from './pages/SolutionAiSales';
+import SolutionBusinessOS from './pages/SolutionBusinessOS';
+import Services from './pages/Services';
+import ServiceAutomation from './pages/ServiceAutomation';
 import Pricing from './pages/Pricing';
 import Privacy from './pages/Privacy';
 import Terms from './pages/Terms';
@@ -48,7 +54,13 @@ const router = createBrowserRouter([
   { path: '/test-chat', element: <ProtectedRoute><TestChat /></ProtectedRoute> },
   { path: '/calls',        element: <ProtectedRoute><Calls /></ProtectedRoute> },
   { path: '/voice-clips',  element: <ProtectedRoute><VoiceClips /></ProtectedRoute> },
-  { path: '/', element: <Landing /> },
+  { path: '/', element: <Home /> },
+  { path: '/about', element: <About /> },
+  { path: '/contact', element: <Contact /> },
+  { path: '/solutions/ai-sales-assistant', element: <SolutionAiSales /> },
+  { path: '/solutions/business-management', element: <SolutionBusinessOS /> },
+  { path: '/services', element: <Services /> },
+  { path: '/services/ai-automation', element: <ServiceAutomation /> },
   { path: '/pricing', element: <Pricing /> },
   { path: '/privacy', element: <Privacy /> },
   { path: '/terms', element: <Terms /> },
@@ -56,6 +68,18 @@ const router = createBrowserRouter([
   { path: '/consult-admin', element: <ProtectedRoute><ConsultAdmin /></ProtectedRoute> },
   { path: '*', element: <Navigate to="/" replace /> },
 ]);
+
+// React Router's data routers don't reset scroll position on navigation the
+// way a full page load does — without this, clicking to a new page leaves
+// you scrolled to wherever you were on the previous one.
+let lastPathname = window.location.pathname;
+router.subscribe(state => {
+  const next = state.location.pathname;
+  if (next !== lastPathname) {
+    lastPathname = next;
+    window.scrollTo(0, 0);
+  }
+});
 
 export default function App() {
   return (

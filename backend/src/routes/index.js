@@ -34,6 +34,7 @@ const quickRepliesRoutes = require('./quickReplies.routes');
 const callsRoutes        = require('./calls.routes');
 const voiceClipsRoutes   = require('./voice_clips.routes');
 const { publicRouter: consultPublic, adminRouter: consultAdmin } = require('./consult.routes');
+const { publicRouter: websiteLeadsPublic, adminRouter: websiteLeadsAdmin } = require('./websiteLeads.routes');
 const publicRoutes     = require('./public.routes');   // external FE channel (API-key), mounted at /public
 const deliveryRoutes   = require('./delivery.routes'); // report-delivery channel for www.puranajothirwedaya.com (X-Delivery-Key), mounted at /internal/delivery
 
@@ -96,6 +97,8 @@ function mountRoutes(app) {
   app.use('/internal/delivery', deliveryRoutes);
   app.use('/consult',          consultPublic);
   app.use('/api/consult',      jwtAuth, consultAdmin);
+  app.use('/leads',            websiteLeadsPublic);
+  app.use('/api/website-leads', websiteLeadsAdmin);
 
   // Customer, message, client routes (all sub-paths defined inside the router)
   app.use('/api',              customerRoutes);
@@ -140,6 +143,7 @@ function mountRoutes(app) {
       req.path.startsWith('/public') ||
       req.path.startsWith('/internal') ||
       req.path.startsWith('/consult') ||
+      req.path.startsWith('/leads') ||
       req.path.startsWith('/legacy');
     if (isBackendRoute) return res.status(404).json({ error: 'Not found' });
     // Don't serve HTML for asset requests — they must exist as static files

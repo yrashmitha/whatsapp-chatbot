@@ -785,6 +785,21 @@ async function init() {
       CREATE INDEX IF NOT EXISTS idx_consult_messages_session ON consult_messages (session_id, created_at);
     `);
 
+    // ── Nova Solutions website — consultation leads ───────────────────────────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS website_leads (
+        id                SERIAL PRIMARY KEY,
+        name              TEXT NOT NULL,
+        business_name     TEXT,
+        email             TEXT NOT NULL,
+        phone             TEXT,
+        country           TEXT,
+        service_interest  TEXT,
+        message           TEXT,
+        created_at        TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+
     // ── Owner/admin notification phone ────────────────────────────────────────
     await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS owner_phone TEXT`);
 

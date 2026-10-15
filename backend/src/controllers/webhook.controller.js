@@ -265,6 +265,7 @@ async function applyAdRule(client, phone, adId, log) {
     if (welcome) {
       const wamid = await sendWhatsAppMessage(phone, welcome, client);
       await db.insertMessage(phone, welcome, 'bot', null, client.id, null, null, wamid);
+      db.noteAdWelcome(client.id, phone, wamid);
     }
 
     // Either the welcome message just sent was the one reply this ad owes, or

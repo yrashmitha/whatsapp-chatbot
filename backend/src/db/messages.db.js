@@ -8,6 +8,16 @@
 
 const { pool, db, IS_PG } = require('./connection');
 
+// An ad's welcome message goes out the moment the click arrives, before the
+// customer's own first message has been written, so it would sort above it.
+// Remember it here and move it just below that message once it exists.
+const pendingAdWelcome = new Map(); // `${clientId}:${phone}` -> { wamid, at }
+const AD_WELCOME_WINDOW_MS = 60 * 1000;
+
+function noteAdWelcome(clientId, phoneNumber, wamid) {
+  if (wamid) pendingAdWelcome.set(`${clientId}:${phoneNumber}`, { wamid, at: Date.now() });
+}
+
 /**
  * Insert a message record into the database.
  *
@@ -54,6 +64,17 @@ async function insertMessage(phoneNumber, text, senderType, costUsd = null, clie
         'UPDATE customers SET last_customer_message_at = NOW() WHERE phone_number = $1 AND client_id = $2',
         [phoneNumber, clientId]
       );
+      const key = `${clientId}:${phoneNumber}`;
+      const welcome = pendingAdWelcome.get(key);
+      if (welcome) {
+        pendingAdWelcome.delete(key);
+        if (Date.now() - welcome.at < AD_WELCOME_WINDOW_MS) {
+          await pool.query(
+            `UPDATE messages SET created_at = NOW() + INTERVAL '1 millisecond' WHERE wamid = $1 AND phone_number = $2`,
+            [welcome.wamid, phoneNumber]
+          );
+        }
+      }
     }
   } else {
     db.prepare('INSERT INTO messages (phone_number, message_text, sender_type, cost_usd, client_id, media_type, media_url, wamid) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(phoneNumber, text, senderType, costUsd, clientId, mediaType, mediaUrl, wamid);
@@ -259,4 +280,4 @@ async function setMessageExtraction(wamid, data) {
   return r.changes > 0;
 }
 
-module.exports = { insertMessage, getMessagesByPhone, deleteMessages, deleteMessage, updateMessageStatus, attachWamidToLatestBotMessage, setMessageExtraction, getLatestBotMessageId };
+module.exports = { insertMessage, getMessagesByPhone, deleteMessages, deleteMessage, updateMessageStatus, attachWamidToLatestBotMessage, setMessageExtraction, getLatestBotMessageId, noteAdWelcome };

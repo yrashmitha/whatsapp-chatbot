@@ -12,7 +12,7 @@ const { IS_PG, pgQuery }                            = require('./connection');
 const { insertMessage, getMessagesByPhone,
         deleteMessages, deleteMessage,
         updateMessageStatus, attachWamidToLatestBotMessage,
-        setMessageExtraction, getLatestBotMessageId } = require('./messages.db');
+        setMessageExtraction, getLatestBotMessageId, noteAdWelcome } = require('./messages.db');
 const { upsertCustomer, getAllCustomers,
         deleteCustomer, getCustomerAiEnabled,
         setCustomerAiMode }                         = require('./customers.db');
@@ -55,6 +55,7 @@ module.exports = {
   attachWamidToLatestBotMessage,
   setMessageExtraction,
   getLatestBotMessageId,
+  noteAdWelcome,
   // Customers
   upsertCustomer,
   getAllCustomers,

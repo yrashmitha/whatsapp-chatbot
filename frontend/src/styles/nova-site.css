@@ -15,9 +15,16 @@
   font-family: 'Inter', system-ui, sans-serif;
   background: var(--nv-canvas);
   color: var(--nv-text-1);
-  min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   overflow-x: clip;
+  /* The admin app owns the viewport (html/body/#root are height:100% with
+     overflow:hidden) so its own pinned chat layouts don't scroll away. The
+     marketing site is an ordinary long page, so it becomes its own scroll
+     container instead of fighting that rule. */
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 [data-theme="dark"] .nv-root {

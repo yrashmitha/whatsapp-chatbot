@@ -32,6 +32,7 @@ const icons = {
   voiceclips:   <IC d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />,
   packages:     <IC d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10" />,
   consult:      <IC d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />,
+  inquiries:    <IC d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />,
 };
 
 // `perm` mirrors the permission guarding that page's routes. A nav entry
@@ -54,6 +55,7 @@ const ALL_NAV = [
   { to: '/test-chat',     label: 'Test Chat', icon: icons.plugins, perm: 'ai.test_chat'     },
   { to: '/settings',      label: 'Settings', icon: icons.settings, perm: 'settings.prompts' },
   { to: '/consult-admin', label: 'Consult',  icon: icons.consult, adminOnly: true },
+  { to: '/web-inquiries', label: 'Web Inquiries', icon: icons.inquiries, adminOnly: true },
 ];
 
 export default function Layout({ children, hideNavOnMobile = false }) {
@@ -81,6 +83,16 @@ export default function Layout({ children, hideNavOnMobile = false }) {
     queryFn: () => api.get('/crm/addons-status', { params: clientId ? { client_id: clientId } : {} }).then(r => r.data),
     enabled: !!clientId,
   });
+
+  // Nova Solutions' own website inquiries, not per-client — only the agency
+  // admin sees this tab, so only poll for superAdmin.
+  const { data: inquiriesUnread } = useQuery({
+    queryKey: ['website-leads-unread'],
+    queryFn: () => api.get('/website-leads/unread-count').then(r => r.data),
+    enabled: superAdmin,
+    refetchInterval: 30_000,
+  });
+  const navBadges = { '/web-inquiries': inquiriesUnread?.count || 0 };
 
   const navItems = ALL_NAV.filter(n => {
     if (n.adminOnly && !superAdmin) return false;
@@ -136,6 +148,14 @@ export default function Layout({ children, hideNavOnMobile = false }) {
             >
               {icon}
               <span>{label}</span>
+              {navBadges[to] > 0 && (
+                <span
+                  className="flex items-center justify-center text-[10px] font-bold text-white rounded-full"
+                  style={{ background: '#ef4444', minWidth: '16px', height: '16px', padding: '0 4px' }}
+                >
+                  {navBadges[to] > 9 ? '9+' : navBadges[to]}
+                </span>
+              )}
             </NavLink>
           ))}
         </nav>

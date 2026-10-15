@@ -3,7 +3,7 @@
 const express   = require('express');
 const rateLimit = require('express-rate-limit');
 const jwtAuth   = require('../middleware/jwtAuth');
-const { createLead, listWebsiteLeads } = require('../controllers/websiteLeads.controller');
+const { createLead, listWebsiteLeads, unreadCount, markRead } = require('../controllers/websiteLeads.controller');
 
 // Basic anti-spam: 5 submissions/minute per IP
 const leadsLimiter = rateLimit({
@@ -21,5 +21,7 @@ publicRouter.post('/', leadsLimiter, createLead);
 // Admin router — mounted at /api/website-leads
 const adminRouter = express.Router();
 adminRouter.get('/', jwtAuth, listWebsiteLeads);
+adminRouter.get('/unread-count', jwtAuth, unreadCount);
+adminRouter.patch('/:id/read', jwtAuth, markRead);
 
 module.exports = { publicRouter, adminRouter };

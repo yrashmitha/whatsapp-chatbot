@@ -31,6 +31,7 @@ import Privacy from './pages/Privacy';
 import Terms from './pages/Terms';
 import Consult from './pages/Consult';
 import ConsultAdmin from './pages/ConsultAdmin';
+import WebInquiries from './pages/WebInquiries';
 
 const qc = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -66,6 +67,7 @@ const router = createBrowserRouter([
   { path: '/terms', element: <Terms /> },
   { path: '/consult', element: <Consult /> },
   { path: '/consult-admin', element: <ProtectedRoute><ConsultAdmin /></ProtectedRoute> },
+  { path: '/web-inquiries', element: <ProtectedRoute><WebInquiries /></ProtectedRoute> },
   { path: '*', element: <Navigate to="/" replace /> },
 ]);
 

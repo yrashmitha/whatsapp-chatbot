@@ -798,6 +798,7 @@ async function init() {
         message           TEXT,
         created_at        TIMESTAMPTZ DEFAULT NOW()
       );
+      ALTER TABLE website_leads ADD COLUMN IF NOT EXISTS is_read BOOLEAN NOT NULL DEFAULT false;
     `);
 
     // ── Owner/admin notification phone ────────────────────────────────────────

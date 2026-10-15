@@ -52,4 +52,22 @@ async function listWebsiteLeads(req, res) {
   res.json({ leads: rows });
 }
 
-module.exports = { createLead, listWebsiteLeads };
+/**
+ * GET /api/website-leads/unread-count — badge count for the admin nav tab.
+ */
+async function unreadCount(req, res) {
+  const { rows } = await db.pgQuery(`SELECT COUNT(*)::int AS count FROM website_leads WHERE is_read = false`);
+  res.json({ count: rows[0].count });
+}
+
+/**
+ * PATCH /api/website-leads/:id/read — marks one inquiry as read (viewed).
+ */
+async function markRead(req, res) {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id.' });
+  await db.pgQuery(`UPDATE website_leads SET is_read = true WHERE id = $1`, [id]);
+  res.json({ ok: true });
+}
+
+module.exports = { createLead, listWebsiteLeads, unreadCount, markRead };

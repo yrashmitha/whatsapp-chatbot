@@ -63,6 +63,18 @@ const router = createBrowserRouter([
   { path: '*', element: <Navigate to="/" replace /> },
 ]);
 
+// React Router's data routers don't reset scroll position on navigation the
+// way a full page load does — without this, clicking to a new page leaves
+// you scrolled to wherever you were on the previous one.
+let lastPathname = window.location.pathname;
+router.subscribe(state => {
+  const next = state.location.pathname;
+  if (next !== lastPathname) {
+    lastPathname = next;
+    window.scrollTo(0, 0);
+  }
+});
+
 export default function App() {
   return (
     <QueryClientProvider client={qc}>

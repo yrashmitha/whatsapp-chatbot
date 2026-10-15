@@ -24,6 +24,9 @@ async function createLead(req, res) {
   if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
     return res.status(400).json({ error: 'A valid email is required.' });
   }
+  if (!phone || typeof phone !== 'string' || !phone.trim()) {
+    return res.status(400).json({ error: 'A WhatsApp or phone number is required.' });
+  }
 
   const serviceInterest = SERVICE_OPTIONS.has(service_interest) ? service_interest : null;
 

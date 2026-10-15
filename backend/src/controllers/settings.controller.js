@@ -29,7 +29,7 @@ async function getSettings(req, res) {
     const r = await db.pgQuery(
       `SELECT custom_prompt, error_message, system_prompt_mode, temperature, thinking_budget, brand_name, brand_color,
               order_fields, contact_number, knowledge_base_enabled, product_catalog_enabled, plugin_enabled,
-              owner_phone, ai_enabled, away_message,
+              owner_phone, ai_enabled, away_message, first_welcome_message,
               (wa_token IS NOT NULL AND wa_token <> '') AS wa_token_set,
               (gemini_api_key IS NOT NULL AND gemini_api_key <> '') AS gemini_api_key_set,
               (freeastro_api_key IS NOT NULL AND freeastro_api_key <> '') AS freeastro_api_key_set,
@@ -68,7 +68,7 @@ async function getSettings(req, res) {
 async function updatePrompt(req, res) {
   const clientId = resolveClientId(req);
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
-  const { prompt, error_message, order_fields, contact_number, knowledge_base_enabled, product_catalog_enabled, plugin_enabled, owner_phone, thinking_budget } = req.body;
+  const { prompt, error_message, order_fields, contact_number, knowledge_base_enabled, product_catalog_enabled, plugin_enabled, owner_phone, thinking_budget, first_welcome_message } = req.body;
   // Absent means 'leave as is'; empty string means 'back to the default'.
   // 0 is a real, meaningful value here, so it must survive the check.
   const tbTouched = thinking_budget !== undefined;
@@ -88,7 +88,7 @@ async function updatePrompt(req, res) {
   }
   try {
     await db.pgQuery(
-      `UPDATE client_configs SET custom_prompt=$1, error_message=$2, order_fields=$3, contact_number=$4, knowledge_base_enabled=$5, product_catalog_enabled=$6, system_prompt_mode='custom', updated_at=NOW(), plugin_enabled=COALESCE($8, plugin_enabled), owner_phone=$9, thinking_budget=CASE WHEN $10 THEN $11 ELSE thinking_budget END WHERE client_id=$7`,
+      `UPDATE client_configs SET custom_prompt=$1, error_message=$2, order_fields=$3, contact_number=$4, knowledge_base_enabled=$5, product_catalog_enabled=$6, system_prompt_mode='custom', updated_at=NOW(), plugin_enabled=COALESCE($8, plugin_enabled), owner_phone=$9, thinking_budget=CASE WHEN $10 THEN $11 ELSE thinking_budget END, first_welcome_message=$12 WHERE client_id=$7`,
       [prompt || null, error_message || null, JSON.stringify(parsedFields), contact_number || null,
         knowledge_base_enabled === true || knowledge_base_enabled === 'true',
         product_catalog_enabled === true || product_catalog_enabled === 'true',
@@ -100,6 +100,7 @@ async function updatePrompt(req, res) {
         owner_phone || null,
         tbTouched,
         tbValue,
+        first_welcome_message || null,
       ]
     );
     clientRouter.invalidateCache(clientId);

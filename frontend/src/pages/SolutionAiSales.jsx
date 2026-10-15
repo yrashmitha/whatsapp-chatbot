@@ -36,7 +36,7 @@ export default function SolutionAiSales() {
             answering, guiding, and selling after you've logged off.
           </p>
           <div className="nv-hero-ctas">
-            <a href={whatsappLink("Hi Nova, I'd like to see the AI Sales Assistant in action.")} target="_blank" rel="noreferrer" className="nv-btn nv-btn-whatsapp">See Nova AI in Action</a>
+            <a href={whatsappLink("Hi, I'd like to see a demo of the AI Sales Assistant.")} target="_blank" rel="noreferrer" className="nv-btn nv-btn-whatsapp">See Nova AI in Action</a>
             <Link to="/contact" className="nv-btn nv-btn-secondary">Book a Consultation</Link>
           </div>
         </div>
@@ -85,7 +85,7 @@ export default function SolutionAiSales() {
             consultation to talk through setting it up for your business.
           </p>
           <div className="nv-cta-row">
-            <a href={whatsappLink("Hi Nova, I'd like to see the AI Sales Assistant in action.")} target="_blank" rel="noreferrer" className="nv-btn nv-btn-whatsapp nv-btn-lg">Try It on WhatsApp</a>
+            <a href={whatsappLink("Hi, I'd like to see a demo of the AI Sales Assistant.")} target="_blank" rel="noreferrer" className="nv-btn nv-btn-whatsapp nv-btn-lg">Try It on WhatsApp</a>
             <Link to="/contact" className="nv-btn nv-btn-primary nv-btn-lg">Book a Consultation</Link>
           </div>
         </Reveal>

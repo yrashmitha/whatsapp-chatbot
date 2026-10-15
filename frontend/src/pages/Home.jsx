@@ -136,7 +136,7 @@ export default function Home() {
                 <div className="nv-feature-chip"><CheckIcon /> Configured to your business</div>
               </div>
               <div className="nv-hero-ctas">
-                <a href={whatsappLink("Hi Nova, I'd like to learn more about your AI Sales Assistant.")} target="_blank" rel="noreferrer" className="nv-btn nv-btn-whatsapp">See Nova AI in Action</a>
+                <a href={whatsappLink("Hi, I'd like to see a demo of the AI Sales Assistant.")} target="_blank" rel="noreferrer" className="nv-btn nv-btn-whatsapp">See Nova AI in Action</a>
                 <Link to="/solutions/ai-sales-assistant" className="nv-btn nv-btn-secondary">Learn More</Link>
               </div>
             </div>

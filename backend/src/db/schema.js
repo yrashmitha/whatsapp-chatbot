@@ -471,6 +471,9 @@ async function init() {
       -- Sent when the bot is switched off, if the client has written one.
       -- Empty means silence, which is what switching the bot off should mean.
       ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS away_message TEXT;
+      -- Sent once, to a brand-new customer's first-ever message. Unlike
+      -- away_message, the bot keeps replying normally afterward.
+      ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS first_welcome_message TEXT;
       ALTER TABLE crm_users ADD COLUMN IF NOT EXISTS client_id    TEXT;
       ALTER TABLE crm_users ADD COLUMN IF NOT EXISTS display_name TEXT;
       ALTER TABLE crm_users ADD COLUMN IF NOT EXISTS permissions  JSONB NOT NULL DEFAULT '[]'::jsonb;

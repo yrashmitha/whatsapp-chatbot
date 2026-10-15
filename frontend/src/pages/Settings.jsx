@@ -51,6 +51,7 @@ export default function Settings() {
   // ── AI Details ────────────────────────────────────────────────────────────
   const [prompt, setPrompt]                           = useState('');
   const [errorMsg, setErrorMsg]                       = useState('');
+  const [firstWelcomeMessage, setFirstWelcomeMessage] = useState('');
   const [contactNumber, setContactNumber]             = useState('');
   const [ownerPhone, setOwnerPhone]                   = useState('');
   const [thinkingBudget, setThinkingBudget]           = useState('');
@@ -148,6 +149,7 @@ export default function Settings() {
     if (settingsData) {
       setPrompt(settingsData.custom_prompt || '');
       setErrorMsg(settingsData.error_message || '');
+      setFirstWelcomeMessage(settingsData.first_welcome_message || '');
       setContactNumber(settingsData.contact_number || '');
       setOwnerPhone(settingsData.owner_phone || '');
       setThinkingBudget(settingsData.thinking_budget ?? '');
@@ -207,7 +209,7 @@ export default function Settings() {
     if (!clientId) { toast.error('Select a client first'); return; }
     setPromptLoading(true);
     try {
-      await api.put('/settings/prompt', { prompt, error_message: errorMsg, contact_number: contactNumber, owner_phone: ownerPhone, thinking_budget: thinkingBudget, knowledge_base_enabled: knowledgeBaseEnabled, product_catalog_enabled: productCatalogEnabled, order_fields: orderFields, plugin_enabled: pluginEnabled }, { params });
+      await api.put('/settings/prompt', { prompt, error_message: errorMsg, first_welcome_message: firstWelcomeMessage, contact_number: contactNumber, owner_phone: ownerPhone, thinking_budget: thinkingBudget, knowledge_base_enabled: knowledgeBaseEnabled, product_catalog_enabled: productCatalogEnabled, order_fields: orderFields, plugin_enabled: pluginEnabled }, { params });
       qc.invalidateQueries({ queryKey: ['settings', clientId] });
       toast.success('Settings saved');
     } catch { toast.error('Failed to save settings'); }
@@ -374,6 +376,14 @@ export default function Settings() {
                       placeholder="We're experiencing a short technical issue…"
                       className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y" />
                     <p className="text-xs text-slate-400 mt-1">Sent when the assistant is temporarily unavailable. Leave blank to use the default.</p>
+                  </div>
+
+                  <div className="border-t border-slate-100 pt-3 mt-1">
+                    <label className="block text-xs font-medium text-slate-600 mb-1.5">First Welcome Message</label>
+                    <textarea rows={3} value={firstWelcomeMessage} onChange={e => setFirstWelcomeMessage(e.target.value)}
+                      placeholder="Hi! Thanks for reaching out, how can we help?"
+                      className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y" />
+                    <p className="text-xs text-slate-400 mt-1">Sent once, the very first time a new customer messages you — then the assistant keeps replying normally. Leave blank to send nothing extra.</p>
                   </div>
 
                   <div className="border-t border-slate-100 pt-3 mt-1">

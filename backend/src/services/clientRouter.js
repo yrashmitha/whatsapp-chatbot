@@ -21,7 +21,7 @@ const CLIENT_SELECT = `
     cc.brand_name, cc.brand_color, cc.logo_url,
     cc.order_id_prefix, cc.product_catalog_enabled, cc.knowledge_base_enabled, cc.max_products_in_context,
     cc.catalog_search_mode, cc.order_flow_enabled, cc.admin_password_env, cc.order_fields, cc.contact_number,
-    cc.plugin_enabled, cc.ai_enabled, cc.gemini_api_key, cc.use_system_gemini_key,
+    cc.plugin_enabled, cc.ai_enabled, cc.away_message, cc.first_welcome_message, cc.gemini_api_key, cc.use_system_gemini_key,
     cc.interactive_menus,
     cc.thinking_budget,
     cc.owner_phone,

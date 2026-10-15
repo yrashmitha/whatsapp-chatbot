@@ -1005,6 +1005,23 @@ function receiveWebhook(req, res) {
       const session = chatSessions.get(sessionKey);
       session.lastUsed = Date.now();
 
+      // A one-time greeting for this customer's first-ever message, distinct
+      // from the ad-referral welcome (which is scoped to click-to-WhatsApp
+      // ads) and from away_message (sent instead of a reply, bot off). This
+      // one is sent in addition to, and before, the bot's normal reply below
+      // — the bot keeps talking afterward, it never goes manual-only.
+      if (client.first_welcome_message) {
+        const { rows: existingCustomerRows } = await db.pgQuery(
+          `SELECT 1 FROM customers WHERE phone_number=$1 AND client_id=$2`,
+          [from, client.id]
+        );
+        if (existingCustomerRows.length === 0) {
+          const welcomeWamid = await sendWhatsAppMessage(from, client.first_welcome_message, client);
+          await db.insertMessage(from, client.first_welcome_message, 'bot', null, client.id, null, null, welcomeWamid);
+          log.info('[WELCOME] First-ever contact — sent first_welcome_message');
+        }
+      }
+
       const { botReply: rawBotReply, imagesToSend, productImagesToSend, isFallback } = await handleMessage(from, userMessage, session.chat, { client, traceId });
 
       // An 'off_after_reply' ad with no welcome message: this reply, the one

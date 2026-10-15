@@ -11,6 +11,7 @@ const jwtAuth = require('../middleware/jwtAuth');
 const { upload } = require('../config/multer');
 const {
   sendTestMessage,
+  listTestAds,
   getTestMessages,
   resetTestSession,
   testConfig,
@@ -20,6 +21,9 @@ const {
 // Draft prompt applied to test sessions only.
 router.get('/config',                  jwtAuth, requirePermission('ai.test_chat'), testConfig);
 router.post('/config',                 jwtAuth, requirePermission('ai.test_chat'), testConfig);
+
+// Ads a test conversation can pretend to arrive from.
+router.get('/ads',                     jwtAuth, requirePermission('ai.test_chat'), listTestAds);
 
 // Media extraction preview.
 router.post('/extract',                jwtAuth, requirePermission('ai.test_chat'), upload.single('file'), testExtract);

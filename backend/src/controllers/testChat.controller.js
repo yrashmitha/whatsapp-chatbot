@@ -76,7 +76,7 @@ async function recentMessages(phoneKey, clientId) {
 async function sendTestMessage(req, res) {
   const clientId = resolveClientId(req);
   const { sessionId } = req.params;
-  const { message } = req.body || {};
+  const { message, ad_id: adId } = req.body || {};
 
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
   if (!validSessionId(sessionId)) return res.status(400).json({ error: 'Invalid test session id' });
@@ -100,6 +100,30 @@ async function sendTestMessage(req, res) {
 
     await db.upsertCustomer(phoneKey, 'Test Session', clientId);
 
+    // Pretend the customer clicked a Facebook ad. Only on the opening message of
+    // a conversation, because that is the only time WhatsApp attaches a referral.
+    // The ad's welcome message is shown exactly as a customer would get it, but
+    // the "turn the bot off" half of the rule is deliberately skipped: the point
+    // here is to see what the bot does after the welcome.
+    let skipUserInsert = false;
+    let adWelcome = null;
+    if (adId && !chatSessions.has(sessionKey)) {
+      const existing = await db.pgQuery(
+        `SELECT 1 FROM messages WHERE phone_number=$1 AND client_id=$2 LIMIT 1`, [phoneKey, clientId]
+      );
+      if (!existing.rows.length) {
+        const rule = await db.getAdRule(clientId, String(adId));
+        adWelcome = (rule?.welcome_message || '').trim() || null;
+        if (adWelcome) {
+          // The customer's message first, then the welcome, so the transcript
+          // reads in the order production shows it.
+          await db.insertMessage(phoneKey, message.trim(), 'user', null, clientId);
+          await db.insertMessage(phoneKey, adWelcome, 'bot', null, clientId);
+          skipUserInsert = true;
+        }
+      }
+    }
+
     if (!chatSessions.has(sessionKey)) {
       chatSessions.set(sessionKey, {
         chat: await buildChatSession(phoneKey, effectiveClient),
@@ -110,7 +134,7 @@ async function sendTestMessage(req, res) {
 
     const result = await handleMessage(phoneKey, message.trim(), session.chat, {
       client: effectiveClient,
-      skipUserInsert: false,
+      skipUserInsert,
       traceId: sessionId,
     });
 
@@ -162,6 +186,39 @@ async function sendTestMessage(req, res) {
   } catch (e) {
     console.error('[TEST-CHAT] send error:', e.message);
     res.status(e.statusCode || 500).json({ error: e.message });
+  }
+}
+
+/**
+ * GET /api/test-chat/ads — ads a test conversation can pretend to arrive from.
+ *
+ * Every ad with a rule, plus every ad that has had a real click, so an ad can be
+ * tried before it is configured (it then simply has no welcome message).
+ *
+ * @param {import('express').Request}  req
+ * @param {import('express').Response} res
+ * @returns {Promise<void>}
+ */
+async function listTestAds(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    const [rules, seen] = await Promise.all([db.listAdRules(clientId), db.listSeenAds(clientId)]);
+    const byId = new Map();
+    for (const s of seen) {
+      byId.set(s.ad_id, { ad_id: s.ad_id, name: s.ad_name || s.headline || null, has_welcome: false });
+    }
+    for (const r of rules) {
+      byId.set(r.ad_id, {
+        ad_id: r.ad_id,
+        name: r.ad_name || byId.get(r.ad_id)?.name || null,
+        has_welcome: !!(r.welcome_message || '').trim(),
+      });
+    }
+    const ads = [...byId.values()].sort((a, b) => Number(b.has_welcome) - Number(a.has_welcome));
+    res.json({ ads });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 }
 
@@ -286,6 +343,7 @@ async function testExtract(req, res) {
 
 module.exports = {
   sendTestMessage,
+  listTestAds,
   getTestMessages,
   resetTestSession,
   testConfig,

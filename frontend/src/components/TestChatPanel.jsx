@@ -133,6 +133,7 @@ export default function TestChatPanel({ clientId, sessionId, onSessionReset }) {
   const [text, setText] = useState('');
   const [debug, setDebug] = useState(null);
   const [debugOpen, setDebugOpen] = useState(true);
+  const [adId, setAdId] = useState('');
   const scrollRef = useRef(null);
   const params = clientId ? { client_id: clientId } : {};
 
@@ -153,8 +154,19 @@ export default function TestChatPanel({ clientId, sessionId, onSessionReset }) {
 
   useEffect(scrollToEnd, [messages, scrollToEnd]);
 
+  // Ads the test customer can pretend to have clicked. Only offered before the
+  // first message, because WhatsApp only attaches an ad to the opening one.
+  const { data: adsData } = useQuery({
+    queryKey: ['test-chat-ads', clientId],
+    queryFn: () => api.get('/test-chat/ads', { params }).then(r => r.data),
+    enabled: !!clientId,
+  });
+  const ads = adsData?.ads || [];
+  const canPickAd = !isLoading && messages.length === 0 && ads.length > 0;
+
   const sendMutation = useMutation({
-    mutationFn: (message) => api.post(`/test-chat/${sessionId}/message`, { message, ...params }, { params })
+    mutationFn: (message) => api.post(`/test-chat/${sessionId}/message`,
+      { message, ...(canPickAd && adId ? { ad_id: adId } : {}), ...params }, { params })
       .then(r => r.data),
     onSuccess: (d) => {
       setDebug(d.debug || null);
@@ -170,7 +182,7 @@ export default function TestChatPanel({ clientId, sessionId, onSessionReset }) {
 
   const resetMutation = useMutation({
     mutationFn: () => api.delete(`/test-chat/${sessionId}`, { params }),
-    onSuccess: () => { setDebug(null); onSessionReset?.(); toast.success('Session cleared'); },
+    onSuccess: () => { setDebug(null); setAdId(''); onSessionReset?.(); toast.success('Session cleared'); },
     onError: (err) => toast.error(err?.response?.data?.error || 'Failed to reset'),
   });
 
@@ -291,6 +303,25 @@ export default function TestChatPanel({ clientId, sessionId, onSessionReset }) {
               </div>
             )}
           </div>
+
+          {canPickAd && (
+            <div className="px-3 py-2 border-t border-slate-200 bg-slate-50 flex items-center gap-2 shrink-0">
+              <label className="text-xs text-slate-500 shrink-0" htmlFor="test-chat-ad">Arrive from ad</label>
+              <select
+                id="test-chat-ad"
+                value={adId}
+                onChange={e => setAdId(e.target.value)}
+                className="flex-1 min-w-0 border border-slate-200 rounded-lg px-2 py-1.5 text-xs bg-white outline-none focus:border-violet-400"
+              >
+                <option value="">No ad (normal chat)</option>
+                {ads.map(a => (
+                  <option key={a.ad_id} value={a.ad_id}>
+                    {a.name || a.ad_id}{a.has_welcome ? ' · has welcome message' : ' · no welcome message'}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <form onSubmit={send} className="px-3 py-2.5 border-t border-slate-200 flex gap-2 bg-white shrink-0">
             <input

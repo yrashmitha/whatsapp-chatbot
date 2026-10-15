@@ -94,6 +94,36 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, followU
   const [sheetCat, setSheetCat]         = useState('');   // '' = all
   const [sheetQuery, setSheetQuery]     = useState('');
 
+  // Long-press a row in the sheet to read the whole reply in a popup.
+  const [previewReply, setPreviewReply] = useState(null);
+  const pressTimer   = useRef(null);
+  const pressStart   = useRef(null);
+  const longPressed  = useRef(false);
+
+  const cancelPress = () => {
+    clearTimeout(pressTimer.current);
+    pressTimer.current = null;
+  };
+  const startPress = (r, e) => {
+    longPressed.current = false;
+    const t = e.touches?.[0] || e;
+    pressStart.current = { x: t.clientX, y: t.clientY };
+    cancelPress();
+    pressTimer.current = setTimeout(() => {
+      longPressed.current = true;
+      navigator.vibrate?.(15);
+      setPreviewReply(r);
+    }, 450);
+  };
+  const movePress = (e) => {
+    const s = pressStart.current, t = e.touches?.[0];
+    if (!s || !t) return;
+    // Scrolling the list must not count as a hold.
+    if (Math.abs(t.clientX - s.x) > 10 || Math.abs(t.clientY - s.y) > 10) cancelPress();
+  };
+
+  useEffect(() => () => clearTimeout(pressTimer.current), []);
+
   useEffect(() => {
     const params = clientId ? { client_id: clientId } : {};
     api.get('/quick-replies', { params }).then(r => setQuickReplies(r.data)).catch(() => {});
@@ -486,13 +516,53 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, followU
               ) : sheetItems.map(r => (
                 <button
                   key={r.id}
-                  onClick={() => pickFromSheet(r)}
+                  onClick={() => {
+                    // The click that follows a long press must not pick the reply.
+                    if (longPressed.current) { longPressed.current = false; return; }
+                    pickFromSheet(r);
+                  }}
+                  onTouchStart={e => startPress(r, e)}
+                  onTouchMove={movePress}
+                  onTouchEnd={cancelPress}
+                  onTouchCancel={cancelPress}
+                  onContextMenu={e => e.preventDefault()}
+                  style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}
                   className="w-full text-left px-4 py-3 flex flex-col gap-0.5 border-0 border-b border-slate-100 bg-white active:bg-violet-50 cursor-pointer"
                 >
                   <span className="text-xs font-semibold text-violet-600">{r.title}</span>
                   <span className="text-sm text-slate-600 line-clamp-2 break-words">{r.text}</span>
                 </button>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {previewReply && (
+        <div
+          className="@xl:hidden fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50"
+          onClick={() => setPreviewReply(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[80dvh] flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-2 px-4 pt-4 pb-2">
+              <span className="text-sm font-semibold text-violet-600 truncate">{previewReply.title}</span>
+              <button
+                onClick={() => setPreviewReply(null)}
+                aria-label="Close"
+                className="shrink-0 w-8 h-8 text-slate-400 text-xl leading-none border-0 bg-transparent cursor-pointer"
+              >×</button>
+            </div>
+            <p className="px-4 pb-3 text-sm text-slate-700 whitespace-pre-wrap break-words overflow-y-auto">
+              {previewReply.text}
+            </p>
+            <div className="px-4 pb-4 pt-2 border-t border-slate-100">
+              <button
+                onClick={() => { const r = previewReply; setPreviewReply(null); pickFromSheet(r); }}
+                className="w-full py-2.5 text-sm font-semibold text-white bg-violet-600 rounded-xl border-0 cursor-pointer"
+              >Use this reply</button>
             </div>
           </div>
         </div>

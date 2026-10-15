@@ -16,9 +16,10 @@ async function create(req, res) {
   const clientId = resolveClientId(req);
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
   const { title, text } = req.body;
+  const category = String(req.body.category ?? '').trim().slice(0, 40);
   if (!title?.trim() || !text?.trim()) return res.status(400).json({ error: 'title and text required' });
   try {
-    const row = await createQuickReply(clientId, title.trim(), text.trim());
+    const row = await createQuickReply(clientId, title.trim(), text.trim(), category);
     res.status(201).json(row);
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
@@ -27,9 +28,10 @@ async function update(req, res) {
   const clientId = resolveClientId(req);
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
   const { title, text } = req.body;
+  const category = String(req.body.category ?? '').trim().slice(0, 40);
   if (!title?.trim() || !text?.trim()) return res.status(400).json({ error: 'title and text required' });
   try {
-    const row = await updateQuickReply(clientId, req.params.id, title.trim(), text.trim());
+    const row = await updateQuickReply(clientId, req.params.id, title.trim(), text.trim(), category);
     if (!row) return res.status(404).json({ error: 'Not found' });
     res.json(row);
   } catch (e) { res.status(500).json({ error: e.message }); }

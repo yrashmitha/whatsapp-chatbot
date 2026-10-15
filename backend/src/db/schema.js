@@ -683,6 +683,9 @@ async function init() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS idx_quick_replies_client ON quick_replies (client_id, sort_order);
+      -- Groups the replies in the mobile picker. Empty means uncategorised.
+      ALTER TABLE quick_replies ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT '';
+      CREATE INDEX IF NOT EXISTS idx_quick_replies_category ON quick_replies (client_id, category, sort_order);
       -- The WhatsApp Business Account that owns this client's number.
       -- Meta requires it alongside messaging_channel on any
       -- business_messaging conversion. Neither of our tokens can read
@@ -1159,6 +1162,7 @@ async function init() {
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
     `);
+    try { db.exec(`ALTER TABLE quick_replies ADD COLUMN category TEXT NOT NULL DEFAULT ''`); } catch (_) {}
 
     // ── Plugin config + customer data (SQLite) ────────────────────────────────
     db.exec(`

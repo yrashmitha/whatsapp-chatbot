@@ -14,6 +14,7 @@ export default function QuickReplies() {
   const [editingId, setEditingId]   = useState(null);   // null = no edit, 'new' = add form
   const [formTitle, setFormTitle]   = useState('');
   const [formText, setFormText]     = useState('');
+  const [formCategory, setFormCategory] = useState('');
   const [saving, setSaving]         = useState(false);
 
   const params = clientId ? { client_id: clientId } : {};
@@ -28,8 +29,8 @@ export default function QuickReplies() {
 
   useEffect(() => { load(); }, [clientId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const openNew = () => { setEditingId('new'); setFormTitle(''); setFormText(''); };
-  const openEdit = (r) => { setEditingId(r.id); setFormTitle(r.title); setFormText(r.text); };
+  const openNew = () => { setEditingId('new'); setFormTitle(''); setFormText(''); setFormCategory(''); };
+  const openEdit = (r) => { setEditingId(r.id); setFormTitle(r.title); setFormText(r.text); setFormCategory(r.category || ''); };
   const cancelEdit = () => setEditingId(null);
 
   const handleSave = async () => {
@@ -37,10 +38,10 @@ export default function QuickReplies() {
     setSaving(true);
     try {
       if (editingId === 'new') {
-        await api.post('/quick-replies', { title: formTitle.trim(), text: formText.trim(), ...params });
+        await api.post('/quick-replies', { title: formTitle.trim(), text: formText.trim(), category: formCategory.trim(), ...params });
         toast.success('Quick reply added');
       } else {
-        await api.put(`/quick-replies/${editingId}`, { title: formTitle.trim(), text: formText.trim(), ...params });
+        await api.put(`/quick-replies/${editingId}`, { title: formTitle.trim(), text: formText.trim(), category: formCategory.trim(), ...params });
         toast.success('Quick reply updated');
       }
       setEditingId(null);
@@ -62,6 +63,8 @@ export default function QuickReplies() {
       toast.error('Failed to delete');
     }
   };
+
+  const categories = [...new Set(replies.map(r => r.category).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
   const inputCls = 'w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100';
 
@@ -93,6 +96,20 @@ export default function QuickReplies() {
                 value={formTitle}
                 onChange={e => setFormTitle(e.target.value)}
               />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-500 block mb-1">Category <span className="text-slate-400 font-normal">(groups replies in the phone picker, e.g. "payment")</span></label>
+              <input
+                className={inputCls}
+                placeholder="payment"
+                list="qr-categories"
+                maxLength={40}
+                value={formCategory}
+                onChange={e => setFormCategory(e.target.value)}
+              />
+              <datalist id="qr-categories">
+                {categories.map(c => <option key={c} value={c} />)}
+              </datalist>
             </div>
             <div>
               <label className="text-xs font-medium text-slate-500 block mb-1">Message</label>
@@ -130,6 +147,7 @@ export default function QuickReplies() {
             <li key={r.id} className="flex items-start gap-3 bg-white border border-slate-200 rounded-2xl px-4 py-3 shadow-sm">
               <div className="flex-1 min-w-0">
                 <span className="text-xs font-semibold text-violet-600">/{r.title}</span>
+                {r.category && <span className="ml-2 text-[10px] font-medium text-slate-500 bg-slate-100 rounded-full px-2 py-0.5">{r.category}</span>}
                 <p className="text-sm text-slate-700 mt-0.5 whitespace-pre-wrap break-words">{r.text}</p>
               </div>
               <div className="flex gap-1 shrink-0">

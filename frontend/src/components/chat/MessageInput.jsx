@@ -89,6 +89,10 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, followU
   const [showQR, setShowQR]             = useState(false);
   const [qrFilter, setQrFilter]         = useState('');
   const [qrIndex, setQrIndex]           = useState(0);
+  // Phone picker: opens without the keyboard so the chat stays in view.
+  const [sheetOpen, setSheetOpen]       = useState(false);
+  const [sheetCat, setSheetCat]         = useState('');   // '' = all
+  const [sheetQuery, setSheetQuery]     = useState('');
 
   useEffect(() => {
     const params = clientId ? { client_id: clientId } : {};
@@ -98,6 +102,13 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, followU
   const filtered = quickReplies.filter(r =>
     !qrFilter || r.title.toLowerCase().includes(qrFilter) || r.text.toLowerCase().includes(qrFilter)
   );
+
+  const categories = [...new Set(quickReplies.map(r => r.category).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const sheetItems = quickReplies.filter(r => {
+    if (sheetCat && r.category !== sheetCat) return false;
+    const q = sheetQuery.trim().toLowerCase();
+    return !q || r.title.toLowerCase().includes(q) || r.text.toLowerCase().includes(q);
+  });
 
   /**
    * Draft a follow-up from the conversation so far and drop it into the box
@@ -123,6 +134,15 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, followU
     setText(r.text);
     setShowQR(false);
     textareaRef.current?.focus();
+  };
+
+  // From the sheet: fill the box and close, without raising the keyboard. The
+  // agent reads the text above the composer and taps into it only to edit.
+  const pickFromSheet = (r) => {
+    setText(r.text);
+    setShowQR(false);
+    setSheetOpen(false);
+    setSheetQuery('');
   };
   // ────────────────────────────────────────────────────────────────────────────
 
@@ -328,6 +348,16 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, followU
           </svg>
         </button>
 
+        <button
+          onClick={() => { textareaRef.current?.blur(); setSheetOpen(true); }}
+          className="@xl:hidden shrink-0 w-10 h-10 border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-violet-500 bg-white cursor-pointer"
+          aria-label="Quick replies" title="Quick replies"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+        </button>
+
         <div className="hidden @xl:flex items-end gap-2">
           {crmMediaEnabled && (
             <>
@@ -411,6 +441,62 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, followU
           )}
         </button>
       </div>
+
+      {sheetOpen && (
+        <div className="@xl:hidden fixed inset-0 z-50 flex flex-col justify-end bg-black/30" onClick={() => setSheetOpen(false)}>
+          <div
+            className="bg-white rounded-t-2xl shadow-xl flex flex-col h-[55dvh] pb-[env(safe-area-inset-bottom)]"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 px-3 pt-3 pb-2">
+              <input
+                value={sheetQuery}
+                onChange={e => setSheetQuery(e.target.value)}
+                placeholder="Search quick replies"
+                className="flex-1 min-w-0 px-3 py-2 text-base border border-slate-200 rounded-xl outline-none focus:border-violet-400"
+              />
+              <button
+                onClick={() => setSheetOpen(false)}
+                aria-label="Close"
+                className="shrink-0 w-9 h-9 text-slate-400 text-xl leading-none border-0 bg-transparent cursor-pointer"
+              >×</button>
+            </div>
+
+            {categories.length > 0 && (
+              <div className="flex gap-2 px-3 pb-2 overflow-x-auto shrink-0">
+                {['', ...categories].map(c => (
+                  <button
+                    key={c || '__all'}
+                    onClick={() => setSheetCat(c)}
+                    className={`shrink-0 px-3 py-1 text-xs font-medium rounded-full border cursor-pointer ${
+                      sheetCat === c
+                        ? 'bg-violet-600 text-white border-violet-600'
+                        : 'bg-white text-slate-600 border-slate-200'
+                    }`}
+                  >{c || 'All'}</button>
+                ))}
+              </div>
+            )}
+
+            <div className="flex-1 overflow-y-auto border-t border-slate-100">
+              {sheetItems.length === 0 ? (
+                <p className="py-10 text-center text-sm text-slate-400">
+                  {quickReplies.length === 0 ? 'No quick replies yet.' : 'Nothing matches.'}
+                </p>
+              ) : sheetItems.map(r => (
+                <button
+                  key={r.id}
+                  onClick={() => pickFromSheet(r)}
+                  className="w-full text-left px-4 py-3 flex flex-col gap-0.5 border-0 border-b border-slate-100 bg-white active:bg-violet-50 cursor-pointer"
+                >
+                  <span className="text-xs font-semibold text-violet-600">{r.title}</span>
+                  <span className="text-sm text-slate-600 line-clamp-2 break-words">{r.text}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       <VoiceClipPickerModal
         open={showVoicePicker}

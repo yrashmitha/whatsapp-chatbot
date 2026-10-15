@@ -28,6 +28,7 @@ const quickRepliesRoutes = require('./quickReplies.routes');
 const callsRoutes        = require('./calls.routes');
 const voiceClipsRoutes   = require('./voice_clips.routes');
 const { publicRouter: consultPublic, adminRouter: consultAdmin } = require('./consult.routes');
+const { publicRouter: leadsPublic, adminRouter: leadsAdmin }     = require('./leads.routes');
 const publicRoutes     = require('./public.routes');   // external FE channel (API-key), mounted at /public
 
 const jwtAuth = require('../middleware/jwtAuth');
@@ -83,6 +84,8 @@ function mountRoutes(app) {
   app.use('/public',           publicRoutes);
   app.use('/consult',          consultPublic);
   app.use('/api/consult',      jwtAuth, consultAdmin);
+  app.use('/leads',            leadsPublic);
+  app.use('/api/leads',        leadsAdmin);
 
   // Customer, message, client routes (all sub-paths defined inside the router)
   app.use('/api',              customerRoutes);
@@ -118,6 +121,7 @@ function mountRoutes(app) {
       req.path.startsWith('/webhook') ||
       req.path.startsWith('/public') ||
       req.path.startsWith('/consult') ||
+      req.path.startsWith('/leads') ||
       req.path.startsWith('/legacy');
     if (isBackendRoute) return res.status(404).json({ error: 'Not found' });
     // Don't serve HTML for asset requests — they must exist as static files

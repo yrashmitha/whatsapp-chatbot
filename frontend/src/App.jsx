@@ -16,7 +16,13 @@ import Plugins from './pages/Plugins';
 import Summary from './pages/Summary';
 import Calls from './pages/Calls';
 import VoiceClips from './pages/VoiceClips';
-import Landing from './pages/Landing';
+import Home from './pages/Home';
+import About from './pages/About';
+import Contact from './pages/Contact';
+import SolutionAiSales from './pages/SolutionAiSales';
+import SolutionBusinessOS from './pages/SolutionBusinessOS';
+import Services from './pages/Services';
+import ServiceAutomation from './pages/ServiceAutomation';
 import Pricing from './pages/Pricing';
 import Privacy from './pages/Privacy';
 import Terms from './pages/Terms';
@@ -42,7 +48,13 @@ const router = createBrowserRouter([
   { path: '/plugins', element: <ProtectedRoute><Plugins /></ProtectedRoute> },
   { path: '/calls',        element: <ProtectedRoute><Calls /></ProtectedRoute> },
   { path: '/voice-clips',  element: <ProtectedRoute><VoiceClips /></ProtectedRoute> },
-  { path: '/', element: <Landing /> },
+  { path: '/', element: <Home /> },
+  { path: '/about', element: <About /> },
+  { path: '/contact', element: <Contact /> },
+  { path: '/solutions/ai-sales-assistant', element: <SolutionAiSales /> },
+  { path: '/solutions/business-management', element: <SolutionBusinessOS /> },
+  { path: '/services', element: <Services /> },
+  { path: '/services/ai-automation', element: <ServiceAutomation /> },
   { path: '/pricing', element: <Pricing /> },
   { path: '/privacy', element: <Privacy /> },
   { path: '/terms', element: <Terms /> },

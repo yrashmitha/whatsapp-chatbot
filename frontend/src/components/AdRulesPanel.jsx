@@ -13,6 +13,7 @@ import { useToast } from './ui/Toast';
  */
 
 const MODES = [
+  { value: 'bot_stays_on', label: 'Bot stays on', hint: 'The welcome message below goes out, then the bot keeps answering normally — it never goes manual.' },
   { value: 'off_after_reply', label: 'Bot off after first reply', hint: 'One reply goes out (the welcome message below, or the bot’s own normal reply if none is set), then the chat goes manual.' },
   { value: 'off_immediately', label: 'Bot off completely', hint: 'No automatic reply at all, even the welcome message below is the only thing ever sent.' },
 ];

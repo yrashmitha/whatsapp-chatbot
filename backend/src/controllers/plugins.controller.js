@@ -1495,8 +1495,8 @@ async function setAdRule(req, res) {
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
   const { adId } = req.params;
   const { welcome_message, off_mode } = req.body || {};
-  if (!['off_immediately', 'off_after_reply'].includes(off_mode)) {
-    return res.status(400).json({ error: "off_mode must be 'off_immediately' or 'off_after_reply'" });
+  if (!['off_immediately', 'off_after_reply', 'bot_stays_on'].includes(off_mode)) {
+    return res.status(400).json({ error: "off_mode must be 'off_immediately', 'off_after_reply', or 'bot_stays_on'" });
   }
   try {
     await db.upsertAdRule(clientId, adId, { welcomeMessage: welcome_message, offMode: off_mode });

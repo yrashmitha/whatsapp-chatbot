@@ -268,6 +268,13 @@ async function applyAdRule(client, phone, adId, log) {
       db.noteAdWelcome(client.id, phone, wamid);
     }
 
+    // 'bot_stays_on': the welcome above is all this rule does — the bot keeps
+    // answering normally afterward, same as an ad with no override at all.
+    if (rule.off_mode === 'bot_stays_on') {
+      log.info(`[AD-RULE] ad ${adId}: ${welcome ? 'sent welcome message, ' : ''}bot stays on`);
+      return;
+    }
+
     // Either the welcome message just sent was the one reply this ad owes, or
     // the ad is off_immediately and owes nothing at all. Either way the chat
     // goes manual now. Only 'off_after_reply' with no welcome message leaves

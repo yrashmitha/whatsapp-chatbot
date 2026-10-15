@@ -917,13 +917,19 @@ async function init() {
         -- 'off_after_reply': one reply goes out (the welcome message, or the
         -- bot's own normal first reply if none is set), then the chat goes
         -- manual, same as an operator taking it over by hand.
+        -- 'bot_stays_on': the welcome message goes out same as the others,
+        -- but the bot keeps answering normally after it — never goes manual.
         off_mode        TEXT NOT NULL DEFAULT 'off_after_reply'
-                          CHECK (off_mode IN ('off_immediately','off_after_reply')),
+                          CHECK (off_mode IN ('off_immediately','off_after_reply','bot_stays_on')),
         created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         PRIMARY KEY (client_id, ad_id)
       );
     `);
+    // A table created before 'bot_stays_on' existed still carries the old,
+    // narrower CHECK — widen it so existing deployments accept the new mode.
+    await pool.query(`ALTER TABLE ad_rules DROP CONSTRAINT IF EXISTS ad_rules_off_mode_check;`);
+    await pool.query(`ALTER TABLE ad_rules ADD CONSTRAINT ad_rules_off_mode_check CHECK (off_mode IN ('off_immediately','off_after_reply','bot_stays_on'));`);
     // One more reply is owed to this customer before the bot goes silent, for
     // an 'off_after_reply' ad with no welcome message: the bot's own generated
     // reply counts as the one reply, so the pause has to happen just after it

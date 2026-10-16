@@ -110,6 +110,7 @@ async function updatePrompt(req, res) {
       await db.pgQuery(
         `UPDATE client_configs SET
             custom_prompt_b = CASE WHEN $1 THEN $2 ELSE custom_prompt_b END,
+            strategy_test_started_at = CASE WHEN $3 AND $4 AND NOT strategy_test_enabled THEN NOW() ELSE strategy_test_started_at END,
             strategy_test_enabled = CASE WHEN $3 THEN $4 ELSE strategy_test_enabled END,
             strategy_b_percent = CASE WHEN $6 THEN $7 ELSE strategy_b_percent END
           WHERE client_id=$5`,

@@ -179,12 +179,19 @@ async function resolveStrategy(phoneNumber, clientId, client) {
   const cur = (await read()).rows[0]?.prompt_strategy;
   if (cur === 'A' || cur === 'B') return { strategy: cur, existing: false };
 
-  // Talked to us before the split began: not part of the test.
+  // A conversation that began before the split was switched on is not part of the test.
+  // The question is when it began, not whether any message exists: an ad customer's click
+  // message is stored before their first reply, so "has an earlier message" would wrongly
+  // leave every ad customer on A and the test would never reach B.
   if (!phoneNumber.startsWith('web:')) {
-    const prior = await pool.query(
-      `SELECT 1 FROM messages WHERE phone_number=$1 AND client_id=$2 AND sender_type='user' LIMIT 1`,
+    const first = await pool.query(
+      `SELECT MIN(created_at) AS t FROM messages WHERE phone_number=$1 AND client_id=$2`,
       [phoneNumber, clientId]);
-    if (prior.rows.length) return { strategy: 'A', existing: true };
+    const began = first.rows[0]?.t ? new Date(first.rows[0].t) : null;
+    const since = client.strategy_test_started_at
+      ? new Date(client.strategy_test_started_at)
+      : new Date(Date.now() - 60 * 60 * 1000);   // older configs: a conversation from the last hour is new
+    if (began && began < since) return { strategy: 'A', existing: true };
   }
 
   const up = await pool.query(

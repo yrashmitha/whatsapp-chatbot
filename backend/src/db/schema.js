@@ -667,6 +667,8 @@ async function init() {
       ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS strategy_test_enabled  BOOLEAN NOT NULL DEFAULT FALSE;
       -- Share of NEW customers given strategy B while the test is on (0 to 100). 50 is an even split.
       ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS strategy_b_percent     INTEGER NOT NULL DEFAULT 50;
+      -- When the split was last switched on: a customer whose conversation began before this is not part of the test.
+      ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS strategy_test_started_at TIMESTAMPTZ;
       -- What the bot did to produce a reply: strategy, prompt version, searches, chunks, blocks.
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS trace JSONB;
       ALTER TABLE customers ADD COLUMN IF NOT EXISTS prompt_strategy    TEXT;
@@ -1099,6 +1101,7 @@ async function init() {
       'custom_prompt_b TEXT', 'test_system_prompt_b TEXT',
       'strategy_test_enabled INTEGER NOT NULL DEFAULT 0',
       'strategy_b_percent INTEGER NOT NULL DEFAULT 50',
+      'strategy_test_started_at TEXT',
       'interactive_menus TEXT',
       'thinking_budget INTEGER',
       'report_logo_width INTEGER NOT NULL DEFAULT 160',

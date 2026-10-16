@@ -1055,6 +1055,20 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     isFallback = true;
   }
 
+  // The model sometimes echoes the wrapper we put around the customer's message
+  // ([CURRENT_MESSAGE_START] [NOW: ...] their text [CURRENT_MESSAGE_END]) before its
+  // real answer. Drop the echo, keep the answer.
+  if (botReply && !isFallback && /\[CURRENT_MESSAGE_(START|END)\]|^\s*\[NOW:/.test(botReply)) {
+    const before = botReply;
+    botReply = botReply
+      .replace(/^[\s\S]*?\[CURRENT_MESSAGE_END\]\s*/, '')
+      .replace(/\[CURRENT_MESSAGE_(START|END)\]\s*/g, '')
+      .replace(/^\s*\[NOW:[^\]]*\]\s*/gm, '')
+      .trim();
+    log.warn(`[WRAPPER_ECHO] Stripped echoed message wrapper. Head: "${before.slice(0, 80).replace(/\n/g, '\\n')}"`);
+    if (!botReply) { botReply = client?.error_message || "Sorry, I didn't get that. Could you please try again? 🙏"; isFallback = true; }
+  }
+
   // ── Reasoning-leak backstop ────────────────────────────────────────────────
   // Last line of defence for reasoning that arrived unflagged as a normal answer.
   // Regenerate once from clean history; if that leaks too, send nothing and flag

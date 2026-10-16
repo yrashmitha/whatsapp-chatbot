@@ -12,7 +12,7 @@ const fs     = require('fs');
 const path   = require('path');
 const db     = require('../db');
 const clientRouter = require('../services/clientRouter');
-const { buildChatSession, handleMessage } = require('../services/gemini');
+const { buildChatSession, handleMessage, adWelcomeNote } = require('../services/gemini');
 const { sendWhatsAppMessage, sendWhatsAppImage, sendWhatsAppAudio, sendBotReply, sendWhatsAppInteractiveList, sendWhatsAppReplyButtons, waToken, waPhoneId, markMessageRead } = require('../services/whatsapp');
 const { chatSessions } = require('../workers/sessionManager');
 const { UPLOADS_DIR, PUBLIC_URL } = require('../config/env');
@@ -254,13 +254,14 @@ async function recordReferral(clientId, phone, referral) {
  * @param {string} phone
  * @param {string|null} adId - referral.source_id
  * @param {object} log
+ * @returns {Promise<{welcomeSent: string|null}>} the welcome text, if one was sent
  */
 async function applyAdRule(client, phone, adId, log) {
-  if (!adId) return { welcomeSent: false };
-  let welcomeSent = false;
+  if (!adId) return { welcomeSent: null };
+  let welcomeSent = null;
   try {
     const rule = await db.getAdRule(client.id, adId);
-    if (!rule) return { welcomeSent: false };
+    if (!rule) return { welcomeSent: null };
 
     const welcome = (rule.welcome_message || '').trim();
     if (welcome) {
@@ -270,7 +271,7 @@ async function applyAdRule(client, phone, adId, log) {
       // A customer who already has a live session (clicking a second ad) would
       // otherwise never see this message; rebuilding reads it from the DB.
       chatSessions.delete(`${client.id}:${phone}`);
-      welcomeSent = true;
+      welcomeSent = welcome;
     }
 
     // 'bot_stays_on': the welcome above is all this rule does — the bot keeps
@@ -296,28 +297,6 @@ async function applyAdRule(client, phone, adId, log) {
     log.warn('[AD-RULE] could not apply:', e.message);
   }
   return { welcomeSent };
-}
-
-/**
- * The text an ad click pre-fills in the customer's first message. It names the
- * service but says nothing about their situation, and the ad's welcome message
- * already asks what they need, so answering it only produces a second welcome.
- * Matched exactly (after tidying), so a customer who adds a real question to it
- * still gets an answer.
- */
-const AD_CLICK_TEXTS = new Set([
-  'මගේ කේන්දර වාර්තාව සකස් කරගන්න අවශ්‍යයි',
-  'hi, මගේ relationship එක ගැන guidance ලබාගන්න mentorship එක ගැන දැනගන්න කැමතියි',
-]);
-const BARE_GREETING = /^(hi+|hello+|hey+|ayubowan(wa)?|හායි|හෙලෝ|ආයුබෝවන්|🙏|👋)$/i;
-
-/**
- * @param {string} text - the customer's first message
- * @returns {boolean} true for pre-filled ad click text or a bare greeting
- */
-function isAdClickText(text) {
-  const t = String(text || '').trim().replace(/\s+/g, ' ').replace(/[.!?\s]+$/, '').toLowerCase();
-  return !!t && (AD_CLICK_TEXTS.has(t) || BARE_GREETING.test(t));
 }
 
 /**
@@ -402,11 +381,11 @@ function receiveWebhook(req, res) {
 
       // Before anything that can return early. The reply can be retried; the
       // referral arrives exactly once and is gone if this turn bails out.
-      let adWelcomeSent = false;
+      let adWelcome = null;
       if (msg.referral) {
         await db.upsertCustomer(from, null, client.id);
         await recordReferral(client.id, from, msg.referral);
-        adWelcomeSent = !!(await applyAdRule(client, from, msg.referral.source_id, log))?.welcomeSent;
+        adWelcome = (await applyAdRule(client, from, msg.referral.source_id, log))?.welcomeSent || null;
       }
 
       // Deliberately not marking it read yet. A blue tick says somebody read
@@ -496,16 +475,6 @@ function receiveWebhook(req, res) {
           }
         }
         log.info(`[WEBHOOK] bot off for ${msg.type} - stored, nothing sent`);
-        return;
-      }
-
-      // The ad's welcome message was just sent and this is only the click text
-      // (or a bare greeting): the welcome already asked what they need, so the
-      // bot stays quiet instead of greeting a second time. Store it and wait
-      // for their real answer.
-      if (adWelcomeSent && msg.type === 'text' && isAdClickText(msg.text?.body)) {
-        await db.insertMessage(from, msg.text.body, 'user', null, client.id, null, null, msg.id);
-        log.info('[AD-RULE] click text after the ad welcome - bot waits for the real message');
         return;
       }
 
@@ -1068,7 +1037,12 @@ function receiveWebhook(req, res) {
         }
       }
 
-      const { botReply: rawBotReply, imagesToSend, productImagesToSend, isFallback } = await handleMessage(from, userMessage, session.chat, { client, traceId });
+      // This message came from an ad whose welcome message was just sent, so
+      // the customer has already been greeted. Say so for this turn, whatever
+      // the prompt's own first-message rule says, and quote the welcome so the
+      // bot carries on from it.
+      const contextNote = adWelcome ? adWelcomeNote(adWelcome) : null;
+      const { botReply: rawBotReply, imagesToSend, productImagesToSend, isFallback } = await handleMessage(from, userMessage, session.chat, { client, traceId, contextNote });
 
       // An 'off_after_reply' ad with no welcome message: this reply, the one
       // just computed, is the one reply that ad is owed. Pausing here rather

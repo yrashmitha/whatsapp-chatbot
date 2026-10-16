@@ -18,7 +18,7 @@
 const db = require('../db');
 const clientRouter = require('../services/clientRouter');
 const resolveClientId = require('../middleware/resolveClientId');
-const { buildChatSession, handleMessage } = require('../services/gemini');
+const { buildChatSession, handleMessage, adWelcomeNote } = require('../services/gemini');
 const { chatSessions } = require('../workers/sessionManager');
 const { extractFromBuffer } = require('../services/mediaExtractor');
 const { getGeminiKey } = require('../services/clientKeys');
@@ -136,6 +136,8 @@ async function sendTestMessage(req, res) {
       client: effectiveClient,
       skipUserInsert,
       traceId: sessionId,
+      // Same note the webhook adds, so the sandbox behaves like a real ad chat.
+      contextNote: adWelcome ? adWelcomeNote(adWelcome) : null,
     });
 
     // handleMessage already stored the bot's text reply. Images belong before

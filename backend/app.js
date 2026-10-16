@@ -107,6 +107,21 @@ db.init()
   .then(async () => {
     console.log('[DB] Initialized successfully');
 
+    // A tarot reading is generated in the background of one request. A restart or
+    // deploy kills it and leaves tarot_data.generating=true forever, so the order
+    // looks stuck. Nothing can be generating at boot, so mark those as interrupted.
+    if (db.IS_PG) {
+      try {
+        const r = await db.pgQuery(
+          `UPDATE orders SET tarot_data = (tarot_data - 'generating') || '{"error":"Generation was interrupted by a server restart. Press generate again."}'::jsonb
+           WHERE tarot_data->>'generating' = 'true' AND tarot_data->'reading' IS NULL`
+        );
+        if (r.rowCount) console.warn(`[TAROT] Marked ${r.rowCount} interrupted reading(s) as failed so they can be regenerated`);
+      } catch (e) {
+        console.warn('[TAROT] Interrupted-reading sweep failed:', e.message);
+      }
+    }
+
     // Seed superadmin if first run
     if (db.IS_PG && process.env.SUPERADMIN_PASSWORD) {
       try {

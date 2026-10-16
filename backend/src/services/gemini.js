@@ -131,6 +131,27 @@ function samePerson(cf, details) {
 }
 
 /**
+ * Hard gate for recording an order: every required order field must hold a real
+ * value. The tool schema marks them required but the model can still pass null or
+ * an empty string, which created an empty order (and a Lead event for Meta) before
+ * the customer had sent any details. A field whose label says "if known" is exempt.
+ *
+ * @returns {string[]} labels of the required fields that are missing
+ */
+function missingRequiredOrderFields(client, details) {
+  const EMPTY = /^(null|undefined|none|n\/a|na|unknown|-+|\?+|not provided|not given|pending|tbd)$/i;
+  const missing = [];
+  for (const f of client?.order_fields || []) {
+    if (!f?.key || !f.required) continue;
+    if (/දන්නවා\s*නම්|if known|optional/i.test(f.label || '')) continue;
+    const v = details?.[f.key];
+    const t = (v === null || v === undefined) ? '' : String(v).trim();
+    if (!t || EMPTY.test(t)) missing.push(f.label || f.key);
+  }
+  return missing;
+}
+
+/**
  * Record a new order, OR reuse the customer's own open order instead of
  * creating a second one.
  *
@@ -917,8 +938,17 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
           log.warn('[ORDER] place_order called again in the same turn — ignoring');
           functionResponses.push({ functionResponse: { name: 'place_order', response: { ok: true, order_id: toolOrderId, note: 'already recorded' } } });
         } else {
-          try {
-            const details = { ...fc.args };
+          const gateDetails = { ...fc.args };
+          const gateMissing = missingRequiredOrderFields(client, gateDetails);
+          if (gateMissing.length) {
+            log.warn(`[ORDER_GATE] place_order refused, missing: ${gateMissing.join(', ')}`);
+            { const te4 = traceEntry.get(fc); if (te4) te4.error = `refused, missing: ${gateMissing.join(', ')}`; }
+            functionResponses.push({ functionResponse: { name: 'place_order', response: {
+              ok: false,
+              error: `NOT recorded. Missing required details: ${gateMissing.join(', ')}. The customer has not given these yet. Do NOT tell them an order was placed or received, and do not send payment details. Ask for the missing details, then read them back and wait for a clear yes before calling place_order again.`,
+            } } });
+          } else try {
+            const details = gateDetails;
             const { orderId: recordedId, reused } = await recordOrReuseOrder(phoneNumber, client, details, log);
             toolOrderId = recordedId;
             { const te3 = traceEntry.get(fc); if (te3) te3.order_id = recordedId; }
@@ -1149,6 +1179,11 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
       log.error(`[ORDER] Failed to parse order JSON from marker:`, e.message, orderMatch[1]);
     }
 
+    const markerMissing = details ? missingRequiredOrderFields(client, details) : [];
+    if (markerMissing.length) {
+      log.warn(`[ORDER_GATE] ORDER_COMPLETE refused, missing: ${markerMissing.join(', ')}`);
+      details = null;
+    }
     if (details) {
       const { orderId: recordedId, reused } = await recordOrReuseOrder(phoneNumber, client, details, log);
       orderId = recordedId;

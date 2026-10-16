@@ -867,7 +867,14 @@ async function triggerTarotReading(req, res) {
     } catch { /* no config */ }
 
     console.log(`[TAROT] Background generation for ${phone} | order=${order_id} | client=${clientId}`);
-    const { chartContext, chart } = await buildTarotChart(clientId, order_id, req.body);
+    // The response is already sent, so a throw here would leave the order stuck on
+    // "generating". A missing chart only means a reading without chart context.
+    let chartContext = '', chart = null;
+    try {
+      ({ chartContext, chart } = await buildTarotChart(clientId, order_id, req.body));
+    } catch (e) {
+      console.warn('[TAROT] Chart fetch failed, generating without it:', e.message);
+    }
     generateTarotReading(clientId, question, customPrompt, order_id, chartContext, linked.text).then(async ({ reading, cards }) => {
       const tarotData = { question, reading, cards, linked_order_ids: linked.ids, generated_at: new Date().toISOString(), ...(chart && { chart_data: chart }) };
       await db.pgQuery(

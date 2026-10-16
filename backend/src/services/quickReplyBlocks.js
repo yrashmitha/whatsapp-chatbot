@@ -33,6 +33,10 @@ const QR_REGEX = /\[\[QR:([a-z0-9_-]+)\]\]/gi;
 async function resolveBlocks(clientId, text, strategy = 'A') {
   if (!text || !clientId) return { text: text || '', used: [], missing: [] };
 
+  // The model sometimes drops brackets ("QR:offer_marriage" or "[QR:offer_marriage]")
+  // and the customer then never gets the block. A line holding only that is a marker.
+  text = text.replace(/^[ \t]*\[{0,2}QR:[ \t]*([a-z0-9_-]+)\]{0,2}[ \t]*$/gim, '[[QR:$1]]');
+
   const wanted = [...new Set([...text.matchAll(QR_REGEX)].map(m => m[1].toLowerCase()))];
   if (!wanted.length) return { text, used: [], missing: [] };
 

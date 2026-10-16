@@ -585,6 +585,10 @@ async function buildChatSession(phoneNumber, client, opts = {}) {
   session._strategy = strategy;
   session._strategyExisting = strategyExisting;
   session._client = client;
+  // Which prompt this chat was built with and when: a chat keeps the prompt it was
+  // built with until it is rebuilt, so this is how a stale chat is recognised.
+  session._builtAt = Date.now();
+  session._promptId = require('crypto').createHash('sha1').update(client?.custom_prompt || '').digest('hex').slice(0, 8);
   return session;
 }
 
@@ -810,11 +814,29 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   let toolOrderId = null;           // set when the model calls place_order
   // Every tool the model invoked this turn, for the Test Chat debug panel.
   const toolCalls = [];
+  // What happened this turn, saved with the bot's message so a reply can be explained later.
+  const trace = {
+    at: new Date().toISOString(),
+    strategy: chatSession?._strategy || 'A',
+    existingCustomer: !!chatSession?._strategyExisting,
+    model: client?.ai_model || 'gemini-2.5-flash',
+    promptId: chatSession?._promptId || null,
+    promptChars: (chatSession?._client?.custom_prompt || client?.custom_prompt || '').length,
+    sessionBuiltAt: chatSession?._builtAt ? new Date(chatSession._builtAt).toISOString() : null,
+    tools: [],
+    blocks: { used: [], missing: [] },
+  };
+  const traceEntry = new Map();
   const initialFcCalls = candidate.functionCalls();
   log.info(`[FC] Gemini initial response has ${initialFcCalls?.length || 0} function call(s): [${(initialFcCalls || []).map(f => f.name).join(', ')}]`);
   while (candidate.functionCalls()?.length > 0 && fcLoopCount++ < 8) {
     const calls = candidate.functionCalls();
-    for (const c of calls) toolCalls.push({ name: c.name, args: c.args });
+    for (const c of calls) {
+      toolCalls.push({ name: c.name, args: c.args });
+      const e = { name: c.name, args: c.args };
+      trace.tools.push(e);
+      traceEntry.set(c, e);
+    }
     const functionResponses = [];
     let anyHandled = false;
 
@@ -872,6 +894,8 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
         try {
           const emb = await embedText(fc.args.query);
           const chunks = await db.vectorSearchKnowledge(client.id, emb, 8, chatSession?._strategy);
+          const te = traceEntry.get(fc);
+          if (te) te.chunks = chunks.map(c => ({ title: c.title, similarity: Number(Number(c.similarity).toFixed(3)), only: c.strategy || null }));
           if (chunks.length > 0) {
             log.info(`[RAG] Knowledge base returned ${chunks.length} chunks`);
             resultText = 'IMPORTANT: Answer using ONLY the exact information below. Do not change numbers, add details, or use any outside knowledge.\n\n'
@@ -881,6 +905,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
           }
         } catch (e) {
           log.warn('[RAG] Knowledge search failed:', e.message);
+          const te2 = traceEntry.get(fc); if (te2) te2.error = e.message;
         }
         functionResponses.push({ functionResponse: { name: 'search_knowledge', response: { result: resultText } } });
         anyHandled = true;
@@ -896,6 +921,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
             const details = { ...fc.args };
             const { orderId: recordedId, reused } = await recordOrReuseOrder(phoneNumber, client, details, log);
             toolOrderId = recordedId;
+            { const te3 = traceEntry.get(fc); if (te3) te3.order_id = recordedId; }
             if (reused) {
               log.info(`[ORDER] place_order merged into existing ${toolOrderId}`);
             } else {
@@ -1267,6 +1293,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     if (resolved.used.length || resolved.missing.length) {
       botReply = resolved.text;
       usedBlocks = resolved.used;
+      trace.blocks = { used: resolved.used, missing: resolved.missing };
       if (resolved.used.length) log.info(`[QR] sent block(s): ${resolved.used.join(', ')}`);
     }
   } catch (e) {
@@ -1284,7 +1311,8 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-  await db.insertMessage(phoneNumber, botReplyForDb, 'bot', callCostUSD, client?.id ?? null);
+  trace.inputTokens = inputTokens; trace.outputTokens = outputTokens; trace.costUSD = callCostUSD; trace.fallback = !!isFallback;
+  await db.insertMessage(phoneNumber, botReplyForDb, 'bot', callCostUSD, client?.id ?? null, null, null, null, null, { trace });
   log.info(`[DB] Saved bot reply cost=$${callCostUSD.toFixed(6)}`);
 
   // After saving to DB, clear botReply so the webhook controller's empty-check
@@ -1307,7 +1335,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     }
   }
 
-  return { botReply, orderId, paymentReceived, callCostUSD, inputTokens, outputTokens, imagesToSend, productImagesToSend, isFallback, toolCalls };
+  return { botReply, orderId, paymentReceived, callCostUSD, inputTokens, outputTokens, imagesToSend, productImagesToSend, isFallback, toolCalls, trace };
 }
 
 module.exports = {

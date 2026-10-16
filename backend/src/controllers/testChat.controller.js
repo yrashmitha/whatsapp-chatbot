@@ -194,6 +194,7 @@ async function sendTestMessage(req, res) {
         promptChars:       (effectiveClient.custom_prompt || '').length,
         model:             effectiveClient.ai_model || 'gemini-2.5-flash',
         toolCalls:         result.toolCalls || [],
+        trace:             result.trace || null,
         inputTokens:       result.inputTokens ?? null,
         outputTokens:      result.outputTokens ?? null,
         costUSD:           result.callCostUSD ?? null,

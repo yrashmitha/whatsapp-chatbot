@@ -667,6 +667,8 @@ async function init() {
       ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS strategy_test_enabled  BOOLEAN NOT NULL DEFAULT FALSE;
       -- Share of NEW customers given strategy B while the test is on (0 to 100). 50 is an even split.
       ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS strategy_b_percent     INTEGER NOT NULL DEFAULT 50;
+      -- What the bot did to produce a reply: strategy, prompt version, searches, chunks, blocks.
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS trace JSONB;
       ALTER TABLE customers ADD COLUMN IF NOT EXISTS prompt_strategy    TEXT;
       ALTER TABLE customers ADD COLUMN IF NOT EXISTS prompt_strategy_at TIMESTAMPTZ;
       CREATE INDEX IF NOT EXISTS idx_customers_strategy ON customers (client_id, prompt_strategy);

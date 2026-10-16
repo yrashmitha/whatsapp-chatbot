@@ -52,7 +52,7 @@ async function vectorSearchKnowledge(clientId, embedding, limit = 5, strategy = 
   // of the same title for that arm, so a fork can reword an answer without the
   // original also coming back.
   const res = await pool.query(
-    `SELECT c.id, c.title, c.content, 1 - (c.embedding <=> $2::vector) AS similarity
+    `SELECT c.id, c.title, c.content, c.strategy, 1 - (c.embedding <=> $2::vector) AS similarity
      FROM client_knowledge_chunks c
      WHERE c.client_id = $1 AND c.embedding IS NOT NULL
        AND (1 - (c.embedding <=> $2::vector)) > 0.35

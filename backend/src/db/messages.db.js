@@ -55,9 +55,9 @@ async function insertMessage(phoneNumber, text, senderType, costUsd = null, clie
   }
   if (IS_PG) {
     await pool.query(
-      `INSERT INTO messages (phone_number, message_text, sender_type, cost_usd, client_id, media_type, media_url, wamid, interactive, sent_by, sent_manual, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE($12, NOW()))`,
-      [phoneNumber, text, senderType, costUsd, clientId, mediaType, mediaUrl, wamid, interactive ? JSON.stringify(interactive) : null, sentBy, sentManual, createdAt]
+      `INSERT INTO messages (phone_number, message_text, sender_type, cost_usd, client_id, media_type, media_url, wamid, interactive, sent_by, sent_manual, trace, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, COALESCE($13, NOW()))`,
+      [phoneNumber, text, senderType, costUsd, clientId, mediaType, mediaUrl, wamid, interactive ? JSON.stringify(interactive) : null, sentBy, sentManual, opts.trace ? JSON.stringify(opts.trace) : null, createdAt]
     );
     if (senderType === 'user') {
       await pool.query(

@@ -83,6 +83,15 @@ function DebugPanel({ debug, onClose }) {
                     {JSON.stringify(t.args, null, 1)}
                   </pre>
                 )}
+                {/* The chunks that came back for this search, best match first. */}
+                {debug.trace?.tools?.[i]?.chunks && (
+                  <ol className="text-[10px] text-slate-600 list-decimal pl-4 mt-0.5">
+                    {debug.trace.tools[i].chunks.map((c, j) => (
+                      <li key={j}>{c.title} <span className="text-slate-400">({c.similarity})</span>{c.only ? ` ${c.only} only` : ''}</li>
+                    ))}
+                    {debug.trace.tools[i].chunks.length === 0 && <li className="list-none text-amber-700">nothing relevant came back</li>}
+                  </ol>
+                )}
               </div>
             ))}
           </div>

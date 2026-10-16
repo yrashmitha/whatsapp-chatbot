@@ -143,6 +143,7 @@ async function getMessages(req, res) {
     const q = `
       SELECT id, phone_number, message_text, sender_type, created_at, cost_usd, media_type, media_url, wamid, is_deleted,
              delivery_status, delivered_at, read_at, error_code, error_message, interactive, extracted, sent_by, sent_manual,
+             (trace IS NOT NULL) AS has_trace,
              (SELECT COALESCE(display_name, username) FROM crm_users WHERE id = messages.sent_by) AS sent_by_name
       FROM messages
       WHERE phone_number=$1 ${clientId ? 'AND client_id=$2' : ''}
@@ -366,6 +367,29 @@ async function getAiMode(req, res) {
 }
 
 /**
+ * GET /api/message-trace/:id — how the bot produced one of its replies.
+ *
+ * The trace is saved with the message when the bot writes it: which prompt
+ * strategy and prompt version ran, when that chat's prompt was built, every
+ * tool it called (with the search words and the chunks that came back), the
+ * quick reply blocks it used, and the cost. Messages from before this was
+ * recorded, and messages a person typed, have none.
+ */
+async function getMessageTrace(req, res) {
+  const clientId = resolveClientId(req);
+  const id = parseInt(req.params.id, 10);
+  if (!clientId || !id) return res.status(400).json({ error: 'client_id and message id required' });
+  try {
+    const r = await db.pgQuery(
+      `SELECT id, sender_type, sent_manual, created_at, trace FROM messages WHERE id=$1 AND client_id=$2`,
+      [id, clientId]);
+    const row = r.rows[0];
+    if (!row) return res.status(404).json({ error: 'Message not found' });
+    res.json({ id: row.id, created_at: row.created_at, sent_manual: !!row.sent_manual, trace: row.trace || null });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+/**
  * PATCH /api/customers/:phone/ai-mode — enable or disable AI for a customer.
  *
  * @param {import('express').Request}  req
@@ -472,6 +496,7 @@ module.exports = {
   deleteCustomer,
   markRead,
   getAiMode,
+  getMessageTrace,
   setAiMode,
   claimChat,
   releaseChat,

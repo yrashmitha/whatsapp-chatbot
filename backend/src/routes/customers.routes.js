@@ -18,6 +18,7 @@ const {
   deleteCustomer,
   markRead,
   getAiMode,
+  getMessageTrace,
   setAiMode,
   claimChat,
   releaseChat,
@@ -49,6 +50,7 @@ router.delete('/customers/:phone',                   jwtAuth, requirePermission(
 router.post('/customers/:phone/mark-read',           jwtAuth, requirePermission('chat.read'), markRead);
 
 // AI mode per customer
+router.get('/message-trace/:id',                      jwtAuth, requirePermission('chat.read'), getMessageTrace);
 router.get('/customers/:phone/ai-mode',              jwtAuth, requirePermission('chat.read'), getAiMode);
 router.patch('/customers/:phone/ai-mode',            jwtAuth, requirePermission('chat.claim'), setAiMode);
 router.post('/customers/:phone/claim',               jwtAuth, requirePermission('chat.claim'), claimChat);

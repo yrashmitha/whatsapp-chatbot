@@ -1,4 +1,7 @@
+import { useState } from 'react';
+import { useAuthStore, isSuperAdmin } from '../../stores/auth';
 import { formatMessageTime } from '../../lib/utils';
+import TraceModal from './TraceModal';
 import ExtractedReading from './ExtractedReading';
 import AdReferral from './AdReferral';
 import { formatWhatsApp } from '../../lib/whatsappFormat';
@@ -164,6 +167,9 @@ function InteractiveMenu({ menu }) {
 }
 
 export default function MessageBubble({ msg, onDelete }) {
+  const [traceOpen, setTraceOpen] = useState(false);
+  const { user, selectedClientId } = useAuthStore();
+  const traceClientId = isSuperAdmin(user) ? (selectedClientId || null) : user?.clientId;
   const senderType = msg.sender_type || msg.role;
   const isUser = senderType === 'user';
   const isAdmin = senderType === 'admin';
@@ -336,6 +342,14 @@ export default function MessageBubble({ msg, onDelete }) {
             </span>
           )}
           {formatMessageTime(msg.created_at)}
+          {/* How the bot wrote this: prompt strategy, searches, the chunks it received, blocks used. */}
+          {!isUser && !msg.sent_manual && msg.has_trace && msg.id && (
+            <button
+              onClick={() => setTraceOpen(true)}
+              className="ml-1.5 underline decoration-dotted bg-transparent border-0 p-0 cursor-pointer text-inherit opacity-80 hover:opacity-100"
+              title="See what the bot searched for and which chunks it received"
+            >Trace</button>
+          )}
           {!isUser && !isAdmin && msg.cost_usd && parseFloat(msg.cost_usd) > 0 && (
             <span className="ml-1.5">${parseFloat(msg.cost_usd).toFixed(6)}</span>
           )}
@@ -352,6 +366,7 @@ export default function MessageBubble({ msg, onDelete }) {
         </div>
       </div>
     </div>
+    {traceOpen && <TraceModal messageId={msg.id} clientId={traceClientId} onClose={() => setTraceOpen(false)} />}
     </>
   );
 

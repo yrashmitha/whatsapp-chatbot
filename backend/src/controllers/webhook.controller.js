@@ -266,6 +266,9 @@ async function applyAdRule(client, phone, adId, log) {
       const wamid = await sendWhatsAppMessage(phone, welcome, client);
       await db.insertMessage(phone, welcome, 'bot', null, client.id, null, null, wamid);
       db.noteAdWelcome(client.id, phone, wamid);
+      // A customer who already has a live session (clicking a second ad) would
+      // otherwise never see this message; rebuilding reads it from the DB.
+      chatSessions.delete(`${client.id}:${phone}`);
     }
 
     // 'bot_stays_on': the welcome above is all this rule does — the bot keeps

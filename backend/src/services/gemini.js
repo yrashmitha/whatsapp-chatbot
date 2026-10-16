@@ -546,8 +546,16 @@ async function buildChatSession(phoneNumber, client) {
       mergedHistory.push({ role: msg.role, parts: [{ text: msg.parts[0].text }] });
     }
   }
-  // History must start with 'user' turn
-  while (mergedHistory.length > 0 && mergedHistory[0].role !== 'user') mergedHistory.shift();
+  // History must start with a 'user' turn. A chat that opens with a bot message
+  // (an ad's welcome message goes out before the customer's first line) used to
+  // lose that message here, so the bot greeted and asked everything again. Keep
+  // it as the bot's own turn behind a short note instead of dropping it.
+  if (mergedHistory.length > 0 && mergedHistory[0].role !== 'user') {
+    mergedHistory.unshift({
+      role: 'user',
+      parts: [{ text: '[SYSTEM NOTE — not from customer]: This customer opened the chat from an ad. The message below was already sent to them automatically as a welcome. It states what they came for, so treat it as said by you: do not repeat it, do not greet again, and continue from it.' }],
+    });
+  }
 
   const fullHistory = [...initialHistory, ...mergedHistory];
   console.log(`[SESSION] Loaded ${mergedHistory.length} messages from DB into session context`);

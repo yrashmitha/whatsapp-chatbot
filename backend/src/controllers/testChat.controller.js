@@ -76,7 +76,7 @@ async function recentMessages(phoneKey, clientId) {
 async function sendTestMessage(req, res) {
   const clientId = resolveClientId(req);
   const { sessionId } = req.params;
-  const { message, ad_id: adId } = req.body || {};
+  const { message, ad_id: adId, strategy: wantedArm } = req.body || {};
 
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
   if (!validSessionId(sessionId)) return res.status(400).json({ error: 'Invalid test session id' });
@@ -92,11 +92,26 @@ async function sendTestMessage(req, res) {
     // A draft prompt applies to test sessions only, so a prompt can be tried
     // against real behaviour without changing what customers receive.
     const { rows } = await db.pgQuery(
-      `SELECT test_system_prompt FROM client_configs WHERE client_id=$1`, [clientId]
+      `SELECT test_system_prompt, test_system_prompt_b FROM client_configs WHERE client_id=$1`, [clientId]
     );
-    const testPrompt = (rows[0]?.test_system_prompt || '').trim();
-    const effectiveClient = testPrompt ? { ...client, custom_prompt: testPrompt } : client;
-    if (testPrompt) console.log(`[TEST-CHAT] draft prompt active for ${clientId} (${testPrompt.length} chars)`);
+    const draftA = (rows[0]?.test_system_prompt || '').trim();
+    const draftB = (rows[0]?.test_system_prompt_b || '').trim();
+    // Two prompt strategies: 'A' / 'B' forces that arm for this test session
+    // (blank draft = that arm's live prompt); anything else follows the live
+    // split, with each arm's draft standing in for its prompt.
+    const forced = wantedArm === 'A' || wantedArm === 'B' ? wantedArm : null;
+    const promptA = draftA || client.custom_prompt;
+    const promptB = draftB || client.custom_prompt_b;
+    if (forced === 'B' && !(promptB || '').trim()) {
+      return res.status(400).json({ error: 'Strategy B has no prompt yet. Write one in Settings or in the draft box.' });
+    }
+    const testPrompt = forced === 'B' ? draftB : draftA;
+    const effectiveClient = {
+      ...client,
+      custom_prompt: forced === 'B' ? promptB : promptA,
+      custom_prompt_b: promptB,
+    };
+    if (testPrompt) console.log(`[TEST-CHAT] draft prompt active for ${clientId} arm=${forced || 'auto'} (${testPrompt.length} chars)`);
 
     await db.upsertCustomer(phoneKey, 'Test Session', clientId);
 
@@ -132,7 +147,7 @@ async function sendTestMessage(req, res) {
 
     if (!chatSessions.has(sessionKey)) {
       chatSessions.set(sessionKey, {
-        chat: await buildChatSession(phoneKey, effectiveClient),
+        chat: await buildChatSession(phoneKey, effectiveClient, forced ? { strategy: forced } : {}),
         phoneNumber: phoneKey,
       });
     }
@@ -175,6 +190,7 @@ async function sendTestMessage(req, res) {
       messages: await recentMessages(phoneKey, clientId),
       debug: {
         draftPromptActive: !!testPrompt,
+        strategy:          session.chat._strategy || 'A',
         promptChars:       (effectiveClient.custom_prompt || '').length,
         model:             effectiveClient.ai_model || 'gemini-2.5-flash',
         toolCalls:         result.toolCalls || [],
@@ -290,13 +306,21 @@ async function testConfig(req, res) {
   try {
     if (req.method === 'GET') {
       const { rows } = await db.pgQuery(
-        `SELECT test_system_prompt FROM client_configs WHERE client_id=$1`, [clientId]
+        `SELECT test_system_prompt, test_system_prompt_b, custom_prompt_b, strategy_test_enabled
+           FROM client_configs WHERE client_id=$1`, [clientId]
       );
-      return res.json({ test_system_prompt: rows[0]?.test_system_prompt || '' });
+      const r0 = rows[0] || {};
+      return res.json({
+        test_system_prompt: r0.test_system_prompt || '',
+        test_system_prompt_b: r0.test_system_prompt_b || '',
+        strategy_b_exists: !!(r0.custom_prompt_b || '').trim(),
+        strategy_test_enabled: !!r0.strategy_test_enabled,
+      });
     }
     const prompt = (req.body?.system_prompt || '').trim();
+    const column = req.body?.strategy === 'B' ? 'test_system_prompt_b' : 'test_system_prompt';
     await db.pgQuery(
-      `UPDATE client_configs SET test_system_prompt=$1, updated_at=NOW() WHERE client_id=$2`,
+      `UPDATE client_configs SET ${column}=$1, updated_at=NOW() WHERE client_id=$2`,
       [prompt || null, clientId]
     );
     res.json({ ok: true, active: !!prompt });

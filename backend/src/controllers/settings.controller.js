@@ -30,6 +30,7 @@ async function getSettings(req, res) {
       `SELECT custom_prompt, error_message, system_prompt_mode, temperature, thinking_budget, brand_name, brand_color,
               order_fields, contact_number, knowledge_base_enabled, product_catalog_enabled, plugin_enabled,
               owner_phone, ai_enabled, away_message, first_welcome_message,
+              custom_prompt_b, strategy_test_enabled,
               (wa_token IS NOT NULL AND wa_token <> '') AS wa_token_set,
               (gemini_api_key IS NOT NULL AND gemini_api_key <> '') AS gemini_api_key_set,
               (freeastro_api_key IS NOT NULL AND freeastro_api_key <> '') AS freeastro_api_key_set,
@@ -47,7 +48,7 @@ async function getSettings(req, res) {
     // fields a Create Order form renders, the brand, the feature flags. The
     // prompt and which keys are set belong to whoever may edit them.
     if (!hasPermission(req.user, 'settings.prompts')) {
-      const { custom_prompt, error_message, system_prompt_mode, temperature,
+      const { custom_prompt, custom_prompt_b, strategy_test_enabled, error_message, system_prompt_mode, temperature,
               thinking_budget, owner_phone, wa_token_set, gemini_api_key_set,
               freeastro_api_key_set, use_system_wa_token, use_system_gemini_key,
               use_system_freeastro_key, ...safe } = row;
@@ -103,9 +104,22 @@ async function updatePrompt(req, res) {
         first_welcome_message || null,
       ]
     );
+    // Strategy B prompt and the split switch. Absent means leave as is.
+    const { custom_prompt_b, strategy_test_enabled } = req.body;
+    if (custom_prompt_b !== undefined || strategy_test_enabled !== undefined) {
+      await db.pgQuery(
+        `UPDATE client_configs SET
+            custom_prompt_b = CASE WHEN $1 THEN $2 ELSE custom_prompt_b END,
+            strategy_test_enabled = CASE WHEN $3 THEN $4 ELSE strategy_test_enabled END
+          WHERE client_id=$5`,
+        [custom_prompt_b !== undefined, (custom_prompt_b || '').trim() || null,
+         strategy_test_enabled !== undefined, strategy_test_enabled === true || strategy_test_enabled === 'true',
+         clientId]);
+    }
     clientRouter.invalidateCache(clientId);
     invalidateClientKeys(clientId);
     pluginLoader.invalidatePlugin(clientId);
+    // Rebuild every live chat so each picks up its (possibly changed) prompt.
     for (const key of chatSessions.keys()) {
       if (key.startsWith(`${clientId}:`)) chatSessions.delete(key);
     }

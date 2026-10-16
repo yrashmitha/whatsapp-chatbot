@@ -260,6 +260,10 @@ async function init() {
         ON client_knowledge_chunks USING hnsw (embedding vector_cosine_ops);
       CREATE INDEX IF NOT EXISTS idx_knowledge_client
         ON client_knowledge_chunks (client_id);
+      -- NULL = shared by both prompt strategies; 'A' or 'B' = that arm only.
+      ALTER TABLE client_knowledge_chunks ADD COLUMN IF NOT EXISTS strategy TEXT;
+      CREATE INDEX IF NOT EXISTS idx_knowledge_strategy
+        ON client_knowledge_chunks (client_id, strategy);
     `);
 
     // ── media_type / media_url / wamid / is_deleted columns on messages ──────
@@ -652,6 +656,19 @@ async function init() {
     // Draft system prompt, applied to Test Chat sessions only so a prompt can
     // be tried against real behaviour without changing what customers get.
     await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS test_system_prompt TEXT`);
+    // ── Two prompt strategies, A/B ────────────────────────────────────────────
+    // A is the normal custom_prompt. B is a second prompt; while the split is
+    // on, each NEW customer is given A or B once and keeps it. Knowledge chunks
+    // and quick replies are shared (strategy NULL) unless tagged to one arm, in
+    // which case the arm's copy replaces the shared one of the same title.
+    await pool.query(`
+      ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS custom_prompt_b        TEXT;
+      ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS test_system_prompt_b   TEXT;
+      ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS strategy_test_enabled  BOOLEAN NOT NULL DEFAULT FALSE;
+      ALTER TABLE customers ADD COLUMN IF NOT EXISTS prompt_strategy    TEXT;
+      ALTER TABLE customers ADD COLUMN IF NOT EXISTS prompt_strategy_at TIMESTAMPTZ;
+      CREATE INDEX IF NOT EXISTS idx_customers_strategy ON customers (client_id, prompt_strategy);
+    `);
     // Named interactive-list menus the bot can send with [[LIST:<id>]].
     await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS interactive_menus JSONB`);
     // NULL means 'use the platform default'. 0 means reasoning off, which is
@@ -689,6 +706,9 @@ async function init() {
       -- Groups the replies in the mobile picker. Empty means uncategorised.
       ALTER TABLE quick_replies ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT '';
       CREATE INDEX IF NOT EXISTS idx_quick_replies_category ON quick_replies (client_id, category, sort_order);
+      -- NULL = shared by both prompt strategies; 'A' or 'B' = that arm only.
+      ALTER TABLE quick_replies ADD COLUMN IF NOT EXISTS strategy TEXT;
+      CREATE INDEX IF NOT EXISTS idx_quick_replies_strategy ON quick_replies (client_id, strategy);
       -- The WhatsApp Business Account that owns this client's number.
       -- Meta requires it alongside messaging_channel on any
       -- business_messaging conversion. Neither of our tokens can read
@@ -1057,6 +1077,9 @@ async function init() {
     try { db.exec(`ALTER TABLE client_configs ADD COLUMN plugin_enabled INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
     try { db.exec(`ALTER TABLE customers ADD COLUMN last_read_at TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE customers ADD COLUMN last_customer_message_at TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE customers ADD COLUMN prompt_strategy TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE customers ADD COLUMN prompt_strategy_at TEXT`); } catch (_) {}
+    try { db.exec(`ALTER TABLE quick_replies ADD COLUMN strategy TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE client_configs ADD COLUMN ai_enabled INTEGER NOT NULL DEFAULT 1`); } catch (_) {}
     try { db.exec(`ALTER TABLE client_configs ADD COLUMN wa_token TEXT`); } catch (_) {}
     try { db.exec(`ALTER TABLE client_configs ADD COLUMN gemini_api_key TEXT`); } catch (_) {}
@@ -1069,6 +1092,8 @@ async function init() {
       'report_divider TEXT', 'report_font TEXT', 'report_logo_url TEXT',
       'pdf_title TEXT', 'pdf_author TEXT', 'pdf_subject TEXT', 'pdf_producer TEXT',
       'test_system_prompt TEXT',
+      'custom_prompt_b TEXT', 'test_system_prompt_b TEXT',
+      'strategy_test_enabled INTEGER NOT NULL DEFAULT 0',
       'interactive_menus TEXT',
       'thinking_budget INTEGER',
       'report_logo_width INTEGER NOT NULL DEFAULT 160',

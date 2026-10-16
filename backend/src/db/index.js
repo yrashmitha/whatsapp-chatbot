@@ -14,7 +14,7 @@ const { insertMessage, getMessagesByPhone,
         updateMessageStatus, attachWamidToLatestBotMessage,
         setMessageExtraction, getLatestBotMessageId, noteAdWelcome } = require('./messages.db');
 const { upsertCustomer, getAllCustomers,
-        deleteCustomer, getCustomerAiEnabled,
+        deleteCustomer, getCustomerAiEnabled, resolveStrategy,
         setCustomerAiMode }                         = require('./customers.db');
 const { insertOrder, getOrdersByPhone, getLatestOrder,
         updateLatestOrderStatus, updateOrderStatusById,
@@ -61,6 +61,7 @@ module.exports = {
   getAllCustomers,
   deleteCustomer,
   getCustomerAiEnabled,
+  resolveStrategy,
   setCustomerAiMode,
   // Orders
   insertOrder,

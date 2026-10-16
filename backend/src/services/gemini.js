@@ -318,8 +318,25 @@ async function buildOrderStatusNote(phoneNumber, clientId) {
  * @param {Object|null} client      - Client config object
  * @returns {Promise<import('@google/generative-ai').ChatSession>} Configured chat session
  */
-async function buildChatSession(phoneNumber, client) {
+async function buildChatSession(phoneNumber, client, opts = {}) {
   console.log(`[SESSION] Building session for ${phoneNumber}`);
+
+  // Two prompt strategies. A is the normal custom_prompt; B is a second prompt.
+  // While the split is on, each new customer is given one and keeps it, and the
+  // rest of this function (system instruction, plugins) sees only the chosen
+  // prompt. opts.strategy lets Test Chat pick an arm; its caller has already
+  // put the right prompt on `client`.
+  let strategy = 'A';
+  let strategyExisting = false;
+  if (opts.strategy === 'A' || opts.strategy === 'B') {
+    strategy = opts.strategy;
+  } else if (client?.id) {
+    const r = await db.resolveStrategy(phoneNumber, client.id, client);
+    strategy = r.strategy;
+    strategyExisting = r.existing;
+    if (strategy === 'B') client = { ...client, custom_prompt: client.custom_prompt_b };
+  }
+  console.log(`[SESSION] strategy=${strategy}${strategyExisting ? ' (existing customer)' : ''} for ${phoneNumber}`);
   const existingOrders = await db.getOrdersByPhone(phoneNumber, client?.id);
   console.log(`[SESSION] Found ${existingOrders.length} existing orders for ${phoneNumber}`);
   let initialHistory = [];
@@ -565,6 +582,9 @@ async function buildChatSession(phoneNumber, client) {
 
   const session = chatModel.startChat({ history: fullHistory, tools });
   session._chatModel = chatModel;
+  session._strategy = strategy;
+  session._strategyExisting = strategyExisting;
+  session._client = client;
   return session;
 }
 
@@ -715,7 +735,8 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
 
   // For multilingual clients: always reload history from DB so _history is always
   // clean (no accumulated label noise from previous turns).
-  const isMultilingual = client?.custom_prompt?.trim().startsWith('[[MULTILINGUAL]]');
+  // The prompt this chat actually runs (strategy A or B), not the client's default.
+  const isMultilingual = (chatSession?._client || client)?.custom_prompt?.trim().startsWith('[[MULTILINGUAL]]');
   if (isMultilingual) {
     chatSession._history = [];
     log.info(`[LANG] Multilingual — forcing fresh DB history reload`);

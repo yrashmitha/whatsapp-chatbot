@@ -148,4 +148,57 @@ async function setCustomerAiMode(phone, clientId, enabled) {
   );
 }
 
-module.exports = { upsertCustomer, getAllCustomers, deleteCustomer, getCustomerAiEnabled, setCustomerAiMode };
+/**
+ * Which prompt strategy ('A' or 'B') this customer's chat runs, assigning one
+ * the first time a NEW customer is seen while the split is on.
+ *
+ * - Split off, no B prompt, or not PostgreSQL: always 'A', nothing stored.
+ * - A customer who already has a strategy keeps it for good.
+ * - A customer who was talking to us before the split started is left on A
+ *   (reported as { strategy: 'A', existing: true }) and never moved.
+ * - A new customer is given whichever arm has fewer customers so far, in one
+ *   atomic UPDATE, so two messages arriving together cannot put one customer
+ *   on both arms. A tie is broken at random.
+ * Test Chat keys ('web:...') are always new, so each test session is assigned.
+ *
+ * @param {string} phoneNumber
+ * @param {string} clientId
+ * @param {{custom_prompt_b?: string|null, strategy_test_enabled?: boolean}} client
+ * @returns {Promise<{strategy: 'A'|'B', existing: boolean}>}
+ */
+async function resolveStrategy(phoneNumber, clientId, client) {
+  const off = { strategy: 'A', existing: false };
+  if (!IS_PG || !clientId || !client?.strategy_test_enabled || !(client.custom_prompt_b || '').trim()) return off;
+
+  const read = () => pool.query(
+    `SELECT prompt_strategy FROM customers WHERE phone_number=$1 AND client_id=$2`, [phoneNumber, clientId]);
+
+  const cur = (await read()).rows[0]?.prompt_strategy;
+  if (cur === 'A' || cur === 'B') return { strategy: cur, existing: false };
+
+  // Talked to us before the split began: not part of the test.
+  if (!phoneNumber.startsWith('web:')) {
+    const prior = await pool.query(
+      `SELECT 1 FROM messages WHERE phone_number=$1 AND client_id=$2 AND sender_type='user' LIMIT 1`,
+      [phoneNumber, clientId]);
+    if (prior.rows.length) return { strategy: 'A', existing: true };
+  }
+
+  const tie = Math.random() < 0.5 ? 'A' : 'B';
+  const up = await pool.query(
+    `UPDATE customers SET
+        prompt_strategy = CASE
+          WHEN (SELECT COUNT(*) FROM customers WHERE client_id=$2 AND phone_number NOT LIKE 'web:%' AND prompt_strategy='A')
+             < (SELECT COUNT(*) FROM customers WHERE client_id=$2 AND phone_number NOT LIKE 'web:%' AND prompt_strategy='B') THEN 'A'
+          WHEN (SELECT COUNT(*) FROM customers WHERE client_id=$2 AND phone_number NOT LIKE 'web:%' AND prompt_strategy='B')
+             < (SELECT COUNT(*) FROM customers WHERE client_id=$2 AND phone_number NOT LIKE 'web:%' AND prompt_strategy='A') THEN 'B'
+          ELSE $3 END,
+        prompt_strategy_at = NOW()
+      WHERE phone_number=$1 AND client_id=$2 AND prompt_strategy IS NULL
+      RETURNING prompt_strategy`,
+    [phoneNumber, clientId, tie]);
+  const got = up.rows[0]?.prompt_strategy || (await read()).rows[0]?.prompt_strategy;
+  return { strategy: got === 'B' ? 'B' : 'A', existing: false };
+}
+
+module.exports = { upsertCustomer, getAllCustomers, deleteCustomer, getCustomerAiEnabled, setCustomerAiMode, resolveStrategy };

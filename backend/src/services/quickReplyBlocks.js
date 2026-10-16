@@ -30,17 +30,23 @@ const QR_REGEX = /\[\[QR:([a-z0-9_-]+)\]\]/gi;
  * @param {string} text
  * @returns {Promise<{text: string, used: string[], missing: string[]}>}
  */
-async function resolveBlocks(clientId, text) {
+async function resolveBlocks(clientId, text, strategy = 'A') {
   if (!text || !clientId) return { text: text || '', used: [], missing: [] };
 
   const wanted = [...new Set([...text.matchAll(QR_REGEX)].map(m => m[1].toLowerCase()))];
   if (!wanted.length) return { text, used: [], missing: [] };
 
+  const arm = strategy === 'B' ? 'B' : 'A';
   const { rows } = await db.pgQuery(
-    'SELECT title, text FROM quick_replies WHERE client_id=$1 AND LOWER(title) = ANY($2)',
-    [clientId, wanted]
+    'SELECT title, text, strategy FROM quick_replies WHERE client_id=$1 AND LOWER(title) = ANY($2) AND (strategy IS NULL OR strategy = $3)',
+    [clientId, wanted, arm]
   );
-  const byTitle = new Map(rows.map(r => [r.title.toLowerCase(), r.text]));
+  // A reply tagged to this chat's strategy replaces the shared one of the same title.
+  const byTitle = new Map();
+  for (const r of rows) {
+    const k = r.title.toLowerCase();
+    if (!byTitle.has(k) || r.strategy === arm) byTitle.set(k, r.text);
+  }
 
   // A block sitting directly under a line of the model's own text should be
   // separated from it by a blank line, or the block's heading butts straight
@@ -69,9 +75,10 @@ async function resolveBlocks(clientId, text) {
  * @param {string} clientId
  * @returns {Promise<string[]>}
  */
-async function listBlockNames(clientId) {
+async function listBlockNames(clientId, strategy = 'A') {
   const { rows } = await db.pgQuery(
-    'SELECT title FROM quick_replies WHERE client_id=$1 ORDER BY title', [clientId]);
+    'SELECT DISTINCT title FROM quick_replies WHERE client_id=$1 AND (strategy IS NULL OR strategy=$2) ORDER BY title',
+    [clientId, strategy === 'B' ? 'B' : 'A']);
   return rows.map(r => r.title);
 }
 

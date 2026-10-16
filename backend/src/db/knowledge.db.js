@@ -16,19 +16,21 @@ const { pool, IS_PG } = require('./connection');
  * @param {string} clientId - Multi-tenant client ID
  * @param {string} title    - Document / section title
  * @param {Array<{content: string, embedding: number[]}>} chunks - Chunk text + vector pairs
+ * @param {string|null} [strategy] - 'A' or 'B' to make the chunks visible to that prompt strategy only; omit for shared
  * @returns {Promise<void>}
  */
-async function insertKnowledgeChunks(clientId, title, chunks) {
+async function insertKnowledgeChunks(clientId, title, chunks, strategy = null) {
   if (!IS_PG || !chunks.length) return;
+  const arm = strategy === 'A' || strategy === 'B' ? strategy : null;
   const values = [];
   const params = [];
   chunks.forEach(({ content, embedding }, i) => {
-    const base = i * 4;
-    values.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}::vector)`);
-    params.push(clientId, title, content, JSON.stringify(embedding));
+    const base = i * 5;
+    values.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}::vector, $${base + 5})`);
+    params.push(clientId, title, content, JSON.stringify(embedding), arm);
   });
   await pool.query(
-    `INSERT INTO client_knowledge_chunks (client_id, title, content, embedding) VALUES ${values.join(', ')}`,
+    `INSERT INTO client_knowledge_chunks (client_id, title, content, embedding, strategy) VALUES ${values.join(', ')}`,
     params
   );
 }
@@ -40,18 +42,29 @@ async function insertKnowledgeChunks(clientId, title, chunks) {
  * @param {string}   clientId  - Multi-tenant client ID
  * @param {number[]} embedding - Query embedding vector (768 dimensions)
  * @param {number}   [limit]   - Maximum number of results
+ * @param {string}   [strategy] - 'A' or 'B', the prompt strategy of the chat asking
  * @returns {Promise<Array>} Array of chunk rows with similarity score
  */
-async function vectorSearchKnowledge(clientId, embedding, limit = 5) {
+async function vectorSearchKnowledge(clientId, embedding, limit = 5, strategy = 'A') {
   if (!IS_PG) return [];
+  // Shared chunks (strategy NULL) are seen by both prompt strategies. A chunk
+  // tagged to one arm is seen only by that arm, and replaces the shared chunk(s)
+  // of the same title for that arm, so a fork can reword an answer without the
+  // original also coming back.
   const res = await pool.query(
-    `SELECT id, title, content, 1 - (embedding <=> $2::vector) AS similarity
-     FROM client_knowledge_chunks
-     WHERE client_id = $1 AND embedding IS NOT NULL
-       AND (1 - (embedding <=> $2::vector)) > 0.35
-     ORDER BY embedding <=> $2::vector
+    `SELECT c.id, c.title, c.content, 1 - (c.embedding <=> $2::vector) AS similarity
+     FROM client_knowledge_chunks c
+     WHERE c.client_id = $1 AND c.embedding IS NOT NULL
+       AND (1 - (c.embedding <=> $2::vector)) > 0.35
+       AND (
+         c.strategy = $4
+         OR (c.strategy IS NULL AND NOT EXISTS (
+               SELECT 1 FROM client_knowledge_chunks o
+                WHERE o.client_id = c.client_id AND o.title = c.title AND o.strategy = $4))
+       )
+     ORDER BY c.embedding <=> $2::vector
      LIMIT $3`,
-    [clientId, JSON.stringify(embedding), limit]
+    [clientId, JSON.stringify(embedding), limit, strategy === 'B' ? 'B' : 'A']
   );
   return res.rows;
 }

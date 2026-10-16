@@ -871,7 +871,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
         let resultText = 'No relevant information found in the knowledge base.';
         try {
           const emb = await embedText(fc.args.query);
-          const chunks = await db.vectorSearchKnowledge(client.id, emb, 8);
+          const chunks = await db.vectorSearchKnowledge(client.id, emb, 8, chatSession?._strategy);
           if (chunks.length > 0) {
             log.info(`[RAG] Knowledge base returned ${chunks.length} chunks`);
             resultText = 'IMPORTANT: Answer using ONLY the exact information below. Do not change numbers, add details, or use any outside knowledge.\n\n'
@@ -1260,7 +1260,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   // keeps the CRM honest about what the customer received.
   let usedBlocks = [];
   try {
-    const resolved = await quickReplyBlocks.resolveBlocks(client?.id, botReply);
+    const resolved = await quickReplyBlocks.resolveBlocks(client?.id, botReply, chatSession?._strategy);
     if (resolved.missing.length) {
       log.warn(`[QR] no block named ${resolved.missing.join(', ')} for ${client?.id}`);
     }

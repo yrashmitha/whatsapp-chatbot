@@ -234,6 +234,13 @@ function _eventTime(when) {
 async function fireCAPIEvent(clientId, eventName, phone, customData = {}, opts = {}) {
   if (!clientId || !phone) return { ok: false, error: 'no client or phone' };
 
+  // A test conversation (Test Chat, or a script exercising the bot) is keyed 'web:...'.
+  // Its orders are not customers: sending them tells Meta about sales that never
+  // happened, and because Meta de-duplicates on the order number, a test order can
+  // also swallow the real order that is given the same number next. Every path that
+  // sends an event goes through here, so this is the one place that has to refuse.
+  if (String(phone).startsWith('web:')) return { ok: false, error: 'test session, not sent to Meta' };
+
   // Callers in the message path ignore this and must keep doing so - a failed
   // conversion can never be allowed to interrupt a reply to a customer. It is
   // returned for the retry button, which has to be able to say what happened
@@ -428,7 +435,8 @@ async function syncAudienceForClient(clientId) {
      LEFT JOIN customers c ON c.phone_number = o.phone_number AND c.client_id = o.client_id
      WHERE o.client_id=$1
        AND o.status IN ('payment_received','paid','delivered','done','complete')
-       AND o.phone_number IS NOT NULL`,
+       AND o.phone_number IS NOT NULL
+       AND o.phone_number NOT LIKE 'web:%'`,
     [clientId]
   );
   const rows = r.rows;

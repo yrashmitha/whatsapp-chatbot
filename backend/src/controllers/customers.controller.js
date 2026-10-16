@@ -98,14 +98,16 @@ async function listCustomers(req, res) {
              -- ad_details knows it, otherwise the referral's own headline (the
              -- page name, better than nothing on an ad we have not synced yet).
              cu.first_ad_id,
-             COALESCE(ad.name, cu.first_ad_headline) AS first_ad_name
+             COALESCE(ad.name, cu.first_ad_headline) AS first_ad_name,
+             -- Which prompt strategy (A or B) this chat runs; NULL when the split was off or the customer pre-dates it.
+             cu.prompt_strategy
       FROM customers cu
       LEFT JOIN messages m ON m.phone_number=cu.phone_number AND m.client_id=cu.client_id
       LEFT JOIN orders   o ON o.phone_number=cu.phone_number AND o.client_id=cu.client_id
       LEFT JOIN ad_details ad ON ad.ad_id = cu.first_ad_id
       ${where}
       GROUP BY cu.phone_number, cu.name, cu.client_id, cu.updated_at, cu.last_read_at, cu.last_customer_message_at, cu.needs_attention,
-               cu.first_ad_id, cu.first_ad_headline, ad.name
+               cu.first_ad_id, cu.first_ad_headline, ad.name, cu.prompt_strategy
       ORDER BY GREATEST(cu.last_customer_message_at, MAX(m.created_at)) DESC NULLS LAST
       LIMIT $${fparams.length + 1} OFFSET $${fparams.length + 2}`;
     const countQ = `SELECT COUNT(*) FROM customers cu ${where}`;
@@ -351,7 +353,13 @@ async function getAiMode(req, res) {
     // Ownership rides along: the header needs both to decide whether to offer
     // "take over" or "hand back", and they are two halves of one fact.
     const own = await ownership.ownerOf(clientId, phone);
-    res.json({ ai_enabled: enabled, owned_by: own.owned_by, owned_at: own.owned_at });
+    // The prompt strategy this chat runs, so the header can say "Strategy A / B".
+    const st = await db.pgQuery(
+      `SELECT cu.prompt_strategy, cc.strategy_test_enabled
+         FROM customers cu LEFT JOIN client_configs cc ON cc.client_id = cu.client_id
+        WHERE cu.phone_number=$1 AND cu.client_id=$2`, [phone, clientId]).then(r => r.rows[0] || {}).catch(() => ({}));
+    res.json({ ai_enabled: enabled, owned_by: own.owned_by, owned_at: own.owned_at,
+               prompt_strategy: st.prompt_strategy || null, strategy_test_enabled: !!st.strategy_test_enabled });
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 

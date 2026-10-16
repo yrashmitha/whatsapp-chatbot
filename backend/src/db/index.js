@@ -25,7 +25,8 @@ const { searchProducts, vectorSearchProducts,
 const { insertKnowledgeChunks, vectorSearchKnowledge,
         getKnowledgeSections, getKnowledgeChunksByTitle,
         updateKnowledgeChunk, deleteKnowledgeChunk,
-        deleteKnowledgeByTitle }                    = require('./knowledge.db');
+        deleteKnowledgeByTitle, copyKnowledgeSection,
+        setKnowledgeChunkStrategy }                 = require('./knowledge.db');
 const { getClientMedia, insertMedia,
         deleteMedia, updateMedia }                  = require('./media.db');
 const { getPluginConfig, upsertPluginConfig,
@@ -86,6 +87,8 @@ module.exports = {
   updateKnowledgeChunk,
   deleteKnowledgeChunk,
   deleteKnowledgeByTitle,
+  copyKnowledgeSection,
+  setKnowledgeChunkStrategy,
   // Media
   getClientMedia,
   insertMedia,

@@ -34,11 +34,14 @@ async function listSections(req, res) {
  * @param {import('express').Response} res
  * @returns {Promise<void>}
  */
+/** 'A' | 'B' | null (shared). */
+function armOf(v) { return v === 'A' || v === 'B' ? v : null; }
+
 async function getChunks(req, res) {
   const clientId = resolveClientId(req);
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
   try {
-    const chunks = await db.getKnowledgeChunksByTitle(clientId, decodeURIComponent(req.params.title));
+    const chunks = await db.getKnowledgeChunksByTitle(clientId, decodeURIComponent(req.params.title), armOf(req.query.strategy));
     res.json(chunks);
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
@@ -54,6 +57,7 @@ async function addDocument(req, res) {
   const clientId = resolveClientId(req);
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
   const { title, content } = req.body;
+  const strategy = armOf(req.body.strategy);
   if (!title || !content) return res.status(400).json({ error: 'title and content are required' });
   try {
     const chunks = chunkText(content);
@@ -63,7 +67,7 @@ async function addDocument(req, res) {
     for (let i = 0; i < chunks.length; i += BATCH) {
       const batch = chunks.slice(i, i + BATCH);
       const embeddings = await Promise.all(batch.map(text => embedText(text)));
-      await db.insertKnowledgeChunks(clientId, title, batch.map((content, j) => ({ content, embedding: embeddings[j] })));
+      await db.insertKnowledgeChunks(clientId, title, batch.map((content, j) => ({ content, embedding: embeddings[j] })), strategy);
       total += batch.length;
     }
     console.log(`[KNOWLEDGE] Added ${total} chunks for client ${clientId} title="${title}"`);
@@ -84,6 +88,8 @@ async function updateChunk(req, res) {
   try {
     const embedding = await embedText(content);
     await db.updateKnowledgeChunk(parseInt(req.params.id), content, embedding);
+    // Optional: move the chunk between shared / A only / B only.
+    if (req.body.strategy !== undefined) await db.setKnowledgeChunkStrategy(parseInt(req.params.id), armOf(req.body.strategy));
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
@@ -113,9 +119,24 @@ async function deleteSection(req, res) {
   const clientId = resolveClientId(req);
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
   try {
-    await db.deleteKnowledgeByTitle(clientId, decodeURIComponent(req.params.title));
+    await db.deleteKnowledgeByTitle(clientId, decodeURIComponent(req.params.title), armOf(req.query.strategy));
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 
-module.exports = { listSections, getChunks, addDocument, updateChunk, deleteChunk, deleteSection };
+/**
+ * POST /api/knowledge/copy { title, from, to } — copy a section to one strategy
+ * only, so that arm can be reworded without touching the original.
+ */
+async function copySection(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  const { title, from, to } = req.body || {};
+  if (!title || !armOf(to)) return res.status(400).json({ error: "title and to ('A' or 'B') are required" });
+  try {
+    const copied = await db.copyKnowledgeSection(clientId, title, armOf(from), to);
+    res.json({ ok: true, copied });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+module.exports = { listSections, getChunks, addDocument, updateChunk, deleteChunk, deleteSection, copySection };

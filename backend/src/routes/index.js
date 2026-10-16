@@ -18,6 +18,7 @@ const orderRoutes      = require('./orders.routes');
 const productRoutes    = require('./products.routes');
 const attributeRoutes  = require('./attributes.routes');
 const knowledgeRoutes  = require('./knowledge.routes');
+const strategyRoutes   = require('./strategy.routes');
 const mediaRoutes      = require('./media.routes');
 const addonRoutes      = require('./addons.routes');      // mounted at /api — owns /api/addons, /api/crm
 const pluginRoutes     = require('./plugins.routes');
@@ -114,6 +115,7 @@ function mountRoutes(app) {
   app.use('/api/products',     productRoutes);
   app.use('/api/attributes',   attributeRoutes);
   app.use('/api/knowledge',    knowledgeRoutes);
+  app.use('/api/strategy-results', strategyRoutes);
   app.use('/api/media',        mediaRoutes);
   app.use('/api/plugins',      pluginRoutes);
   app.use('/api/settings',     settingsRoutes);

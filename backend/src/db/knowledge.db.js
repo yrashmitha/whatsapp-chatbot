@@ -77,10 +77,12 @@ async function vectorSearchKnowledge(clientId, embedding, limit = 5, strategy = 
  */
 async function getKnowledgeSections(clientId) {
   if (!IS_PG) return [];
+  // One row per title AND strategy: a shared document and a B-only fork of the
+  // same title are separate rows, so each can be opened, edited and deleted.
   const res = await pool.query(
-    `SELECT title, COUNT(*) AS chunk_count, MIN(created_at) AS created_at
+    `SELECT title, strategy, COUNT(*) AS chunk_count, MIN(created_at) AS created_at
      FROM client_knowledge_chunks WHERE client_id=$1
-     GROUP BY title ORDER BY MIN(created_at)`,
+     GROUP BY title, strategy ORDER BY MIN(created_at)`,
     [clientId]
   );
   return res.rows;
@@ -93,12 +95,12 @@ async function getKnowledgeSections(clientId) {
  * @param {string} title    - Document title
  * @returns {Promise<Array>} Array of { id, content, created_at }
  */
-async function getKnowledgeChunksByTitle(clientId, title) {
+async function getKnowledgeChunksByTitle(clientId, title, strategy = null) {
   if (!IS_PG) return [];
   const res = await pool.query(
-    `SELECT id, content, created_at FROM client_knowledge_chunks
-     WHERE client_id=$1 AND title=$2 ORDER BY id`,
-    [clientId, title]
+    `SELECT id, content, created_at, strategy FROM client_knowledge_chunks
+     WHERE client_id=$1 AND title=$2 AND strategy IS NOT DISTINCT FROM $3 ORDER BY id`,
+    [clientId, title, strategy === 'A' || strategy === 'B' ? strategy : null]
   );
   return res.rows;
 }
@@ -137,12 +139,52 @@ async function deleteKnowledgeChunk(id) {
  * @param {string} title    - Document title
  * @returns {Promise<void>}
  */
-async function deleteKnowledgeByTitle(clientId, title) {
+async function deleteKnowledgeByTitle(clientId, title, strategy = null) {
   if (!IS_PG) return;
   await pool.query(
-    `DELETE FROM client_knowledge_chunks WHERE client_id=$1 AND title=$2`,
-    [clientId, title]
+    `DELETE FROM client_knowledge_chunks WHERE client_id=$1 AND title=$2
+       AND strategy IS NOT DISTINCT FROM $3`,
+    [clientId, title, strategy === 'A' || strategy === 'B' ? strategy : null]
   );
+}
+
+/**
+ * Copy a whole document section to one strategy only, embeddings included, so
+ * that arm gets its own editable version under the same title. A no-op if that
+ * arm already has a section with the title.
+ *
+ * @param {string}      clientId
+ * @param {string}      title
+ * @param {string|null} fromStrategy - where to copy from (null = shared)
+ * @param {string}      toStrategy   - 'A' or 'B'
+ * @returns {Promise<number>} number of chunks copied
+ */
+async function copyKnowledgeSection(clientId, title, fromStrategy, toStrategy) {
+  if (!IS_PG || (toStrategy !== 'A' && toStrategy !== 'B')) return 0;
+  const from = fromStrategy === 'A' || fromStrategy === 'B' ? fromStrategy : null;
+  const have = await pool.query(
+    `SELECT 1 FROM client_knowledge_chunks WHERE client_id=$1 AND title=$2 AND strategy=$3 LIMIT 1`,
+    [clientId, title, toStrategy]);
+  if (have.rows.length) return 0;
+  const r = await pool.query(
+    `INSERT INTO client_knowledge_chunks (client_id, title, content, embedding, strategy)
+     SELECT client_id, title, content, embedding, $4 FROM client_knowledge_chunks
+      WHERE client_id=$1 AND title=$2 AND strategy IS NOT DISTINCT FROM $3 ORDER BY id`,
+    [clientId, title, from, toStrategy]);
+  return r.rowCount;
+}
+
+/**
+ * Change which strategy a single chunk belongs to (null = shared).
+ *
+ * @param {number}      id
+ * @param {string|null} strategy
+ * @returns {Promise<void>}
+ */
+async function setKnowledgeChunkStrategy(id, strategy) {
+  if (!IS_PG) return;
+  await pool.query(`UPDATE client_knowledge_chunks SET strategy=$1 WHERE id=$2`,
+    [strategy === 'A' || strategy === 'B' ? strategy : null, id]);
 }
 
 module.exports = {
@@ -153,4 +195,6 @@ module.exports = {
   updateKnowledgeChunk,
   deleteKnowledgeChunk,
   deleteKnowledgeByTitle,
+  copyKnowledgeSection,
+  setKnowledgeChunkStrategy,
 };

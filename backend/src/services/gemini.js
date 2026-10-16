@@ -578,9 +578,7 @@ async function buildChatSession(phoneNumber, client) {
  * @param {Object} [options]
  * @param {boolean} [options.skipUserInsert] - If true, skip inserting the user message into DB
  * @param {Object|null} [options.client]     - Client config object
- * @param {string|null} [options.retryNote]  - Optional retry context prefix
- * @param {string|null} [options.contextNote] - Optional note for this turn only (not stored)
- * @returns {Promise<{botReply: string, orderId: string|null, paymentReceived: boolean,
+ * @param {string|null} [options.retryNote]  - Optional retry context prefix * @returns {Promise<{botReply: string, orderId: string|null, paymentReceived: boolean,
  *   callCostUSD: number, inputTokens: number, outputTokens: number,
  *   imagesToSend: string[], productImagesToSend: Array<{url: string, caption: string}>}>}
  */
@@ -705,22 +703,7 @@ function historyTextFor(m) {
   return `${text}\n[[${kind}:${menu.id}]]`;
 }
 
-/**
- * The note for the turn right after an ad's welcome message went out.
- *
- * The welcome greets the customer and asks what they need. A prompt's own
- * first-message rule would greet them again and send the menu, so this turn is
- * told plainly that the chat is already welcomed, with the welcome quoted.
- *
- * @param {string} welcome - the welcome text that was sent
- * @returns {string}
- */
-function adWelcomeNote(welcome) {
-  return '[SYSTEM NOTE, not from the customer: This customer came from an ad and was ALREADY WELCOMED with the message below, sent automatically just now as your own message. Do NOT greet again, do NOT send any welcome, greeting or service menu, and do NOT repeat the welcome. Keep the chat going from it: if the customer\'s message has a question or describes their situation, answer that; if it is only the ad\'s pre-filled text or a greeting, reply [[SILENT]], because the welcome already asked what they need.\n'
-    + `WELCOME ALREADY SENT:\n${welcome}]`;
-}
-
-async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserInsert = false, client = null, retryNote = null, contextNote = null, traceId = '?' } = {}) {
+async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserInsert = false, client = null, retryNote = null, traceId = '?' } = {}) {
   const log = makeLogger(traceId, client?.id, phoneNumber);
   log.info(`[IN] "${userMessage.substring(0, 100)}"`);
 
@@ -761,7 +744,6 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   const statusNote = await buildOrderStatusNote(phoneNumber, client?.id);
   let messageToSend = statusNote ? `${statusNote}\n\n${userMessage}` : userMessage;
   messageToSend = `${nowNote(client)}\n\n${messageToSend}`;
-  if (contextNote) messageToSend = `${contextNote}\n\n${messageToSend}`;
   if (retryNote) messageToSend = `${retryNote}\n\n${messageToSend}`;
 
   // For multilingual clients: wrap current message with a clear marker so the system
@@ -1313,7 +1295,6 @@ module.exports = {
   calcCost,
   buildChatSession,
   handleMessage,
-  adWelcomeNote,
   generateOrderId,
   buildOrderStatusNote,
   ORDER_MARKER_REGEX,

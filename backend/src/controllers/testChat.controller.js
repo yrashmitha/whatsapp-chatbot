@@ -18,7 +18,7 @@
 const db = require('../db');
 const clientRouter = require('../services/clientRouter');
 const resolveClientId = require('../middleware/resolveClientId');
-const { buildChatSession, handleMessage, adWelcomeNote } = require('../services/gemini');
+const { buildChatSession, handleMessage } = require('../services/gemini');
 const { chatSessions } = require('../workers/sessionManager');
 const { extractFromBuffer } = require('../services/mediaExtractor');
 const { getGeminiKey } = require('../services/clientKeys');
@@ -119,7 +119,13 @@ async function sendTestMessage(req, res) {
           // reads in the order production shows it.
           await db.insertMessage(phoneKey, message.trim(), 'user', null, clientId);
           await db.insertMessage(phoneKey, adWelcome, 'bot', null, clientId);
-          skipUserInsert = true;
+          // Same as the webhook: the welcome is the reply to this message, so
+          // the bot says nothing until the customer answers it.
+          return res.json({
+            reply: '', fallback: false, images: [],
+            messages: await recentMessages(phoneKey, clientId),
+            debug: { draftPromptActive: !!testPrompt, adWelcomeWasTheReply: true, toolCalls: [] },
+          });
         }
       }
     }
@@ -136,8 +142,6 @@ async function sendTestMessage(req, res) {
       client: effectiveClient,
       skipUserInsert,
       traceId: sessionId,
-      // Same note the webhook adds, so the sandbox behaves like a real ad chat.
-      contextNote: adWelcome ? adWelcomeNote(adWelcome) : null,
     });
 
     // handleMessage already stored the bot's text reply. Images belong before

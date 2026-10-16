@@ -12,7 +12,7 @@ const fs     = require('fs');
 const path   = require('path');
 const db     = require('../db');
 const clientRouter = require('../services/clientRouter');
-const { buildChatSession, handleMessage, adWelcomeNote } = require('../services/gemini');
+const { buildChatSession, handleMessage } = require('../services/gemini');
 const { sendWhatsAppMessage, sendWhatsAppImage, sendWhatsAppAudio, sendBotReply, sendWhatsAppInteractiveList, sendWhatsAppReplyButtons, waToken, waPhoneId, markMessageRead } = require('../services/whatsapp');
 const { chatSessions } = require('../workers/sessionManager');
 const { UPLOADS_DIR, PUBLIC_URL } = require('../config/env');
@@ -475,6 +475,22 @@ function receiveWebhook(req, res) {
           }
         }
         log.info(`[WEBHOOK] bot off for ${msg.type} - stored, nothing sent`);
+        return;
+      }
+
+      // This message came from an ad whose welcome message was just sent. The
+      // welcome IS the reply: it greets and asks what they need. Letting the
+      // bot answer as well sent a second greeting, a menu or a package block
+      // whatever it was told, so it is decided here and not in the prompt.
+      // Their message stays in the history, so the bot answers it together
+      // with their reply to the welcome.
+      if (adWelcome) {
+        const text = msg.text?.body || msg.interactive?.button_reply?.title
+          || msg.interactive?.list_reply?.title || msg.button?.text || `[${msg.type}]`;
+        await db.insertMessage(from, text, 'user', null, client.id, null, null, msg.id);
+        // The welcome answered it, so the blue tick is honest.
+        markMessageRead(msg.id, client).catch(() => {});
+        log.info('[AD-RULE] ad welcome was the reply to this message - bot waits for the next one');
         return;
       }
 
@@ -1041,8 +1057,7 @@ function receiveWebhook(req, res) {
       // the customer has already been greeted. Say so for this turn, whatever
       // the prompt's own first-message rule says, and quote the welcome so the
       // bot carries on from it.
-      const contextNote = adWelcome ? adWelcomeNote(adWelcome) : null;
-      const { botReply: rawBotReply, imagesToSend, productImagesToSend, isFallback } = await handleMessage(from, userMessage, session.chat, { client, traceId, contextNote });
+      const { botReply: rawBotReply, imagesToSend, productImagesToSend, isFallback } = await handleMessage(from, userMessage, session.chat, { client, traceId });
 
       // An 'off_after_reply' ad with no welcome message: this reply, the one
       // just computed, is the one reply that ad is owed. Pausing here rather

@@ -73,7 +73,7 @@ function VoiceClipPickerModal({ open, onClose, phone, clientId, onSent }) {
   );
 }
 
-export default function MessageInput({ phone, clientId, crmMediaEnabled, followUpEnabled, reportLink, reportReleased, prefill, onPrefillConsumed, onSent }) {
+export default function MessageInput({ phone, clientId, strategy, crmMediaEnabled, followUpEnabled, reportLink, reportReleased, prefill, onPrefillConsumed, onSent }) {
   const [text, setText] = useState('');
   // Which follow-up variant is currently drafting ('1' | '2' | null).
   const [drafting, setDrafting] = useState(null);
@@ -125,9 +125,10 @@ export default function MessageInput({ phone, clientId, crmMediaEnabled, followU
   useEffect(() => () => clearTimeout(pressTimer.current), []);
 
   useEffect(() => {
-    const params = clientId ? { client_id: clientId } : {};
+    // An operator in a B chat sends B's wording, so ask for what that strategy would send.
+    const params = { ...(clientId ? { client_id: clientId } : {}), ...(strategy ? { strategy } : {}) };
     api.get('/quick-replies', { params }).then(r => setQuickReplies(r.data)).catch(() => {});
-  }, [clientId]);
+  }, [clientId, strategy]);
 
   const filtered = quickReplies.filter(r =>
     !qrFilter || r.title.toLowerCase().includes(qrFilter) || r.text.toLowerCase().includes(qrFilter)

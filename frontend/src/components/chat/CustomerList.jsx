@@ -259,7 +259,7 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
                       {c.last_message && (
                         <div className="text-xs truncate mt-0.5" style={{ color: 'var(--text-2)' }}>{c.last_message}</div>
                       )}
-                      {(c.has_image || c.has_document || c.has_voice || c.latest_order_status || c.owned_by || c.ai_enabled === false || c.client_id || c.first_ad_name || c.lead_status || c.next_call_at) && (
+                      {(c.has_image || c.has_document || c.has_voice || c.latest_order_status || c.owned_by || c.ai_enabled === false || c.client_id || c.first_ad_name || c.prompt_strategy || c.lead_status || c.next_call_at) && (
                         <div className="flex gap-1 mt-1 flex-wrap items-center">
                           {/* Lead quality and the day a call was promised. */}
                           {c.lead_status && <StatusBadge status={c.lead_status} />}
@@ -273,6 +273,16 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
                             >📞 {shortDate(c.next_call_at)}</span>
                           )}
                           {/* Which ad this customer clicked to start the chat, if any. */}
+                          {/* Which prompt strategy (A or B) the bot runs for this customer. */}
+                          {c.prompt_strategy && (
+                            <span
+                              className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
+                              style={c.prompt_strategy === 'B'
+                                ? { background: 'rgba(217,70,239,0.15)', color: '#e879f9' }
+                                : { background: 'rgba(14,165,233,0.15)', color: '#38bdf8' }}
+                              title={`Prompt strategy ${c.prompt_strategy}`}
+                            >{c.prompt_strategy}</span>
+                          )}
                           {c.first_ad_name && (
                             <span
                               className="text-[10px] px-1.5 py-0.5 rounded font-medium"

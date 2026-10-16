@@ -56,6 +56,10 @@ function DebugPanel({ debug, onClose }) {
         >×</button>
       </div>
 
+      <DebugRow label="Strategy">
+        <div className="text-xs text-slate-600 font-semibold">{debug.strategy === 'B' ? 'B' : 'A'}</div>
+      </DebugRow>
+
       <DebugRow label="Prompt">
         <div className="text-xs text-slate-600">
           {debug.promptChars?.toLocaleString()} chars
@@ -127,7 +131,7 @@ function DebugPanel({ debug, onClose }) {
   );
 }
 
-export default function TestChatPanel({ clientId, sessionId, onSessionReset }) {
+export default function TestChatPanel({ clientId, sessionId, onSessionReset, strategy = 'auto' }) {
   const toast = useToast();
   const qc = useQueryClient();
   const [text, setText] = useState('');
@@ -166,7 +170,7 @@ export default function TestChatPanel({ clientId, sessionId, onSessionReset }) {
 
   const sendMutation = useMutation({
     mutationFn: (message) => api.post(`/test-chat/${sessionId}/message`,
-      { message, ...(canPickAd && adId ? { ad_id: adId } : {}), ...params }, { params })
+      { message, ...(canPickAd && adId ? { ad_id: adId } : {}), ...(strategy === 'A' || strategy === 'B' ? { strategy } : {}), ...params }, { params })
       .then(r => r.data),
     onSuccess: (d) => {
       setDebug(d.debug || null);
@@ -203,6 +207,10 @@ export default function TestChatPanel({ clientId, sessionId, onSessionReset }) {
       <div className="px-4 py-2.5 border-b border-slate-200 flex items-center justify-between bg-slate-50 shrink-0">
         <span className="text-xs text-slate-500 truncate">
           Test session · <code className="font-mono">{sessionId}</code>
+          <span
+            className={`ml-2 text-[11px] font-semibold px-2 py-0.5 rounded-full ${debug?.strategy === 'B' || (!debug && strategy === 'B') ? 'bg-fuchsia-100 text-fuchsia-700' : 'bg-sky-100 text-sky-700'}`}
+            title="The prompt strategy this test chat runs"
+          >Strategy {debug?.strategy || (strategy === 'B' ? 'B' : strategy === 'A' ? 'A' : 'auto')}</span>
         </span>
         <div className="flex items-center gap-2 shrink-0">
           <button

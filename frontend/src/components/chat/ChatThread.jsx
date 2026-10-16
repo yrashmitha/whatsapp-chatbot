@@ -330,7 +330,16 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
         )}
 
         <div className="order-2 flex-1 min-w-0">
-          <div className="text-[15px] font-semibold text-slate-800 truncate leading-snug">{name || phone}</div>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <div className="text-[15px] font-semibold text-slate-800 truncate leading-snug">{name || phone}</div>
+            {/* Which prompt strategy this chat runs, so a reply can be judged against the right rules. */}
+            {(aiModeData?.prompt_strategy || aiModeData?.strategy_test_enabled) && (
+              <span
+                className={`shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded ${aiModeData?.prompt_strategy === 'B' ? 'bg-fuchsia-100 text-fuchsia-700' : 'bg-sky-100 text-sky-700'}`}
+                title={aiModeData?.prompt_strategy ? `This chat runs prompt strategy ${aiModeData.prompt_strategy}` : 'Started before the A/B split, so it runs strategy A'}
+              >{aiModeData?.prompt_strategy === 'B' ? 'Strategy B' : aiModeData?.prompt_strategy === 'A' ? 'Strategy A' : 'A (existing)'}</span>
+            )}
+          </div>
           {name && <div className="text-xs text-slate-500 truncate tabular-nums">{phone}</div>}
         </div>
 
@@ -522,6 +531,7 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
       <MessageInput
         phone={phone}
         clientId={clientId}
+        strategy={aiModeData?.prompt_strategy || null}
         crmMediaEnabled={crmMediaEnabled}
         followUpEnabled={addonsData?.addons?.includes('follow_up_generator') ?? false}
         reportLink={(customerOrders.find(o => o.delivery_url) || {}).delivery_url || null}

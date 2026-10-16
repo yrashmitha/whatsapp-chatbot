@@ -7,10 +7,23 @@ import Button from '../components/ui/Button';
 import { useToast } from '../components/ui/Toast';
 import api from '../lib/api';
 
+// Which prompt strategy sees an entry: both (shared), or only A, or only B.
+const STRATEGY_LABEL = { A: 'A only', B: 'B only' };
+function StrategyBadge({ strategy }) {
+  if (strategy !== 'A' && strategy !== 'B') return null;
+  return (
+    <span
+      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${strategy === 'B' ? 'bg-fuchsia-100 text-fuchsia-700' : 'bg-sky-100 text-sky-700'}`}
+      title={`Only chats running strategy ${strategy} can find this`}
+    >{STRATEGY_LABEL[strategy]}</span>
+  );
+}
+
 // ─── Add Document Modal ───────────────────────────────────────────────────────
 function AddDocModal({ open, onClose, clientId, onSaved }) {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [strategy, setStrategy] = useState('');
   const [saving, setSaving] = useState(false);
   const toast = useToast();
 
@@ -21,7 +34,7 @@ function AddDocModal({ open, onClose, clientId, onSaved }) {
     setSaving(true);
     try {
       const params = clientId ? { client_id: clientId } : {};
-      const r = await api.post('/knowledge', { title: title.trim(), content }, { params });
+      const r = await api.post('/knowledge', { title: title.trim(), content, strategy: strategy || null }, { params });
       toast.success(`Saved ${r.data.chunks} chunks`);
       setTitle(''); setContent('');
       onSaved();
@@ -48,6 +61,16 @@ function AddDocModal({ open, onClose, clientId, onSaved }) {
               placeholder="e.g. Life Insurance Policy 2024"
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-violet-400"
             />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Who can find it</label>
+            <select value={strategy} onChange={e => setStrategy(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-violet-400 bg-white">
+              <option value="">Both strategies (shared)</option>
+              <option value="A">Strategy A only</option>
+              <option value="B">Strategy B only</option>
+            </select>
+            <p className="text-xs text-slate-400 mt-1">A strategy-only document with the same name as a shared one replaces it for that strategy.</p>
           </div>
           <div className="flex-1">
             <label className="block text-xs font-medium text-slate-600 mb-1">
@@ -153,17 +176,30 @@ function DocRow({ doc, clientId, onDeleted }) {
   const qc = useQueryClient();
 
   const { data: chunks, isLoading: loadingChunks, refetch } = useQuery({
-    queryKey: ['knowledge-chunks', doc.title, clientId],
+    queryKey: ['knowledge-chunks', doc.title, doc.strategy || 'shared', clientId],
     queryFn: () => api.get(`/knowledge/${encodeURIComponent(doc.title)}/chunks`,
-      { params: clientId ? { client_id: clientId } : {} }).then(r => r.data),
+      { params: { ...(clientId ? { client_id: clientId } : {}), strategy: doc.strategy || 'shared' } }).then(r => r.data),
     enabled: expanded,
   });
 
+  // Copy this document for one strategy only, so that strategy can be reworded
+  // while the other keeps the original.
+  const handleCopy = async (to) => {
+    try {
+      const r = await api.post('/knowledge/copy', { title: doc.title, from: doc.strategy || null, to },
+        { params: clientId ? { client_id: clientId } : {} });
+      toast.success(r.data.copied ? `Copied for strategy ${to}` : `Strategy ${to} already has its own "${doc.title}"`);
+      onDeleted();
+    } catch (e) {
+      toast.error('Failed to copy document');
+    }
+  };
+
   const handleDelete = async () => {
-    if (!confirm(`Delete "${doc.title}" and all its chunks?`)) return;
+    if (!confirm(`Delete "${doc.title}"${doc.strategy ? ` (${STRATEGY_LABEL[doc.strategy]})` : ''} and all its chunks?`)) return;
     try {
       await api.delete(`/knowledge/${encodeURIComponent(doc.title)}`,
-        { params: clientId ? { client_id: clientId } : {} });
+        { params: { ...(clientId ? { client_id: clientId } : {}), strategy: doc.strategy || 'shared' } });
       toast.success('Document deleted');
       onDeleted();
     } catch (e) {
@@ -178,11 +214,20 @@ function DocRow({ doc, clientId, onDeleted }) {
           <div className="flex items-center gap-2">
             <span className="text-slate-400 text-xs">{expanded ? '▼' : '▶'}</span>
             <span className="font-medium text-slate-800">{doc.title}</span>
+            <StrategyBadge strategy={doc.strategy} />
           </div>
         </td>
         <td className="py-3 pr-4 text-slate-500 text-sm">{doc.chunk_count}</td>
         <td className="py-3 pr-4 text-slate-400 text-sm">{new Date(doc.created_at).toLocaleDateString()}</td>
-        <td className="py-3 text-right" onClick={e => e.stopPropagation()}>
+        <td className="py-3 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
+          {doc.strategy !== 'A' && (
+            <button onClick={() => handleCopy('A')} title="Make a copy only strategy A uses"
+              className="text-xs text-sky-600 hover:text-sky-800 bg-transparent border-0 cursor-pointer mr-3">Copy to A</button>
+          )}
+          {doc.strategy !== 'B' && (
+            <button onClick={() => handleCopy('B')} title="Make a copy only strategy B uses"
+              className="text-xs text-fuchsia-600 hover:text-fuchsia-800 bg-transparent border-0 cursor-pointer mr-3">Copy to B</button>
+          )}
           <button onClick={handleDelete}
             className="text-xs text-red-400 hover:text-red-600 bg-transparent border-0 cursor-pointer">Delete</button>
         </td>
@@ -219,6 +264,7 @@ export default function KnowledgeBase() {
   const { user, selectedClientId } = useAuthStore();
   const superAdmin = isSuperAdmin(user);
   const [showAdd, setShowAdd] = useState(false);
+  const [only, setOnly] = useState('all'); // all | shared | A | B
   const qc = useQueryClient();
 
   const clientId = superAdmin ? (selectedClientId || null) : user?.clientId;
@@ -243,6 +289,13 @@ export default function KnowledgeBase() {
       <div className="flex flex-col h-full">
         <div className="px-6 py-4 border-b border-slate-200 bg-white flex items-center gap-3 flex-wrap shrink-0">
           <h1 className="text-lg font-semibold text-slate-800 mr-2">Knowledge Base</h1>
+          <select value={only} onChange={e => setOnly(e.target.value)} aria-label="Show"
+            className="text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:border-violet-400">
+            <option value="all">All entries</option>
+            <option value="shared">Shared by both strategies</option>
+            <option value="A">Strategy A only</option>
+            <option value="B">Strategy B only</option>
+          </select>
           <div className="ml-auto">
             <Button size="sm" onClick={() => setShowAdd(true)} disabled={!clientId}>+ Add Document</Button>
           </div>
@@ -273,9 +326,11 @@ export default function KnowledgeBase() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(sections || []).map(doc => (
-                    <DocRow key={doc.title} doc={doc} clientId={clientId} onDeleted={refresh} />
-                  ))}
+                  {(sections || [])
+                    .filter(doc => only === 'all' || (only === 'shared' ? !doc.strategy : doc.strategy === only))
+                    .map(doc => (
+                      <DocRow key={`${doc.title}:${doc.strategy || 'shared'}`} doc={doc} clientId={clientId} onDeleted={refresh} />
+                    ))}
                   {sections?.length === 0 && (
                     <tr><td colSpan={4} className="py-12 text-center text-slate-400">
                       No documents yet. Click "+ Add Document" to get started.

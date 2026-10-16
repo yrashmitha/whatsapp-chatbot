@@ -27,6 +27,8 @@ export default function TestChat() {
   const [tab, setTab] = useState('chat');
   const [sessionId, setSessionId] = useState(newSessionId);
   const [draftEdit, setDraftEdit] = useState(null);
+  // Which prompt strategy this test chat runs: 'A', 'B', or 'auto' (follow the live split).
+  const [arm, setArm] = useState('A');
   const params = clientId ? { client_id: clientId } : {};
 
   const { data: config } = useQuery({
@@ -36,7 +38,7 @@ export default function TestChat() {
   });
 
   const saveMutation = useMutation({
-    mutationFn: (system_prompt) => api.post('/test-chat/config', { system_prompt }, { params }).then(r => r.data),
+    mutationFn: (system_prompt) => api.post('/test-chat/config', { system_prompt, strategy: arm === 'B' ? 'B' : 'A' }, { params }).then(r => r.data),
     onSuccess: (d) => {
       toast.success(d.active ? 'Draft prompt applied to test sessions' : 'Draft prompt cleared');
       setDraftEdit(null);
@@ -46,8 +48,16 @@ export default function TestChat() {
     onError: (err) => toast.error(err?.response?.data?.error || 'Failed to save'),
   });
 
-  const promptDraft = draftEdit ?? (config?.test_system_prompt || '');
-  const active = !!(config?.test_system_prompt || '').trim();
+  const savedDraft = arm === 'B' ? (config?.test_system_prompt_b || '') : (config?.test_system_prompt || '');
+  const promptDraft = draftEdit ?? savedDraft;
+  const active = !!savedDraft.trim();
+
+  function pickArm(next) {
+    if (next === arm) return;
+    setArm(next);
+    setDraftEdit(null);
+    setSessionId(newSessionId());
+  }
 
   return (
     <Layout>
@@ -78,8 +88,32 @@ export default function TestChat() {
             {tab === 'chat' && (
               <div className="flex flex-col xl:flex-row gap-4 xl:h-[calc(100vh-14rem)]">
                 <div className="bg-white border border-slate-200 rounded-xl p-4 xl:w-[26rem] xl:shrink-0 xl:overflow-y-auto">
+                  <div className="flex gap-1 mb-3" role="tablist" aria-label="Prompt strategy">
+                    {[['A', 'Strategy A'], ['B', 'Strategy B'], ['auto', 'Live split']].map(([id, label]) => (
+                      <button
+                        key={id}
+                        role="tab"
+                        aria-selected={arm === id}
+                        onClick={() => pickArm(id)}
+                        className={`text-xs px-3 py-1.5 rounded-lg border-0 cursor-pointer font-medium transition-colors ${
+                          arm === id ? 'bg-violet-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >{label}</button>
+                    ))}
+                  </div>
+                  {arm === 'B' && !config?.strategy_b_exists && !(config?.test_system_prompt_b || '').trim() && (
+                    <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-2 py-1.5 mb-2">
+                      Strategy B has no prompt yet. Write a draft below, or save one under Settings.
+                    </p>
+                  )}
+                  {arm === 'auto' && (
+                    <p className="text-xs text-slate-500 mb-2">
+                      Follows the live split: the customer is given A or B the way a real new customer would be
+                      ({config?.strategy_test_enabled ? 'the split is on' : 'the split is off, so this runs A'}).
+                    </p>
+                  )}
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-sm font-semibold text-slate-700">Draft system prompt</span>
+                    <span className="text-sm font-semibold text-slate-700">Draft prompt, strategy {arm === 'auto' ? 'A and B' : arm}</span>
                     {active && (
                       <span className="text-xs font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded-full">
                         applied to test sessions
@@ -92,6 +126,7 @@ export default function TestChat() {
                     the live one.
                   </p>
                   <textarea
+                    disabled={arm === 'auto'}
                     value={promptDraft}
                     onChange={e => setDraftEdit(e.target.value)}
                     rows={14}
@@ -99,7 +134,7 @@ export default function TestChat() {
                     className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 resize-y font-mono"
                   />
                   <div className="flex gap-2 mt-2">
-                    <Button onClick={() => saveMutation.mutate(promptDraft)} disabled={saveMutation.isPending}>
+                    <Button onClick={() => saveMutation.mutate(promptDraft)} disabled={saveMutation.isPending || arm === 'auto'}>
                       {saveMutation.isPending ? 'Saving…' : 'Apply and restart session'}
                     </Button>
                     {active && (
@@ -117,6 +152,7 @@ export default function TestChat() {
                     clientId={clientId}
                     sessionId={sessionId}
                     onSessionReset={() => setSessionId(newSessionId())}
+                    strategy={arm}
                   />
                 </div>
               </div>

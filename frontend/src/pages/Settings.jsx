@@ -7,6 +7,7 @@ import AdRulesPanel from '../components/AdRulesPanel';
 import Button from '../components/ui/Button';
 import { useToast } from '../components/ui/Toast';
 import api, { authApi } from '../lib/api';
+import StrategyResults from '../components/StrategyResults';
 
 const TABS = ['Assistant', 'Menus', 'Ads', 'API Keys', 'Password', 'Quick Replies'];
 const ADMIN_TABS = ['Assistant', 'Menus', 'Ads', 'API Keys', 'Password', 'Quick Replies', 'Consultation'];
@@ -50,6 +51,9 @@ export default function Settings() {
 
   // ── AI Details ────────────────────────────────────────────────────────────
   const [prompt, setPrompt]                           = useState('');
+  // Second prompt strategy and the switch that splits new customers between A (the prompt above) and B.
+  const [promptB, setPromptB]                         = useState('');
+  const [splitOn, setSplitOn]                          = useState(false);
   const [errorMsg, setErrorMsg]                       = useState('');
   const [firstWelcomeMessage, setFirstWelcomeMessage] = useState('');
   const [contactNumber, setContactNumber]             = useState('');
@@ -148,6 +152,8 @@ export default function Settings() {
   useEffect(() => {
     if (settingsData) {
       setPrompt(settingsData.custom_prompt || '');
+      setPromptB(settingsData.custom_prompt_b || '');
+      setSplitOn(!!settingsData.strategy_test_enabled);
       setErrorMsg(settingsData.error_message || '');
       setFirstWelcomeMessage(settingsData.first_welcome_message || '');
       setContactNumber(settingsData.contact_number || '');
@@ -209,7 +215,7 @@ export default function Settings() {
     if (!clientId) { toast.error('Select a client first'); return; }
     setPromptLoading(true);
     try {
-      await api.put('/settings/prompt', { prompt, error_message: errorMsg, first_welcome_message: firstWelcomeMessage, contact_number: contactNumber, owner_phone: ownerPhone, thinking_budget: thinkingBudget, knowledge_base_enabled: knowledgeBaseEnabled, product_catalog_enabled: productCatalogEnabled, order_fields: orderFields, plugin_enabled: pluginEnabled }, { params });
+      await api.put('/settings/prompt', { prompt, error_message: errorMsg, first_welcome_message: firstWelcomeMessage, contact_number: contactNumber, owner_phone: ownerPhone, thinking_budget: thinkingBudget, knowledge_base_enabled: knowledgeBaseEnabled, product_catalog_enabled: productCatalogEnabled, order_fields: orderFields, plugin_enabled: pluginEnabled, ...(settingsData && 'custom_prompt_b' in settingsData ? { custom_prompt_b: promptB, strategy_test_enabled: splitOn } : {}) }, { params });
       qc.invalidateQueries({ queryKey: ['settings', clientId] });
       toast.success('Settings saved');
     } catch { toast.error('Failed to save settings'); }
@@ -369,6 +375,26 @@ export default function Settings() {
                   <textarea rows={8} value={prompt} onChange={e => setPrompt(e.target.value)}
                     placeholder="You are a helpful assistant for [business name]…"
                     className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono" />
+
+                  {settingsData && 'custom_prompt_b' in settingsData && (
+                    <div className="border-t border-slate-100 pt-3 mt-1">
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Strategy B prompt (the instructions above are Strategy A)</label>
+                      <textarea rows={8} value={promptB} onChange={e => setPromptB(e.target.value)}
+                        placeholder="A second set of instructions to try against the one above…"
+                        className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-fuchsia-400 focus:ring-2 focus:ring-fuchsia-100 resize-y font-mono" />
+                      <label className="flex items-start gap-2 mt-2 text-sm text-slate-700 cursor-pointer">
+                        <input type="checkbox" checked={splitOn} disabled={!promptB.trim()} onChange={e => setSplitOn(e.target.checked)} className="mt-1" />
+                        <span>
+                          Split new customers between A and B, one each in turn
+                          <span className="block text-xs text-slate-400">
+                            Each new customer keeps their strategy for the whole chat, and you can see it on the chat. Customers already talking to you stay on A.
+                            Knowledge base entries and quick replies can be set to one strategy on their own pages. Needs a Strategy B prompt.
+                          </span>
+                        </span>
+                      </label>
+                      <div className="mt-3"><StrategyResults clientId={clientId} /></div>
+                    </div>
+                  )}
 
                   <div className="border-t border-slate-100 pt-3 mt-1">
                     <label className="block text-xs font-medium text-slate-600 mb-1.5">Service Unavailable Message</label>

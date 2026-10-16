@@ -15,6 +15,9 @@ export default function QuickReplies() {
   const [formTitle, setFormTitle]   = useState('');
   const [formText, setFormText]     = useState('');
   const [formCategory, setFormCategory] = useState('');
+  // Which prompt strategy sends this reply: '' = both, 'A' or 'B' = that one only.
+  const [formStrategy, setFormStrategy] = useState('');
+  const [only, setOnly]             = useState('all'); // all | shared | A | B
   const [saving, setSaving]         = useState(false);
 
   const params = clientId ? { client_id: clientId } : {};
@@ -29,8 +32,8 @@ export default function QuickReplies() {
 
   useEffect(() => { load(); }, [clientId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const openNew = () => { setEditingId('new'); setFormTitle(''); setFormText(''); setFormCategory(''); };
-  const openEdit = (r) => { setEditingId(r.id); setFormTitle(r.title); setFormText(r.text); setFormCategory(r.category || ''); };
+  const openNew = () => { setEditingId('new'); setFormTitle(''); setFormText(''); setFormCategory(''); setFormStrategy(''); };
+  const openEdit = (r) => { setEditingId(r.id); setFormTitle(r.title); setFormText(r.text); setFormCategory(r.category || ''); setFormStrategy(r.strategy || ''); };
   const cancelEdit = () => setEditingId(null);
 
   const handleSave = async () => {
@@ -38,10 +41,10 @@ export default function QuickReplies() {
     setSaving(true);
     try {
       if (editingId === 'new') {
-        await api.post('/quick-replies', { title: formTitle.trim(), text: formText.trim(), category: formCategory.trim(), ...params });
+        await api.post('/quick-replies', { title: formTitle.trim(), text: formText.trim(), category: formCategory.trim(), strategy: formStrategy || null, ...params });
         toast.success('Quick reply added');
       } else {
-        await api.put(`/quick-replies/${editingId}`, { title: formTitle.trim(), text: formText.trim(), category: formCategory.trim(), ...params });
+        await api.put(`/quick-replies/${editingId}`, { title: formTitle.trim(), text: formText.trim(), category: formCategory.trim(), strategy: formStrategy || null, ...params });
         toast.success('Quick reply updated');
       }
       setEditingId(null);
@@ -64,6 +67,19 @@ export default function QuickReplies() {
     }
   };
 
+  // Copy a reply for one strategy only: same title, so that strategy sends the
+  // copy instead of the original while the other keeps the original.
+  const handleFork = async (r, to) => {
+    try {
+      await api.post(`/quick-replies/${r.id}/fork`, { strategy: to }, { params });
+      toast.success(`Copied for strategy ${to}. Edit the copy to change what ${to} sends.`);
+      load();
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Failed to copy');
+    }
+  };
+
+  const shown = replies.filter(r => only === 'all' || (only === 'shared' ? !r.strategy : r.strategy === only));
   const categories = [...new Set(replies.map(r => r.category).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
   const inputCls = 'w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100';
@@ -75,6 +91,13 @@ export default function QuickReplies() {
           <h1 className="text-lg font-semibold text-slate-800">Quick Replies</h1>
           <p className="text-xs text-slate-400 mt-0.5">Type <span className="font-mono bg-slate-100 px-1 rounded">/</span> in chat to use these templates</p>
         </div>
+        <select value={only} onChange={e => setOnly(e.target.value)} aria-label="Show"
+          className="text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:border-violet-400 mr-2">
+          <option value="all">All replies</option>
+          <option value="shared">Shared by both strategies</option>
+          <option value="A">Strategy A only</option>
+          <option value="B">Strategy B only</option>
+        </select>
         {editingId !== 'new' && (
           <button
             onClick={openNew}
@@ -112,6 +135,14 @@ export default function QuickReplies() {
               </datalist>
             </div>
             <div>
+              <label className="text-xs font-medium text-slate-500 block mb-1">Who sends it <span className="text-slate-400 font-normal">(a strategy-only reply with the same title replaces the shared one for that strategy)</span></label>
+              <select className={inputCls} value={formStrategy} onChange={e => setFormStrategy(e.target.value)}>
+                <option value="">Both strategies (shared)</option>
+                <option value="A">Strategy A only</option>
+                <option value="B">Strategy B only</option>
+              </select>
+            </div>
+            <div>
               <label className="text-xs font-medium text-slate-500 block mb-1">Message</label>
               <textarea
                 className={inputCls}
@@ -143,14 +174,28 @@ export default function QuickReplies() {
         <div className="text-center py-16 text-slate-400 text-sm">No quick replies yet. Click <strong>+ Add Quick Reply</strong> to create one.</div>
       ) : (
         <ul className="flex flex-col gap-2">
-          {replies.map(r => (
+          {shown.map(r => (
             <li key={r.id} className="flex items-start gap-3 bg-white border border-slate-200 rounded-2xl px-4 py-3 shadow-sm">
               <div className="flex-1 min-w-0">
                 <span className="text-xs font-semibold text-violet-600">/{r.title}</span>
+                {(r.strategy === 'A' || r.strategy === 'B') && (
+                  <span
+                    className={`ml-2 text-[10px] font-semibold rounded px-1.5 py-0.5 ${r.strategy === 'B' ? 'bg-fuchsia-100 text-fuchsia-700' : 'bg-sky-100 text-sky-700'}`}
+                    title={`Only chats running strategy ${r.strategy} send this`}
+                  >{r.strategy} only</span>
+                )}
                 {r.category && <span className="ml-2 text-[10px] font-medium text-slate-500 bg-slate-100 rounded-full px-2 py-0.5">{r.category}</span>}
                 <p className="text-sm text-slate-700 mt-0.5 whitespace-pre-wrap break-words">{r.text}</p>
               </div>
-              <div className="flex gap-1 shrink-0">
+              <div className="flex gap-1 shrink-0 flex-wrap justify-end">
+                {r.strategy !== 'A' && (
+                  <button onClick={() => handleFork(r, 'A')} title="Make a copy only strategy A sends"
+                    className="px-2.5 py-1 text-xs text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-lg border-0 cursor-pointer">Copy to A</button>
+                )}
+                {r.strategy !== 'B' && (
+                  <button onClick={() => handleFork(r, 'B')} title="Make a copy only strategy B sends"
+                    className="px-2.5 py-1 text-xs text-fuchsia-700 bg-fuchsia-50 hover:bg-fuchsia-100 rounded-lg border-0 cursor-pointer">Copy to B</button>
+                )}
                 <button
                   onClick={() => openEdit(r)}
                   className="px-2.5 py-1 text-xs text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg border-0 cursor-pointer"

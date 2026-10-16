@@ -665,6 +665,8 @@ async function init() {
       ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS custom_prompt_b        TEXT;
       ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS test_system_prompt_b   TEXT;
       ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS strategy_test_enabled  BOOLEAN NOT NULL DEFAULT FALSE;
+      -- Share of NEW customers given strategy B while the test is on (0 to 100). 50 is an even split.
+      ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS strategy_b_percent     INTEGER NOT NULL DEFAULT 50;
       ALTER TABLE customers ADD COLUMN IF NOT EXISTS prompt_strategy    TEXT;
       ALTER TABLE customers ADD COLUMN IF NOT EXISTS prompt_strategy_at TIMESTAMPTZ;
       CREATE INDEX IF NOT EXISTS idx_customers_strategy ON customers (client_id, prompt_strategy);
@@ -1094,6 +1096,7 @@ async function init() {
       'test_system_prompt TEXT',
       'custom_prompt_b TEXT', 'test_system_prompt_b TEXT',
       'strategy_test_enabled INTEGER NOT NULL DEFAULT 0',
+      'strategy_b_percent INTEGER NOT NULL DEFAULT 50',
       'interactive_menus TEXT',
       'thinking_budget INTEGER',
       'report_logo_width INTEGER NOT NULL DEFAULT 160',

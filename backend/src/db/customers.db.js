@@ -156,19 +156,22 @@ async function setCustomerAiMode(phone, clientId, enabled) {
  * - A customer who already has a strategy keeps it for good.
  * - A customer who was talking to us before the split started is left on A
  *   (reported as { strategy: 'A', existing: true }) and never moved.
- * - A new customer is given whichever arm has fewer customers so far, in one
- *   atomic UPDATE, so two messages arriving together cannot put one customer
- *   on both arms. A tie is broken at random.
+ * - A new customer is given B while B is below its target share (strategy_b_percent)
+ *   of the customers assigned so far, otherwise A, in one atomic UPDATE, so two
+ *   messages arriving together cannot put one customer on both arms.
  * Test Chat keys ('web:...') are always new, so each test session is assigned.
  *
  * @param {string} phoneNumber
  * @param {string} clientId
- * @param {{custom_prompt_b?: string|null, strategy_test_enabled?: boolean}} client
+ * @param {{custom_prompt_b?: string|null, strategy_test_enabled?: boolean, strategy_b_percent?: number}} client
  * @returns {Promise<{strategy: 'A'|'B', existing: boolean}>}
  */
 async function resolveStrategy(phoneNumber, clientId, client) {
   const off = { strategy: 'A', existing: false };
-  if (!IS_PG || !clientId || !client?.strategy_test_enabled || !(client.custom_prompt_b || '').trim()) return off;
+  // Off, or B has no prompt, or B's share is 0: every chat runs the live prompt (A), including
+  // customers who were given B earlier. Switching it off is how a rollout is stopped safely.
+  const pct = Math.max(0, Math.min(100, Number.isFinite(Number(client?.strategy_b_percent)) ? Math.round(Number(client.strategy_b_percent)) : 50));
+  if (!IS_PG || !clientId || !client?.strategy_test_enabled || pct <= 0 || !(client.custom_prompt_b || '').trim()) return off;
 
   const read = () => pool.query(
     `SELECT prompt_strategy FROM customers WHERE phone_number=$1 AND client_id=$2`, [phoneNumber, clientId]);
@@ -184,19 +187,18 @@ async function resolveStrategy(phoneNumber, clientId, client) {
     if (prior.rows.length) return { strategy: 'A', existing: true };
   }
 
-  const tie = Math.random() < 0.5 ? 'A' : 'B';
   const up = await pool.query(
     `UPDATE customers SET
+        -- B while B is below its target share of the customers assigned so far, otherwise A.
+        -- 50 gives B A B A...; 10 gives one B in ten; 100 gives only B.
         prompt_strategy = CASE
-          WHEN (SELECT COUNT(*) FROM customers WHERE client_id=$2 AND phone_number NOT LIKE 'web:%' AND prompt_strategy='A')
-             < (SELECT COUNT(*) FROM customers WHERE client_id=$2 AND phone_number NOT LIKE 'web:%' AND prompt_strategy='B') THEN 'A'
-          WHEN (SELECT COUNT(*) FROM customers WHERE client_id=$2 AND phone_number NOT LIKE 'web:%' AND prompt_strategy='B')
-             < (SELECT COUNT(*) FROM customers WHERE client_id=$2 AND phone_number NOT LIKE 'web:%' AND prompt_strategy='A') THEN 'B'
-          ELSE $3 END,
+          WHEN (SELECT COUNT(*) FROM customers WHERE client_id=$2 AND phone_number NOT LIKE 'web:%' AND prompt_strategy='B') * 100
+             < $3::int * (SELECT COUNT(*) FROM customers WHERE client_id=$2 AND phone_number NOT LIKE 'web:%' AND prompt_strategy IN ('A','B')) + $3::int
+          THEN 'B' ELSE 'A' END,
         prompt_strategy_at = NOW()
       WHERE phone_number=$1 AND client_id=$2 AND prompt_strategy IS NULL
       RETURNING prompt_strategy`,
-    [phoneNumber, clientId, tie]);
+    [phoneNumber, clientId, pct]);
   const got = up.rows[0]?.prompt_strategy || (await read()).rows[0]?.prompt_strategy;
   return { strategy: got === 'B' ? 'B' : 'A', existing: false };
 }

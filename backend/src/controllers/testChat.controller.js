@@ -306,7 +306,7 @@ async function testConfig(req, res) {
   try {
     if (req.method === 'GET') {
       const { rows } = await db.pgQuery(
-        `SELECT test_system_prompt, test_system_prompt_b, custom_prompt_b, strategy_test_enabled
+        `SELECT test_system_prompt, test_system_prompt_b, custom_prompt_b, strategy_test_enabled, strategy_b_percent
            FROM client_configs WHERE client_id=$1`, [clientId]
       );
       const r0 = rows[0] || {};
@@ -315,6 +315,7 @@ async function testConfig(req, res) {
         test_system_prompt_b: r0.test_system_prompt_b || '',
         strategy_b_exists: !!(r0.custom_prompt_b || '').trim(),
         strategy_test_enabled: !!r0.strategy_test_enabled,
+        strategy_b_percent: r0.strategy_b_percent ?? 50,
       });
     }
     const prompt = (req.body?.system_prompt || '').trim();

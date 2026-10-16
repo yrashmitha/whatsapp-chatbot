@@ -54,6 +54,7 @@ export default function Settings() {
   // Second prompt strategy and the switch that splits new customers between A (the prompt above) and B.
   const [promptB, setPromptB]                         = useState('');
   const [splitOn, setSplitOn]                          = useState(false);
+  const [bPercent, setBPercent]                       = useState(50);
   const [errorMsg, setErrorMsg]                       = useState('');
   const [firstWelcomeMessage, setFirstWelcomeMessage] = useState('');
   const [contactNumber, setContactNumber]             = useState('');
@@ -154,6 +155,7 @@ export default function Settings() {
       setPrompt(settingsData.custom_prompt || '');
       setPromptB(settingsData.custom_prompt_b || '');
       setSplitOn(!!settingsData.strategy_test_enabled);
+      setBPercent(settingsData.strategy_b_percent ?? 50);
       setErrorMsg(settingsData.error_message || '');
       setFirstWelcomeMessage(settingsData.first_welcome_message || '');
       setContactNumber(settingsData.contact_number || '');
@@ -215,7 +217,7 @@ export default function Settings() {
     if (!clientId) { toast.error('Select a client first'); return; }
     setPromptLoading(true);
     try {
-      await api.put('/settings/prompt', { prompt, error_message: errorMsg, first_welcome_message: firstWelcomeMessage, contact_number: contactNumber, owner_phone: ownerPhone, thinking_budget: thinkingBudget, knowledge_base_enabled: knowledgeBaseEnabled, product_catalog_enabled: productCatalogEnabled, order_fields: orderFields, plugin_enabled: pluginEnabled, ...(settingsData && 'custom_prompt_b' in settingsData ? { custom_prompt_b: promptB, strategy_test_enabled: splitOn } : {}) }, { params });
+      await api.put('/settings/prompt', { prompt, error_message: errorMsg, first_welcome_message: firstWelcomeMessage, contact_number: contactNumber, owner_phone: ownerPhone, thinking_budget: thinkingBudget, knowledge_base_enabled: knowledgeBaseEnabled, product_catalog_enabled: productCatalogEnabled, order_fields: orderFields, plugin_enabled: pluginEnabled, ...(settingsData && 'custom_prompt_b' in settingsData ? { custom_prompt_b: promptB, strategy_test_enabled: splitOn, strategy_b_percent: bPercent } : {}) }, { params });
       qc.invalidateQueries({ queryKey: ['settings', clientId] });
       toast.success('Settings saved');
     } catch { toast.error('Failed to save settings'); }
@@ -385,13 +387,21 @@ export default function Settings() {
                       <label className="flex items-start gap-2 mt-2 text-sm text-slate-700 cursor-pointer">
                         <input type="checkbox" checked={splitOn} disabled={!promptB.trim()} onChange={e => setSplitOn(e.target.checked)} className="mt-1" />
                         <span>
-                          Split new customers between A and B, one each in turn
+                          Run the test: give new customers strategy B
                           <span className="block text-xs text-slate-400">
                             Each new customer keeps their strategy for the whole chat, and you can see it on the chat. Customers already talking to you stay on A.
-                            Knowledge base entries and quick replies can be set to one strategy on their own pages. Needs a Strategy B prompt.
+                            Untick this and every chat, including ones already on B, goes back to the live prompt (A) straight away. Needs a Strategy B prompt.
                           </span>
                         </span>
                       </label>
+                      <div className="flex items-center gap-2 mt-2 text-sm text-slate-700">
+                        <label htmlFor="b-share">Share of new customers on B</label>
+                        <select id="b-share" value={bPercent} disabled={!splitOn} onChange={e => setBPercent(Number(e.target.value))}
+                          className="border border-slate-200 rounded-lg px-2 py-1 bg-white">
+                          {[10, 25, 50, 75, 100].map(p => <option key={p} value={p}>{p === 50 ? '50% (even split)' : p === 100 ? '100% (all new customers)' : p + '%'}</option>)}
+                        </select>
+                        <span className="text-xs text-slate-400">Start small, raise it when B looks good.</span>
+                      </div>
                       <div className="mt-3"><StrategyResults clientId={clientId} /></div>
                     </div>
                   )}

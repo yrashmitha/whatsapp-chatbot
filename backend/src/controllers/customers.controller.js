@@ -100,14 +100,15 @@ async function listCustomers(req, res) {
              cu.first_ad_id,
              COALESCE(ad.name, cu.first_ad_headline) AS first_ad_name,
              -- Which prompt strategy (A or B) this chat runs; NULL when the split was off or the customer pre-dates it.
-             cu.prompt_strategy
+             -- Shown only while the split is on: when it is off every chat runs A, whatever it was given before.
+             CASE WHEN (SELECT cc2.strategy_test_enabled FROM client_configs cc2 WHERE cc2.client_id = cu.client_id) THEN cu.prompt_strategy END AS prompt_strategy
       FROM customers cu
       LEFT JOIN messages m ON m.phone_number=cu.phone_number AND m.client_id=cu.client_id
       LEFT JOIN orders   o ON o.phone_number=cu.phone_number AND o.client_id=cu.client_id
       LEFT JOIN ad_details ad ON ad.ad_id = cu.first_ad_id
       ${where}
       GROUP BY cu.phone_number, cu.name, cu.client_id, cu.updated_at, cu.last_read_at, cu.last_customer_message_at, cu.needs_attention,
-               cu.first_ad_id, cu.first_ad_headline, ad.name, cu.prompt_strategy
+               cu.first_ad_id, cu.first_ad_headline, ad.name, cu.prompt_strategy, cu.client_id
       ORDER BY GREATEST(cu.last_customer_message_at, MAX(m.created_at)) DESC NULLS LAST
       LIMIT $${fparams.length + 1} OFFSET $${fparams.length + 2}`;
     const countQ = `SELECT COUNT(*) FROM customers cu ${where}`;
@@ -359,7 +360,8 @@ async function getAiMode(req, res) {
          FROM customers cu LEFT JOIN client_configs cc ON cc.client_id = cu.client_id
         WHERE cu.phone_number=$1 AND cu.client_id=$2`, [phone, clientId]).then(r => r.rows[0] || {}).catch(() => ({}));
     res.json({ ai_enabled: enabled, owned_by: own.owned_by, owned_at: own.owned_at,
-               prompt_strategy: st.prompt_strategy || null, strategy_test_enabled: !!st.strategy_test_enabled });
+               prompt_strategy: st.strategy_test_enabled ? (st.prompt_strategy || null) : null,
+               strategy_test_enabled: !!st.strategy_test_enabled });
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 

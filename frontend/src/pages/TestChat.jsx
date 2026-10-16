@@ -28,7 +28,7 @@ export default function TestChat() {
   const [sessionId, setSessionId] = useState(newSessionId);
   const [draftEdit, setDraftEdit] = useState(null);
   // Which prompt strategy this test chat runs: 'A', 'B', or 'auto' (follow the live split).
-  const [arm, setArm] = useState('A');
+  const [arm, setArm] = useState('B');
   const params = clientId ? { client_id: clientId } : {};
 
   const { data: config } = useQuery({

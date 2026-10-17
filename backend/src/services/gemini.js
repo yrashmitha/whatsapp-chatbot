@@ -138,17 +138,84 @@ function samePerson(cf, details) {
  *
  * @returns {string[]} labels of the required fields that are missing
  */
+function isTarotOrder(details) {
+  const price = String(details?.price || '').replace(/\D/g, '');
+  return price === '990' || price === '1490'
+    || /tarot|ටැරෝ/i.test(`${details?.summary || ''} ${details?.needs || ''}`);
+}
+
+const NAME_KEYS = ['b', 'customer_name', 'name'];
+
 function missingRequiredOrderFields(client, details) {
-  const EMPTY = /^(null|undefined|none|n\/a|na|unknown|-+|\?+|not provided|not given|pending|tbd)$/i;
-  const missing = [];
-  for (const f of client?.order_fields || []) {
-    if (!f?.key || !f.required) continue;
-    if (/දන්නවා\s*නම්|if known|optional/i.test(f.label || '')) continue;
-    const v = details?.[f.key];
+  const EMPTY = /^(null|undefined|none|n\/a|na|unknown|-+|\?+|not provided|not given|missing|pending|tbd)$/i;
+  const blank = (v) => {
     const t = (v === null || v === undefined) ? '' : String(v).trim();
-    if (!t || EMPTY.test(t)) missing.push(f.label || f.key);
+    return !t || EMPTY.test(t);
+  };
+  const missing = [];
+  const tarot = isTarotOrder(details);
+  for (const f of client?.order_fields || []) {
+    if (!f?.key) continue;
+    // A Tarot order needs the name and the one question, never birth details.
+    if (tarot) {
+      if (!NAME_KEYS.includes(f.key) && f.key !== 'needs') continue;
+    } else {
+      if (!f.required) continue;
+      if (/දන්නවා\s*නම්|if known|optional/i.test(f.label || '')) continue;
+    }
+    if (blank(details?.[f.key])) missing.push(f.label || f.key);
   }
   return missing;
+}
+
+/**
+ * Second hard gate, from the chat history. The details must really have come from
+ * the customer and been read back to them before the order is recorded:
+ *  - the birth date numbers must appear in something the customer typed
+ *    (digits are language independent, so Singlish and Sinhala both pass), and
+ *  - the last message we sent must be a read-back (it must contain the customer's
+ *    name or the birth date numbers), so a "yes" to a price or a payment question
+ *    can never place an order.
+ * Tarot has no birth details, so only the read-back check applies to it. An open
+ * order from the last two hours is being changed, not placed, so only the
+ * required-fields gate applies to it.
+ *
+ * @returns {Promise<string|null>} why the order must not be recorded, or null
+ */
+async function orderHistoryProblem(phoneNumber, client, details) {
+  try {
+    const clientId = client?.id ?? null;
+    const open = ((await db.getOrdersByPhone(phoneNumber, clientId)) || []).some(o =>
+      !CLOSED_ORDER_STATUSES.has(String(o.status || '').toLowerCase())
+      && (Date.now() - new Date(o.created_at).getTime()) <= REORDER_FAST_WINDOW_MS);
+    if (open) return null;
+
+    const { rows } = await db.pgQuery(
+      `SELECT sender_type, message_text FROM messages
+        WHERE phone_number=$1 AND client_id IS NOT DISTINCT FROM $2
+        ORDER BY id DESC LIMIT 60`, [phoneNumber, clientId]);
+    const nums = (t) => (String(t || '').match(/\d+/g) || []).map(n => String(Number(n)));
+    const customerText = rows.filter(r => r.sender_type === 'user').map(r => r.message_text).join('\n');
+    const lastBot = (rows.find(r => r.sender_type !== 'user') || {}).message_text || '';
+
+    const tarot = isTarotOrder(details);
+    const dateNums = tarot ? [] : nums(details?.birth_date);
+    if (dateNums.length) {
+      const typed = new Set(nums(customerText));
+      if (!dateNums.some(n => typed.has(n))) return 'the birth date was never typed by the customer in this chat';
+    }
+
+    const nameKey = NAME_KEYS.find(k => details?.[k]);
+    const firstName = String(details?.[nameKey] || '').trim().split(/\s+/)[0] || '';
+    const botNums = new Set(nums(lastBot));
+    const readBack = (firstName.length >= 2 && lastBot.toLowerCase().includes(firstName.toLowerCase()))
+      || (dateNums.length > 0 && dateNums.some(n => botNums.has(n)));
+    if (!readBack) return 'the details were not read back to the customer for confirmation';
+    return null;
+  } catch (e) {
+    console.warn('[ORDER_GATE] history check failed, allowing:', e.message);
+    return null;
+  }
 }
 
 /**
@@ -758,6 +825,35 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     log.info(`[DB] Saved user message`);
   }
 
+  // The first message of a chat with no ad welcome gets the welcome menu, whatever
+  // it says, when the client names a block for it (client_configs.first_message_block_a / _b, one per strategy). Left to the prompt, the model answered "mama mithuna" and even "hi"
+  // in its own words, so this is done here and the model is not asked.
+  const firstBlock = String(client?.[chatSession?._strategy === 'B' ? 'first_message_block_b' : 'first_message_block_a'] || '').trim().replace(/[^a-z0-9_-]/gi, '');
+  if (!skipUserInsert && client?.id && firstBlock) {
+    try {
+      const { rows: prior } = await db.pgQuery(
+        `SELECT 1 FROM messages WHERE phone_number=$1 AND client_id IS NOT DISTINCT FROM $2 AND sender_type <> 'user' LIMIT 1`,
+        [phoneNumber, client.id]);
+      const orders = prior.length ? [] : await db.getOrdersByPhone(phoneNumber, client.id);
+      if (!prior.length && !orders.length) {
+        const welcome = await quickReplyBlocks.resolveBlocks(client.id, `[[QR:${firstBlock}]]`, chatSession?._strategy);
+        if (welcome.used.length && welcome.text) {
+          const trace = { blocks: { used: welcome.used, missing: [] }, firstMessageWelcome: true };
+          await db.insertMessage(phoneNumber, welcome.text, 'bot', 0, client.id, null, null, null, null, { trace });
+          if (chatSession) {
+            chatSession._history = [...(chatSession._history || []),
+              { role: 'user', parts: [{ text: userMessage }] },
+              { role: 'model', parts: [{ text: welcome.text }] }];
+          }
+          log.info('[WELCOME] first message of a chat with no ad welcome: sent the no-ad welcome block (' + firstBlock + ') without the model');
+          return { botReply: welcome.text, orderId: null, paymentReceived: false, callCostUSD: 0, inputTokens: 0, outputTokens: 0, imagesToSend: [], productImagesToSend: [], isFallback: false, toolCalls: [], trace };
+        }
+      }
+    } catch (e) {
+      log.warn('[WELCOME] could not send the first-message welcome, falling back to the model:', e.message);
+    }
+  }
+
   // For multilingual clients: always reload history from DB so _history is always
   // clean (no accumulated label noise from previous turns).
   // The prompt this chat actually runs (strategy A or B), not the client's default.
@@ -940,12 +1036,16 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
         } else {
           const gateDetails = { ...fc.args };
           const gateMissing = missingRequiredOrderFields(client, gateDetails);
-          if (gateMissing.length) {
-            log.warn(`[ORDER_GATE] place_order refused, missing: ${gateMissing.join(', ')}`);
-            { const te4 = traceEntry.get(fc); if (te4) te4.error = `refused, missing: ${gateMissing.join(', ')}`; }
+          const gateHistory = gateMissing.length ? null : await orderHistoryProblem(phoneNumber, client, gateDetails);
+          if (gateMissing.length || gateHistory) {
+            const why = gateMissing.length ? `missing: ${gateMissing.join(', ')}` : gateHistory;
+            log.warn(`[ORDER_GATE] place_order refused, ${why}`);
+            { const te4 = traceEntry.get(fc); if (te4) te4.error = `refused, ${why}`; }
             functionResponses.push({ functionResponse: { name: 'place_order', response: {
               ok: false,
-              error: `NOT recorded. Missing required details: ${gateMissing.join(', ')}. The customer has not given these yet. Do NOT tell them an order was placed or received, and do not send payment details. Ask for the missing details, then read them back and wait for a clear yes before calling place_order again.`,
+              error: gateMissing.length
+                ? `NOT recorded. Missing required details: ${gateMissing.join(', ')}. The customer has not given these yet. Do NOT tell them an order was placed or received, and do not send payment details. Ask for the missing details, then read them back and wait for a clear yes before calling place_order again.`
+                : `NOT recorded: ${gateHistory}. Do NOT tell the customer an order was placed or received, and do not send payment details. Read their details back to them now in one message (the name and the birth date, time and place for a full report; the name and the question for Tarot), ask them to confirm, and call place_order only after their clear yes.`,
             } } });
           } else try {
             const details = gateDetails;
@@ -1180,8 +1280,9 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     }
 
     const markerMissing = details ? missingRequiredOrderFields(client, details) : [];
-    if (markerMissing.length) {
-      log.warn(`[ORDER_GATE] ORDER_COMPLETE refused, missing: ${markerMissing.join(', ')}`);
+    const markerHistory = (details && !markerMissing.length) ? await orderHistoryProblem(phoneNumber, client, details) : null;
+    if (markerMissing.length || markerHistory) {
+      log.warn(`[ORDER_GATE] ORDER_COMPLETE refused, ${markerMissing.length ? 'missing: ' + markerMissing.join(', ') : markerHistory}`);
       details = null;
     }
     if (details) {
@@ -1398,4 +1499,6 @@ module.exports = {
   ORDER_MARKER_REGEX,
   ORDER_UPDATE_REGEX,
   UPDATE_SUMMARY_REGEX,
+  missingRequiredOrderFields,
+  orderHistoryProblem,
 };

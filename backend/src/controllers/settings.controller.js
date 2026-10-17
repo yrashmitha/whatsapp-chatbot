@@ -31,6 +31,7 @@ async function getSettings(req, res) {
               order_fields, contact_number, knowledge_base_enabled, product_catalog_enabled, plugin_enabled,
               owner_phone, ai_enabled, away_message, first_welcome_message,
               custom_prompt_b, strategy_test_enabled, strategy_b_percent,
+              first_message_block_a, first_message_block_b,
               (wa_token IS NOT NULL AND wa_token <> '') AS wa_token_set,
               (gemini_api_key IS NOT NULL AND gemini_api_key <> '') AS gemini_api_key_set,
               (freeastro_api_key IS NOT NULL AND freeastro_api_key <> '') AS freeastro_api_key_set,
@@ -241,4 +242,37 @@ async function setAiMode(req, res) {
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 
-module.exports = { getSettings, updatePrompt, changePassword, updateTokens, setAiMode };
+/**
+ * PUT /api/settings/first-message-blocks: which quick reply is sent, instead of a
+ * model-written answer, as the first reply to a chat with no ad welcome. One per
+ * strategy; an empty value turns it off for that strategy.
+ */
+async function setFirstMessageBlocks(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    const { rows } = await db.pgQuery('SELECT DISTINCT LOWER(title) AS t FROM quick_replies WHERE client_id=$1', [clientId]);
+    const have = new Set(rows.map(r => r.t));
+    const clean = (v) => {
+      const t = String(v || '').trim().replace(/^\/+/, '');
+      return t;
+    };
+    const vals = {};
+    for (const k of ['first_message_block_a', 'first_message_block_b']) {
+      if (req.body[k] === undefined) continue;
+      const t = clean(req.body[k]);
+      if (t && !/^[a-z0-9_-]+$/i.test(t)) return res.status(400).json({ error: `"${t}" is not a usable quick reply title` });
+      if (t && !have.has(t.toLowerCase())) return res.status(400).json({ error: `No quick reply named "${t}"` });
+      vals[k] = t || null;
+    }
+    const keys = Object.keys(vals);
+    if (!keys.length) return res.json({ ok: true });
+    await db.pgQuery(
+      `UPDATE client_configs SET ${keys.map((k, i) => `${k}=$${i + 1}`).join(', ')}, updated_at=NOW() WHERE client_id=$${keys.length + 1}`,
+      [...keys.map(k => vals[k]), clientId]);
+    clientRouter.invalidateCache(clientId);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+module.exports = { setFirstMessageBlocks, getSettings, updatePrompt, changePassword, updateTokens, setAiMode };

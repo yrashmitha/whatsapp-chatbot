@@ -667,6 +667,9 @@ async function init() {
       ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS strategy_test_enabled  BOOLEAN NOT NULL DEFAULT FALSE;
       -- Share of NEW customers given strategy B while the test is on (0 to 100). 50 is an even split.
       ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS strategy_b_percent     INTEGER NOT NULL DEFAULT 50;
+      -- Title of the quick reply sent as the whole reply to the first message of a chat with no ad welcome, per strategy. Empty means the model answers.
+      ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS first_message_block_a  TEXT;
+      ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS first_message_block_b  TEXT;
       -- When the split was last switched on: a customer whose conversation began before this is not part of the test.
       ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS strategy_test_started_at TIMESTAMPTZ;
       -- What the bot did to produce a reply: strategy, prompt version, searches, chunks, blocks.
@@ -1101,6 +1104,7 @@ async function init() {
       'custom_prompt_b TEXT', 'test_system_prompt_b TEXT',
       'strategy_test_enabled INTEGER NOT NULL DEFAULT 0',
       'strategy_b_percent INTEGER NOT NULL DEFAULT 50',
+      'first_message_block_a TEXT', 'first_message_block_b TEXT',
       'strategy_test_started_at TEXT',
       'interactive_menus TEXT',
       'thinking_budget INTEGER',

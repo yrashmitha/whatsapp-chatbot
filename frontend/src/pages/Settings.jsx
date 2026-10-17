@@ -4,6 +4,7 @@ import { useAuthStore, isSuperAdmin } from '../stores/auth';
 import Layout from '../components/Layout';
 import MenusPanel from '../components/MenusPanel';
 import AdRulesPanel from '../components/AdRulesPanel';
+import NoAdWelcomePanel from '../components/NoAdWelcomePanel';
 import Button from '../components/ui/Button';
 import { useToast } from '../components/ui/Toast';
 import api, { authApi } from '../lib/api';
@@ -570,7 +571,8 @@ export default function Settings() {
           {activeTab === 'Menus' && <MenusPanel clientId={clientId} />}
 
           {/* ── Ads tab ── */}
-          {activeTab === 'Ads' && (
+          {activeTab === 'Ads' && (<>
+            <NoAdWelcomePanel clientId={clientId} />
             <div className="bg-white border border-slate-200 rounded-xl p-6">
               <h2 className="text-sm font-semibold text-slate-700 mb-1">Ad-based bot rules</h2>
               <p className="text-xs text-slate-400 mb-4">
@@ -579,7 +581,7 @@ export default function Settings() {
               </p>
               <AdRulesPanel clientId={clientId} />
             </div>
-          )}
+          </>)}
 
           {/* ── API Keys tab ── */}
           {activeTab === 'API Keys' && (

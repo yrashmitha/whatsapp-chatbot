@@ -24,6 +24,7 @@ const CLIENT_SELECT = `
     cc.plugin_enabled, cc.ai_enabled, cc.away_message, cc.first_welcome_message, cc.gemini_api_key, cc.use_system_gemini_key,
     cc.interactive_menus,
     cc.thinking_budget,
+    cc.first_message_block_a, cc.first_message_block_b,
     cc.custom_prompt_b, cc.strategy_test_enabled, cc.strategy_b_percent, cc.strategy_test_started_at,
     cc.owner_phone,
     cc.package_id, cc.bonus_messages, cc.overage_limit, cc.per_message_cost AS client_per_message_cost,

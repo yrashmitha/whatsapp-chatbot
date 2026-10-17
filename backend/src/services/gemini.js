@@ -1247,11 +1247,22 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     }
   }
 
+  // The history shows an image we sent as "[Image: review1.jpg]", and the model
+  // sometimes copies that line instead of writing the marker, so the customer
+  // got the words "[Image: review1.jpg]" and no picture. Read such a line as the
+  // marker it was meant to be; a stray "[PDF: ...]" copy is just removed.
+  botReply = botReply
+    .replace(/\[Image:\s*([\w.\- ]+\.(?:jpe?g|png|webp))\s*\]/gi, '[[SEND_IMAGE:$1]]')
+    .replace(/^[ \t]*\[PDF:[^\]]*\][ \t]*\n?/gim, '');
+
   // Extract [[SEND_IMAGE:filename]] markers
   const IMAGE_RE = /\[\[SEND_IMAGE:([^\]]+)\]\]/g;
   const imagesToSend = [];
   let m;
-  while ((m = IMAGE_RE.exec(botReply)) !== null) imagesToSend.push(m[1].trim());
+  while ((m = IMAGE_RE.exec(botReply)) !== null) {
+    const f = m[1].trim();
+    if (!imagesToSend.includes(f)) imagesToSend.push(f);
+  }
   if (imagesToSend.length > 0) {
     botReply = botReply.replace(/\[\[SEND_IMAGE:[^\]]+\]\]/g, '').replace(/\n{3,}/g, '\n\n').trim();
     log.info(`[MSG] Image markers found: ${imagesToSend.join(', ')}`);

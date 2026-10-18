@@ -457,6 +457,38 @@ function receiveWebhook(req, res) {
           }
         }
 
+        // Global switch off: the welcome still goes out, and only the welcome.
+        // An ad's own welcome was already sent above (applyAdRule runs first).
+        // A chat with no ad gets the no-ad welcome block (or the plain first
+        // welcome) on its first message, the same text the bot would have sent.
+        if (client.ai_enabled === false && !adWelcome) {
+          try {
+            const { rows: prior } = await db.pgQuery(
+              `SELECT 1 FROM messages WHERE phone_number=$1 AND client_id=$2 AND sender_type <> 'user' LIMIT 1`,
+              [from, client.id]);
+            const orders = prior.length ? [] : await db.getOrdersByPhone(from, client.id);
+            if (!prior.length && !orders.length) {
+              const { strategy } = await db.resolveStrategy(from, client.id, client);
+              const blockName = String(client[`first_message_block_${strategy.toLowerCase()}`] || '').trim().replace(/[^a-z0-9_-]/gi, '');
+              let welcomeText = '';
+              if (blockName) {
+                const resolved = await require('../services/quickReplyBlocks').resolveBlocks(client.id, `[[QR:${blockName}]]`, strategy);
+                if (resolved.used.length) welcomeText = resolved.text;
+              }
+              if (!welcomeText) welcomeText = (client.first_welcome_message || '').trim();
+              if (welcomeText) {
+                const wamids = await sendBotReply(from, welcomeText, client);
+                await db.insertMessage(from, welcomeText, 'bot', null, client.id, null, null, wamids?.[0] || null);
+                markMessageRead(msg.id, client).catch(() => {});
+                log.info('[WEBHOOK] bot off - sent the welcome only');
+                return;
+              }
+            }
+          } catch (e) {
+            log.warn('[WEBHOOK] bot off - could not send the welcome:', e.message);
+          }
+        }
+
         // An away message is opt-in and only for the global switch: a chat an
         // operator has taken over is being handled by a person, and telling
         // that customer nobody is available would be false.

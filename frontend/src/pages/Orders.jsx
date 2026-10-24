@@ -22,6 +22,7 @@ import OrderRemarks from '../components/orders/OrderRemarks';
 import OrderDetailDrawer from '../components/orders/OrderDetailDrawer';
 import { orderFacts, statusLabel } from '../components/orders/orderView';
 import MetaRowMarker from '../components/orders/MetaRowMarker';
+import OrderCardMobile from '../components/orders/OrderCardMobile';
 import SendTemplateModal from '../components/orders/SendTemplateModal';
 import WaMessageModal from '../components/orders/WaMessageModal';
 import TarotGenerateModal from '../components/orders/TarotGenerateModal';
@@ -34,6 +35,8 @@ const QUICK_STATUSES = ['payment_received', 'delivered'];
 /** The rest are rarely wanted, so they sit one tap further in, under More. Legacy
  *  statuses stay reachable through the chip the filter adds. */
 const MORE_STATUSES = ['pending', 'started', 'payment_identified', 'done', 'cancelled'];
+/** The web header keeps every status as a chip, as it always did. */
+const WEB_STATUS_CHIPS = ['pending', 'started', 'payment_identified', 'payment_received', 'delivered', 'done', 'cancelled'];
 
 const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d; };
@@ -85,6 +88,7 @@ export default function Orders() {
   const [openOrderId, setOpenOrderId] = useState(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [customOpen, setCustomOpen] = useState(false);
+  const [incomeOpen, setIncomeOpen] = useState(false);
   // Ticked orders, for sending a template to several people at once.
   const [selected, setSelected] = useState([]);
   const [templateOpen, setTemplateOpen] = useState(false);
@@ -190,6 +194,47 @@ export default function Orders() {
     wasGenerating.current = now;
   }, [orders]);
   const generatingNow = orders.filter(o => orderFacts(o).generating).length;
+
+  // The three report buttons on a phone card: Horoscope, Match and Tarot, each in
+  // the state it is in. Owner-only, like every report control.
+  const reportButtons = (o, f) => {
+    const hd = f.hd || {};
+    const td = f.td || {};
+    const items = [];
+    if (showHoroscope) {
+      items.push({
+        key: 'horoscope', label: 'Horoscope',
+        busy: hd.generating === true || hd.quantum_generating === true,
+        pct: hd.progress?.percent ?? null,
+        done: f.horoscopeDone, error: f.horoscopeError,
+        locked: !isEnabled('horoscope_reading'),
+        onClick: f.horoscopeDone && !f.horoscopeError
+          ? () => setEditorOrder(o)
+          : guard('horoscope_reading', () => setHoroscopeOrder(o)),
+      });
+      items.push({
+        key: 'match', label: 'Match',
+        busy: hd.match_generating === true,
+        pct: hd.match_progress?.percent ?? null,
+        done: f.matchDone, error: !f.matchDone ? f.matchError : null,
+        locked: !isEnabled('match_making'),
+        onClick: guard('match_making', f.matchDone ? () => setMatchOrder(o) : () => setMatchModalOrder(o)),
+      });
+    }
+    if (showTarot) {
+      items.push({
+        key: 'tarot', label: 'Tarot',
+        busy: td.generating === true,
+        pct: null,
+        done: f.tarotDone, error: f.tarotError,
+        locked: !isEnabled('tarot_reading'),
+        onClick: f.tarotDone && !f.tarotError
+          ? () => setTarotEditorOrder(o)
+          : guard('tarot_reading', () => setTarotOrder(o)),
+      });
+    }
+    return items;
+  };
 
   // The one report button a row offers. Opening an order to find it cost three
   // extra steps per horoscope; this puts the next move back on the row.
@@ -323,10 +368,12 @@ export default function Orders() {
     ? (DATE_PRESETS.find(p => { const [a, b] = p.range(); return a === dateFrom && b === dateTo; })?.key || null)
     : null;
   const customDates = !!(dateFrom || dateTo) && !activePreset;
-  // What More is hiding that is switched on, so a hidden filter never goes unnoticed.
-  const moreCount = (operator ? 1 : 0)
-    + (statusFilter && !QUICK_STATUSES.includes(statusFilter) ? 1 : 0)
-    + (dir !== 'desc' ? 1 : 0);
+  // What the phone's More panel is hiding that is switched on, so a hidden filter never goes unnoticed.
+  const moreCount = (operator ? 1 : 0) + (dir !== 'desc' ? 1 : 0);
+  // The phone's date select: a preset, a custom range, or nothing.
+  const dateSelect = activePreset || ((customDates || customOpen) ? 'custom' : '');
+  const statusOptions = [...QUICK_STATUSES, ...MORE_STATUSES];
+  if (statusFilter && !statusOptions.includes(statusFilter)) statusOptions.push(statusFilter);
   const chip = (active) => ({
     background: active ? 'var(--accent)' : 'var(--bg-card)',
     color: active ? '#fff' : 'var(--text-2)',
@@ -341,115 +388,53 @@ export default function Orders() {
     <Layout>
       {lockModal}
       <div className="flex flex-col h-full">
-        {/* Header: find an order, make an order. Income and every filter scroll with the
-            list, so once you start scrolling the list has the whole screen. */}
-        <div className="px-4 sm:px-6 pt-3 pb-3 shrink-0" style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)' }}>
-          <div className="flex items-center gap-2">
-            <h1 className="text-lg font-semibold m-0 mr-1" style={{ color: 'var(--text-1)' }}>Orders</h1>
+        {/* Web: the full header and filters, as they were. */}
+        <div className="hidden md:block shrink-0">
+        {/* Header: what matters this month, find an order, make an order. */}
+        <div className="px-4 sm:px-6 pt-4 pb-3 shrink-0" style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)' }}>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-lg font-semibold mr-1 m-0" style={{ color: 'var(--text-1)' }}>Orders</h1>
+            {isEnabled('income_summary') ? (
+              <IncomeBadges income={incomeData} operator={operator} onPick={(v) => { setOperator(v); setPage(1); }} />
+            ) : (
+              <button
+                onClick={() => showLocked('income_summary')}
+                title="Income Summary: see what this does"
+                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-slate-50 text-slate-400 border border-slate-200 border-dashed cursor-pointer hover:bg-slate-100"
+              >
+                This month: LKR ••••• <LockBadge />
+              </button>
+            )}
+            <div className="ml-auto flex gap-2">
+              <button onClick={handleExport} className={`${fieldCls} cursor-pointer`} style={fieldStyle}>Export</button>
+              <button onClick={() => setShowCreate(true)}
+                className="text-sm font-medium text-white rounded-lg px-4 py-2 cursor-pointer border-0"
+                style={{ background: 'var(--accent)' }}>
+                + New order
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 mt-3 flex-wrap">
             <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
               placeholder="Search name, phone or order number"
               aria-label="Search orders"
-              className={`${fieldCls} flex-1 min-w-0`} style={fieldStyle} />
-            <button type="button" onClick={() => setFiltersOpen(v => !v)} aria-expanded={filtersOpen}
-              className={`${fieldCls} cursor-pointer shrink-0`}
-              style={moreCount ? { ...fieldStyle, borderColor: 'var(--accent)', color: 'var(--accent)' } : fieldStyle}>
-              More{moreCount ? ` (${moreCount})` : ''}
+              className={`${fieldCls} flex-1 min-w-[200px] max-w-md`} style={fieldStyle} />
+            <button type="button" onClick={() => setFiltersOpen(v => !v)}
+              className={`${fieldCls} cursor-pointer`}
+              style={filtersActive ? { ...fieldStyle, borderColor: 'var(--accent)', color: 'var(--accent)' } : fieldStyle}>
+              Filters{filtersActive ? ' (on)' : ''}
             </button>
-            <button type="button" onClick={() => setShowCreate(true)} aria-label="New order"
-              className="text-sm font-medium text-white rounded-lg px-3 sm:px-4 py-2 cursor-pointer border-0 shrink-0"
-              style={{ background: 'var(--accent)' }}>
-              <span className="sm:hidden">+</span>
-              <span className="hidden sm:inline">+ New order</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-auto px-4 sm:px-6 py-4">
-          {isEnabled('income_summary') ? (
-            <div className="mb-3 empty:hidden">
-              <IncomeBadges income={incomeData} operator={operator} onPick={(v) => { setOperator(v); setPage(1); }} />
-            </div>
-          ) : (
-            <button
-              onClick={() => showLocked('income_summary')}
-              title="Income Summary: see what this does"
-              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 mb-3 rounded-lg bg-slate-50 text-slate-400 border border-slate-200 border-dashed cursor-pointer hover:bg-slate-100"
-            >
-              This month: LKR ••••• <LockBadge />
-            </button>
-          )}
-
-          {/* The two filters used all day, one tap each. Tap a chosen chip again to clear it.
-              No date is chosen until someone chooses one. */}
-          <div className="flex gap-1.5 flex-wrap mb-2" role="group" aria-label="Filter by date">
-            {DATE_PRESETS.map(p => (
-              <button key={p.key} type="button" aria-pressed={activePreset === p.key}
-                onClick={() => {
-                  if (activePreset === p.key) { setDateFrom(''); setDateTo(''); }
-                  else { const [a, b] = p.range(); setDateFrom(a); setDateTo(b); }
-                  setCustomOpen(false); setPage(1);
-                }}
-                className="text-xs font-medium rounded-full px-2.5 py-1.5 cursor-pointer"
-                style={chip(activePreset === p.key)}>
-                {p.label}
-              </button>
-            ))}
-            <button type="button" aria-pressed={customDates || customOpen}
-              onClick={() => {
-                if (customDates || customOpen) { setDateFrom(''); setDateTo(''); setCustomOpen(false); setPage(1); }
-                else setCustomOpen(true);
-              }}
-              className="text-xs font-medium rounded-full px-2.5 py-1.5 cursor-pointer"
-              style={chip(customDates || customOpen)}>
-              Custom
+            <button type="button"
+              onClick={() => { setDir(d => (d === 'desc' ? 'asc' : 'desc')); setPage(1); }}
+              className={`${fieldCls} cursor-pointer`} style={fieldStyle}
+              title="Sort by date and time">
+              {dir === 'desc' ? 'Newest first' : 'Oldest first'}
             </button>
           </div>
-          {(customDates || customOpen) && (
-            <div className="flex items-end gap-3 mb-2 flex-wrap">
-              <label className="flex flex-col gap-1 text-xs" style={{ color: 'var(--text-3)' }}>
-                From
-                <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }}
-                  className={fieldCls} style={fieldStyle} />
-              </label>
-              <label className="flex flex-col gap-1 text-xs" style={{ color: 'var(--text-3)' }}>
-                To
-                <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }}
-                  className={fieldCls} style={fieldStyle} />
-              </label>
-            </div>
-          )}
 
-          <div className="flex gap-1.5 flex-wrap mb-3" role="group" aria-label="Filter by status">
-            {[['', 'All'], ...QUICK_STATUSES.map(s => [s, statusLabel(s)])].map(([val, label]) => (
-              <button key={val || 'all'} type="button" aria-pressed={statusFilter === val}
-                onClick={() => { setStatusFilter(val); setPage(1); }}
-                className="text-xs font-medium rounded-full px-3 py-1.5 cursor-pointer"
-                style={chip(statusFilter === val)}>
-                {label}
-              </button>
-            ))}
-            {statusFilter && !QUICK_STATUSES.includes(statusFilter) && (
-              <button type="button" aria-pressed className="text-xs font-medium rounded-full px-3 py-1.5 cursor-pointer"
-                style={chip(true)} onClick={() => { setStatusFilter(''); setPage(1); }}>{statusLabel(statusFilter)} ✕</button>
-            )}
-          </div>
-
-          {/* The rest: statuses used now and then, whose sales, order of the list, export. */}
           {filtersOpen && (
-            <div className="flex flex-col gap-3 mb-3 p-3 rounded-xl" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-              <div>
-                <div className="text-xs mb-1.5" style={{ color: 'var(--text-3)' }}>Other statuses</div>
-                <div className="flex gap-1.5 flex-wrap" role="group" aria-label="Other statuses">
-                  {MORE_STATUSES.map(s => (
-                    <button key={s} type="button" aria-pressed={statusFilter === s}
-                      onClick={() => { setStatusFilter(statusFilter === s ? '' : s); setPage(1); }}
-                      className="text-xs font-medium rounded-full px-3 py-1.5 cursor-pointer"
-                      style={chip(statusFilter === s)}>
-                      {statusLabel(s)}
-                    </button>
-                  ))}
-                </div>
-              </div>
+            <div className="flex items-end gap-3 mt-3 flex-wrap">
               {canPickOperator && (
                 <label className="flex flex-col gap-1 text-xs" style={{ color: 'var(--text-3)' }}>
                   Whose sales
@@ -465,24 +450,167 @@ export default function Orders() {
                   </select>
                 </label>
               )}
-              <div className="flex items-center gap-2 flex-wrap">
-                <button type="button"
-                  onClick={() => { setDir(d => (d === 'desc' ? 'asc' : 'desc')); setPage(1); }}
-                  className={`${fieldCls} cursor-pointer`} style={fieldStyle}
-                  title="Sort by date and time">
-                  {dir === 'desc' ? 'Newest first' : 'Oldest first'}
+              <label className="flex flex-col gap-1 text-xs" style={{ color: 'var(--text-3)' }}>
+                From
+                <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }}
+                  className={fieldCls} style={fieldStyle} />
+              </label>
+              <label className="flex flex-col gap-1 text-xs" style={{ color: 'var(--text-3)' }}>
+                To
+                <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }}
+                  className={fieldCls} style={fieldStyle} />
+              </label>
+              {filtersActive && (
+                <button type="button" className="text-sm cursor-pointer bg-transparent border-0 pb-2"
+                  style={{ color: 'var(--accent)' }}
+                  onClick={() => { setOperator(''); setDateFrom(''); setDateTo(''); setPage(1); }}>
+                  Clear filters
                 </button>
-                <button type="button" onClick={handleExport} className={`${fieldCls} cursor-pointer`} style={fieldStyle}>Export</button>
-                {(moreCount > 0 || filtersActive || statusFilter) && (
-                  <button type="button" className="text-sm cursor-pointer bg-transparent border-0 ml-auto"
-                    style={{ color: 'var(--accent)' }}
-                    onClick={() => { setOperator(''); setDateFrom(''); setDateTo(''); setStatusFilter(''); setCustomOpen(false); setDir('desc'); setPage(1); }}>
-                    Clear all filters
-                  </button>
-                )}
-              </div>
+              )}
             </div>
           )}
+
+          {/* One tap to a queue. Wraps rather than scrolls sideways. */}
+          <div className="flex gap-1.5 mt-3 flex-wrap" role="group" aria-label="Filter by status">
+            {[['', 'All'], ...WEB_STATUS_CHIPS.map(s => [s, statusLabel(s)])].map(([val, label]) => (
+              <button key={val || 'all'} type="button" aria-pressed={statusFilter === val}
+                onClick={() => { setStatusFilter(val); setPage(1); }}
+                className="text-xs font-medium rounded-full px-3 py-1.5 cursor-pointer"
+                style={chip(statusFilter === val)}>
+                {label}
+              </button>
+            ))}
+            {statusFilter && !WEB_STATUS_CHIPS.includes(statusFilter) && (
+              <button type="button" aria-pressed className="text-xs font-medium rounded-full px-3 py-1.5 cursor-pointer"
+                style={chip(true)} onClick={() => setStatusFilter('')}>{statusLabel(statusFilter)} ✕</button>
+            )}
+          </div>
+        </div>
+        </div>
+
+        {/* Phone: one slim line. Income and the filters scroll with the list, so once you
+            start scrolling the list has the whole screen. */}
+        <div className="md:hidden px-4 pt-3 pb-3 shrink-0" style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)' }}>
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg font-semibold m-0 mr-1" style={{ color: 'var(--text-1)' }}>Orders</h1>
+            <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
+              placeholder="Search name, phone or order number"
+              aria-label="Search orders"
+              className={`${fieldCls} flex-1 min-w-0 text-base`} style={fieldStyle} />
+            <button type="button" onClick={() => setShowCreate(true)} aria-label="New order"
+              className="text-lg font-medium text-white rounded-lg w-10 h-10 cursor-pointer border-0 shrink-0 leading-none"
+              style={{ background: 'var(--accent)' }}>
+              +
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-auto px-4 sm:px-6 py-4">
+          {/* Phone filters: two select boxes and More, one row. Income is one line that opens. */}
+          <div className="md:hidden">
+            {isEnabled('income_summary') ? (
+              <div className="mb-2">
+                <button type="button" onClick={() => setIncomeOpen(v => !v)} aria-expanded={incomeOpen}
+                  className="w-full flex items-center justify-between text-xs font-medium px-3 py-2 rounded-lg cursor-pointer"
+                  style={{ background: 'rgba(16,185,129,0.10)', color: '#047857', border: '1px solid rgba(16,185,129,0.25)' }}>
+                  <span>This month: LKR {Math.round(Number(incomeData?.total) || 0).toLocaleString()}</span>
+                  <span>{incomeOpen ? '▲' : '▼'}</span>
+                </button>
+                {incomeOpen && (
+                  <div className="flex gap-1.5 flex-wrap mt-1.5 empty:hidden">
+                    <IncomeBadges income={incomeData} operator={operator} onPick={(v) => { setOperator(v); setPage(1); }} />
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button
+                onClick={() => showLocked('income_summary')}
+                title="Income Summary: see what this does"
+                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 mb-2 rounded-lg bg-slate-50 text-slate-400 border border-slate-200 border-dashed cursor-pointer hover:bg-slate-100"
+              >
+                This month: LKR ••••• <LockBadge />
+              </button>
+            )}
+
+            <div className="grid grid-cols-[1fr_1fr_auto] gap-2 mb-2">
+              <select aria-label="Date" value={dateSelect}
+                onChange={e => {
+                  const v = e.target.value;
+                  if (v === '') { setDateFrom(''); setDateTo(''); setCustomOpen(false); }
+                  else if (v === 'custom') { setCustomOpen(true); }
+                  else { const p = DATE_PRESETS.find(x => x.key === v); const [a, b] = p.range(); setDateFrom(a); setDateTo(b); setCustomOpen(false); }
+                  setPage(1);
+                }}
+                className={`${fieldCls} w-full min-w-0 text-base`}
+                style={dateSelect ? { ...fieldStyle, borderColor: 'var(--accent)', color: 'var(--accent)' } : fieldStyle}>
+                <option value="">All dates</option>
+                {DATE_PRESETS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+                <option value="custom">Custom range</option>
+              </select>
+              <select aria-label="Status" value={statusFilter}
+                onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
+                className={`${fieldCls} w-full min-w-0 text-base`}
+                style={statusFilter ? { ...fieldStyle, borderColor: 'var(--accent)', color: 'var(--accent)' } : fieldStyle}>
+                <option value="">All statuses</option>
+                {statusOptions.map(s => <option key={s} value={s}>{statusLabel(s)}</option>)}
+              </select>
+              <button type="button" onClick={() => setFiltersOpen(v => !v)} aria-expanded={filtersOpen}
+                className={`${fieldCls} cursor-pointer`}
+                style={moreCount ? { ...fieldStyle, borderColor: 'var(--accent)', color: 'var(--accent)' } : fieldStyle}>
+                More{moreCount ? ` (${moreCount})` : ''}
+              </button>
+            </div>
+
+            {dateSelect === 'custom' && (
+              <div className="grid grid-cols-2 gap-2 mb-2">
+                <label className="flex flex-col gap-1 text-xs" style={{ color: 'var(--text-3)' }}>
+                  From
+                  <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }}
+                    className={`${fieldCls} text-base min-w-0`} style={fieldStyle} />
+                </label>
+                <label className="flex flex-col gap-1 text-xs" style={{ color: 'var(--text-3)' }}>
+                  To
+                  <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }}
+                    className={`${fieldCls} text-base min-w-0`} style={fieldStyle} />
+                </label>
+              </div>
+            )}
+
+            {filtersOpen && (
+              <div className="flex flex-col gap-3 mb-2 p-3 rounded-xl" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+                {canPickOperator && (
+                  <label className="flex flex-col gap-1 text-xs" style={{ color: 'var(--text-3)' }}>
+                    Whose sales
+                    <select value={operator} onChange={e => { setOperator(e.target.value); setPage(1); }}
+                      className={`${fieldCls} text-base`} style={fieldStyle}>
+                      <option value="">Everyone</option>
+                      <option value="bot">Bot only</option>
+                      {operators.map(o => (
+                        <option key={o.id} value={String(o.id)}>
+                          {o.display_name || o.username}{o.active ? '' : ' (disabled)'}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button type="button"
+                    onClick={() => { setDir(d => (d === 'desc' ? 'asc' : 'desc')); setPage(1); }}
+                    className={`${fieldCls} cursor-pointer`} style={fieldStyle}>
+                    {dir === 'desc' ? 'Newest first' : 'Oldest first'}
+                  </button>
+                  <button type="button" onClick={handleExport} className={`${fieldCls} cursor-pointer`} style={fieldStyle}>Export</button>
+                  {(moreCount > 0 || filtersActive || statusFilter) && (
+                    <button type="button" className="text-sm cursor-pointer bg-transparent border-0 ml-auto"
+                      style={{ color: 'var(--accent)' }}
+                      onClick={() => { setOperator(''); setDateFrom(''); setDateTo(''); setStatusFilter(''); setCustomOpen(false); setDir('desc'); setPage(1); }}>
+                      Clear all
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
 
           {selected.length > 0 && (
             <div className="flex items-center gap-3 mb-3 px-3 py-2 rounded-xl sticky top-0 z-10"
@@ -541,13 +669,36 @@ export default function Orders() {
                 const needsPayment = !!f.paymentIdentified && o.status !== 'payment_received';
                 const isOpen = openOrderId === o.id;
                 const paidLocked = (s) => !canMarkPaid && PAID_STATUSES.includes(s) && !o.credited_at;
+                const statusControl = (
+                  <select aria-label={`Status of order ${o.order_id}`} value={o.status}
+                    onChange={e => updateStatus.mutate({ orderId: o.order_id, status: e.target.value })}
+                    className={`text-xs font-medium rounded-lg px-2 py-1.5 border cursor-pointer outline-none max-w-[10.5rem] ${STATUS_COLORS[o.status] || 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                    {!STATUS_OPTIONS.includes(o.status) && <option value={o.status}>{statusLabel(o.status)}</option>}
+                    {STATUS_OPTIONS.map(s => (
+                      <option key={s} value={s} disabled={paidLocked(s)}>
+                        {statusLabel(s)}{paidLocked(s) ? ' (owner only)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                );
                 return (
                   <li key={o.id}>
+                    {/* Phone: its own card. Web: the row below, with its columns. */}
+                    <OrderCardMobile
+                      o={o} f={f} needsPayment={needsPayment} isOpen={isOpen}
+                      checked={selected.includes(o.order_id)}
+                      onCheck={on => setSelected(prev => on ? [...prev, o.order_id] : prev.filter(x => x !== o.order_id))}
+                      onOpen={() => setOpenOrderId(o.id)}
+                      onChat={() => setDrawerCustomer({ phone: f.phone, name: f.name })}
+                      statusControl={statusControl}
+                      metaMarker={<MetaRowMarker orderId={o.order_id} clientId={clientId} state={metaStatuses[o.order_id]} />}
+                      reports={reportButtons(o, f)}
+                    />
                     <div
                       role="button" tabIndex={0}
                       onClick={() => setOpenOrderId(o.id)}
                       onKeyDown={e => { if (e.key === 'Enter' && e.target === e.currentTarget) setOpenOrderId(o.id); }}
-                      className="flex items-start md:items-center gap-3 rounded-xl px-3 py-3 cursor-pointer flex-wrap md:flex-nowrap"
+                      className="hidden md:flex items-center gap-3 rounded-xl px-3 py-3 cursor-pointer"
                       style={{
                         background: isOpen ? 'rgba(99,102,241,0.08)' : 'var(--bg-card)',
                         border: `1px solid ${needsPayment ? '#f59e0b' : f.generating ? 'var(--accent)' : 'var(--border)'}`,
@@ -561,11 +712,11 @@ export default function Orders() {
                         onClick={e => e.stopPropagation()}
                         className="cursor-pointer mt-1 md:mt-0" />
 
-                      <div className="md:w-[26%] min-w-0 flex-1 md:flex-none">
+                      <div className="md:w-[24%] md:min-w-[190px] min-w-0 md:flex-none">
                         <button type="button" title="Open chat"
                           onClick={e => { e.stopPropagation(); setDrawerCustomer({ phone: f.phone, name: f.name }); }}
-                          className="font-medium truncate block max-w-full text-left bg-transparent border-0 p-0 cursor-pointer"
-                          style={{ color: 'var(--text-1)' }}>
+                          className="font-medium block max-w-full text-left bg-transparent border-0 p-0 cursor-pointer break-words"
+                          style={{ color: 'var(--text-1)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                           {f.name}
                         </button>
                         <div className="text-xs truncate" style={{ color: 'var(--text-3)' }}>

@@ -23,7 +23,7 @@ import OrderDetailDrawer from '../components/orders/OrderDetailDrawer';
 import { orderFacts, statusLabel } from '../components/orders/orderView';
 import MetaRowMarker from '../components/orders/MetaRowMarker';
 import OrderCardMobile from '../components/orders/OrderCardMobile';
-import OrderRowWeb, { WEB_COLS } from '../components/orders/OrderRowWeb';
+import OrdersWeb from './OrdersWeb';
 import SendTemplateModal from '../components/orders/SendTemplateModal';
 import WaMessageModal from '../components/orders/WaMessageModal';
 import TarotGenerateModal from '../components/orders/TarotGenerateModal';
@@ -36,8 +36,6 @@ const QUICK_STATUSES = ['payment_received', 'delivered'];
 /** The rest are rarely wanted, so they sit one tap further in, under More. Legacy
  *  statuses stay reachable through the chip the filter adds. */
 const MORE_STATUSES = ['pending', 'started', 'payment_identified', 'done', 'cancelled'];
-/** The web header keeps every status as a chip, as it always did. */
-const WEB_STATUS_CHIPS = ['pending', 'started', 'payment_identified', 'payment_received', 'delivered', 'done', 'cancelled'];
 
 const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d; };
@@ -69,7 +67,7 @@ function genCostTooltip(runs) {
   return `${list.length} generation run(s) — total $${total.toFixed(6)}\n\n${lines.join('\n')}`;
 }
 
-export default function Orders() {
+function OrdersPhone() {
   const { user, selectedClientId } = useAuthStore();
   const superAdmin = isSuperAdmin(user);
   const { can, isOwner } = usePermissions();
@@ -362,107 +360,6 @@ export default function Orders() {
     <Layout>
       {lockModal}
       <div className="flex flex-col h-full">
-        {/* Web: every filter on screen, nothing behind a toggle. Title and income, then
-            search with the date and who, then the status chips. */}
-        <div className="hidden md:block shrink-0 px-6 pt-4 pb-3" style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)' }}>
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-lg font-semibold mr-1 m-0" style={{ color: 'var(--text-1)' }}>Orders</h1>
-            {isEnabled('income_summary') ? (
-              <IncomeBadges income={incomeData} operator={operator} onPick={(v) => { setOperator(v); setPage(1); }} />
-            ) : (
-              <button
-                onClick={() => showLocked('income_summary')}
-                title="Income Summary: see what this does"
-                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-slate-50 text-slate-400 border border-slate-200 border-dashed cursor-pointer hover:bg-slate-100"
-              >
-                This month: LKR ••••• <LockBadge />
-              </button>
-            )}
-            <div className="ml-auto flex gap-2">
-              <button onClick={handleExport} className={`${fieldCls} cursor-pointer`} style={fieldStyle}>Export</button>
-              <button onClick={() => setShowCreate(true)}
-                className="text-sm font-medium text-white rounded-lg px-4 py-2 cursor-pointer border-0"
-                style={{ background: 'var(--accent)' }}>
-                + New order
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 mt-3 flex-wrap">
-            <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
-              placeholder="Search name, phone or order number"
-              aria-label="Search orders"
-              className={`${fieldCls} w-72`} style={fieldStyle} />
-
-            <div className="flex items-center gap-1.5" role="group" aria-label="Filter by date">
-              {DATE_PRESETS.map(p => (
-                <button key={p.key} type="button" aria-pressed={activePreset === p.key}
-                  onClick={() => {
-                    if (activePreset === p.key) { setDateFrom(''); setDateTo(''); }
-                    else { const [a, b] = p.range(); setDateFrom(a); setDateTo(b); }
-                    setCustomOpen(false); setPage(1);
-                  }}
-                  className="text-xs font-medium rounded-full px-3 py-1.5 cursor-pointer"
-                  style={chip(activePreset === p.key)}>
-                  {p.label}
-                </button>
-              ))}
-              <input type="date" aria-label="From date" value={dateFrom}
-                onChange={e => { setDateFrom(e.target.value); setPage(1); }}
-                className={`${fieldCls} py-1.5`} style={fieldStyle} />
-              <span className="text-xs" style={{ color: 'var(--text-3)' }}>to</span>
-              <input type="date" aria-label="To date" value={dateTo}
-                onChange={e => { setDateTo(e.target.value); setPage(1); }}
-                className={`${fieldCls} py-1.5`} style={fieldStyle} />
-            </div>
-
-            {canPickOperator && (
-              <select aria-label="Whose sales" value={operator}
-                onChange={e => { setOperator(e.target.value); setPage(1); }}
-                className={fieldCls}
-                style={operator ? { ...fieldStyle, borderColor: 'var(--accent)', color: 'var(--accent)' } : fieldStyle}>
-                <option value="">Everyone's sales</option>
-                <option value="bot">Bot only</option>
-                {operators.map(o => (
-                  <option key={o.id} value={String(o.id)}>
-                    {o.display_name || o.username}{o.active ? '' : ' (disabled)'}
-                  </option>
-                ))}
-              </select>
-            )}
-
-            <button type="button"
-              onClick={() => { setDir(d => (d === 'desc' ? 'asc' : 'desc')); setPage(1); }}
-              className={`${fieldCls} cursor-pointer`} style={fieldStyle}
-              title="Sort by date and time">
-              {dir === 'desc' ? 'Newest first' : 'Oldest first'}
-            </button>
-
-            {(filtersActive || statusFilter) && (
-              <button type="button" className="text-sm cursor-pointer bg-transparent border-0"
-                style={{ color: 'var(--accent)' }}
-                onClick={() => { setOperator(''); setDateFrom(''); setDateTo(''); setStatusFilter(''); setCustomOpen(false); setPage(1); }}>
-                Clear filters
-              </button>
-            )}
-          </div>
-
-          <div className="flex gap-1.5 mt-3 flex-wrap" role="group" aria-label="Filter by status">
-            {[['', 'All'], ...WEB_STATUS_CHIPS.map(s => [s, statusLabel(s)])].map(([val, label]) => (
-              <button key={val || 'all'} type="button" aria-pressed={statusFilter === val}
-                onClick={() => { setStatusFilter(val); setPage(1); }}
-                className="text-xs font-medium rounded-full px-3 py-1.5 cursor-pointer"
-                style={chip(statusFilter === val)}>
-                {label}
-              </button>
-            ))}
-            {statusFilter && !WEB_STATUS_CHIPS.includes(statusFilter) && (
-              <button type="button" aria-pressed className="text-xs font-medium rounded-full px-3 py-1.5 cursor-pointer"
-                style={chip(true)} onClick={() => setStatusFilter('')}>{statusLabel(statusFilter)} ✕</button>
-            )}
-          </div>
-        </div>
-
         {/* Phone: one slim line. Income and the filters scroll with the list, so once you
             start scrolling the list has the whole screen. */}
         <div className="md:hidden px-4 pt-3 pb-3 shrink-0" style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)' }}>
@@ -627,18 +524,6 @@ export default function Orders() {
             </div>
           ) : (
             <ul className="list-none m-0 p-0 flex flex-col gap-2">
-              <li className="hidden md:grid items-center gap-3 px-3 pb-1 text-[11px] uppercase tracking-wider"
-                  style={{ color: 'var(--text-3)', gridTemplateColumns: WEB_COLS }}>
-                <input type="checkbox" aria-label="Select all on this page"
-                  checked={orders.length > 0 && selected.length === orders.length}
-                  onChange={e => setSelected(e.target.checked ? orders.map(x => x.order_id).filter(Boolean) : [])}
-                  className="cursor-pointer" />
-                <span>Customer</span>
-                <span>Order</span>
-                <span>Status</span>
-                <span>Reports</span>
-                <span className="text-right">Placed</span>
-              </li>
               {orders.map(o => {
                 const f = orderFacts(o);
                 const needsPayment = !!f.paymentIdentified && o.status !== 'payment_received';
@@ -668,19 +553,6 @@ export default function Orders() {
                       statusControl={statusControl}
                       metaMarker={<MetaRowMarker orderId={o.order_id} clientId={clientId} state={metaStatuses[o.order_id]} />}
                       reports={reportButtons(o, f)}
-                    />
-                    <OrderRowWeb
-                      o={o} f={f} needsPayment={needsPayment} isOpen={isOpen}
-                      checked={selected.includes(o.order_id)}
-                      onCheck={on => setSelected(prev => on ? [...prev, o.order_id] : prev.filter(x => x !== o.order_id))}
-                      onOpen={() => setOpenOrderId(o.id)}
-                      onChat={() => setDrawerCustomer({ phone: f.phone, name: f.name })}
-                      statusControl={statusControl}
-                      metaMarker={<MetaRowMarker orderId={o.order_id} clientId={clientId} state={metaStatuses[o.order_id]} />}
-                      reports={reportButtons(o, f)}
-                      templateSent={templateSends[o.order_id]}
-                      showClient={superAdmin}
-                      clientId={clientId}
                     />
                   </li>
                 );
@@ -852,4 +724,28 @@ export default function Orders() {
       </Drawer>
     </Layout>
   );
+}
+
+/** True from the md breakpoint up. Follows the window, so rotating a tablet swaps the layout. */
+function useIsWide() {
+  const query = '(min-width: 768px)';
+  const [wide, setWide] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches);
+  React.useEffect(() => {
+    const m = window.matchMedia(query);
+    const on = () => setWide(m.matches);
+    on();
+    m.addEventListener('change', on);
+    return () => m.removeEventListener('change', on);
+  }, []);
+  return wide;
+}
+
+/**
+ * Two interfaces for one list. Desktop keeps the table it has always had: the
+ * report buttons on the row, details that open in place, no drawer between you
+ * and a report. Phones get the card layout built for a thumb. They are separate
+ * pages rather than one squeezed to fit, so each can be right for its screen.
+ */
+export default function Orders() {
+  return useIsWide() ? <OrdersWeb /> : <OrdersPhone />;
 }

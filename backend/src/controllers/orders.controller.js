@@ -484,6 +484,12 @@ async function createOrder(req, res) {
         .fireCAPIEvent(clientId, 'Lead', phone_number, { order_id: orderId })
         .catch(() => {});
     }
+    // The bot writes a summary when it places an order; an order typed in by
+    // hand had none. Written in the background so creating the order is not
+    // held up by a model call, and it shows on the order a few seconds later.
+    require('../services/orderSummary')
+      .generateOrderSummary(clientId || null, phone_number, orderId, { customFields: custom_fields, notes })
+      .catch(() => {});
     res.json({ ok: true, order_id: orderId });
   } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }

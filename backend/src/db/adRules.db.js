@@ -54,23 +54,36 @@ async function listAdRules(clientId) {
 }
 
 /**
- * Ads this client has actually received clicks from, whether or not they are
- * configured yet — the pool a settings page picks new rules from.
+ * Ads a settings page can pick a rule for: every ad this client has received
+ * clicks from, newest first, followed by the ads Meta lists for the ad account
+ * that nobody has clicked into a chat yet. The second group exists so a welcome
+ * message and bot mode can be set before the first click, not after the first
+ * customer has already been answered the normal way. They only appear once Sync
+ * from Meta has filled ad_details.
  *
  * @param {string} clientId
  */
 async function listSeenAds(clientId) {
   if (!IS_PG) return [];
   const r = await pool.query(
-    `SELECT r.source_id AS ad_id, max(r.headline) AS headline, max(r.thumb_url) AS thumb_url,
-            max(r.created_at) AS last_seen, count(*)::int AS clicks,
-            d.name AS ad_name, d.campaign_name
-       FROM ad_referrals r
-       LEFT JOIN ad_details d ON d.ad_id = r.source_id
-      WHERE r.client_id=$1 AND r.source_id IS NOT NULL
-      GROUP BY r.source_id, d.name, d.campaign_name
-      ORDER BY last_seen DESC
-      LIMIT 200`,
+    `SELECT * FROM (
+       SELECT r.source_id AS ad_id, max(r.headline) AS headline, max(r.thumb_url) AS thumb_url,
+              max(r.created_at) AS last_seen, count(*)::int AS clicks,
+              d.name AS ad_name, d.campaign_name
+         FROM ad_referrals r
+         LEFT JOIN ad_details d ON d.ad_id = r.source_id
+        WHERE r.client_id=$1 AND r.source_id IS NOT NULL
+        GROUP BY r.source_id, d.name, d.campaign_name
+       UNION ALL
+       SELECT d.ad_id, NULL, NULL, NULL::timestamptz, 0, d.name, d.campaign_name
+         FROM ad_details d
+        WHERE d.client_id=$1
+          AND COALESCE(d.effective_status, '') NOT IN ('DELETED', 'ARCHIVED')
+          AND NOT EXISTS (SELECT 1 FROM ad_referrals r
+                           WHERE r.client_id=$1 AND r.source_id = d.ad_id)
+     ) ads
+     ORDER BY last_seen DESC NULLS LAST, ad_name
+     LIMIT 200`,
     [clientId]);
   return r.rows;
 }

@@ -60,6 +60,9 @@ function AdRow({ ad, rule, clientId, qc, toast }) {
           <div className="text-sm font-medium text-slate-800 truncate">{title}</div>
           {ad.campaign_name && <div className="text-xs text-slate-400 truncate">{ad.campaign_name}</div>}
         </div>
+        {!ad.clicks && (
+          <span className="text-xs text-slate-400 shrink-0" title="Listed from Meta. Nobody has started a chat from this ad yet.">No clicks yet</span>
+        )}
         {configured ? (
           <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 shrink-0">
             {MODES.find(m => m.value === rule.off_mode)?.label || rule.off_mode}
@@ -156,9 +159,10 @@ export default function AdRulesPanel({ clientId }) {
     <div className="flex flex-col gap-3">
       <div className="flex items-start justify-between gap-3">
         <p className="text-xs text-slate-500">
-          Every ad someone has clicked to start a chat, newest first. An ad with no override
-          behaves exactly as if it had never been clicked: the bot answers normally. Give an
-          ad a welcome message and a mode below to hand its chats to an operator instead.
+          Every ad someone has clicked to start a chat, newest first, then the other ads in your
+          ad account (after Sync from Meta) so you can set them up before their first click. An ad
+          with no override behaves exactly as if it had never been clicked: the bot answers normally.
+          Give an ad a welcome message and a mode below to hand its chats to an operator instead.
         </p>
         <button
           onClick={() => sync.mutate()}
@@ -170,7 +174,7 @@ export default function AdRulesPanel({ clientId }) {
         </button>
       </div>
       {!ads.length && (
-        <p className="text-sm text-slate-400">No ad clicks recorded yet for this client.</p>
+        <p className="text-sm text-slate-400">No ad clicks recorded yet. Press Sync from Meta to list the ads in your ad account.</p>
       )}
       {ads.map(ad => (
         <AdRow key={ad.ad_id} ad={ad} rule={ruleByAd.get(ad.ad_id)} clientId={clientId} qc={qc} toast={toast} />

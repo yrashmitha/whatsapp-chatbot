@@ -433,8 +433,8 @@ async function aiFillOrderDraft(req, res) {
     const chatLog = formatChatLog(await db.getMessagesByPhone(phone, clientId));
 
     const fieldLines = [
-      '- customer_name: full name',
-      ...orderFields.map(f => `- ${f.key}: ${f.label}`),
+      '- customer_name: full name (REQUIRED)',
+      ...orderFields.map(f => `- ${f.key}: ${f.label}${f.required ? ' (REQUIRED)' : ''}`),
     ].join('\n');
     const prompt = `You fill in an order form for a WhatsApp business from the customer's chat. Return JSON only.
 
@@ -450,7 +450,9 @@ ${earlier.rows.map(r => `${r.order_id}: ${JSON.stringify(parse(r.custom_fields))
 Rules:
 - This is a NEW order. Base every problem/question/request field on what the customer is asking for in the LATEST messages, not on old requests already handled.
 - Write problem/question fields as a short, specific note in the same language the form uses (Sinhala if the earlier orders are Sinhala). Never invent facts that are not in the chat.
-- Copy name and birth details from the chat, or from earlier orders when the chat does not repeat them. Use "" when unknown.
+- Copy name and birth details from the chat, or from earlier orders when the chat does not repeat them.
+- Every field marked (REQUIRED) must have a value, because the form cannot be saved with it empty. When the chat and the earlier orders really do not contain it, write exactly "N/A". Never guess a name, date, time or place to avoid writing "N/A".
+- Use "" only for fields that are not marked (REQUIRED) and are unknown.
 - Every key in "fields" must be one of the form keys above.
 
 Return: {"customer_name": string, "product_id": number|null, "fields": {key: string}}
@@ -472,9 +474,29 @@ ${chatLog || '(no messages found)'}`;
     for (const [k, v] of Object.entries(parsed.fields || {})) {
       if (keys.has(k) && v != null && String(v).trim()) fields[k] = String(v).trim();
     }
+    // The form refuses to save a required field left empty, so every one of them
+    // leaves here with something in it. The model is told to write N/A, but a
+    // model forgets, so the rule is enforced here too: anything empty or
+    // placeholder-like in a required field becomes N/A.
+    const blank = v => ['', 'unknown', 'none', 'null', '-', 'n/a', 'na'].includes(String(v ?? '').trim().toLowerCase());
+    for (const f of orderFields) {
+      if (f.required && blank(fields[f.key])) fields[f.key] = 'N/A';
+    }
+
+    // The name: what the chat or earlier orders gave, else the name already saved
+    // on the customer, else N/A.
+    let customerName = String(parsed.customer_name || '').trim();
+    if (blank(customerName)) {
+      const saved = await db.pgQuery(
+        'SELECT name FROM customers WHERE phone_number=$1 AND client_id=$2 LIMIT 1', [phone, clientId ?? null]
+      ).catch(() => ({ rows: [] }));
+      customerName = String(saved.rows[0]?.name || '').trim();
+    }
+    if (blank(customerName)) customerName = 'N/A';
+
     const validProduct = prods.rows.find(p => Number(p.id) === Number(parsed.product_id));
     res.json({
-      customer_name: String(parsed.customer_name || '').trim(),
+      customer_name: customerName,
       product_id: validProduct ? String(validProduct.id) : null,
       fields,
     });

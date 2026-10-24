@@ -61,11 +61,19 @@ export default function CreateOrderDrawer({ open, onClose, customer, clientId })
     try {
       const { data } = await api.post('/crm/orders/ai-fill-draft', { phone: phoneVal },
         clientId ? { params: { client_id: clientId } } : {});
-      setFields(prev => ({
-        ...prev,
-        ...(data.customer_name && { customer_name: data.customer_name }),
-        ...data.fields,
-      }));
+      // "N/A" means the chat had nothing for a required field. It fills an empty
+      // box but never replaces something the operator already typed.
+      setFields(prev => {
+        const next = { ...prev };
+        const put = (key, val) => {
+          if (!val) return;
+          if (val === 'N/A' && String(prev[key] ?? '').trim()) return;
+          next[key] = val;
+        };
+        put('customer_name', data.customer_name);
+        for (const [k, v] of Object.entries(data.fields || {})) put(k, v);
+        return next;
+      });
       if (data.product_id) setProductId(data.product_id);
       toast.success('Filled from the chat. Check it, then create the order.');
     } catch (err) {

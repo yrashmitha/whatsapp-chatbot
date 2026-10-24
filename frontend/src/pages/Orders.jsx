@@ -29,8 +29,22 @@ import TarotEditorDrawer from '../components/orders/TarotEditorDrawer';
 import MarriageEditorDrawer from '../components/orders/MarriageEditorDrawer';
 import MatchEditorDrawer from '../components/orders/MatchEditorDrawer';
 
-/** Queues worth one tap. Legacy statuses stay reachable through the chip the filter adds. */
-const STATUS_CHIPS = ['pending', 'started', 'payment_identified', 'payment_received', 'delivered', 'done', 'cancelled'];
+/** The two statuses looked at all day: one tap each, always on screen. */
+const QUICK_STATUSES = ['payment_received', 'delivered'];
+/** The rest are rarely wanted, so they sit one tap further in, under More. Legacy
+ *  statuses stay reachable through the chip the filter adds. */
+const MORE_STATUSES = ['pending', 'started', 'payment_identified', 'done', 'cancelled'];
+
+const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d; };
+
+/** Date ranges worth one tap. Each returns [from, to] as the YYYY-MM-DD the API takes. */
+const DATE_PRESETS = [
+  { key: 'today',     label: 'Today',     range: () => [isoDay(daysAgo(0)), isoDay(daysAgo(0))] },
+  { key: 'yesterday', label: 'Yesterday', range: () => [isoDay(daysAgo(1)), isoDay(daysAgo(1))] },
+  { key: '7d',        label: '7 days',    range: () => [isoDay(daysAgo(6)), isoDay(daysAgo(0))] },
+  { key: 'month',     label: 'Month',     range: () => { const n = new Date(); return [isoDay(new Date(n.getFullYear(), n.getMonth(), 1)), isoDay(n)]; } },
+];
 
 function parseCustomFields(raw) {
   if (!raw) return null;
@@ -70,6 +84,7 @@ export default function Orders() {
   const [operator, setOperator] = useState('');
   const [openOrderId, setOpenOrderId] = useState(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [customOpen, setCustomOpen] = useState(false);
   // Ticked orders, for sending a template to several people at once.
   const [selected, setSelected] = useState([]);
   const [templateOpen, setTemplateOpen] = useState(false);
@@ -303,6 +318,15 @@ export default function Orders() {
 
   const openOrder = orders.find(x => x.id === openOrderId) || null;
   const filtersActive = !!(operator || dateFrom || dateTo);
+  // Which preset the current dates are, if any; dates that match none are a custom range.
+  const activePreset = (dateFrom && dateTo)
+    ? (DATE_PRESETS.find(p => { const [a, b] = p.range(); return a === dateFrom && b === dateTo; })?.key || null)
+    : null;
+  const customDates = !!(dateFrom || dateTo) && !activePreset;
+  // What More is hiding that is switched on, so a hidden filter never goes unnoticed.
+  const moreCount = (operator ? 1 : 0)
+    + (statusFilter && !QUICK_STATUSES.includes(statusFilter) ? 1 : 0)
+    + (dir !== 'desc' ? 1 : 0);
   const chip = (active) => ({
     background: active ? 'var(--accent)' : 'var(--bg-card)',
     color: active ? '#fff' : 'var(--text-2)',
@@ -317,51 +341,115 @@ export default function Orders() {
     <Layout>
       {lockModal}
       <div className="flex flex-col h-full">
-        {/* Header: what matters this month, find an order, make an order. */}
-        <div className="px-4 sm:px-6 pt-4 pb-3 shrink-0" style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)' }}>
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-lg font-semibold mr-1 m-0" style={{ color: 'var(--text-1)' }}>Orders</h1>
-            {isEnabled('income_summary') ? (
-              <IncomeBadges income={incomeData} operator={operator} onPick={(v) => { setOperator(v); setPage(1); }} />
-            ) : (
-              <button
-                onClick={() => showLocked('income_summary')}
-                title="Income Summary: see what this does"
-                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-slate-50 text-slate-400 border border-slate-200 border-dashed cursor-pointer hover:bg-slate-100"
-              >
-                This month: LKR ••••• <LockBadge />
-              </button>
-            )}
-            <div className="ml-auto flex gap-2">
-              <button onClick={handleExport} className={`${fieldCls} cursor-pointer`} style={fieldStyle}>Export</button>
-              <button onClick={() => setShowCreate(true)}
-                className="text-sm font-medium text-white rounded-lg px-4 py-2 cursor-pointer border-0"
-                style={{ background: 'var(--accent)' }}>
-                + New order
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 mt-3 flex-wrap">
+        {/* Header: find an order, make an order. Income and every filter scroll with the
+            list, so once you start scrolling the list has the whole screen. */}
+        <div className="px-4 sm:px-6 pt-3 pb-3 shrink-0" style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)' }}>
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg font-semibold m-0 mr-1" style={{ color: 'var(--text-1)' }}>Orders</h1>
             <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
               placeholder="Search name, phone or order number"
               aria-label="Search orders"
-              className={`${fieldCls} flex-1 min-w-[200px] max-w-md`} style={fieldStyle} />
-            <button type="button" onClick={() => setFiltersOpen(v => !v)}
-              className={`${fieldCls} cursor-pointer`}
-              style={filtersActive ? { ...fieldStyle, borderColor: 'var(--accent)', color: 'var(--accent)' } : fieldStyle}>
-              Filters{filtersActive ? ' (on)' : ''}
+              className={`${fieldCls} flex-1 min-w-0`} style={fieldStyle} />
+            <button type="button" onClick={() => setFiltersOpen(v => !v)} aria-expanded={filtersOpen}
+              className={`${fieldCls} cursor-pointer shrink-0`}
+              style={moreCount ? { ...fieldStyle, borderColor: 'var(--accent)', color: 'var(--accent)' } : fieldStyle}>
+              More{moreCount ? ` (${moreCount})` : ''}
             </button>
-            <button type="button"
-              onClick={() => { setDir(d => (d === 'desc' ? 'asc' : 'desc')); setPage(1); }}
-              className={`${fieldCls} cursor-pointer`} style={fieldStyle}
-              title="Sort by date and time">
-              {dir === 'desc' ? 'Newest first' : 'Oldest first'}
+            <button type="button" onClick={() => setShowCreate(true)} aria-label="New order"
+              className="text-sm font-medium text-white rounded-lg px-3 sm:px-4 py-2 cursor-pointer border-0 shrink-0"
+              style={{ background: 'var(--accent)' }}>
+              <span className="sm:hidden">+</span>
+              <span className="hidden sm:inline">+ New order</span>
             </button>
           </div>
+        </div>
 
+        <div className="flex-1 overflow-auto px-4 sm:px-6 py-4">
+          {isEnabled('income_summary') ? (
+            <div className="mb-3 empty:hidden">
+              <IncomeBadges income={incomeData} operator={operator} onPick={(v) => { setOperator(v); setPage(1); }} />
+            </div>
+          ) : (
+            <button
+              onClick={() => showLocked('income_summary')}
+              title="Income Summary: see what this does"
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 mb-3 rounded-lg bg-slate-50 text-slate-400 border border-slate-200 border-dashed cursor-pointer hover:bg-slate-100"
+            >
+              This month: LKR ••••• <LockBadge />
+            </button>
+          )}
+
+          {/* The two filters used all day, one tap each. Tap a chosen chip again to clear it.
+              No date is chosen until someone chooses one. */}
+          <div className="flex gap-1.5 flex-wrap mb-2" role="group" aria-label="Filter by date">
+            {DATE_PRESETS.map(p => (
+              <button key={p.key} type="button" aria-pressed={activePreset === p.key}
+                onClick={() => {
+                  if (activePreset === p.key) { setDateFrom(''); setDateTo(''); }
+                  else { const [a, b] = p.range(); setDateFrom(a); setDateTo(b); }
+                  setCustomOpen(false); setPage(1);
+                }}
+                className="text-xs font-medium rounded-full px-2.5 py-1.5 cursor-pointer"
+                style={chip(activePreset === p.key)}>
+                {p.label}
+              </button>
+            ))}
+            <button type="button" aria-pressed={customDates || customOpen}
+              onClick={() => {
+                if (customDates || customOpen) { setDateFrom(''); setDateTo(''); setCustomOpen(false); setPage(1); }
+                else setCustomOpen(true);
+              }}
+              className="text-xs font-medium rounded-full px-2.5 py-1.5 cursor-pointer"
+              style={chip(customDates || customOpen)}>
+              Custom
+            </button>
+          </div>
+          {(customDates || customOpen) && (
+            <div className="flex items-end gap-3 mb-2 flex-wrap">
+              <label className="flex flex-col gap-1 text-xs" style={{ color: 'var(--text-3)' }}>
+                From
+                <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }}
+                  className={fieldCls} style={fieldStyle} />
+              </label>
+              <label className="flex flex-col gap-1 text-xs" style={{ color: 'var(--text-3)' }}>
+                To
+                <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }}
+                  className={fieldCls} style={fieldStyle} />
+              </label>
+            </div>
+          )}
+
+          <div className="flex gap-1.5 flex-wrap mb-3" role="group" aria-label="Filter by status">
+            {[['', 'All'], ...QUICK_STATUSES.map(s => [s, statusLabel(s)])].map(([val, label]) => (
+              <button key={val || 'all'} type="button" aria-pressed={statusFilter === val}
+                onClick={() => { setStatusFilter(val); setPage(1); }}
+                className="text-xs font-medium rounded-full px-3 py-1.5 cursor-pointer"
+                style={chip(statusFilter === val)}>
+                {label}
+              </button>
+            ))}
+            {statusFilter && !QUICK_STATUSES.includes(statusFilter) && (
+              <button type="button" aria-pressed className="text-xs font-medium rounded-full px-3 py-1.5 cursor-pointer"
+                style={chip(true)} onClick={() => { setStatusFilter(''); setPage(1); }}>{statusLabel(statusFilter)} ✕</button>
+            )}
+          </div>
+
+          {/* The rest: statuses used now and then, whose sales, order of the list, export. */}
           {filtersOpen && (
-            <div className="flex items-end gap-3 mt-3 flex-wrap">
+            <div className="flex flex-col gap-3 mb-3 p-3 rounded-xl" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+              <div>
+                <div className="text-xs mb-1.5" style={{ color: 'var(--text-3)' }}>Other statuses</div>
+                <div className="flex gap-1.5 flex-wrap" role="group" aria-label="Other statuses">
+                  {MORE_STATUSES.map(s => (
+                    <button key={s} type="button" aria-pressed={statusFilter === s}
+                      onClick={() => { setStatusFilter(statusFilter === s ? '' : s); setPage(1); }}
+                      className="text-xs font-medium rounded-full px-3 py-1.5 cursor-pointer"
+                      style={chip(statusFilter === s)}>
+                      {statusLabel(s)}
+                    </button>
+                  ))}
+                </div>
+              </div>
               {canPickOperator && (
                 <label className="flex flex-col gap-1 text-xs" style={{ color: 'var(--text-3)' }}>
                   Whose sales
@@ -377,44 +465,25 @@ export default function Orders() {
                   </select>
                 </label>
               )}
-              <label className="flex flex-col gap-1 text-xs" style={{ color: 'var(--text-3)' }}>
-                From
-                <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }}
-                  className={fieldCls} style={fieldStyle} />
-              </label>
-              <label className="flex flex-col gap-1 text-xs" style={{ color: 'var(--text-3)' }}>
-                To
-                <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }}
-                  className={fieldCls} style={fieldStyle} />
-              </label>
-              {filtersActive && (
-                <button type="button" className="text-sm cursor-pointer bg-transparent border-0 pb-2"
-                  style={{ color: 'var(--accent)' }}
-                  onClick={() => { setOperator(''); setDateFrom(''); setDateTo(''); setPage(1); }}>
-                  Clear filters
+              <div className="flex items-center gap-2 flex-wrap">
+                <button type="button"
+                  onClick={() => { setDir(d => (d === 'desc' ? 'asc' : 'desc')); setPage(1); }}
+                  className={`${fieldCls} cursor-pointer`} style={fieldStyle}
+                  title="Sort by date and time">
+                  {dir === 'desc' ? 'Newest first' : 'Oldest first'}
                 </button>
-              )}
+                <button type="button" onClick={handleExport} className={`${fieldCls} cursor-pointer`} style={fieldStyle}>Export</button>
+                {(moreCount > 0 || filtersActive || statusFilter) && (
+                  <button type="button" className="text-sm cursor-pointer bg-transparent border-0 ml-auto"
+                    style={{ color: 'var(--accent)' }}
+                    onClick={() => { setOperator(''); setDateFrom(''); setDateTo(''); setStatusFilter(''); setCustomOpen(false); setDir('desc'); setPage(1); }}>
+                    Clear all filters
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
-          {/* One tap to a queue. Wraps rather than scrolls sideways. */}
-          <div className="flex gap-1.5 mt-3 flex-wrap" role="group" aria-label="Filter by status">
-            {[['', 'All'], ...STATUS_CHIPS.map(s => [s, statusLabel(s)])].map(([val, label]) => (
-              <button key={val || 'all'} type="button" aria-pressed={statusFilter === val}
-                onClick={() => { setStatusFilter(val); setPage(1); }}
-                className="text-xs font-medium rounded-full px-3 py-1.5 cursor-pointer"
-                style={chip(statusFilter === val)}>
-                {label}
-              </button>
-            ))}
-            {statusFilter && !STATUS_CHIPS.includes(statusFilter) && (
-              <button type="button" aria-pressed className="text-xs font-medium rounded-full px-3 py-1.5 cursor-pointer"
-                style={chip(true)} onClick={() => setStatusFilter('')}>{statusLabel(statusFilter)} ✕</button>
-            )}
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-auto px-4 sm:px-6 py-4">
           {selected.length > 0 && (
             <div className="flex items-center gap-3 mb-3 px-3 py-2 rounded-xl sticky top-0 z-10"
                  style={{ background: 'var(--bg-card)', border: '1px solid var(--accent)' }}>
@@ -465,7 +534,7 @@ export default function Orders() {
                 <span className="w-40">Status</span>
                 <span className="w-32 text-right">Placed</span>
                 {superAdmin && <span className="w-16">Client</span>}
-                <span className="w-44" />
+                <span className="w-28" />
               </li>
               {orders.map(o => {
                 const f = orderFacts(o);
@@ -493,7 +562,12 @@ export default function Orders() {
                         className="cursor-pointer mt-1 md:mt-0" />
 
                       <div className="md:w-[26%] min-w-0 flex-1 md:flex-none">
-                        <div className="font-medium truncate" style={{ color: 'var(--text-1)' }}>{f.name}</div>
+                        <button type="button" title="Open chat"
+                          onClick={e => { e.stopPropagation(); setDrawerCustomer({ phone: f.phone, name: f.name }); }}
+                          className="font-medium truncate block max-w-full text-left bg-transparent border-0 p-0 cursor-pointer"
+                          style={{ color: 'var(--text-1)' }}>
+                          {f.name}
+                        </button>
                         <div className="text-xs truncate" style={{ color: 'var(--text-3)' }}>
                           {f.phone} · #{o.order_id || o.id}
                           <span className="md:hidden"> · {formatDateTime(o.created_at)}</span>
@@ -562,14 +636,8 @@ export default function Orders() {
                       </div>
                       {superAdmin && <div className="w-16 text-xs hidden md:block" style={{ color: 'var(--accent)' }}>{o.client_id}</div>}
 
-                      <div className="md:w-44 shrink-0 flex justify-end items-center gap-2" onClick={e => e.stopPropagation()}>
+                      <div className="md:w-28 shrink-0 flex justify-end items-center empty:hidden" onClick={e => e.stopPropagation()}>
                         {reportAction(o, f)}
-                        <button type="button"
-                          onClick={() => setDrawerCustomer({ phone: f.phone, name: f.name })}
-                          className="text-xs font-medium rounded-lg px-3 py-1.5 cursor-pointer"
-                          style={{ background: 'transparent', color: 'var(--accent)', border: '1px solid var(--border)' }}>
-                          Chat
-                        </button>
                       </div>
                     </div>
                   </li>

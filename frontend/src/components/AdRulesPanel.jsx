@@ -133,7 +133,7 @@ export default function AdRulesPanel({ clientId }) {
     queryFn: () => api.get('/plugins/ads/seen', { params }).then(r => r.data.ads),
     enabled: !!clientId,
   });
-  const { data: rules } = useQuery({
+  const { data: rules, isLoading: rulesLoading } = useQuery({
     queryKey: ['ad-rules', clientId],
     queryFn: () => api.get('/plugins/ads/rules', { params }).then(r => r.data.rules),
     enabled: !!clientId,
@@ -150,7 +150,10 @@ export default function AdRulesPanel({ clientId }) {
   });
 
   if (!clientId) return <p className="text-sm text-slate-400">Select a client from the sidebar first.</p>;
-  if (seenLoading) return <p className="text-sm text-slate-400">Loading…</p>;
+  // Wait for both. A row copies its rule into form state only when it first
+  // appears, so a row drawn before the rules arrive shows an empty welcome box
+  // that a later Save would write over the real message.
+  if (seenLoading || rulesLoading) return <p className="text-sm text-slate-400">Loading…</p>;
 
   const ruleByAd = new Map((rules || []).map(r => [r.ad_id, r]));
   const ads = seen || [];

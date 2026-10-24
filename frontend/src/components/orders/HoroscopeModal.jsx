@@ -55,7 +55,13 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
   const [tab, setTab] = useState(hasTabs ? initialTab : 'horoscope');
   const geoRef = useRef();
   const auraFileRef = useRef();
-  const [showOrderDetails, setShowOrderDetails] = useState(true);
+  // On a phone the order details start closed: the form is what you came for,
+  // and the chat is one tap away in the Details / Chat switch.
+  const isWide = typeof window === 'undefined' || window.matchMedia('(min-width: 768px)').matches;
+  const [showOrderDetails, setShowOrderDetails] = useState(isWide);
+  const [mobilePane, setMobilePane] = useState('form'); // 'form' | 'chat', below md only
+  const [sectionsOpen, setSectionsOpen] = useState(false);
+  const [questionsOpen, setQuestionsOpen] = useState(false);
 
   const cf = (() => {
     if (!order?.custom_fields) return {};
@@ -82,6 +88,10 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
   const [birthHour, setBirthHour]       = useState('07');
   const [birthMinute, setBirthMinute]   = useState('00');
   const [overrideAstro, setOverrideAstro] = useState(false);
+  // Generating is locked until the sign has been checked on the details as they
+  // stand now. Changing a birth detail unchecks it, so a stale check can never
+  // let a wrong chart through.
+  const [signChecked, setSignChecked] = useState(false);
 
   useEffect(() => {
     const raw = cf.birth_time || '';
@@ -131,6 +141,9 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
 
   const handleGeoInput = (e) => { setGeoQuery(e.target.value); setSelectedPlace(null); searchGeo(e.target.value); };
   const selectPlace    = (place) => { setSelectedPlace(place); setGeoQuery(place.name); setGeoSuggestions([]); };
+
+  useEffect(() => { setSignChecked(false); },
+    [birthDate, birthHour, birthMinute, selectedPlace?.lat, selectedPlace?.lng]);
 
   // ── Package ────────────────────────────────────────────────────────────────
   const [packageType, setPackageType] = useState('2990');
@@ -278,6 +291,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
   });
 
   const handleGenerate = async () => {
+    if (!signChecked)      return toast.error('Check the sign before generating');
     if (!selectedPlace)    return toast.error('Please select a birth place');
     if (!birthDate.trim()) return toast.error('Birth date is required');
     if (includeQuantum && !hasSections) {
@@ -300,6 +314,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
   };
 
   const handleGenerateAgent = async () => {
+    if (!signChecked)      return toast.error('Check the sign before generating');
     if (!selectedPlace)    return toast.error('Please select a birth place');
     if (!birthDate.trim()) return toast.error('Birth date is required');
     try {
@@ -350,7 +365,8 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
     }
   };
 
-  const inputCls = 'w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100';
+  // 16px on a phone: iOS zooms the page in when a smaller field is focused.
+  const inputCls = 'w-full px-3 py-2.5 md:py-2 text-base md:text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100';
   const labelCls = 'text-xs font-medium text-slate-500 block mb-1';
 
   return (
@@ -360,23 +376,41 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 shrink-0">
-          <div>
-            <h2 className="text-base font-semibold text-slate-800">
+        <div className="flex items-center justify-between gap-3 pl-4 md:pl-5 pr-2 md:pr-5 py-2 md:py-3 border-b border-slate-100 shrink-0">
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold text-slate-800 truncate">
               {tab === 'match' ? '💑 Generate Match Making Report'
                 : tab === 'marriage' ? '💍 Generate Marriage Report'
                 : '🔮 Generate Horoscope Reading'}
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">#{order?.order_id}</p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 bg-transparent border-0 cursor-pointer text-xl leading-none">×</button>
+          <button onClick={onClose} aria-label="Close"
+            className="w-11 h-11 md:w-auto md:h-auto shrink-0 flex items-center justify-center text-slate-400 hover:text-slate-600 bg-transparent border-0 cursor-pointer text-2xl md:text-xl leading-none">×</button>
         </div>
 
-        {/* Two-column body */}
+        {/* On a phone the chat and the form cannot share the width, so they take turns.
+            Reading the chat while filling the form is one tap each way. */}
+        <div className="md:hidden flex shrink-0 border-b border-slate-100" role="tablist" aria-label="Show">
+          {[['form', 'Details'], ['chat', 'Chat']].map(([key, label]) => (
+            <button key={key} type="button" role="tab" aria-selected={mobilePane === key}
+              onClick={() => setMobilePane(key)}
+              className="flex-1 py-3 text-sm font-medium bg-transparent border-0 cursor-pointer"
+              style={{
+                color: mobilePane === key ? '#4f46e5' : '#64748b',
+                borderBottom: `2px solid ${mobilePane === key ? '#4f46e5' : 'transparent'}`,
+                marginBottom: '-1px',
+              }}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Two-column body from md up; one pane at a time below it */}
         <div className="flex flex-1 overflow-hidden min-h-0">
 
           {/* Left: Chat */}
-          <div className="w-1/2 shrink-0 border-r border-slate-100 flex flex-col overflow-hidden">
+          <div className={`${mobilePane === 'chat' ? 'flex' : 'hidden'} md:flex w-full md:w-1/2 md:shrink-0 border-r border-slate-100 flex-col overflow-hidden`}>
             <ChatThread
               customer={{ phone: order?.phone || order?.phone_number, name: order?.customer_name || order?.phone || order?.phone_number }}
               clientId={clientId}
@@ -384,11 +418,11 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
           </div>
 
           {/* Right: Form */}
-          <div className="flex flex-1 flex-col overflow-hidden min-w-0">
+          <div className={`${mobilePane === 'form' ? 'flex' : 'hidden'} md:flex flex-1 flex-col overflow-hidden min-w-0`}>
 
         {/* Report tabs */}
         {hasTabs && (
-          <div className="flex gap-1 px-5 pt-3 border-b border-slate-100 shrink-0">
+          <div className="flex gap-1 px-3 md:px-5 pt-2 md:pt-3 border-b border-slate-100 shrink-0">
             {[
               { key: 'horoscope', label: '🔮 Horoscope', accent: '#6366f1' },
               ...(showMatch    ? [{ key: 'match',    label: '💑 Match Making', accent: '#0d9488' }] : []),
@@ -398,7 +432,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
                 key={t.key}
                 type="button"
                 onClick={() => setTab(t.key)}
-                className="px-4 py-2 text-sm font-medium bg-transparent border-0 cursor-pointer"
+                className="px-3 md:px-4 py-2.5 md:py-2 text-sm font-medium bg-transparent border-0 cursor-pointer whitespace-nowrap"
                 style={{
                   color: tab === t.key ? t.accent : '#94a3b8',
                   borderBottom: `2px solid ${tab === t.key ? t.accent : 'transparent'}`,
@@ -436,13 +470,13 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
             <button
               type="button"
               onClick={() => setShowOrderDetails(v => !v)}
-              className="w-full flex items-center justify-between px-5 py-2.5 bg-violet-50 text-xs font-semibold text-violet-700 hover:bg-violet-100 border-0 cursor-pointer"
+              className="w-full flex items-center justify-between px-4 md:px-5 py-3 md:py-2.5 bg-violet-50 text-xs font-semibold text-violet-700 hover:bg-violet-100 border-0 cursor-pointer"
             >
               <span>📋 Customer Order Details</span>
               <span className="text-violet-400 text-base leading-none">{showOrderDetails ? '▲' : '▼'}</span>
             </button>
             {showOrderDetails && (
-              <div className="px-5 py-3 flex flex-col gap-2 bg-slate-50 max-h-48 overflow-y-auto">
+              <div className="px-4 md:px-5 py-3 flex flex-col gap-2 bg-slate-50 max-h-48 overflow-y-auto">
                 <div className="grid grid-cols-2 gap-x-6 gap-y-2">
                   {Object.entries(cf).map(([k, v]) => {
                     if (!v || typeof v === 'object') return null;
@@ -455,7 +489,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
                   })}
                 </div>
                 {order?.ai_summary && (
-                  <div className="bg-violet-50 border border-violet-200 rounded-lg px-3 py-2 text-xs text-slate-700 leading-relaxed whitespace-pre-wrap mt-1">
+                  <div className="bg-violet-50 border border-violet-200 rounded-lg px-3 py-2 text-xs text-violet-950 leading-relaxed whitespace-pre-wrap mt-1">
                     <span className="text-violet-600 font-semibold block mb-1">✨ Summary</span>
                     {order.ai_summary}
                   </div>
@@ -485,7 +519,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
         )}
 
         {/* Body */}
-        <div className="overflow-y-auto flex-1 px-5 py-4 flex flex-col gap-3">
+        <div className="overflow-y-auto flex-1 px-4 md:px-5 py-4 flex flex-col gap-4 md:gap-3">
 
           {/* Agent live progress */}
           {agentRunning && (() => {
@@ -575,11 +609,11 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
             {cf.birth_time && <p className="text-xs text-amber-600 mb-1">Original: <span className="font-mono">{cf.birth_time}</span></p>}
             <div className="flex gap-2">
               <select value={birthHour} onChange={e => setBirthHour(e.target.value)}
-                className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 bg-white">
+                className="flex-1 px-3 py-2.5 md:py-2 text-base md:text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 bg-white">
                 {HOURS.map(h => <option key={h} value={h}>{h}h</option>)}
               </select>
               <select value={birthMinute} onChange={e => setBirthMinute(e.target.value)}
-                className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 bg-white">
+                className="flex-1 px-3 py-2.5 md:py-2 text-base md:text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 bg-white">
                 {MINUTES.map(m => <option key={m} value={m}>{m}m</option>)}
               </select>
             </div>
@@ -603,7 +637,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
                 {geoSuggestions.map((s, i) => (
                   <li key={i}>
                     <button onClick={() => selectPlace(s)}
-                      className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-violet-50 cursor-pointer bg-transparent border-0">
+                      className="w-full text-left px-3 py-3 md:py-2 text-sm md:text-xs text-slate-700 hover:bg-violet-50 hover:text-violet-950 cursor-pointer bg-transparent border-0">
                       {s.name}
                     </button>
                   </li>
@@ -616,7 +650,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
           </div>
 
           {/* Check Sign */}
-          <div className="flex items-center gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <button
               type="button"
               disabled={checkingSign || !selectedPlace || !birthDate}
@@ -635,6 +669,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
                     ...(clientId && { client_id: clientId }),
                   });
                   setDetectedLagna(r.data.sign);
+                  setSignChecked(true);
                   toast.success('Chart data saved');
                 } catch (e) {
                   toast.error(e?.response?.data?.error || 'Failed to fetch chart');
@@ -642,7 +677,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
                   setCheckingSign(false);
                 }
               }}
-              className="px-4 py-2 text-sm font-medium rounded-xl border-0 cursor-pointer disabled:opacity-50 transition-colors"
+              className="w-full sm:w-auto px-4 py-3 sm:py-2 text-sm font-medium rounded-xl border-0 cursor-pointer disabled:opacity-50 transition-colors"
               style={{ background: '#f3f0ff', color: '#7c3aed' }}
             >
               {checkingSign ? 'Checking…' : '🔍 Check Sign'}
@@ -659,6 +694,13 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
               </div>
             )}
           </div>
+
+          {/* The check is required, and says so, so a locked Generate is never a mystery. */}
+          {signChecked ? (
+            <p className="text-xs text-emerald-700 m-0 -mt-2">Sign checked. Changing a birth detail means checking it again.</p>
+          ) : (
+            <p className="text-xs text-amber-700 m-0 -mt-2">Check the sign to confirm these details. Generate unlocks once it is checked.</p>
+          )}
 
           {/* Package selection */}
           <div>
@@ -826,7 +868,14 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
 
           {/* Sections to generate */}
           {configSections.length > 0 && (
-            <div>
+            <button type="button" onClick={() => setSectionsOpen(v => !v)} aria-expanded={sectionsOpen}
+              className="md:hidden flex items-center justify-between w-full py-3 px-3 text-sm font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer">
+              <span>Sections to generate</span>
+              <span className="text-slate-500">{selectedSections.length}/{configSections.length} {sectionsOpen ? '▲' : '▼'}</span>
+            </button>
+          )}
+          {configSections.length > 0 && (
+            <div className={sectionsOpen ? '' : 'hidden md:block'}>
               <div className="flex items-center justify-between mb-1.5">
                 <label className={labelCls} style={{ marginBottom: 0 }}>
                   Sections to Generate
@@ -872,7 +921,12 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
           )}
 
           {/* Special questions */}
-          <div>
+          <button type="button" onClick={() => setQuestionsOpen(v => !v)} aria-expanded={questionsOpen}
+            className="md:hidden flex items-center justify-between w-full py-3 px-3 text-sm font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer">
+            <span>Special questions</span>
+            <span className="text-slate-500">{specialQuestions.length} {questionsOpen ? '▲' : '▼'}</span>
+          </button>
+          <div className={questionsOpen ? '' : 'hidden md:block'}>
             <label className={labelCls}>Special Questions <span className="text-slate-400 font-normal">(optional — select sections to use as context)</span></label>
             <div className="flex gap-2 mb-2">
               <textarea
@@ -1004,18 +1058,21 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t border-slate-100 flex gap-3 flex-wrap">
+        <div className="px-4 md:px-5 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:py-4 border-t border-slate-100 flex flex-col md:flex-row gap-2 md:gap-3 shrink-0">
+          {!signChecked && (
+            <p className="md:hidden text-xs text-amber-700 m-0">Check the sign above to unlock Generate.</p>
+          )}
           <button
             onClick={onClose}
-            className="py-2.5 px-5 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl border-0 cursor-pointer"
+            className="hidden md:block py-2.5 px-5 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl border-0 cursor-pointer"
           >
             Cancel
           </button>
-          <div className="flex gap-3 flex-1 flex-wrap justify-end">
+          <div className="flex flex-col md:flex-row gap-2 md:gap-3 flex-1 md:flex-wrap md:justify-end">
             <button
               onClick={handleGenerate}
-              disabled={generating || generatingQuantum || agentRunning || !selectedPlace || !birthDate.trim() || auraUploading || selectedSections.length === 0}
-              className="flex-1 min-w-[160px] py-2.5 text-sm font-medium text-white rounded-xl border-0 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+              disabled={generating || generatingQuantum || agentRunning || !selectedPlace || !birthDate.trim() || auraUploading || selectedSections.length === 0 || !signChecked}
+              className="w-full md:w-auto md:flex-1 md:min-w-[160px] py-3 md:py-2.5 text-sm font-medium text-white rounded-xl border-0 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
               style={{ background: generating ? '#4f46e5' : 'linear-gradient(135deg,#4f46e5,#6366f1)' }}
             >
               {generating ? (
@@ -1026,9 +1083,9 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
             </button>
             <button
               onClick={handleGenerateAgent}
-              disabled={generating || generatingQuantum || agentRunning || !selectedPlace || !birthDate.trim() || auraUploading || selectedSections.length === 0}
+              disabled={generating || generatingQuantum || agentRunning || !selectedPlace || !birthDate.trim() || auraUploading || selectedSections.length === 0 || !signChecked}
               title="Generator ⇄ Critic reflection loop — higher quality, ~3–5 min"
-              className="flex-1 min-w-[160px] py-2.5 text-sm font-medium text-white rounded-xl border-0 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+              className="w-full md:w-auto md:flex-1 md:min-w-[160px] py-3 md:py-2.5 text-sm font-medium text-white rounded-xl border-0 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
               style={{ background: agentRunning ? '#6d28d9' : 'linear-gradient(135deg,#7c3aed,#9333ea)' }}
             >
               {agentRunning ? (
@@ -1041,7 +1098,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
               <button
                 onClick={handleRegenerateQuantum}
                 disabled={generating || generatingQuantum || agentRunning || !auraAnalysis || !activeName.trim() || auraUploading}
-                className="flex-1 min-w-[160px] py-2.5 text-sm font-medium text-white rounded-xl border-0 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                className="w-full md:w-auto md:flex-1 md:min-w-[160px] py-3 md:py-2.5 text-sm font-medium text-white rounded-xl border-0 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
                 style={{ background: generatingQuantum ? '#7c3aed' : 'linear-gradient(135deg,#7c3aed,#a855f7)' }}
               >
                 {generatingQuantum ? (

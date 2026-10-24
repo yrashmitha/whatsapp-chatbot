@@ -265,7 +265,10 @@ async function applyAdRule(client, phone, adId, log) {
 
     const welcome = (rule.welcome_message || '').trim();
     if (welcome) {
-      const wamid = await sendWhatsAppMessage(phone, welcome, client);
+      // sendBotReply splits on [[MSG_BREAK]], so a welcome can go out as several
+      // bubbles. The stored row keeps the markers, same as every other bot reply.
+      const wamids = await sendBotReply(phone, welcome, client);
+      const wamid = wamids?.[0] || null;
       await db.insertMessage(phone, welcome, 'bot', null, client.id, null, null, wamid);
       db.noteAdWelcome(client.id, phone, wamid);
       // A customer who already has a live session (clicking a second ad) would

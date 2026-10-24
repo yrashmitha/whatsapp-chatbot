@@ -49,8 +49,26 @@ export function orderFacts(o) {
     || hd.marriage_generating === true || hd.match_generating === true || td.generating === true;
   const failed = !!(hd.error || hd.marriage_error || (hd.match_error && !matchDone) || td.error);
 
+  // Which report this order is waiting on, by what was sold, so the list can
+  // offer the right one without opening anything. Anything not clearly tarot
+  // is a horoscope: that is what the business mostly sells.
+  const isTarot = /tarot/i.test(String(cf?.product || '')) || tarotDone || td.generating === true || !!td.error;
+
+  // What is being made right now, in words and with progress when the
+  // generator reports it, so a row can say more than "generating".
+  let activity = null;
+  if (hd.generating === true || hd.quantum_generating === true) {
+    activity = { label: 'Horoscope', percent: hd.progress?.percent ?? null, phase: hd.progress?.phase || null };
+  } else if (hd.marriage_generating === true) {
+    activity = { label: 'Marriage report', percent: null, phase: null };
+  } else if (hd.match_generating === true) {
+    activity = { label: 'Match making', percent: hd.match_progress?.percent ?? null, phase: hd.match_progress?.phase || null };
+  } else if (td.generating === true) {
+    activity = { label: 'Tarot reading', percent: null, phase: null };
+  }
+
   return {
-    cf, hd, td,
+    cf, hd, td, isTarot, activity,
     name: o.customer_name || o.phone || o.phone_number || 'Unknown',
     phone: o.phone || o.phone_number || '',
     product,

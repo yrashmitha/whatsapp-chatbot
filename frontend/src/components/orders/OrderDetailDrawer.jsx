@@ -192,6 +192,72 @@ export default function OrderDetailDrawer({
             )}
           </div>
 
+          {/* Reports sit directly under who and status: generating one is the job an owner opens an order for, and it used to be five sections down. */}
+          {(showHoroscope || showTarot) && (
+            <Section title="Reports">
+              {showHoroscope && (
+                <>
+                  <ReportRow icon="🔮" label="Horoscope reading"
+                    state={hd?.generating ? { busy: true, text: `Generating${hd?.progress?.percent != null ? ` ${hd.progress.percent}%` : '...'}` }
+                      : f.horoscopeError ? { tone: 'error', text: 'Failed, tap Retry', title: f.horoscopeError }
+                      : f.horoscopeDone ? { text: 'Ready' } : { text: 'Not generated' }}>
+                    {f.horoscopeDone && <ActionBtn onClick={open.horoscopeEdit}>View / edit</ActionBtn>}
+                    {f.horoscopeDone && <ActionBtn onClick={open.wa} title={hd?.wa_message ? 'View or regenerate the WhatsApp message' : 'Generate the WhatsApp message'}>WhatsApp message</ActionBtn>}
+                    {!hd?.generating && (
+                      <ActionBtn primary={!f.horoscopeDone} locked={!isEnabled('horoscope_reading')}
+                        onClick={guard('horoscope_reading', open.horoscope)}>
+                        {f.horoscopeError ? 'Retry' : f.horoscopeDone ? 'Regenerate' : 'Generate'}
+                      </ActionBtn>
+                    )}
+                  </ReportRow>
+
+                  {(hd?.marriage_generating || f.marriageDone || f.marriageError) && (
+                    <ReportRow icon="💍" label="Marriage report"
+                      state={hd?.marriage_generating ? { busy: true, text: 'Generating...' }
+                        : f.marriageError && !f.marriageDone ? { tone: 'error', text: 'Failed', title: f.marriageError }
+                        : { text: 'Ready' }}>
+                      {f.marriageDone && <ActionBtn onClick={guard('horoscope_reading', open.marriage)}>View / edit</ActionBtn>}
+                    </ReportRow>
+                  )}
+
+                  {showMatch && (
+                    <ReportRow icon="💑" label="Match making"
+                      state={hd?.match_generating ? { busy: true, text: `Generating${hd?.match_progress?.percent != null ? ` ${hd.match_progress.percent}%` : '...'}` }
+                        : f.matchError && !f.matchDone ? { tone: 'error', text: 'Failed', title: f.matchError }
+                        : f.matchDone ? { text: 'Ready' } : { text: 'Not started' }}>
+                      {!hd?.match_generating && (
+                        <ActionBtn primary={!f.matchDone} locked={!isEnabled('match_making')}
+                          onClick={guard('match_making', f.matchDone ? open.match : open.matchNew)}>
+                          {f.matchDone ? 'View / edit' : 'Enter both charts'}
+                        </ActionBtn>
+                      )}
+                    </ReportRow>
+                  )}
+                </>
+              )}
+
+              {showTarot && (
+                <ReportRow icon="🃏" label="Tarot reading"
+                  state={td?.generating ? { busy: true, text: 'Generating...' }
+                    : f.tarotError ? { tone: 'error', text: 'Failed, tap Retry', title: f.tarotError }
+                    : f.tarotDone ? { text: 'Ready' } : { text: 'Not generated' }}>
+                  {f.tarotDone && <ActionBtn onClick={open.tarotEdit}>View / edit</ActionBtn>}
+                  {!td?.generating && (
+                    <ActionBtn primary={!f.tarotDone} locked={!isEnabled('tarot_reading')}
+                      onClick={guard('tarot_reading', open.tarot)}>
+                      {f.tarotError ? 'Retry' : f.tarotDone ? 'Regenerate' : 'Generate'}
+                    </ActionBtn>
+                  )}
+                </ReportRow>
+              )}
+
+              {Number(o.gen_cost_usd) > 0 && (
+                <div className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>
+                  AI cost so far: ${Number(o.gen_cost_usd).toFixed(4)}
+                </div>
+              )}
+            </Section>
+          )}
           <Section title="Remarks">
             <OrderRemarks orderId={o.order_id} remarks={o.remarks} clientId={clientId} />
           </Section>
@@ -277,71 +343,6 @@ export default function OrderDetailDrawer({
             )}
           </Section>
 
-          {(showHoroscope || showTarot) && (
-            <Section title="Reports">
-              {showHoroscope && (
-                <>
-                  <ReportRow icon="🔮" label="Horoscope reading"
-                    state={hd?.generating ? { busy: true, text: `Generating${hd?.progress?.percent != null ? ` ${hd.progress.percent}%` : '...'}` }
-                      : f.horoscopeError ? { tone: 'error', text: 'Failed, tap Retry', title: f.horoscopeError }
-                      : f.horoscopeDone ? { text: 'Ready' } : { text: 'Not generated' }}>
-                    {f.horoscopeDone && <ActionBtn onClick={open.horoscopeEdit}>View / edit</ActionBtn>}
-                    {f.horoscopeDone && <ActionBtn onClick={open.wa} title={hd?.wa_message ? 'View or regenerate the WhatsApp message' : 'Generate the WhatsApp message'}>WhatsApp message</ActionBtn>}
-                    {!hd?.generating && (
-                      <ActionBtn primary={!f.horoscopeDone} locked={!isEnabled('horoscope_reading')}
-                        onClick={guard('horoscope_reading', open.horoscope)}>
-                        {f.horoscopeError ? 'Retry' : f.horoscopeDone ? 'Regenerate' : 'Generate'}
-                      </ActionBtn>
-                    )}
-                  </ReportRow>
-
-                  {(hd?.marriage_generating || f.marriageDone || f.marriageError) && (
-                    <ReportRow icon="💍" label="Marriage report"
-                      state={hd?.marriage_generating ? { busy: true, text: 'Generating...' }
-                        : f.marriageError && !f.marriageDone ? { tone: 'error', text: 'Failed', title: f.marriageError }
-                        : { text: 'Ready' }}>
-                      {f.marriageDone && <ActionBtn onClick={guard('horoscope_reading', open.marriage)}>View / edit</ActionBtn>}
-                    </ReportRow>
-                  )}
-
-                  {showMatch && (
-                    <ReportRow icon="💑" label="Match making"
-                      state={hd?.match_generating ? { busy: true, text: `Generating${hd?.match_progress?.percent != null ? ` ${hd.match_progress.percent}%` : '...'}` }
-                        : f.matchError && !f.matchDone ? { tone: 'error', text: 'Failed', title: f.matchError }
-                        : f.matchDone ? { text: 'Ready' } : { text: 'Not started' }}>
-                      {!hd?.match_generating && (
-                        <ActionBtn primary={!f.matchDone} locked={!isEnabled('match_making')}
-                          onClick={guard('match_making', f.matchDone ? open.match : open.matchNew)}>
-                          {f.matchDone ? 'View / edit' : 'Enter both charts'}
-                        </ActionBtn>
-                      )}
-                    </ReportRow>
-                  )}
-                </>
-              )}
-
-              {showTarot && (
-                <ReportRow icon="🃏" label="Tarot reading"
-                  state={td?.generating ? { busy: true, text: 'Generating...' }
-                    : f.tarotError ? { tone: 'error', text: 'Failed, tap Retry', title: f.tarotError }
-                    : f.tarotDone ? { text: 'Ready' } : { text: 'Not generated' }}>
-                  {f.tarotDone && <ActionBtn onClick={open.tarotEdit}>View / edit</ActionBtn>}
-                  {!td?.generating && (
-                    <ActionBtn primary={!f.tarotDone} locked={!isEnabled('tarot_reading')}
-                      onClick={guard('tarot_reading', open.tarot)}>
-                      {f.tarotError ? 'Retry' : f.tarotDone ? 'Regenerate' : 'Generate'}
-                    </ActionBtn>
-                  )}
-                </ReportRow>
-              )}
-
-              {Number(o.gen_cost_usd) > 0 && (
-                <div className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>
-                  AI cost so far: ${Number(o.gen_cost_usd).toFixed(4)}
-                </div>
-              )}
-            </Section>
-          )}
 
           <Section title="Tracking">
             <MetaTracking orderId={o.order_id} clientId={clientId} />

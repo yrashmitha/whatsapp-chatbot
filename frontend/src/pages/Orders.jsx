@@ -156,6 +156,54 @@ export default function Orders() {
     setHasGenerating(anyGenerating);
   }, [orders]);
 
+  // A report finishing used to be visible only by opening the order. Say so
+  // when it happens, for any order still on this page.
+  const wasGenerating = React.useRef(new Map());
+  React.useEffect(() => {
+    const now = new Map();
+    for (const o of orders) {
+      const f = orderFacts(o);
+      if (f.generating) now.set(o.order_id, f.name);
+    }
+    for (const [id, name] of wasGenerating.current) {
+      if (now.has(id)) continue;
+      const cur = orders.find(o => o.order_id === id);
+      if (!cur) continue;
+      if (orderFacts(cur).failed) toast.error(`Report for ${name} failed`);
+      else toast.success(`Report for ${name} is ready`);
+    }
+    wasGenerating.current = now;
+  }, [orders]);
+  const generatingNow = orders.filter(o => orderFacts(o).generating).length;
+
+  // The one report button a row offers. Opening an order to find it cost three
+  // extra steps per horoscope; this puts the next move back on the row.
+  const reportAction = (o, f) => {
+    const tarot = f.isTarot;
+    if (!(tarot ? showTarot : showHoroscope) || f.generating) return null;
+    const feature = tarot ? 'tarot_reading' : 'horoscope_reading';
+    const generate = guard(feature, () => (tarot ? setTarotOrder(o) : setHoroscopeOrder(o)));
+    const done = tarot ? f.tarotDone : f.horoscopeDone;
+    const failed = tarot ? f.tarotError : f.horoscopeError;
+    const locked = !done && !failed && !isEnabled(feature);
+    let label = 'Generate'; let onClick = generate; let primary = true;
+    if (failed) { label = 'Retry'; }
+    else if (done) {
+      label = 'Open report'; primary = false;
+      onClick = () => (tarot ? setTarotEditorOrder(o) : setEditorOrder(o));
+    }
+    return (
+      <button type="button" onClick={onClick}
+        title={failed ? `Failed: ${failed}` : locked ? 'See what this does' : undefined}
+        className="text-xs font-medium rounded-lg px-3 py-1.5 cursor-pointer whitespace-nowrap"
+        style={primary && !locked
+          ? { background: 'var(--accent)', color: '#fff', border: '1px solid var(--accent)' }
+          : { background: 'transparent', color: locked ? 'var(--text-3)' : 'var(--text-1)', border: '1px solid var(--border)' }}>
+        {locked ? '🔒 ' : ''}{label}
+      </button>
+    );
+  };
+
   const updateStatus = useMutation({
     mutationFn: ({ orderId, status }) => api.patch(`/orders/${orderId}/status`, { status }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['orders'] }); toast.success('Status updated'); },
@@ -381,6 +429,15 @@ export default function Orders() {
             </div>
           )}
 
+          {generatingNow > 0 && (
+            <div role="status" className="flex items-center gap-2 mb-3 px-3 py-2 rounded-xl text-sm"
+                 style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid var(--border)', color: 'var(--text-2)' }}>
+              <span className="w-3 h-3 border-2 rounded-full animate-spin inline-block"
+                style={{ borderColor: 'var(--border)', borderTopColor: 'var(--accent)' }} />
+              {generatingNow} report{generatingNow === 1 ? '' : 's'} generating. This list updates by itself.
+            </div>
+          )}
+
           {isLoading ? (
             <div className="flex justify-center py-12"><Spinner /></div>
           ) : orders.length === 0 ? (
@@ -408,7 +465,7 @@ export default function Orders() {
                 <span className="w-40">Status</span>
                 <span className="w-32 text-right">Placed</span>
                 {superAdmin && <span className="w-16">Client</span>}
-                <span className="w-20" />
+                <span className="w-44" />
               </li>
               {orders.map(o => {
                 const f = orderFacts(o);
@@ -424,7 +481,7 @@ export default function Orders() {
                       className="flex items-start md:items-center gap-3 rounded-xl px-3 py-3 cursor-pointer flex-wrap md:flex-nowrap"
                       style={{
                         background: isOpen ? 'rgba(99,102,241,0.08)' : 'var(--bg-card)',
-                        border: `1px solid ${needsPayment ? '#f59e0b' : 'var(--border)'}`,
+                        border: `1px solid ${needsPayment ? '#f59e0b' : f.generating ? 'var(--accent)' : 'var(--border)'}`,
                       }}
                     >
                       <input type="checkbox" aria-label={`Select order ${o.order_id}`}
@@ -458,7 +515,9 @@ export default function Orders() {
                             <span className="text-xs px-1.5 py-0.5 rounded-md font-medium flex items-center gap-1" style={pill('rgba(99,102,241,0.12)', 'var(--accent)')}>
                               <span className="w-2.5 h-2.5 border-2 rounded-full animate-spin inline-block"
                                 style={{ borderColor: 'var(--border)', borderTopColor: 'var(--accent)' }} />
-                              Report generating
+                              {f.activity
+                                ? `${f.activity.label} generating${f.activity.percent != null ? ` ${f.activity.percent}%` : '...'}`
+                                : 'Report generating'}
                             </span>
                           )}
                           {f.failed && !f.generating && (
@@ -503,7 +562,8 @@ export default function Orders() {
                       </div>
                       {superAdmin && <div className="w-16 text-xs hidden md:block" style={{ color: 'var(--accent)' }}>{o.client_id}</div>}
 
-                      <div className="md:w-20 shrink-0 flex justify-end" onClick={e => e.stopPropagation()}>
+                      <div className="md:w-44 shrink-0 flex justify-end items-center gap-2" onClick={e => e.stopPropagation()}>
+                        {reportAction(o, f)}
                         <button type="button"
                           onClick={() => setDrawerCustomer({ phone: f.phone, name: f.name })}
                           className="text-xs font-medium rounded-lg px-3 py-1.5 cursor-pointer"

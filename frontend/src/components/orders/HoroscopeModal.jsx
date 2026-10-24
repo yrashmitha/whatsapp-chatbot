@@ -637,7 +637,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
                 {geoSuggestions.map((s, i) => (
                   <li key={i}>
                     <button onClick={() => selectPlace(s)}
-                      className="w-full text-left px-3 py-3 md:py-2 text-sm md:text-xs text-slate-700 hover:bg-violet-50 hover:text-violet-950 cursor-pointer bg-transparent border-0">
+                      className="w-full text-left px-3 py-3 md:py-2 text-sm md:text-xs text-violet-950 hover:bg-violet-50 cursor-pointer bg-transparent border-0">
                       {s.name}
                     </button>
                   </li>

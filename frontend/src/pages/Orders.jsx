@@ -23,6 +23,7 @@ import OrderDetailDrawer from '../components/orders/OrderDetailDrawer';
 import { orderFacts, statusLabel } from '../components/orders/orderView';
 import MetaRowMarker from '../components/orders/MetaRowMarker';
 import OrderCardMobile from '../components/orders/OrderCardMobile';
+import OrderRowWeb, { WEB_COLS } from '../components/orders/OrderRowWeb';
 import SendTemplateModal from '../components/orders/SendTemplateModal';
 import WaMessageModal from '../components/orders/WaMessageModal';
 import TarotGenerateModal from '../components/orders/TarotGenerateModal';
@@ -236,33 +237,6 @@ export default function Orders() {
     return items;
   };
 
-  // The one report button a row offers. Opening an order to find it cost three
-  // extra steps per horoscope; this puts the next move back on the row.
-  const reportAction = (o, f) => {
-    const tarot = f.isTarot;
-    if (!(tarot ? showTarot : showHoroscope) || f.generating) return null;
-    const feature = tarot ? 'tarot_reading' : 'horoscope_reading';
-    const generate = guard(feature, () => (tarot ? setTarotOrder(o) : setHoroscopeOrder(o)));
-    const done = tarot ? f.tarotDone : f.horoscopeDone;
-    const failed = tarot ? f.tarotError : f.horoscopeError;
-    const locked = !done && !failed && !isEnabled(feature);
-    let label = 'Generate'; let onClick = generate; let primary = true;
-    if (failed) { label = 'Retry'; }
-    else if (done) {
-      label = 'Open report'; primary = false;
-      onClick = () => (tarot ? setTarotEditorOrder(o) : setEditorOrder(o));
-    }
-    return (
-      <button type="button" onClick={onClick}
-        title={failed ? `Failed: ${failed}` : locked ? 'See what this does' : undefined}
-        className="text-xs font-medium rounded-lg px-3 py-1.5 cursor-pointer whitespace-nowrap"
-        style={primary && !locked
-          ? { background: 'var(--accent)', color: '#fff', border: '1px solid var(--accent)' }
-          : { background: 'transparent', color: locked ? 'var(--text-3)' : 'var(--text-1)', border: '1px solid var(--border)' }}>
-        {locked ? '🔒 ' : ''}{label}
-      </button>
-    );
-  };
 
   const updateStatus = useMutation({
     mutationFn: ({ orderId, status }) => api.patch(`/orders/${orderId}/status`, { status }),
@@ -388,10 +362,9 @@ export default function Orders() {
     <Layout>
       {lockModal}
       <div className="flex flex-col h-full">
-        {/* Web: the full header and filters, as they were. */}
-        <div className="hidden md:block shrink-0">
-        {/* Header: what matters this month, find an order, make an order. */}
-        <div className="px-4 sm:px-6 pt-4 pb-3 shrink-0" style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)' }}>
+        {/* Web: every filter on screen, nothing behind a toggle. Title and income, then
+            search with the date and who, then the status chips. */}
+        <div className="hidden md:block shrink-0 px-6 pt-4 pb-3" style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)' }}>
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-lg font-semibold mr-1 m-0" style={{ color: 'var(--text-1)' }}>Orders</h1>
             {isEnabled('income_summary') ? (
@@ -419,58 +392,61 @@ export default function Orders() {
             <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
               placeholder="Search name, phone or order number"
               aria-label="Search orders"
-              className={`${fieldCls} flex-1 min-w-[200px] max-w-md`} style={fieldStyle} />
-            <button type="button" onClick={() => setFiltersOpen(v => !v)}
-              className={`${fieldCls} cursor-pointer`}
-              style={filtersActive ? { ...fieldStyle, borderColor: 'var(--accent)', color: 'var(--accent)' } : fieldStyle}>
-              Filters{filtersActive ? ' (on)' : ''}
-            </button>
+              className={`${fieldCls} w-72`} style={fieldStyle} />
+
+            <div className="flex items-center gap-1.5" role="group" aria-label="Filter by date">
+              {DATE_PRESETS.map(p => (
+                <button key={p.key} type="button" aria-pressed={activePreset === p.key}
+                  onClick={() => {
+                    if (activePreset === p.key) { setDateFrom(''); setDateTo(''); }
+                    else { const [a, b] = p.range(); setDateFrom(a); setDateTo(b); }
+                    setCustomOpen(false); setPage(1);
+                  }}
+                  className="text-xs font-medium rounded-full px-3 py-1.5 cursor-pointer"
+                  style={chip(activePreset === p.key)}>
+                  {p.label}
+                </button>
+              ))}
+              <input type="date" aria-label="From date" value={dateFrom}
+                onChange={e => { setDateFrom(e.target.value); setPage(1); }}
+                className={`${fieldCls} py-1.5`} style={fieldStyle} />
+              <span className="text-xs" style={{ color: 'var(--text-3)' }}>to</span>
+              <input type="date" aria-label="To date" value={dateTo}
+                onChange={e => { setDateTo(e.target.value); setPage(1); }}
+                className={`${fieldCls} py-1.5`} style={fieldStyle} />
+            </div>
+
+            {canPickOperator && (
+              <select aria-label="Whose sales" value={operator}
+                onChange={e => { setOperator(e.target.value); setPage(1); }}
+                className={fieldCls}
+                style={operator ? { ...fieldStyle, borderColor: 'var(--accent)', color: 'var(--accent)' } : fieldStyle}>
+                <option value="">Everyone's sales</option>
+                <option value="bot">Bot only</option>
+                {operators.map(o => (
+                  <option key={o.id} value={String(o.id)}>
+                    {o.display_name || o.username}{o.active ? '' : ' (disabled)'}
+                  </option>
+                ))}
+              </select>
+            )}
+
             <button type="button"
               onClick={() => { setDir(d => (d === 'desc' ? 'asc' : 'desc')); setPage(1); }}
               className={`${fieldCls} cursor-pointer`} style={fieldStyle}
               title="Sort by date and time">
               {dir === 'desc' ? 'Newest first' : 'Oldest first'}
             </button>
+
+            {(filtersActive || statusFilter) && (
+              <button type="button" className="text-sm cursor-pointer bg-transparent border-0"
+                style={{ color: 'var(--accent)' }}
+                onClick={() => { setOperator(''); setDateFrom(''); setDateTo(''); setStatusFilter(''); setCustomOpen(false); setPage(1); }}>
+                Clear filters
+              </button>
+            )}
           </div>
 
-          {filtersOpen && (
-            <div className="flex items-end gap-3 mt-3 flex-wrap">
-              {canPickOperator && (
-                <label className="flex flex-col gap-1 text-xs" style={{ color: 'var(--text-3)' }}>
-                  Whose sales
-                  <select value={operator} onChange={e => { setOperator(e.target.value); setPage(1); }}
-                    className={fieldCls} style={fieldStyle}>
-                    <option value="">Everyone</option>
-                    <option value="bot">Bot only</option>
-                    {operators.map(o => (
-                      <option key={o.id} value={String(o.id)}>
-                        {o.display_name || o.username}{o.active ? '' : ' (disabled)'}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-              <label className="flex flex-col gap-1 text-xs" style={{ color: 'var(--text-3)' }}>
-                From
-                <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }}
-                  className={fieldCls} style={fieldStyle} />
-              </label>
-              <label className="flex flex-col gap-1 text-xs" style={{ color: 'var(--text-3)' }}>
-                To
-                <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }}
-                  className={fieldCls} style={fieldStyle} />
-              </label>
-              {filtersActive && (
-                <button type="button" className="text-sm cursor-pointer bg-transparent border-0 pb-2"
-                  style={{ color: 'var(--accent)' }}
-                  onClick={() => { setOperator(''); setDateFrom(''); setDateTo(''); setPage(1); }}>
-                  Clear filters
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* One tap to a queue. Wraps rather than scrolls sideways. */}
           <div className="flex gap-1.5 mt-3 flex-wrap" role="group" aria-label="Filter by status">
             {[['', 'All'], ...WEB_STATUS_CHIPS.map(s => [s, statusLabel(s)])].map(([val, label]) => (
               <button key={val || 'all'} type="button" aria-pressed={statusFilter === val}
@@ -485,7 +461,6 @@ export default function Orders() {
                 style={chip(true)} onClick={() => setStatusFilter('')}>{statusLabel(statusFilter)} ✕</button>
             )}
           </div>
-        </div>
         </div>
 
         {/* Phone: one slim line. Income and the filters scroll with the list, so once you
@@ -652,17 +627,17 @@ export default function Orders() {
             </div>
           ) : (
             <ul className="list-none m-0 p-0 flex flex-col gap-2">
-              <li className="hidden md:flex items-center gap-3 px-3 pb-1 text-[11px] uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>
+              <li className="hidden md:grid items-center gap-3 px-3 pb-1 text-[11px] uppercase tracking-wider"
+                  style={{ color: 'var(--text-3)', gridTemplateColumns: WEB_COLS }}>
                 <input type="checkbox" aria-label="Select all on this page"
                   checked={orders.length > 0 && selected.length === orders.length}
                   onChange={e => setSelected(e.target.checked ? orders.map(x => x.order_id).filter(Boolean) : [])}
                   className="cursor-pointer" />
-                <span className="w-[26%]">Customer</span>
-                <span className="flex-1">Order</span>
-                <span className="w-40">Status</span>
-                <span className="w-32 text-right">Placed</span>
-                {superAdmin && <span className="w-16">Client</span>}
-                <span className="w-28" />
+                <span>Customer</span>
+                <span>Order</span>
+                <span>Status</span>
+                <span>Reports</span>
+                <span className="text-right">Placed</span>
               </li>
               {orders.map(o => {
                 const f = orderFacts(o);
@@ -694,103 +669,19 @@ export default function Orders() {
                       metaMarker={<MetaRowMarker orderId={o.order_id} clientId={clientId} state={metaStatuses[o.order_id]} />}
                       reports={reportButtons(o, f)}
                     />
-                    <div
-                      role="button" tabIndex={0}
-                      onClick={() => setOpenOrderId(o.id)}
-                      onKeyDown={e => { if (e.key === 'Enter' && e.target === e.currentTarget) setOpenOrderId(o.id); }}
-                      className="hidden md:flex items-center gap-3 rounded-xl px-3 py-3 cursor-pointer"
-                      style={{
-                        background: isOpen ? 'rgba(99,102,241,0.08)' : 'var(--bg-card)',
-                        border: `1px solid ${needsPayment ? '#f59e0b' : f.generating ? 'var(--accent)' : 'var(--border)'}`,
-                      }}
-                    >
-                      <input type="checkbox" aria-label={`Select order ${o.order_id}`}
-                        checked={selected.includes(o.order_id)}
-                        onChange={e => setSelected(prev => e.target.checked
-                          ? [...prev, o.order_id]
-                          : prev.filter(x => x !== o.order_id))}
-                        onClick={e => e.stopPropagation()}
-                        className="cursor-pointer mt-1 md:mt-0" />
-
-                      <div className="md:w-[24%] md:min-w-[190px] min-w-0 md:flex-none">
-                        <button type="button" title="Open chat"
-                          onClick={e => { e.stopPropagation(); setDrawerCustomer({ phone: f.phone, name: f.name }); }}
-                          className="font-medium block max-w-full text-left bg-transparent border-0 p-0 cursor-pointer break-words"
-                          style={{ color: 'var(--text-1)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                          {f.name}
-                        </button>
-                        <div className="text-xs truncate" style={{ color: 'var(--text-3)' }}>
-                          {f.phone} · #{o.order_id || o.id}
-                          <span className="md:hidden"> · {formatDateTime(o.created_at)}</span>
-                        </div>
-                      </div>
-
-                      <div className="w-full md:w-auto md:flex-1 min-w-0 order-last md:order-none pl-7 md:pl-0">
-                        <div className="text-sm truncate" style={{ color: f.summaryLine ? 'var(--text-2)' : 'var(--text-3)' }}>
-                          {f.summaryLine || 'No product yet'}
-                        </div>
-                        <div className="flex items-center gap-1.5 flex-wrap mt-1 empty:hidden">
-                          {needsPayment && (
-                            <span className="text-xs px-1.5 py-0.5 rounded-md font-medium" style={pill('#fef3c7', '#92400e')}
-                              title={`Amount ${f.paymentIdentified.amount || '?'} | ${f.paymentIdentified.bank || '?'} | Ref ${f.paymentIdentified.ref || '?'}`}>
-                              Slip received, confirm payment
-                            </span>
-                          )}
-                          {f.generating && (
-                            <span className="text-xs px-1.5 py-0.5 rounded-md font-medium flex items-center gap-1" style={pill('rgba(99,102,241,0.12)', 'var(--accent)')}>
-                              <span className="w-2.5 h-2.5 border-2 rounded-full animate-spin inline-block"
-                                style={{ borderColor: 'var(--border)', borderTopColor: 'var(--accent)' }} />
-                              {f.activity
-                                ? `${f.activity.label} generating${f.activity.percent != null ? ` ${f.activity.percent}%` : '...'}`
-                                : 'Report generating'}
-                            </span>
-                          )}
-                          {f.failed && !f.generating && (
-                            <span className="text-xs px-1.5 py-0.5 rounded-md font-medium" style={pill('#fee2e2', '#b91c1c')}>Report failed</span>
-                          )}
-                          {(f.horoscopeDone || f.tarotDone || f.marriageDone || f.matchDone) && !f.generating && !f.failed && (
-                            <span className="text-xs px-1.5 py-0.5 rounded-md font-medium" style={pill('rgba(16,185,129,0.12)', '#047857')}>Report ready</span>
-                          )}
-                          {o.notes && (
-                            <span className="text-xs px-1.5 py-0.5 rounded-md" style={pill('var(--bg-surface)', 'var(--text-3)')}>Has notes</span>
-                          )}
-                          {templateSends[o.order_id] && (
-                            <span className="text-xs px-1.5 py-0.5 rounded-md font-medium" style={pill('rgba(217,119,6,0.12)', '#b45309')}
-                              title={`Already sent "${templateSends[o.order_id].template}" on ${new Date(templateSends[o.order_id].at).toLocaleString()}. Sending again is refused.`}>
-                              Template sent
-                            </span>
-                          )}
-                          <span onClick={e => e.stopPropagation()}>
-                            <MetaRowMarker orderId={o.order_id} clientId={clientId} state={metaStatuses[o.order_id]} />
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="md:w-40 shrink-0" onClick={e => e.stopPropagation()}>
-                        <select
-                          aria-label={`Status of order ${o.order_id}`}
-                          value={o.status}
-                          onChange={e => updateStatus.mutate({ orderId: o.order_id, status: e.target.value })}
-                          className={`text-xs font-medium rounded-lg px-2.5 py-1.5 border cursor-pointer outline-none w-full ${STATUS_COLORS[o.status] || 'bg-slate-100 text-slate-600 border-slate-200'}`}
-                        >
-                          {!STATUS_OPTIONS.includes(o.status) && <option value={o.status}>{statusLabel(o.status)}</option>}
-                          {STATUS_OPTIONS.map(s => (
-                            <option key={s} value={s} disabled={paidLocked(s)}>
-                              {statusLabel(s)}{paidLocked(s) ? ' (owner only)' : ''}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div className="md:w-32 md:text-right text-xs shrink-0 hidden md:block" style={{ color: 'var(--text-3)' }}>
-                        {formatDateTime(o.created_at)}
-                      </div>
-                      {superAdmin && <div className="w-16 text-xs hidden md:block" style={{ color: 'var(--accent)' }}>{o.client_id}</div>}
-
-                      <div className="md:w-28 shrink-0 flex justify-end items-center empty:hidden" onClick={e => e.stopPropagation()}>
-                        {reportAction(o, f)}
-                      </div>
-                    </div>
+                    <OrderRowWeb
+                      o={o} f={f} needsPayment={needsPayment} isOpen={isOpen}
+                      checked={selected.includes(o.order_id)}
+                      onCheck={on => setSelected(prev => on ? [...prev, o.order_id] : prev.filter(x => x !== o.order_id))}
+                      onOpen={() => setOpenOrderId(o.id)}
+                      onChat={() => setDrawerCustomer({ phone: f.phone, name: f.name })}
+                      statusControl={statusControl}
+                      metaMarker={<MetaRowMarker orderId={o.order_id} clientId={clientId} state={metaStatuses[o.order_id]} />}
+                      reports={reportButtons(o, f)}
+                      templateSent={templateSends[o.order_id]}
+                      showClient={superAdmin}
+                      clientId={clientId}
+                    />
                   </li>
                 );
               })}

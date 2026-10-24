@@ -13,7 +13,7 @@ const REPORT_STYLE = {
 };
 
 /** One small report button: Horoscope, Match or Tarot, in whatever state it is in. */
-function ReportButton({ r }) {
+export function ReportButton({ r }) {
   const state = r.busy ? 'busy' : r.error ? 'error' : r.done ? 'done' : r.locked ? 'locked' : 'idle';
   const text = r.busy ? `${r.label}${r.pct != null ? ` ${r.pct}%` : '...'}`
     : r.error ? `${r.label} !`

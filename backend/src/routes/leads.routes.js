@@ -11,11 +11,12 @@
 const router  = require('express').Router();
 const jwtAuth = require('../middleware/jwtAuth');
 const requirePermission = require('../middleware/requirePermission');
-const { listLeads, leadsSummary, setLeadStatus, getLead, listCalls, logCall } = require('../controllers/leads.controller');
+const { listLeads, leadsSummary, leadsStats, setLeadStatus, getLead, listCalls, logCall } = require('../controllers/leads.controller');
 
 router.get('/leads',                      jwtAuth, requirePermission('followups.view'),     listLeads);
 router.get('/leads/summary',              jwtAuth, requirePermission('followups.view'),     leadsSummary);
-router.get('/customers/:phone/lead',      jwtAuth, requirePermission('followups.view'),     getLead);
+router.get('/leads/stats',                jwtAuth, requirePermission('followups.view'),     leadsStats);
+router.get('/customers/:phone/lead',     jwtAuth, requirePermission('followups.view'),     getLead);
 router.get('/customers/:phone/calls',    jwtAuth, requirePermission('followups.view'),     listCalls);
 router.post('/customers/:phone/calls',    jwtAuth, requirePermission('followups.schedule'), logCall);
 router.patch('/customers/:phone/lead-status', jwtAuth, requirePermission('followups.schedule'), setLeadStatus);

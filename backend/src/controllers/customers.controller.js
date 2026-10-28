@@ -55,6 +55,12 @@ async function listCustomers(req, res) {
       const today = add(todayLocal(await timezoneFor(clientId)));
       conds.push(`EXISTS (SELECT 1 ${settings} AND cs.next_call_at ${callback === 'today' ? '=' : '<'} ${today}::date)`);
     }
+    // Chats nobody has rung yet. A bare note in the log is not a call.
+    if (req.query.called === 'no' && clientId) {
+      conds.push(`NOT EXISTS (SELECT 1 FROM lead_call_log lc
+                               WHERE lc.client_id=cu.client_id AND lc.phone_number=cu.phone_number
+                                 AND lc.outcome <> 'note')`);
+    }
     const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
     const params = [...fparams, limit, offset];
     const q = `

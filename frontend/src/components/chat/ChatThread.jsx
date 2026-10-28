@@ -345,7 +345,29 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
 
         {/* Primary controls: second line on a phone, inline on a desk. */}
         <div className="order-4 @xl:order-3 basis-full @xl:basis-auto flex items-center gap-1.5 @xl:gap-2 min-w-0">
-          {canLead && <div className={`min-w-0 ${railHasLead ? '@4xl:hidden' : ''}`}><LeadPanel phone={phone} clientId={clientId} lead={lead} /></div>}
+          <a
+            href={`tel:+${String(phone).replace(/\D/g, '')}`}
+            onClick={() => {
+              // Tapping Call counts as having called. The dialer opens either
+              // way; a failed save must never block the call.
+              if (!canLead) return;
+              api.post(`/customers/${encodeURIComponent(phone)}/calls`, { outcome: 'dialed' }, { params: cp })
+                .then(() => {
+                  ['leads', 'leads-summary', 'lead', 'customers', 'leads-stats']
+                    .forEach(k => qc.invalidateQueries({ queryKey: [k] }));
+                  qc.invalidateQueries({ queryKey: ['calls', phone] });
+                })
+                .catch(() => {});
+            }}
+            title="Call this customer, then log the result"
+            className="shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium no-underline"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+            </svg>
+            Call
+          </a>
+          {canLead &&<div className={`min-w-0 ${railHasLead ? '@4xl:hidden' : ''}`}><LeadPanel phone={phone} clientId={clientId} lead={lead} /></div>}
           {perms.isOperator ? (
             <button
               onClick={() => (mineAlready ? releaseMutation.mutate() : claimMutation.mutate())}

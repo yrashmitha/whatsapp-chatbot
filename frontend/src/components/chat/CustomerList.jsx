@@ -100,7 +100,8 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
   const perms = usePermissions();
   const canLeads = perms.can('followups.view');
   const chipFilter = !chip ? {}
-    : (chip === 'today' || chip === 'overdue') ? { callback: chip } : { lead_status: chip };
+    : (chip === 'today' || chip === 'overdue') ? { callback: chip }
+    : chip === 'not_called' ? { called: 'no' } : { lead_status: chip };
 
   const { data: summary } = useQuery({
     queryKey: ['leads-summary', clientId],
@@ -110,7 +111,7 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
     refetchIntervalInBackground: false,
   });
   const [statusOpen, setStatusOpen] = useState(false);
-  const isStatusChip = chip && chip !== 'today' && chip !== 'overdue';
+  const isStatusChip = chip && chip !== 'today' && chip !== 'overdue' && chip !== 'not_called';
   const statusMeta = isStatusChip ? LEAD_STATUSES.find(x => x.key === chip) : null;
   const pick = (key) => { setChip(key); setPage(1); setStatusOpen(false); };
 
@@ -150,10 +151,11 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
             chips; every status lives behind one dropdown, so nothing scrolls
             sideways and a new status needs no new room. */}
         {canLeads && clientId && (
-          <div className="relative flex gap-1.5 mt-2">
+          <div className="relative flex flex-wrap gap-1.5 mt-2">
             {[
               { key: 'overdue', label: 'Overdue', count: summary?.overdue, red: true },
               { key: 'today', label: 'Call today', count: summary?.today },
+              { key: 'not_called', label: 'Not called', count: summary?.not_called },
             ].map(c => {
               const active = chip === c.key;
               const hot = c.red && c.count > 0 && !active;

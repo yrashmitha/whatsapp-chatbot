@@ -16,7 +16,7 @@ const { timezoneFor } = require('../services/scheduledFollowUps');
 
 /** null in the database means New: nobody has judged the lead yet. */
 const LEAD_STATUSES = ['interested', 'thinking', 'promised_payment', 'not_interested', 'wrong_number', 'bought'];
-const CALL_OUTCOMES = ['answered', 'no_answer', 'busy', 'switched_off', 'not_reachable', 'call_back', 'note'];
+const CALL_OUTCOMES = ['answered', 'no_answer', 'busy', 'switched_off', 'not_reachable', 'call_back', 'dialed', 'note'];
 
 /** The calendar day it is now on a clock in `timeZone` ("YYYY-MM-DD"). */
 function todayLocal(timeZone) {
@@ -135,7 +135,7 @@ async function leadsSummary(req, res) {
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
   try {
     const today = todayLocal(await timezoneFor(clientId));
-    const [byStatus, due] = await Promise.all([
+    const [byStatus, due, uncalled] = await Promise.all([
       db.pgQuery(
         `SELECT cs.lead_status AS status, COUNT(*) AS n
            FROM customers cu
@@ -148,6 +148,12 @@ async function leadsSummary(req, res) {
                 COUNT(*) FILTER (WHERE next_call_at < $2::date) AS overdue,
                 COUNT(*) FILTER (WHERE next_call_at > $2::date) AS upcoming
            FROM customer_settings WHERE client_id=$1`, [clientId, today]),
+      db.pgQuery(
+        `SELECT COUNT(*) FROM customers cu
+          WHERE cu.client_id=$1
+            AND NOT EXISTS (SELECT 1 FROM lead_call_log lc
+                             WHERE lc.client_id=cu.client_id AND lc.phone_number=cu.phone_number
+                               AND lc.outcome <> 'note')`, [clientId]),
     ]);
     const counts = { new: 0 };
     let all = 0;
@@ -158,9 +164,92 @@ async function leadsSummary(req, res) {
     }
     res.json({
       all, counts,
-      today:    parseInt(due.rows[0].today),
+      not_called: parseInt(uncalled.rows[0].count),
+      today:   parseInt(due.rows[0].today),
       overdue:  parseInt(due.rows[0].overdue),
       upcoming: parseInt(due.rows[0].upcoming),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+/** YYYY-MM-DD shifted by `n` days (calendar arithmetic, no time zone involved). */
+function shiftDay(ymd, n) {
+  const d = new Date(`${ymd}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * GET /api/leads/stats - lead volume, calls made and conversion for a period.
+ *
+ * Query: days (7, 30, ... ; 0 = all time) or date_from + date_to (YYYY-MM-DD).
+ *
+ * A lead is a chat whose first customer message falls in the period. It is
+ * converted when it has an order. Calls count real attempts only; a bare note
+ * is not a call. "Called" for the cohort looks at calls at any time, so a lead
+ * rung a week after it arrived still counts as one we called.
+ */
+async function leadsStats(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    const tz    = await timezoneFor(clientId);
+    const today = todayLocal(tz);
+    let from = cleanDate(req.query.date_from);
+    let to   = cleanDate(req.query.date_to);
+    if (!from && !to) {
+      const days = req.query.days === undefined ? 30 : Math.max(0, parseInt(req.query.days) || 0);
+      from = days ? shiftDay(today, -(days - 1)) : '1970-01-01';
+      to   = today;
+    }
+    from = from || '1970-01-01';
+    to   = to   || today;
+
+    const r = await db.pgQuery(`
+      WITH first_msg AS (
+        SELECT phone_number, MIN(created_at) AS first_at
+          FROM messages WHERE client_id=$1 AND sender_type='user'
+         GROUP BY phone_number),
+      cohort AS (
+        SELECT f.phone_number,
+               EXISTS (SELECT 1 FROM lead_call_log l
+                        WHERE l.client_id=$1 AND l.phone_number=f.phone_number
+                          AND l.outcome <> 'note') AS was_called,
+               EXISTS (SELECT 1 FROM orders o
+                        WHERE o.client_id=$1 AND o.phone_number=f.phone_number) AS has_order
+          FROM first_msg f
+          JOIN customers cu ON cu.client_id=$1 AND cu.phone_number=f.phone_number
+         WHERE (f.first_at AT TIME ZONE $2)::date BETWEEN $3::date AND $4::date),
+      activity AS (
+        SELECT COUNT(*) AS calls,
+               COUNT(DISTINCT phone_number) AS leads_called,
+               COUNT(DISTINCT phone_number) FILTER (WHERE outcome='answered') AS leads_reached
+          FROM lead_call_log
+         WHERE client_id=$1 AND outcome <> 'note'
+           AND (created_at AT TIME ZONE $2)::date BETWEEN $3::date AND $4::date)
+      SELECT (SELECT COUNT(*) FROM cohort)                                   AS leads,
+             (SELECT COUNT(*) FROM cohort WHERE has_order)                   AS converted,
+             (SELECT COUNT(*) FROM cohort WHERE was_called)                  AS cohort_called,
+             (SELECT COUNT(*) FROM cohort WHERE was_called AND has_order)    AS cohort_called_converted,
+             (SELECT COUNT(*) FROM cohort WHERE NOT was_called AND has_order) AS cohort_uncalled_converted,
+             a.calls, a.leads_called, a.leads_reached
+        FROM activity a`, [clientId, tz, from, to]);
+
+    const n = (k) => parseInt(r.rows[0][k]) || 0;
+    const leads = n('leads'), called = n('cohort_called');
+    const pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : 0);
+    res.json({
+      from, to,
+      leads,
+      converted: n('converted'),
+      conversion_rate: pct(n('converted'), leads),
+      called,
+      not_called: leads - called,
+      called_conversion_rate: pct(n('cohort_called_converted'), called),
+      not_called_conversion_rate: pct(n('cohort_uncalled_converted'), leads - called),
+      calls_made: n('calls'),
+      leads_called: n('leads_called'),
+      leads_reached: n('leads_reached'),
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
@@ -265,7 +354,9 @@ async function logCall(req, res) {
       `INSERT INTO lead_call_log (client_id, phone_number, outcome, note, callback_on, created_by)
        VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, created_at`,
       [clientId, phone, outcome, note, callbackOn, req.user.uid || null]);
-    if (!isNote) {
+    // "dialed" is the Call button being tapped: the number was rung but no
+    // result is known yet, so a promised call-back day must stay in place.
+    if (!isNote && outcome !== 'dialed') {
       await db.pgQuery(
         `INSERT INTO customer_settings (phone_number, client_id, next_call_at)
          VALUES ($1,$2,$3)
@@ -276,4 +367,4 @@ async function logCall(req, res) {
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 
-module.exports = { todayLocal, listLeads, leadsSummary, setLeadStatus, getLead, listCalls, logCall, LEAD_STATUSES, CALL_OUTCOMES };
+module.exports = { todayLocal, listLeads, leadsSummary, leadsStats, setLeadStatus, getLead, listCalls, logCall, LEAD_STATUSES, CALL_OUTCOMES };

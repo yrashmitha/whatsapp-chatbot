@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore, isSuperAdmin } from '../stores/auth';
 import Layout from '../components/Layout';
@@ -128,6 +128,85 @@ function FiltersPopover({ outcome, setOutcome, dateField, setDateField, dateFrom
   );
 }
 
+const RANGES = [
+  { key: '1',  label: 'Today' },
+  { key: '7',  label: '7 days' },
+  { key: '30', label: '30 days' },
+  { key: '90', label: '90 days' },
+  { key: '0',  label: 'All time' },
+];
+
+function Stat({ label, value, sub, tone }) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 min-w-0">
+      <div className="text-xs text-slate-500 truncate">{label}</div>
+      <div className={`text-2xl font-bold tabular-nums ${tone || 'text-slate-800'}`}>{value}</div>
+      {sub && <div className="text-xs text-slate-500 truncate">{sub}</div>}
+    </div>
+  );
+}
+
+/**
+ * Lead volume, calls made and conversion for a chosen period. A lead counts in
+ * the period its first message arrived; it is converted once it has an order.
+ */
+function LeadStats({ clientId }) {
+  const [range, setRange] = useState('30');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const custom = range === 'custom';
+  const params = custom
+    ? { date_from: from, date_to: to }
+    : { days: range };
+
+  const { data: s, isFetching } = useQuery({
+    queryKey: ['leads-stats', clientId, range, from, to],
+    queryFn: () => api.get('/leads/stats', { params: { ...(clientId ? { client_id: clientId } : {}), ...params } }).then(r => r.data),
+    enabled: !!clientId && (!custom || !!(from || to)),
+    placeholderData: keepPreviousData,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+  });
+
+  const chip = (on) => `text-xs px-3 h-8 rounded-full border cursor-pointer ${
+    on ? 'bg-violet-600 text-white border-violet-600' : 'bg-white text-slate-600 border-slate-200 hover:border-violet-300'}`;
+  const dateField = 'text-xs border border-slate-200 rounded-lg px-2 h-8 bg-white text-slate-700';
+
+  return (
+    <section aria-label="Lead performance" className="mb-5">
+      <div className="flex flex-wrap items-center gap-1.5 mb-2">
+        {RANGES.map(r => (
+          <button key={r.key} onClick={() => setRange(r.key)} className={chip(range === r.key)}>{r.label}</button>
+        ))}
+        <button onClick={() => setRange('custom')} className={chip(custom)}>Custom</button>
+        {custom && (
+          <span className="flex items-center gap-1.5">
+            <input type="date" value={from} max={to || undefined} onChange={e => setFrom(e.target.value)} aria-label="From" className={dateField} />
+            <span className="text-xs text-slate-500">to</span>
+            <input type="date" value={to} min={from || undefined} onChange={e => setTo(e.target.value)} aria-label="To" className={dateField} />
+          </span>
+        )}
+        {isFetching && <Spinner size="sm" className="ml-1" />}
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <Stat label="New leads" value={s ? s.leads : '...'} sub={s ? `${shortDate(s.from)} to ${shortDate(s.to)}` : ''} />
+        <Stat label="Conversion rate" value={s ? `${s.conversion_rate}%` : '...'} tone="text-emerald-700"
+          sub={s ? `${s.converted} of ${s.leads} ordered` : ''} />
+        <Stat label="Leads called" value={s ? s.called : '...'}
+          sub={s ? `${s.not_called} not called yet` : ''} />
+        <Stat label="Calls made" value={s ? s.calls_made : '...'}
+          sub={s ? `${s.leads_reached} people reached` : ''} />
+      </div>
+      {s && s.leads > 0 && (
+        <p className="text-xs text-slate-500 mt-2">
+          Called leads convert at <span className="font-semibold text-slate-700">{s.called_conversion_rate}%</span>,
+          leads never called at <span className="font-semibold text-slate-700">{s.not_called_conversion_rate}%</span>.
+        </p>
+      )}
+    </section>
+  );
+}
+
 export default function FollowUps() {
   const { user, selectedClientId } = useAuthStore();
   const navigate = useNavigate();
@@ -157,6 +236,20 @@ export default function FollowUps() {
   useEffect(() => { setPage(1); }, [tab, status, outcome, search, clientId, dateField, dateFrom, dateTo]);
 
   const setRange = (from, to) => { setDateFrom(from); setDateTo(to); };
+
+  // Tapping Call counts as having called. The dialer opens either way; a
+  // failed save must never block the call.
+  const qc = useQueryClient();
+  const markDialed = (phone) => {
+    if (!canEdit) return;
+    api.post(`/customers/${encodeURIComponent(phone)}/calls`, { outcome: 'dialed' }, { params: cp })
+      .then(() => {
+        ['leads', 'leads-summary', 'lead', 'customers', 'leads-stats']
+          .forEach(k => qc.invalidateQueries({ queryKey: [k] }));
+        qc.invalidateQueries({ queryKey: ['calls', phone] });
+      })
+      .catch(() => {});
+  };
 
   const { data: summary } = useQuery({
     queryKey: ['leads-summary', clientId],
@@ -212,6 +305,8 @@ export default function FollowUps() {
           </div>
           {isFetching && !isLoading && <Spinner size="sm" className="mt-1.5" />}
         </div>
+
+        <LeadStats clientId={clientId} />
 
         {/* The call queue. It is the main way into the page. */}
         <div role="tablist" aria-label="Call queue" className="grid grid-cols-4 gap-1 p-1 bg-slate-100 rounded-xl mb-3">
@@ -304,7 +399,7 @@ export default function FollowUps() {
                         </span>
                       )}
                     </div>
-                    <a href={telHref(l.phone_number)} onClick={e => e.stopPropagation()} aria-label={`Call ${l.name || l.phone_number}`}
+                    <a href={telHref(l.phone_number)} onClick={e => { e.stopPropagation(); markDialed(l.phone_number); }} aria-label={`Call ${l.name || l.phone_number}`}
                       className="inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium no-underline">
                       <PhoneIcon />Call
                     </a>
@@ -330,7 +425,7 @@ export default function FollowUps() {
                   </div>
 
                   <div className="flex gap-2 md:justify-end">
-                    <a href={telHref(l.phone_number)}
+                    <a href={telHref(l.phone_number)} onClick={() => markDialed(l.phone_number)}
                       className="flex-1 md:flex-none inline-flex items-center justify-center gap-1.5 h-10 md:h-9 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium no-underline">
                       <PhoneIcon />Call
                     </a>
@@ -368,7 +463,7 @@ export default function FollowUps() {
                 </div>
               </div>
               <div className="flex gap-2">
-                <a href={telHref(current.phone_number)}
+                <a href={telHref(current.phone_number)} onClick={() => markDialed(current.phone_number)}
                   className="flex-1 inline-flex items-center justify-center gap-1.5 h-10 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium no-underline">
                   <PhoneIcon />Call
                 </a>

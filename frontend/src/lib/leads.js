@@ -26,11 +26,14 @@ export const CALL_OUTCOMES = [
 /** A note with no call attached; shown in history, never offered as a call button. */
 const NOTE_OUTCOME = { key: 'note', label: 'Note' };
 
+/** Logged by the Call button itself; the result is added afterwards by hand. */
+const DIALED_OUTCOME = { key: 'dialed', label: 'Called (no result yet)' };
+
 export const statusMeta = (key) =>
   LEAD_STATUSES.find(s => s.key === (key || 'new')) || LEAD_STATUSES[0];
 
 export const outcomeLabel = (key) =>
-  [...CALL_OUTCOMES, NOTE_OUTCOME].find(o => o.key === key)?.label || key || '';
+  [...CALL_OUTCOMES, DIALED_OUTCOME, NOTE_OUTCOME].find(o => o.key === key)?.label || key || '';
 
 /** Today as YYYY-MM-DD on the viewer's clock (for date inputs and overdue colouring). */
 export const todayStr = () => {

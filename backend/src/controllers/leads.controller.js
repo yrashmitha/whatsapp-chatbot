@@ -172,6 +172,9 @@ async function leadsSummary(req, res) {
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 
+// Same set as the income summary and the Meta Purchase event.
+const PAID_STATUSES = ['payment_received', 'paid', 'delivered', 'done', 'complete'];
+
 /** YYYY-MM-DD shifted by `n` days (calendar arithmetic, no time zone involved). */
 function shiftDay(ymd, n) {
   const d = new Date(`${ymd}T00:00:00Z`);
@@ -185,7 +188,8 @@ function shiftDay(ymd, n) {
  * Query: days (7, 30, ... ; 0 = all time) or date_from + date_to (YYYY-MM-DD).
  *
  * A lead is a chat whose first customer message falls in the period. It is
- * converted when it has an order. Calls count real attempts only; a bare note
+ * converted when it has an order in a paid status (payment received or
+ * delivered); a pending or cancelled order is not a conversion. Calls count real attempts only; a bare note
  * is not a call. "Called" for the cohort looks at calls at any time, so a lead
  * rung a week after it arrived still counts as one we called.
  */
@@ -216,7 +220,8 @@ async function leadsStats(req, res) {
                         WHERE l.client_id=$1 AND l.phone_number=f.phone_number
                           AND l.outcome <> 'note') AS was_called,
                EXISTS (SELECT 1 FROM orders o
-                        WHERE o.client_id=$1 AND o.phone_number=f.phone_number) AS has_order
+                        WHERE o.client_id=$1 AND o.phone_number=f.phone_number
+                          AND o.status = ANY($5::text[])) AS has_order
           FROM first_msg f
           JOIN customers cu ON cu.client_id=$1 AND cu.phone_number=f.phone_number
          WHERE (f.first_at AT TIME ZONE $2)::date BETWEEN $3::date AND $4::date),
@@ -233,7 +238,7 @@ async function leadsStats(req, res) {
              (SELECT COUNT(*) FROM cohort WHERE was_called AND has_order)    AS cohort_called_converted,
              (SELECT COUNT(*) FROM cohort WHERE NOT was_called AND has_order) AS cohort_uncalled_converted,
              a.calls, a.leads_called, a.leads_reached
-        FROM activity a`, [clientId, tz, from, to]);
+        FROM activity a`, [clientId, tz, from, to, PAID_STATUSES]);
 
     const n = (k) => parseInt(r.rows[0][k]) || 0;
     const leads = n('leads'), called = n('cohort_called');

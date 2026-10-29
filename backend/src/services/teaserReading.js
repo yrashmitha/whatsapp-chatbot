@@ -22,6 +22,7 @@
 'use strict';
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { resolveModelId } = require('./geminiModels');
 const { pool, db: sqliteDb, IS_PG } = require('../db/connection');
 const clientRouter = require('./clientRouter');
 
@@ -200,7 +201,7 @@ async function generateTeaserReading(chartData, birthHash, clientId) {
     const prompt = `Real facts from this customer's chart:\n${facts.map(f => `- ${f}`).join('\n')}`;
 
     const model = clientAI.getGenerativeModel({
-      model: 'gemini-2.5-flash',
+      model: resolveModelId(client?.ai_model),
       systemInstruction: SYSTEM_INSTRUCTION,
       generationConfig: {
         temperature: 0.7,

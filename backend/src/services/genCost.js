@@ -16,19 +16,27 @@
 
 const db = require('../db');
 
-// gemini-2.5-flash pricing (USD per token). Mirror of gemini.js:PRICE_*.
-// Were 0.075 / 0.30 until 2026-09-29, which are 1.5/2.0 Flash prices: every
-// report before that date is recorded at roughly a quarter of what it cost.
-const PRICE_INPUT  = 0.15 / 1_000_000;
-const PRICE_OUTPUT = 2.50 / 1_000_000;
+// Prices come from geminiModels.js, per model. Before 2026-10-29 this file
+// priced everything at 0.15 in / 2.50 out; Google lists gemini-2.5-flash at
+// 0.30 in, so input on earlier reports was recorded at half its cost. Earlier
+// still (until 2026-09-29) it was 0.075 / 0.30, which are 1.5/2.0 Flash prices.
+const { DEFAULT_MODEL, pricePerToken } = require('./geminiModels');
+const { getClientModel } = require('./clientKeys');
 
 /**
  * A running tally of token usage across the many model calls in one report run.
- * @returns {{ add: (usage:object|undefined)=>void, totals: {in_tokens:number,out_tokens:number,calls:number,cost_usd:number} }}
+ *
+ * Callers do not say which model ran: the client's setting decides that, and
+ * recordOrderGenCost prices the tokens against it. `totals.cost_usd` is priced
+ * as `model` (the default if omitted) and is only exact when that matches.
+ *
+ * @param {string} [model]
+ * @returns {{ add: (usage:object|undefined)=>void, tokens: {in:number,out:number}, totals: {in_tokens:number,out_tokens:number,calls:number,cost_usd:number} }}
  */
-function makeMeter() {
+function makeMeter(model = DEFAULT_MODEL) {
   let inTok = 0, outTok = 0, calls = 0;
   return {
+    get tokens() { return { in: inTok, out: outTok }; },
     add(usage) {
       if (!usage) return;
       inTok  += usage.promptTokenCount || 0;
@@ -37,7 +45,8 @@ function makeMeter() {
       calls  += 1;
     },
     get totals() {
-      const cost = inTok * PRICE_INPUT + outTok * PRICE_OUTPUT;
+      const p = pricePerToken(model);
+      const cost = inTok * p.input + outTok * p.output;
       return { in_tokens: inTok, out_tokens: outTok, calls, cost_usd: Number(cost.toFixed(8)) };
     },
   };
@@ -53,14 +62,23 @@ function makeMeter() {
  * @returns {Promise<object>} the run's totals
  */
 async function recordOrderGenCost(orderId, kind, meter, extra = {}) {
-  const t = meter.totals;
+  let t = meter.totals;
   if (!orderId || !db.IS_PG) return t;
   if (t.calls === 0) return t;
+
+  // Price the run against the model the order's client is set to.
+  let model = DEFAULT_MODEL;
+  try {
+    const r = await db.pgQuery('SELECT client_id FROM orders WHERE order_id = $1', [orderId]);
+    if (r.rows[0]?.client_id) model = await getClientModel(r.rows[0].client_id);
+  } catch (_) { /* fall back to the default price */ }
+  const p = pricePerToken(model);
+  t = { ...t, cost_usd: Number((t.in_tokens * p.input + t.out_tokens * p.output).toFixed(8)) };
 
   const entry = {
     at: new Date().toISOString(),
     kind,
-    model: 'gemini-2.5-flash',
+    model,
     ...t,
     ...extra,
   };
@@ -79,4 +97,4 @@ async function recordOrderGenCost(orderId, kind, meter, extra = {}) {
   return t;
 }
 
-module.exports = { makeMeter, recordOrderGenCost, PRICE_INPUT, PRICE_OUTPUT };
+module.exports = { makeMeter, recordOrderGenCost };

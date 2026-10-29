@@ -13,8 +13,6 @@ const BRANDING_KEYS = ['report_signature', 'report_footer', 'report_invocation',
 
 const TABS = ['Identity', 'WhatsApp', 'AI', 'Branding', 'Reports', 'Features', 'Order Fields', 'Access'];
 const TYPES = ['general', 'ecommerce', 'restaurant', 'astrology', 'service'];
-const AI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
-
 function Toggle({ checked, onChange, label }) {
   return (
     <label className="flex items-center gap-2 cursor-pointer">
@@ -246,6 +244,28 @@ export default function Clients() {
     }));
   }, [brandingData]);
 
+  // Models and their prices come from the backend, so the select box cannot drift
+  // from what cost tracking charges.
+  const { data: geminiModels } = useQuery({
+    queryKey: ['gemini-models'],
+    queryFn: () => adminApi.get('/gemini-models').then(r => r.data),
+    staleTime: 60 * 60 * 1000,
+  });
+  const modelOptions = (() => {
+    const list = geminiModels || [];
+    const opts = list.map(m => ({
+      value: m.id,
+      label: `${m.label}: $${m.input_per_1m} in / $${m.output_per_1m} out per 1M tokens`
+        + (m.status === 'preview' ? ' (preview)' : '')
+        + (m.status === 'limited' ? ' (new Google keys blocked)' : ''),
+    }));
+    // A client saved with a model we no longer list still has to show as selected.
+    if (form.ai_model && !list.some(m => m.id === form.ai_model)) {
+      opts.unshift({ value: form.ai_model, label: `${form.ai_model} (unlisted, replies use the default model)` });
+    }
+    return opts.length ? opts : [form.ai_model || 'gemini-2.5-flash'];
+  })();
+
   const saveMutation = useMutation({
     mutationFn: (body) => editing
       ? adminApi.put(`/clients/${editing.id}`, body)
@@ -471,7 +491,7 @@ export default function Clients() {
       case 2: return ( // AI
         <div className="flex flex-col gap-4">
           <Field label="AI Model">
-            <Select value={form.ai_model} onChange={set('ai_model')} options={AI_MODELS} />
+            <Select value={form.ai_model} onChange={set('ai_model')} options={modelOptions} />
           </Field>
           <Field label={`Temperature: ${parseFloat(form.temperature).toFixed(2)}`} hint="0 = focused, 1 = creative">
             <input

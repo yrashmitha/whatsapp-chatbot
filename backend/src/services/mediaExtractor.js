@@ -8,6 +8,7 @@
  */
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { modelForKey } = require('./clientKeys');
 
 const DEFAULT_EXTRACTION_PROMPT = `You are a data extraction assistant for a WhatsApp chatbot.
 Analyse the attached media and extract ALL useful information.
@@ -49,7 +50,7 @@ async function extractFromBuffer(buffer, mimeType, filename, customPrompt, apiKe
     if (!rawText.trim()) return { text: null, mediaType: 'document' };
 
     const genai   = new GoogleGenerativeAI(apiKey);
-    const model   = genai.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const model   = genai.getGenerativeModel({ model: modelForKey(apiKey) });
     const result  = await model.generateContent([
       prompt + '\n\nThe following is plain text extracted from a Word document:',
       rawText,
@@ -71,7 +72,7 @@ async function extractFromBuffer(buffer, mimeType, filename, customPrompt, apiKe
     : `document (${filename})`;
 
   const genai   = new GoogleGenerativeAI(apiKey);
-  const model   = genai.getGenerativeModel({ model: 'gemini-2.5-flash' });
+  const model   = genai.getGenerativeModel({ model: modelForKey(apiKey) });
   const result  = await model.generateContent([
     prompt,
     { inlineData: { mimeType: cleanMime, data: buffer.toString('base64') } },

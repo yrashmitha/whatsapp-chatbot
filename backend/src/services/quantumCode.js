@@ -12,6 +12,7 @@
 
 const crypto = require('crypto');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { modelForKey } = require('./clientKeys');
 const { todayContextBlock } = require('./dateContext');
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -102,13 +103,13 @@ async function analyzeAura(imageBuffer, mimeType, apiKey, systemPromptOverride) 
   }
 
   console.log('[AURA] ── REQUEST ───────────────────────────────────────');
-  console.log(`[AURA] model: gemini-2.5-flash  temperature=0.2  maxTokens=1024  mimeType=${mimeType}  imageSize=${imageBuffer.length} bytes`);
+  console.log(`[AURA] model: ${modelForKey(key)}  temperature=0.2  maxTokens=1024  mimeType=${mimeType}  imageSize=${imageBuffer.length} bytes`);
   console.log('[AURA] systemInstruction:\n' + prompt);
   console.log('[AURA] ─────────────────────────────────────────────────');
 
   const genAI = new GoogleGenerativeAI(key);
   const model = genAI.getGenerativeModel({
-    model: 'gemini-2.5-flash',
+    model: modelForKey(key),
     generationConfig: {
       temperature: 0.2,
       maxOutputTokens: 2048,
@@ -246,14 +247,14 @@ async function generateQuantumReading(quantumData, auraAnalysis, apiKey, systemP
   const prompt = buildQuantumReadingPrompt(quantumData, auraAnalysis);
 
   console.log('[QR] ── REQUEST ─────────────────────────────────────────');
-  console.log(`[QR] model: gemini-2.5-flash  temperature=0.5  maxTokens=4096`);
+  console.log(`[QR] model: ${modelForKey(key)}  temperature=0.5  maxTokens=4096`);
   console.log('[QR] systemInstruction:\n' + sysPrompt);
   console.log('[QR] userPrompt:\n' + prompt);
   console.log('[QR] ────────────────────────────────────────────────────');
 
   const genAI = new GoogleGenerativeAI(key);
   const model = genAI.getGenerativeModel({
-    model: 'gemini-2.5-flash',
+    model: modelForKey(key),
     generationConfig: {
       temperature: 0.5,
       maxOutputTokens: 4096,
@@ -464,7 +465,7 @@ async function generateQuantumSections(quantumData, auraAnalysis, sections, apiK
 
   const genAI = new GoogleGenerativeAI(key);
   const model = genAI.getGenerativeModel({
-    model: 'gemini-2.5-flash',
+    model: modelForKey(key),
     generationConfig: {
       temperature: 0.5,
       maxOutputTokens: 8192,
@@ -474,7 +475,7 @@ async function generateQuantumSections(quantumData, auraAnalysis, sections, apiK
   });
 
   console.log('[QS] ══ SESSION START ════════════════════════════════════════════');
-  console.log(`[QS] model: gemini-2.5-flash  temperature=0.5  maxTokens=2048  thinkingBudget=512`);
+  console.log(`[QS] model: ${modelForKey(key)}  temperature=0.5  maxTokens=2048  thinkingBudget=512`);
   console.log(`[QS] systemPrompt: ${sysPrompt.length} chars`);
   console.log('[QS] systemPrompt:\n' + sysPrompt);
   console.log(`[QS] sections to generate: ${sections.map(s => s.label).join(', ')}`);

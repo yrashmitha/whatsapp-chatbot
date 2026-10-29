@@ -25,7 +25,7 @@
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const db = require('../db');
-const { getGeminiKey } = require('./clientKeys');
+const { getGeminiKey, modelForKey } = require('./clientKeys');
 const { formatLocal, windowClosesAt, timezoneFor, localToUtc } = require('./scheduledFollowUps');
 
 /** WhatsApp's free-form reply window. */
@@ -389,7 +389,7 @@ You are given ONE person. Reply with a single JSON object, no markdown:
  */
 async function classifyOne(facts, apiKey, systemInstruction) {
   const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({
-    model: 'gemini-2.5-flash',
+    model: modelForKey(apiKey),
     systemInstruction: systemInstruction || DEFAULT_SYSTEM,
     generationConfig: {
       temperature: 0.4,

@@ -17,11 +17,12 @@
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { pgQuery } = require('../db/connection');
+const { DEFAULT_MODEL, resolveModelId } = require('./geminiModels');
 
 /** How long a resolved key set stays cached, in milliseconds. */
 const CACHE_TTL_MS = 60 * 1000;
 
-/** @type {Map<string, {at: number, keys: {gemini: string|null, freeastro: string|null}}>} */
+/** @type {Map<string, {at: number, keys: {gemini: string|null, freeastro: string|null, aiModel: string|null}}>} */
 const cache = new Map();
 
 /** @type {Map<string, import('@google/generative-ai').GoogleGenerativeAI>} */
@@ -60,7 +61,7 @@ async function loadKeys(clientId) {
 
   const { rows } = await pgQuery(
     `SELECT gemini_api_key, use_system_gemini_key,
-            freeastro_api_key, use_system_freeastro_key
+            freeastro_api_key, use_system_freeastro_key, ai_model
        FROM client_configs
       WHERE client_id = $1`,
     [clientId]
@@ -72,6 +73,7 @@ async function loadKeys(clientId) {
       || (row.use_system_gemini_key ? (process.env.GEMINI_API_KEY || null) : null),
     freeastro: row.freeastro_api_key
       || (row.use_system_freeastro_key ? (process.env.FREEASTRO_API_KEY || null) : null),
+    aiModel: row.ai_model || null,
   };
   cache.set(clientId, { at: Date.now(), keys });
   return keys;
@@ -122,7 +124,46 @@ async function getGenAI(clientId) {
     genAI = new GoogleGenerativeAI(key);
     genAICache.set(key, genAI);
   }
-  return genAI;
+  // Report code asks for the platform default by name. The client's own choice
+  // (Clients > AI Model) replaces it here, so a client whose key Google no longer
+  // lets use the default is moved by one setting, not by editing every caller.
+  // A model a caller names on purpose is left alone.
+  const modelId = await getClientModel(clientId);
+  if (modelId === DEFAULT_MODEL) return genAI;
+  const scoped = Object.create(genAI);
+  scoped.getGenerativeModel = (params, requestOptions) => genAI.getGenerativeModel(
+    params && params.model === DEFAULT_MODEL ? { ...params, model: modelId } : params,
+    requestOptions);
+  return scoped;
+}
+
+/**
+ * The Gemini model this client is set to, always one we can price.
+ *
+ * @param {string} clientId
+ * @returns {Promise<string>}
+ */
+async function getClientModel(clientId) {
+  if (!clientId) return DEFAULT_MODEL;
+  const { aiModel } = await loadKeys(clientId);
+  return resolveModelId(aiModel);
+}
+
+/**
+ * The model for code that only holds a raw API key (media extraction, the
+ * quantum/aura calls, follow-up classification). Looked up from the clients whose
+ * key this is; if clients sharing one key disagree, the default is used rather
+ * than guessing. Meant to be called right after getGeminiKey, which loads it.
+ *
+ * @param {string} apiKey
+ * @returns {string}
+ */
+function modelForKey(apiKey) {
+  const found = new Set();
+  for (const { keys } of cache.values()) {
+    if (keys.gemini === apiKey) found.add(resolveModelId(keys.aiModel));
+  }
+  return found.size === 1 ? [...found][0] : DEFAULT_MODEL;
 }
 
 /**
@@ -141,5 +182,7 @@ module.exports = {
   getGeminiKey,
   getFreeAstroKey,
   getGenAI,
+  getClientModel,
+  modelForKey,
   invalidateClientKeys,
 };

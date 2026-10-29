@@ -42,6 +42,10 @@ const {
   changeClientPackage,
 } = require('../controllers/admin.controller');
 const embeddedSignup = require('../controllers/embeddedSignup.controller');
+const { listModels } = require('../services/geminiModels');
+
+// Gemini models a client can be set to, with today's price, for the Clients select.
+router.get('/gemini-models', adminAuth, (req, res) => res.json(listModels()));
 
 // Templates
 router.get('/templates',                       adminAuth, listTemplates);

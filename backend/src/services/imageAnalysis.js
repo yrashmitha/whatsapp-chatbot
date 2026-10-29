@@ -8,6 +8,7 @@
 'use strict';
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { modelForKey } = require('./clientKeys');
 
 /**
  * Build the vision prompt, including whatever verification the client has
@@ -119,7 +120,7 @@ async function analyzePaymentDocument(buffer, mimeType, apiKey, expected = {}) {
 
   const genAI = new GoogleGenerativeAI(key);
   const model = genAI.getGenerativeModel({
-    model: 'gemini-2.5-flash',
+    model: modelForKey(key),
     generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
   });
 

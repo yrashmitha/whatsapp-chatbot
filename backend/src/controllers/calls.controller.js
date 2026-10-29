@@ -16,7 +16,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const db = require('../db');
 const resolveClientId = require('../middleware/resolveClientId');
 const { PUBLIC_URL } = require('../config/env');
-const { getGeminiKey } = require('../services/clientKeys');
+const { getGeminiKey, modelForKey } = require('../services/clientKeys');
 
 // ─── PCM → WAV conversion ─────────────────────────────────────────────────────
 /**
@@ -170,7 +170,7 @@ async function geminiCallReply(systemPrompt, transcript, apiKey) {
   if (!apiKey) throw new Error('No Gemini API key supplied for call reply');
   const genAI = new GoogleGenerativeAI(apiKey);
   const callModel = genAI.getGenerativeModel({
-    model: 'gemini-2.5-flash',
+    model: modelForKey(apiKey),
     systemInstruction: systemPrompt || 'You are a helpful telephone receptionist. Keep responses concise and conversational.',
     generationConfig: {
       temperature: 0.8,
@@ -380,7 +380,7 @@ async function handleStatusWebhook(req, res) {
             .join('\n');
 
           const genAI = new GoogleGenerativeAI(cfg.geminiApiKey);
-          const summaryModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+          const summaryModel = genAI.getGenerativeModel({ model: modelForKey(cfg.geminiApiKey) });
           const result = await summaryModel.generateContent(
             `Summarize this phone call transcript in 2-3 sentences. Focus on what the caller wanted and how it was resolved.\n\nTranscript:\n${transcriptText}`
           );

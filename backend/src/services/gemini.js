@@ -17,6 +17,7 @@ const { embedText } = require('./embedder');
 const { makeLogger } = require('../utils/logger');
 const { DELIVERY_BASE_URL } = require('../config/env');
 const { ensureToken: ensureDeliveryToken, deliveryUrl } = require('./reportDelivery');
+const { pricePerToken, resolveModelId } = require('./geminiModels');
 
 // ─── Gemini client ────────────────────────────────────────────────────────────
 const systemInstruction = buildSystemInstruction();
@@ -38,20 +39,22 @@ const model = genAI.getGenerativeModel({
   }
 });
 
-// ─── Cost calculation (Gemini 2.5 Flash pricing) ─────────────────────────────
-// These were 0.075 / 0.30 for a long time, which are 1.5/2.0 Flash prices, and
-// under-reported every reply by roughly 8x on the output side.
-const PRICE_INPUT  = 0.15 / 1_000_000;
-const PRICE_OUTPUT = 2.50 / 1_000_000;
+// ─── Cost calculation ────────────────────────────────────────────────────────
+// Prices per model live in geminiModels.js. Until 2026-10-29 this used one fixed
+// 2.5 Flash price (0.15 in / 2.50 out); input was under-reported by half.
 
 /**
  * Calculate the approximate cost of a Gemini API call.
  *
  * @param {number} i - Input token count
  * @param {number} o - Output token count, thinking included
+ * @param {string} [model] - The client's ai_model; the default model's price if omitted
  * @returns {number} Cost in USD
  */
-function calcCost(i, o) { return i * PRICE_INPUT + o * PRICE_OUTPUT; }
+function calcCost(i, o, model) {
+  const p = pricePerToken(model);
+  return i * p.input + o * p.output;
+}
 
 /**
  * What Google actually bills for one call, from its usageMetadata.
@@ -506,7 +509,7 @@ async function buildChatSession(phoneNumber, client, opts = {}) {
       ? new GoogleGenerativeAI(clientApiKey)
       : genAI;
     chatModel = clientGenAI.getGenerativeModel({
-      model: client.ai_model || 'gemini-2.5-flash',
+      model: resolveModelId(client.ai_model),
       systemInstruction: fullInstruction,
       generationConfig: {
         temperature: parseFloat(client.temperature) || 0.7,
@@ -936,7 +939,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
     at: new Date().toISOString(),
     strategy: chatSession?._strategy || 'A',
     existingCustomer: !!chatSession?._strategyExisting,
-    model: client?.ai_model || 'gemini-2.5-flash',
+    model: resolveModelId(client?.ai_model),
     promptId: chatSession?._promptId || null,
     promptChars: (chatSession?._client?.custom_prompt || client?.custom_prompt || '').length,
     sessionBuiltAt: chatSession?._builtAt ? new Date(chatSession._builtAt).toISOString() : null,
@@ -1139,7 +1142,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   if (/^\[\[SILENT\]\]$/i.test(botReply)) {
     log.info('[GEMINI] [[SILENT]] token received — suppressing reply');
     const { inputTokens, outputTokens } = billableTokens(result.response.usageMetadata);
-    const callCostUSD  = calcCost(inputTokens, outputTokens);
+    const callCostUSD  = calcCost(inputTokens, outputTokens, client?.ai_model);
     return { botReply: '', orderId: null, paymentReceived: false, callCostUSD, inputTokens, outputTokens, imagesToSend: [], productImagesToSend: [], isFallback: false, toolCalls };
   }
 
@@ -1243,7 +1246,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
       // Usage is tallied further down, past this early return — compute it here
       // so a suppressed turn is still billed and counted like any other.
       const { inputTokens: leakIn, outputTokens: leakOut } = billableTokens(result.response.usageMetadata);
-      return { botReply: '', orderId: null, paymentReceived: false, callCostUSD: calcCost(leakIn, leakOut), inputTokens: leakIn, outputTokens: leakOut, imagesToSend: [], productImagesToSend: [], isFallback: false, toolCalls };
+      return { botReply: '', orderId: null, paymentReceived: false, callCostUSD: calcCost(leakIn, leakOut, client?.ai_model), inputTokens: leakIn, outputTokens: leakOut, imagesToSend: [], productImagesToSend: [], isFallback: false, toolCalls };
     }
   }
 
@@ -1271,7 +1274,7 @@ async function handleMessage(phoneNumber, userMessage, chatSession, { skipUserIn
   const usage        = result.response.usageMetadata || {};
   log.info(`[GEMINI] usageMetadata raw: ${JSON.stringify(usage)}`);
   const { inputTokens, outputTokens } = billableTokens(usage);
-  const callCostUSD  = calcCost(inputTokens, outputTokens);
+  const callCostUSD  = calcCost(inputTokens, outputTokens, client?.ai_model);
   log.info(`[OUT] "${botReply.substring(0, 120)}" | tokens in=${inputTokens} out=${outputTokens} cost=$${callCostUSD.toFixed(6)}`);
 
   let orderId = toolOrderId;

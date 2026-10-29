@@ -19,6 +19,7 @@
 const { IS_PG, pool, db } = require('../db/connection');
 const clientRouter = require('./clientRouter');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { resolveModelId } = require('./geminiModels');
 
 const DEEP_MATCH_SCHEMA = {
   type: 'object',
@@ -122,7 +123,7 @@ async function generateDeepMatchAnalysis(porondamFactors, facts, finalRecommenda
 
   try {
     const model = clientAI.getGenerativeModel({
-      model: 'gemini-2.5-flash',
+      model: resolveModelId(client?.ai_model),
       systemInstruction: SYSTEM_INSTRUCTION,
       generationConfig: {
         temperature: 0.5,

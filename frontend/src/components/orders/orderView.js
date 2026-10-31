@@ -4,6 +4,8 @@
  * objects depending on the driver, so every parse goes through here.
  */
 
+import { SECTION_KIND_LIST, sectionReportState } from './sectionReports';
+
 export function parseJson(raw, fallback = null) {
   if (!raw) return fallback;
   if (typeof raw === 'object') return raw;
@@ -45,9 +47,15 @@ export function orderFacts(o) {
   const horoscopeDone = !!(hd.sections && Object.keys(hd.sections).length > 0);
   const tarotDone = !!(td.reading && td.cards);
 
+  // Abroad, pregnancy and any later report built like the marriage one.
+  const sectionReports = Object.fromEntries(SECTION_KIND_LIST.map(k => [k.key, sectionReportState(hd, k.key)]));
+  const sectionList = Object.values(sectionReports);
+
   const generating = hd.generating === true || hd.quantum_generating === true
-    || hd.marriage_generating === true || hd.match_generating === true || td.generating === true;
-  const failed = !!(hd.error || hd.marriage_error || (hd.match_error && !matchDone) || td.error);
+    || hd.marriage_generating === true || hd.match_generating === true || td.generating === true
+    || sectionList.some(s => s.generating);
+  const failed = !!(hd.error || hd.marriage_error || (hd.match_error && !matchDone) || td.error
+    || sectionList.some(s => s.error && !s.done));
 
   // Which report this order is waiting on, by what was sold, so the list can
   // offer the right one without opening anything. Anything not clearly tarot
@@ -65,6 +73,9 @@ export function orderFacts(o) {
     activity = { label: 'Match making', percent: hd.match_progress?.percent ?? null, phase: hd.match_progress?.phase || null };
   } else if (td.generating === true) {
     activity = { label: 'Tarot reading', percent: null, phase: null };
+  } else {
+    const busy = SECTION_KIND_LIST.find(k => sectionReports[k.key].generating);
+    if (busy) activity = { label: `${busy.name} report`, percent: null, phase: null };
   }
 
   return {
@@ -78,6 +89,7 @@ export function orderFacts(o) {
     horoscopeDone, horoscopeError: hd.error || null,
     marriageDone, marriageError: hd.marriage_error || null,
     matchDone, matchError: hd.match_error || null,
+    sectionReports,
     tarotDone, tarotError: td.error || null,
     generating, failed,
   };

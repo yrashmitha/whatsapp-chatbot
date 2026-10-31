@@ -23,6 +23,7 @@ const {
   resolveMatchConfig, historyFromSections: matchHistoryFromSections,
 } = require('../services/matchReport');
 const { buildPorondamDoc } = require('../services/porondamReport');
+const sectionReport = require('../services/sectionReport');
 const { makeMeter, recordOrderGenCost } = require('../services/genCost');
 const { formatChatLog } = require('../utils/chatLog');
 
@@ -303,6 +304,25 @@ async function convertDocxToPdf(tmpDocx, outDir, tmpHome, fontDir) {
 }
 
 /**
+ * Empty config for every section-report kind (abroad, pregnancy, ...), with the
+ * built-in AI Fill prompt as the one non-empty default. Editorial fields start
+ * empty for the same reason the marriage ones do.
+ */
+function sectionReportDefaults() {
+  const out = {};
+  for (const kind of sectionReport.KIND_LIST) {
+    for (const f of sectionReport.CONFIG_FIELDS) {
+      out[sectionReport.hdKey(kind, f)] = f === 'sections' ? [] : '';
+    }
+    out[sectionReport.hdKey(kind, 'ai_fill_prompt')] = sectionReport.defaultAiFillPrompt(kind);
+  }
+  return out;
+}
+
+/** Every plugin config key the section-report kinds own, for the save whitelist. */
+const SECTION_REPORT_CONFIG_KEYS = sectionReport.KIND_LIST.flatMap(k => sectionReport.configKeys(k));
+
+/**
  * GET /api/plugins/:pluginId/config — get plugin config for the current client.
  *
  * @param {import('express').Request}  req
@@ -338,6 +358,7 @@ async function getPluginConfig(req, res) {
         match_questions_title: '', match_fixed_instructions: '',
         match_question_instructions: '',
         match_ai_fill_prompt: DEFAULT_MATCH_AI_FILL_PROMPT,
+        ...sectionReportDefaults(),
       };
     } else if (pluginId === 'ai_call_answering') {
       defaults = { name: 'AI Call Answering', system_prompt: '', greeting: 'Hello, how can I help you today?', tts_voice: 'Kore', stt_language: 'en-US' };
@@ -441,6 +462,9 @@ async function updatePluginConfig(req, res) {
     if (match_questions_title !== undefined) update.match_questions_title = match_questions_title;
     if (match_fixed_instructions !== undefined) update.match_fixed_instructions = match_fixed_instructions;
     if (match_question_instructions !== undefined) update.match_question_instructions = match_question_instructions;
+    for (const k of SECTION_REPORT_CONFIG_KEYS) {
+      if (req.body[k] !== undefined) update[k] = req.body[k];
+    }
     if (page1_heading !== undefined) update.page1_heading = page1_heading;
     if (page2_heading !== undefined) update.page2_heading = page2_heading;
     if (page4_heading !== undefined) update.page4_heading = page4_heading;
@@ -691,6 +715,7 @@ const REPORT_KEYS = {
               'marriage_wa_message', 'marriage_progress', 'marriage_generating',
               'marriage_generating_at', 'marriage_error'],
 };
+for (const kind of sectionReport.KIND_LIST) REPORT_KEYS[kind] = sectionReport.reportKeys(kind);
 
 async function deleteReport(req, res) {
   const clientId = resolveClientId(req);
@@ -2365,6 +2390,355 @@ async function saveMarriageWaHandler(req, res) {
   } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
 
+// ─── Section reports (abroad, pregnancy) ──────────────────────────────────────
+// One set of handlers for every report built like the marriage report. The kind
+// arrives as a route param and is validated here; the data keys are
+// horoscope_data.<kind>_* and the config keys are <kind>_* under horoscope_reading.
+
+/** Resolve and validate the :kind route param, answering 404 itself when it is wrong. */
+function sectionKindOf(req, res) {
+  const kind = String(req.params.kind || '');
+  if (!sectionReport.isKind(kind)) {
+    res.status(404).json({ error: `Unknown report kind "${kind}"` });
+    return null;
+  }
+  return kind;
+}
+
+/**
+ * POST /api/plugins/section-report/:kind/generate/:orderId
+ * Starts generation in the background; the UI polls `<kind>_generating` on the order.
+ */
+async function generateSectionReportHandler(req, res) {
+  const kind = sectionKindOf(req, res); if (!kind) return;
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  const { orderId } = req.params;
+
+  if (!await db.hasAddon(clientId, 'horoscope_reading')) {
+    return res.status(403).json({ error: 'horoscope_reading addon not enabled' });
+  }
+
+  const generating = sectionReport.hdKey(kind, 'generating');
+  const generatingAt = sectionReport.hdKey(kind, 'generating_at');
+  const errorKey = sectionReport.hdKey(kind, 'error');
+
+  try {
+    const order = await loadOrderReport(orderId);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (!order.hd.chart_data) {
+      return res.status(400).json({
+        error: 'No birth chart for this order. Fill the birth details and press Check Lagna first. You do not need to generate the horoscope itself.',
+      });
+    }
+
+    await db.pgQuery(
+      `UPDATE orders SET horoscope_data = jsonb_set(jsonb_set(COALESCE(horoscope_data,'{}'::jsonb) - $2::text, ARRAY[$3]::text[], 'true'::jsonb), ARRAY[$4]::text[], to_jsonb(NOW()::text)) WHERE order_id=$1`,
+      [orderId, errorKey, generating, generatingAt]
+    );
+
+    res.json({ ok: true, generating: true });
+
+    sectionReport.generateReading(kind, clientId, orderId).catch(async (e) => {
+      console.error(`[${kind.toUpperCase()}] generate error:`, e.message);
+      await db.pgQuery(
+        `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'::jsonb) - $2::text, ARRAY[$3]::text[], $4::jsonb) WHERE order_id=$1`,
+        [orderId, generating, errorKey, JSON.stringify(e.message)]
+      ).catch(() => {});
+    });
+  } catch (e) {
+    console.error(`[${kind.toUpperCase()}] error:`, e.message);
+    if (!res.headersSent) res.status(e.statusCode || 500).json({ error: e.message });
+  }
+}
+
+/** POST /api/plugins/section-report/:kind/regenerate-section/:orderId  body { label } */
+async function regenerateSectionReportSectionHandler(req, res) {
+  const kind = sectionKindOf(req, res); if (!kind) return;
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  const { orderId } = req.params;
+  const label = String(req.body.label || '').trim();
+  if (!label) return res.status(400).json({ error: 'label required' });
+
+  try {
+    const order = await loadOrderReport(orderId);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (!order.hd.chart_data) return res.status(400).json({ error: 'No chart data found.' });
+
+    const config = await db.getPluginConfig(clientId, 'horoscope_reading');
+    const cfg = sectionReport.resolveConfig(kind, config);
+    const sectionDef = cfg.sections.find(s => s.label === label);
+    if (!sectionDef) return res.status(404).json({ error: `Section "${label}" not found in config.` });
+
+    const dataKey = sectionReport.hdKey(kind, 'sections_data');
+    const existing = Array.isArray(order.hd[dataKey]) ? order.hd[dataKey] : [];
+
+    // No live session exists any more, so rebuild the conversation from the saved
+    // sections (minus this one), otherwise the redo repeats its neighbours.
+    const regenMeter = makeMeter();
+    const content = await sectionReport.generateSectionText({
+      kind, clientId,
+      fixedInstructions: cfg.fixedInstructions,
+      chartData:    order.hd.chart_data,
+      systemPrompt: cfg.systemPrompt,
+      label:        sectionDef.label,
+      guide:        sectionDef.guide || '',
+      history:      sectionReport.historyFromSections(existing, label),
+      meter:        regenMeter,
+    });
+    await recordOrderGenCost(orderId, 'section', regenMeter, { report: kind, section: label });
+
+    const idx = existing.findIndex(s => s.label === label);
+    const updated = idx >= 0
+      ? existing.map((s, i) => (i === idx ? { ...s, content } : s))
+      : [...existing, { label, content }];
+
+    await db.pgQuery(
+      `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'::jsonb), ARRAY[$1]::text[], $2::jsonb) WHERE order_id=$3`,
+      [dataKey, JSON.stringify(updated), orderId]
+    );
+    res.json({ ok: true, label, content });
+  } catch (e) {
+    console.error(`[${kind.toUpperCase()}-REGEN-SECTION] error:`, e.message);
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
+}
+
+/** PATCH /api/plugins/section-report/:kind/sections/:orderId  body { sections_data, special_questions?, special_answers? } */
+async function updateSectionReport(req, res) {
+  const kind = sectionKindOf(req, res); if (!kind) return;
+  const { orderId } = req.params;
+  const { sections_data, special_questions, special_answers } = req.body;
+  if (!Array.isArray(sections_data)) return res.status(400).json({ error: 'sections_data array required' });
+  try {
+    const order = await loadOrderReport(orderId);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    const updated = {
+      ...order.hd,
+      [sectionReport.hdKey(kind, 'sections_data')]: sections_data,
+      ...(Array.isArray(special_questions) && { [sectionReport.hdKey(kind, 'special_questions')]: special_questions }),
+      ...(Array.isArray(special_answers) && { [sectionReport.hdKey(kind, 'special_answers')]: special_answers }),
+    };
+    await db.pgQuery('UPDATE orders SET horoscope_data=$1 WHERE order_id=$2', [JSON.stringify(updated), orderId]);
+    res.json({ ok: true });
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
+}
+
+/** PATCH /api/plugins/section-report/:kind/questions/:orderId  body { special_questions } */
+async function saveSectionReportQuestions(req, res) {
+  const kind = sectionKindOf(req, res); if (!kind) return;
+  const { orderId } = req.params;
+  const { special_questions } = req.body;
+  if (!Array.isArray(special_questions)) return res.status(400).json({ error: 'special_questions array required' });
+  try {
+    const order = await loadOrderReport(orderId);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    const updated = { ...order.hd, [sectionReport.hdKey(kind, 'special_questions')]: special_questions };
+    await db.pgQuery('UPDATE orders SET horoscope_data=$1 WHERE order_id=$2', [JSON.stringify(updated), orderId]);
+    res.json({ ok: true });
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
+}
+
+/**
+ * POST /api/plugins/section-report/:kind/ai-prepare/:orderId
+ * Reads the WhatsApp thread and returns the birth details plus the questions
+ * this customer asked about the kind's topic. Nothing is saved: the panel fills
+ * its form and the operator reviews before generating.
+ */
+async function aiPrepareSectionReport(req, res) {
+  const kind = sectionKindOf(req, res); if (!kind) return;
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  const { orderId } = req.params;
+
+  try {
+    const orderRes = await db.pgQuery('SELECT * FROM orders WHERE order_id=$1', [orderId]);
+    if (!orderRes.rows.length) return res.status(404).json({ error: 'Order not found' });
+    const order = orderRes.rows[0];
+    const cf = (typeof order.custom_fields === 'string')
+      ? JSON.parse(order.custom_fields || '{}')
+      : (order.custom_fields || {});
+
+    const messages = await db.getMessagesByPhone(order.phone_number, clientId);
+    const chatLog = formatChatLog(messages);
+
+    const config = await db.getPluginConfig(clientId, 'horoscope_reading');
+    const cfg = sectionReport.resolveConfig(kind, config);
+    const template = cfg.aiFillPrompt || sectionReport.defaultAiFillPrompt(kind);
+    const prompt = template
+      .replace(/\{\{customer_name\}\}/g, customerNameFrom(cf))
+      .replace(/\{\{birth_date\}\}/g,    cf.birth_date || '')
+      .replace(/\{\{birth_time\}\}/g,    cf.birth_time || '')
+      .replace(/\{\{birth_place\}\}/g,   cf.birth_place || '')
+      .replace(/\{\{chat_log\}\}/g,      () => chatLog || '(no messages found)');
+
+    const geminiModel = (await getGenAI(clientId)).getGenerativeModel({
+      model: 'gemini-2.5-flash',
+      generationConfig: {
+        temperature: 0.2,
+        topP: 0.9,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: 'object',
+          properties: {
+            birth_date_iso:  { type: 'string', nullable: true },
+            birth_time_24h:  { type: 'string', nullable: true },
+            birth_place_en:  { type: 'string', nullable: true },
+            lat:             { type: 'number', nullable: true },
+            lng:             { type: 'number', nullable: true },
+            special_questions: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: { question: { type: 'string' }, prompt: { type: 'string' } },
+                required: ['question', 'prompt'],
+              },
+            },
+          },
+          required: ['birth_date_iso', 'birth_time_24h', 'birth_place_en', 'lat', 'lng', 'special_questions'],
+        },
+      },
+    });
+
+    const result = await geminiModel.generateContent(prompt);
+    const meter = makeMeter();
+    meter.add(result.response.usageMetadata);
+    await recordOrderGenCost(orderId, 'ai_fill', meter, { report: kind });
+
+    const raw = result.response.text().trim();
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch { return res.status(500).json({ error: 'Gemini returned invalid JSON', raw }); }
+
+    res.json({
+      birth_date_iso:    parsed.birth_date_iso || null,
+      birth_time_24h:    parsed.birth_time_24h || null,
+      birth_place_en:    parsed.birth_place_en || null,
+      lat:               parsed.lat ?? null,
+      lng:               parsed.lng ?? null,
+      special_questions: Array.isArray(parsed.special_questions) ? parsed.special_questions : [],
+    });
+  } catch (e) {
+    console.error(`[AI-PREPARE-${kind.toUpperCase()}]`, e.message);
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
+}
+
+/** Build a section report's .docx buffer for an order, or throw a 404-ish error. */
+async function sectionReportDocxFor(kind, orderId, clientId) {
+  const order = await loadOrderReport(orderId);
+  if (!order) { const e = new Error('Order not found'); e.status = 404; throw e; }
+  const data = order.hd[sectionReport.hdKey(kind, 'sections_data')];
+  if (!Array.isArray(data) || data.length === 0) {
+    const e = new Error(`No ${sectionReport.KINDS[kind].label} report generated yet`); e.status = 404; throw e;
+  }
+  const config = clientId ? await db.getPluginConfig(clientId, 'horoscope_reading') : {};
+  const cfg = sectionReport.resolveConfig(kind, config);
+
+  const buffer = await sectionReport.buildDoc({
+    reportTitle:    cfg.reportTitle,
+    questionsTitle: cfg.questionsTitle,
+    customerName:   order.cf.customer_name || '',
+    sections:       data,
+    specialNote:    cfg.specialNote,
+    birthDate:      order.cf.birth_date || '',
+    birthTime:      order.cf.birth_time || '',
+    sectionOrder:   cfg.sections,
+    specialAnswers: order.hd[sectionReport.hdKey(kind, 'special_answers')] || [],
+    brand:          await getBrand(clientId),
+  });
+  return { buffer, order: { ...order, reportTitle: cfg.reportTitle } };
+}
+
+/** Filename stem: <phone>-<birthday>-<kind> */
+function sectionReportFilenameStem(kind, order, orderId) {
+  const phone  = (order.phone || orderId).replace(/\D/g, '');
+  const parsed = parseSinhalaDate(order.cf.birth_date || '');
+  const birthday = parsed
+    ? `${parsed.year}${String(parsed.month).padStart(2, '0')}${String(parsed.day).padStart(2, '0')}`
+    : (order.cf.birth_date || 'birthday').replace(/[^0-9]/g, '').slice(0, 8) || 'birthday';
+  return `${phone}-${birthday}-${sectionReport.KINDS[kind].fileSuffix}`;
+}
+
+/** GET /api/plugins/section-report/:kind/download-docx/:orderId (also used for preview) */
+async function downloadSectionReportDocx(req, res) {
+  const kind = sectionKindOf(req, res); if (!kind) return;
+  const { orderId } = req.params;
+  try {
+    const { buffer, order } = await sectionReportDocxFor(kind, orderId, resolveClientId(req));
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="${sectionReportFilenameStem(kind, order, orderId)}.docx"`);
+    res.send(buffer);
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+}
+
+/** GET /api/plugins/section-report/:kind/download-pdf/:orderId */
+async function downloadSectionReportPdf(req, res) {
+  const kind = sectionKindOf(req, res); if (!kind) return;
+  const { orderId } = req.params;
+  try {
+    const clientId = resolveClientId(req);
+    const { buffer: docxBuffer, order } = await sectionReportDocxFor(kind, orderId, clientId);
+    const pdf = await docxBufferToPdf(docxBuffer, `${kind}-${orderId}-${Date.now()}`, {
+      title:   order.reportTitle,
+      subject: order.reportTitle,
+      brand:   await getBrand(clientId),
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${sectionReportFilenameStem(kind, order, orderId)}.pdf"`);
+    res.send(pdf);
+  } catch (e) {
+    console.error(`[${kind.toUpperCase()}-PDF] error:`, e.message);
+    res.status(e.status || 500).json({ error: e.message });
+  }
+}
+
+/** POST /api/plugins/section-report/:kind/generate-wa/:orderId */
+async function generateSectionReportWaHandler(req, res) {
+  const kind = sectionKindOf(req, res); if (!kind) return;
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  const { orderId } = req.params;
+  try {
+    const order = await loadOrderReport(orderId);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    const data = order.hd[sectionReport.hdKey(kind, 'sections_data')];
+    if (!Array.isArray(data) || data.length === 0) {
+      return res.status(400).json({ error: `Generate the ${sectionReport.KINDS[kind].label} report first.` });
+    }
+    const config = await db.getPluginConfig(clientId, 'horoscope_reading');
+    const cfg = sectionReport.resolveConfig(kind, config);
+    if (!cfg.waPrompt) {
+      return res.status(400).json({ error: `${kind}_wa_prompt is not configured in plugin settings` });
+    }
+    const message = await sectionReport.generateWaMessage(kind, clientId, orderId, data, cfg.waPrompt);
+    res.json({ wa_message: message });
+  } catch (e) {
+    console.error(`[${kind.toUpperCase()}-WA] error:`, e.message);
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
+}
+
+/** PATCH /api/plugins/section-report/:kind/wa/:orderId  body { wa_message } */
+async function saveSectionReportWaHandler(req, res) {
+  const kind = sectionKindOf(req, res); if (!kind) return;
+  const { orderId } = req.params;
+  const { wa_message } = req.body;
+  if (typeof wa_message !== 'string') return res.status(400).json({ error: 'wa_message required' });
+  try {
+    await db.pgQuery(
+      `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'::jsonb), ARRAY[$1]::text[], $2::jsonb) WHERE order_id=$3`,
+      [sectionReport.hdKey(kind, 'wa_message'), JSON.stringify(wa_message), orderId]
+    );
+    res.json({ ok: true });
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
+}
+
+/** PDF handler for one kind, in the shape renderReportPdf expects (req.params.orderId only). */
+function sectionReportPdfFor(kind) {
+  return (req, res) => downloadSectionReportPdf({ ...req, params: { ...req.params, kind } }, res);
+}
+
 // ─── Match Making (ගැළපීම) — couple compatibility report ─────────────────────
 
 /**
@@ -2801,6 +3175,10 @@ module.exports = {
   generateMarriageHandler, regenerateMarriageSectionHandler, updateMarriageSections,
   downloadMarriageDocx, downloadMarriagePdf,
   generateMarriageWaHandler, saveMarriageWaHandler, aiPrepareMarriage, saveMarriageQuestions,
+  generateSectionReportHandler, regenerateSectionReportSectionHandler, updateSectionReport,
+  saveSectionReportQuestions, aiPrepareSectionReport, downloadSectionReportDocx,
+  downloadSectionReportPdf, generateSectionReportWaHandler, saveSectionReportWaHandler,
+  sectionReportPdfFor,
   aiPrepareMatch, saveMatchPeople, generateMatchHandler, regenerateMatchSectionHandler,
   updateMatchSections, downloadMatchDocx, downloadMatchPdf,
   downloadPorondamDocx, downloadPorondamPdf,

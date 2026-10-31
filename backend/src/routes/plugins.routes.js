@@ -41,6 +41,15 @@ const {
   saveMarriageWaHandler,
   aiPrepareMarriage,
   saveMarriageQuestions,
+  generateSectionReportHandler,
+  regenerateSectionReportSectionHandler,
+  updateSectionReport,
+  saveSectionReportQuestions,
+  aiPrepareSectionReport,
+  downloadSectionReportDocx,
+  downloadSectionReportPdf,
+  generateSectionReportWaHandler,
+  saveSectionReportWaHandler,
   aiPrepareMatch,
   saveMatchPeople,
   generateMatchHandler,
@@ -113,7 +122,17 @@ router.post('/horoscope/generate-marriage-wa/:orderId',         jwtAuth, require
 router.patch('/horoscope/marriage-wa/:orderId',                 jwtAuth, requirePermission('reports.edit'), orderScope, saveMarriageWaHandler);
 router.post('/horoscope/ai-prepare-marriage/:orderId',          jwtAuth, requirePermission('ai.fill'), orderScope, aiPrepareMarriage);
 router.patch('/horoscope/marriage-questions/:orderId',          jwtAuth, requirePermission('orders.edit'), orderScope, saveMarriageQuestions);
-router.post('/horoscope/ai-prepare-match/:orderId',              jwtAuth, requirePermission('ai.fill'), orderScope, aiPrepareMatch);
+// Section reports built like the marriage report (abroad, pregnancy). :kind is validated in the handlers.
+router.post('/section-report/:kind/generate/:orderId',            jwtAuth, requirePermission('ai.generate_report'), orderScope, generateSectionReportHandler);
+router.post('/section-report/:kind/regenerate-section/:orderId',  jwtAuth, requirePermission('ai.generate_report'), orderScope, regenerateSectionReportSectionHandler);
+router.patch('/section-report/:kind/sections/:orderId',           jwtAuth, requirePermission('reports.edit'), orderScope, updateSectionReport);
+router.get('/section-report/:kind/download-docx/:orderId',        jwtAuth, requirePermission('reports.download'), orderScope, downloadSectionReportDocx);
+router.get('/section-report/:kind/download-pdf/:orderId',         jwtAuth, requirePermission('reports.download'), orderScope, downloadSectionReportPdf);
+router.post('/section-report/:kind/generate-wa/:orderId',         jwtAuth, requirePermission('ai.generate_report'), orderScope, generateSectionReportWaHandler);
+router.patch('/section-report/:kind/wa/:orderId',                 jwtAuth, requirePermission('reports.edit'), orderScope, saveSectionReportWaHandler);
+router.post('/section-report/:kind/ai-prepare/:orderId',          jwtAuth, requirePermission('ai.fill'), orderScope, aiPrepareSectionReport);
+router.patch('/section-report/:kind/questions/:orderId',          jwtAuth, requirePermission('orders.edit'), orderScope, saveSectionReportQuestions);
+router.post('/horoscope/ai-prepare-match/:orderId',             jwtAuth, requirePermission('ai.fill'), orderScope, aiPrepareMatch);
 router.patch('/horoscope/match-people/:orderId',                jwtAuth, requirePermission('orders.edit'), orderScope, saveMatchPeople);
 router.post('/horoscope/generate-match/:orderId',               jwtAuth, requirePermission('ai.generate_report'), orderScope, generateMatchHandler);
 router.post('/horoscope/regenerate-match-section/:orderId',     jwtAuth, requirePermission('ai.generate_report'), orderScope, regenerateMatchSectionHandler);

@@ -7,6 +7,7 @@ import { formatDateTime, STATUS_COLORS, STATUS_OPTIONS } from '../../lib/utils';
 import OrderRemarks from './OrderRemarks';
 import MetaTracking from './MetaTracking';
 import { orderFacts, statusLabel } from './orderView';
+import { SECTION_KIND_LIST } from './sectionReports';
 
 const PAID_STATUSES = ['payment_received', 'paid', 'delivered', 'done', 'complete'];
 
@@ -219,6 +220,29 @@ export default function OrderDetailDrawer({
                       {f.marriageDone && <ActionBtn onClick={guard('horoscope_reading', open.marriage)}>View / edit</ActionBtn>}
                     </ReportRow>
                   )}
+
+                  {/* Abroad, pregnancy and any later report built like the marriage one.
+                      A row shows once there is something to say about it, or when the
+                      order's product names it. The form is also on the 🔮 modal's tabs. */}
+                  {SECTION_KIND_LIST.map(k => {
+                    const s = f.sectionReports[k.key];
+                    const sold = k.productHint.test([f.product, ...(Array.isArray(cf?.items) ? cf.items.map(i => i?.name) : [])].filter(Boolean).join(' '));
+                    if (!(s.generating || s.done || s.error || sold)) return null;
+                    return (
+                      <ReportRow key={k.key} icon={k.emoji} label={`${k.name} report`}
+                        state={s.generating ? { busy: true, text: 'Generating...' }
+                          : s.error && !s.done ? { tone: 'error', text: 'Failed, tap Retry', title: s.error }
+                          : s.done ? { text: 'Ready' } : { text: 'Not started' }}>
+                        {s.done && <ActionBtn onClick={guard('horoscope_reading', () => open.sectionReport(k.key))}>View / edit</ActionBtn>}
+                        {!s.generating && (
+                          <ActionBtn primary={!s.done} locked={!isEnabled('horoscope_reading')}
+                            onClick={guard('horoscope_reading', () => open.sectionReportNew(k.key))}>
+                            {s.error && !s.done ? 'Retry' : s.done ? 'Regenerate' : 'Generate'}
+                          </ActionBtn>
+                        )}
+                      </ReportRow>
+                    );
+                  })}
 
                   {showMatch && (
                     <ReportRow icon="💑" label="Match making"

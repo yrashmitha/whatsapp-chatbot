@@ -287,4 +287,8 @@ module.exports = {
   generateMarriageWaMessage,
   buildMarriageDoc,
   resolveMarriageConfig,
+  // Shared with sectionReport.js: the prompt wording and document layout are
+  // the same for every "cover page plus titled sections" report.
+  buildMarriageSectionPrompt,
+  buildMarriageQuestionPrompt,
 };

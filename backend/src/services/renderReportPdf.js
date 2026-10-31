@@ -23,7 +23,9 @@ function handlerFor(kind) {
     case 'marriage':  return plugins.downloadMarriagePdf;
     case 'match':     return plugins.downloadMatchPdf;
     case 'tarot':     return addons.downloadTarotPdfByOrder;
-    default:          return null;
+    default:
+      // abroad, pregnancy and any later section report kind
+      return require('./sectionReport').isKind(kind) ? plugins.sectionReportPdfFor(kind) : null;
   }
 }
 

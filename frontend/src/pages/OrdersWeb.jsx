@@ -26,6 +26,9 @@ import WaMessageModal from '../components/orders/WaMessageModal';
 import TarotGenerateModal from '../components/orders/TarotGenerateModal';
 import TarotEditorDrawer from '../components/orders/TarotEditorDrawer';
 import MarriageEditorDrawer from '../components/orders/MarriageEditorDrawer';
+import SectionReportEditorDrawer from '../components/orders/SectionReportEditorDrawer';
+import SectionReportBadges from '../components/orders/SectionReportBadges';
+import { SECTION_KIND_LIST } from '../components/orders/sectionReports';
 import MatchEditorDrawer from '../components/orders/MatchEditorDrawer';
 
 function parseCustomFields(raw) {
@@ -82,6 +85,7 @@ export default function OrdersWeb() {
   const [marriageOrder, setMarriageOrder]       = useState(null); // marriage editor drawer
   const [matchOrder, setMatchOrder]             = useState(null); // match making editor drawer
   const [matchModalOrder, setMatchModalOrder]   = useState(null); // order modal opened on the match tab
+  const [sectionEditor, setSectionEditor]       = useState(null); // { kind, order }: abroad / pregnancy editor drawer
   const toast = useToast();
   const qc = useQueryClient();
 
@@ -143,6 +147,7 @@ export default function OrdersWeb() {
         ? (() => { try { return JSON.parse(o.horoscope_data); } catch { return {}; } })()
         : (o.horoscope_data || {});
       if (hd.generating === true || hd.quantum_generating === true || hd.marriage_generating === true || hd.match_generating === true) return true;
+      if (SECTION_KIND_LIST.some(k => hd[`${k.key}_generating`] === true)) return true;
       const td = o.tarot_data && typeof o.tarot_data === 'string'
         ? (() => { try { return JSON.parse(o.tarot_data); } catch { return {}; } })()
         : (o.tarot_data || {});
@@ -537,6 +542,7 @@ export default function OrdersWeb() {
                                 ) : marriageError ? (
                                   <span title={marriageError} className="text-xs px-1.5 py-0.5 rounded border-0 bg-red-100 text-red-600 cursor-default">💍 ⚠</span>
                                 ) : null}
+                                <SectionReportBadges hd={hd} guard={guard} onOpen={(kind) => setSectionEditor({ kind, order: o })} />
                                 {showMatch && (
                                   matchGenerating ? (
                                     <span
@@ -811,6 +817,7 @@ export default function OrdersWeb() {
           clientId={clientId}
           showMatch={showMatch}
           showMarriage={showHoroscope}
+          sectionKinds={showHoroscope ? SECTION_KIND_LIST.map(k => k.key) : []}
           onClose={() => setHoroscopeOrder(null)}
           onGenerated={() => qc.invalidateQueries({ queryKey: ['orders'] })}
         />
@@ -853,6 +860,13 @@ export default function OrdersWeb() {
         clientId={clientId}
         open={!!marriageOrder}
         onClose={() => setMarriageOrder(null)}
+      />
+      <SectionReportEditorDrawer
+        kind={sectionEditor?.kind}
+        order={orders.find(o => o.order_id === sectionEditor?.order?.order_id) || sectionEditor?.order}
+        clientId={clientId}
+        open={!!sectionEditor}
+        onClose={() => setSectionEditor(null)}
       />
       <MatchEditorDrawer
         order={orders.find(o => o.order_id === matchOrder?.order_id) || matchOrder}

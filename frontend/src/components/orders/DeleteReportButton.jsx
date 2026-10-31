@@ -5,7 +5,7 @@ import api from '../../lib/api';
 
 const LABELS = {
   horoscope: 'horoscope', match: 'match-making', marriage: 'marriage',
-  quantum: 'Quantum Code', tarot: 'tarot',
+  quantum: 'Quantum Code', tarot: 'tarot', abroad: 'abroad', pregnancy: 'pregnancy',
 };
 
 /**

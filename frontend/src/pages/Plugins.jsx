@@ -1,10 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore, isSuperAdmin } from '../stores/auth';
 import Layout from '../components/Layout';
 import { useFeatureGate, LockBadge } from '../components/FeatureLock';
 import { useToast } from '../components/ui/Toast';
 import api from '../lib/api';
+import SectionReportSettings, { sectionReportGap } from '../components/plugins/SectionReportSettings';
+import { ReportTabs, Group, PanelIntro } from '../components/plugins/settingsLayout';
+import { SECTION_KIND_LIST, sectionConfigFromApi, sectionConfigToBody } from '../components/orders/sectionReports';
 
 
 
@@ -14,38 +17,38 @@ import api from '../lib/api';
  * loader line, a save line and a JSX block that can quietly drift apart.
  */
 const HOROSCOPE_EXTRAS = [
-  { key: 'fixed_instructions', label: 'Fixed Writing Instructions', rows: 8,
+  { key: 'fixed_instructions', group: 'horoscope', label: 'Fixed Writing Instructions', rows: 8,
     hint: 'Appended to every horoscope section prompt \u2014 tone, structure, and what not to repeat.' },
-  { key: 'vip_section_label', label: 'VIP Section Label', rows: 2,
+  { key: 'vip_section_label', group: 'horoscope', label: 'VIP Section Label', rows: 2,
     hint: 'Extra section added when an order is marked VIP.' },
-  { key: 'remedies_section_label', label: 'Remedies Section Label', rows: 2,
+  { key: 'remedies_section_label', group: 'horoscope', label: 'Remedies Section Label', rows: 2,
     hint: 'Must exactly match one of your section labels \u2014 it marks where the remedies half of the document begins.' },
-  { key: 'special_questions_title', label: 'Special Questions Heading', rows: 2,
+  { key: 'special_questions_title', group: 'horoscope', label: 'Special Questions Heading', rows: 2,
     hint: 'Heading above the customer\u2019s own questions. Use {year} for the current year.' },
-  { key: 'quantum_report_title', label: 'Quantum Report Title', rows: 2,
+  { key: 'quantum_report_title', group: 'quantum', label: 'Quantum Report Title', rows: 2,
     hint: 'Cover title of the quantum / aura report.' },
-  { key: 'porondam_report_title', label: 'Porondam Report Title', rows: 2,
+  { key: 'porondam_report_title', group: 'porondam', label: 'Porondam Report Title', rows: 2,
     hint: 'Cover title of the 20-Porondam report.' },
-  { key: 'porondam_special_note', label: 'Porondam Special Note', rows: 4,
+  { key: 'porondam_special_note', group: 'porondam', label: 'Porondam Special Note', rows: 4,
     hint: 'Final page of the Porondam report.' },
-  { key: 'marriage_report_title', label: 'Marriage Report Title', rows: 2,
+  { key: 'marriage_report_title', group: 'marriage', label: 'Marriage Report Title', rows: 2,
     hint: 'Cover title of the marriage report.' },
-  { key: 'marriage_fixed_instructions', label: 'Marriage Fixed Instructions', rows: 6,
+  { key: 'marriage_fixed_instructions', group: 'marriage', label: 'Marriage Fixed Instructions', rows: 6,
     hint: 'Appended to every marriage section prompt.' },
-  { key: 'marriage_questions_title', label: 'Marriage Questions Heading', rows: 2,
+  { key: 'marriage_questions_title', group: 'marriage', label: 'Marriage Questions Heading', rows: 2,
     hint: 'Heading above the customer’s own questions in the marriage report.' },
-  { key: 'marriage_question_instructions', label: 'Marriage Question Instructions', rows: 6,
+  { key: 'marriage_question_instructions', group: 'marriage', label: 'Marriage Question Instructions', rows: 6,
     hint: 'Appended when answering the customer’s own questions.' },
 ];
 
 const MATCH_EXTRAS = [
-  { key: 'match_report_title', label: 'Match Report Title', rows: 2,
+  { key: 'match_report_title', group: 'match', label: 'Match Report Title', rows: 2,
     hint: 'Cover title of the compatibility report.' },
-  { key: 'match_questions_title', label: 'Match Questions Heading', rows: 2,
+  { key: 'match_questions_title', group: 'match', label: 'Match Questions Heading', rows: 2,
     hint: 'Heading above the couple\u2019s own questions.' },
-  { key: 'match_fixed_instructions', label: 'Match Fixed Instructions', rows: 6,
+  { key: 'match_fixed_instructions', group: 'match', label: 'Match Fixed Instructions', rows: 6,
     hint: 'Appended to every match-making section prompt.' },
-  { key: 'match_question_instructions', label: 'Match Question Instructions', rows: 6,
+  { key: 'match_question_instructions', group: 'match', label: 'Match Question Instructions', rows: 6,
     hint: 'Appended when answering the couple\u2019s own questions.' },
 ];
 
@@ -56,6 +59,9 @@ const TAROT_EXTRAS = [
 ];
 
 const ALL_EXTRAS = [...HOROSCOPE_EXTRAS, ...MATCH_EXTRAS, ...TAROT_EXTRAS];
+
+/** The label and instruction fields that belong to one report tab. */
+const extrasFor = (group) => [...HOROSCOPE_EXTRAS, ...MATCH_EXTRAS].filter(f => f.group === group);
 
 /** One labelled textarea backed by the `extras` bag. */
 function ExtraField({ field, value, onChange }) {
@@ -105,6 +111,14 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
   const [marriageSpecialNote, setMarriageSpecialNote]   = useState('');
   const [marriageWaPrompt, setMarriageWaPrompt]         = useState('');
   const [marriageAiFillPrompt, setMarriageAiFillPrompt] = useState('');
+  // Abroad, pregnancy and any later report built like the marriage one: one settings bag per kind.
+  const [sectionCfg, setSectionCfg] = useState(() => sectionConfigFromApi());
+  // Which report the Horoscope plugin is showing: one at a time instead of one endless form.
+  const [reportTab, setReportTab] = useState('horoscope');
+  const marriageGap = (!marriageSystemPrompt.trim() || marriageSections.length === 0)
+    ? 'Cannot generate yet: add the system prompt and sections' : null;
+  const setSectionField = (kind, field, val) =>
+    setSectionCfg(p => ({ ...p, [kind]: { ...p[kind], [field]: val } }));
   const [matchSystemPrompt, setMatchSystemPrompt]       = useState('');
   const [matchSections, setMatchSections]               = useState([]);
   const [matchSpecialNote, setMatchSpecialNote]         = useState('');
@@ -159,6 +173,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
         setMarriageSpecialNote(r.data.marriage_special_note || '');
         setMarriageWaPrompt(r.data.marriage_wa_prompt || '');
         setMarriageAiFillPrompt(r.data.marriage_ai_fill_prompt || '');
+        setSectionCfg(sectionConfigFromApi(r.data));
         setMatchSystemPrompt(r.data.match_system_prompt || '');
         setMatchSections(Array.isArray(r.data.match_sections) ? r.data.match_sections : []);
         setMatchSpecialNote(r.data.match_special_note || '');
@@ -201,6 +216,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
         setMarriageSections([]);
         setMarriageSpecialNote('');
         setMarriageWaPrompt('');
+        setSectionCfg(sectionConfigFromApi());
         setGreeting('');
         setTtsVoice('Kore');
         setSttLanguage('en-US');
@@ -237,6 +253,7 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
         body.marriage_special_note  = marriageSpecialNote;
         body.marriage_wa_prompt     = marriageWaPrompt;
         body.marriage_ai_fill_prompt = marriageAiFillPrompt;
+        Object.assign(body, sectionConfigToBody(sectionCfg));
         if (showMatch) {
           body.match_system_prompt  = matchSystemPrompt;
           body.match_sections       = matchSections;
@@ -709,19 +726,26 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
 
       {isHoroscope && (
         <>
-          <div className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-slate-50">
-            <div>
-              <p className="text-sm font-medium text-slate-700">Aura &amp; Quantum Feature</p>
-              <p className="text-xs text-slate-400 mt-0.5">When off, the Full report option is hidden and no Aura/Quantum analysis is run.</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setQuantumEnabled(v => !v)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer border-0 ${quantumEnabled ? 'bg-violet-600' : 'bg-slate-300'}`}
-            >
-              <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${quantumEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
-            </button>
-          </div>
+          {/* One report at a time. The tabs wrap, so none hides behind a sideways swipe;
+              a dot marks a report that cannot generate yet. */}
+          <ReportTabs
+            label="Report"
+            value={reportTab}
+            onChange={setReportTab}
+            tabs={[
+              { id: 'horoscope', label: 'Horoscope' },
+              { id: 'quantum', label: 'Quantum' },
+              { id: 'porondam', label: 'Porondam' },
+              { id: 'marriage', label: 'Marriage', warn: marriageGap },
+              ...SECTION_KIND_LIST.map(k => ({ id: k.key, label: k.name, warn: sectionReportGap(sectionCfg[k.key]) })),
+              ...(showMatch ? [{ id: 'match', label: 'Match making' }] : []),
+            ]}
+          />
+
+          {reportTab === 'horoscope' && (
+            <div className="flex flex-col gap-3">
+              <PanelIntro>The main life report: the prompts, sections and labels for the horoscope reading.</PanelIntro>
+              <Group title="Prompts" defaultOpen>
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">System Prompt</label>
             <p className="text-xs text-slate-400 mb-1.5">
@@ -733,32 +757,6 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
               rows={12}
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
               placeholder="ඔබ දක්ෂ වෛදික ජ්‍යෝතිෂ විශේෂඥයෙකි…"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-slate-500 block mb-1">Quantum Reading System Prompt</label>
-            <p className="text-xs text-slate-400 mb-1.5">
-              House style for the Quantum Code reading (Aura + numerology section).
-            </p>
-            <textarea
-              value={quantumSystemPrompt}
-              onChange={e => setQuantumSystemPrompt(e.target.value)}
-              rows={12}
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
-              placeholder="Leave blank to use built-in default…"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-slate-500 block mb-1">Aura Analysis Prompt</label>
-            <p className="text-xs text-slate-400 mb-1.5">
-              How aura selfies should be read and what to report back.
-            </p>
-            <textarea
-              value={auraSystemPrompt}
-              onChange={e => setAuraSystemPrompt(e.target.value)}
-              rows={10}
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
-              placeholder="Leave blank to use built-in default…"
             />
           </div>
           <div>
@@ -788,50 +786,8 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
               placeholder="Leave blank to use built-in default…"
             />
           </div>
-          <div>
-            <label className="text-xs font-medium text-slate-500 block mb-1">Quantum Sections</label>
-            <p className="text-xs text-slate-400 mb-1.5">
-              Each section is written separately using the Quantum Reading house style, with the full horoscope as context.
-            </p>
-            {quantumSections.map((sec, i) => (
-              <div key={i} className="flex gap-2 mb-2 items-start">
-                <div className="flex flex-col gap-1 shrink-0 mt-1">
-                  <button
-                    onClick={() => { if (i === 0) return; const u = [...quantumSections]; [u[i-1], u[i]] = [u[i], u[i-1]]; setQuantumSections(u); }}
-                    disabled={i === 0}
-                    className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 disabled:opacity-30 cursor-pointer bg-white text-xs"
-                  >▲</button>
-                  <button
-                    onClick={() => { if (i === quantumSections.length - 1) return; const u = [...quantumSections]; [u[i], u[i+1]] = [u[i+1], u[i]]; setQuantumSections(u); }}
-                    disabled={i === quantumSections.length - 1}
-                    className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 disabled:opacity-30 cursor-pointer bg-white text-xs"
-                  >▼</button>
-                </div>
-                <input
-                  type="text"
-                  value={sec.label}
-                  onChange={e => { const u = [...quantumSections]; u[i] = { ...u[i], label: e.target.value }; setQuantumSections(u); }}
-                  placeholder="Section label…"
-                  className="w-40 shrink-0 px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
-                />
-                <textarea
-                  value={sec.guide}
-                  onChange={e => { const u = [...quantumSections]; u[i] = { ...u[i], guide: e.target.value }; setQuantumSections(u); }}
-                  placeholder="Writing guide for this section…"
-                  rows={3}
-                  className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
-                />
-                <button
-                  onClick={() => setQuantumSections(quantumSections.filter((_, j) => j !== i))}
-                  className="mt-1 w-7 h-7 shrink-0 flex items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-300 cursor-pointer bg-white text-xs font-bold"
-                >×</button>
-              </div>
-            ))}
-            <button
-              onClick={() => setQuantumSections([...quantumSections, { label: '', guide: '' }])}
-              className="mt-1 px-3 py-1.5 text-xs border border-dashed border-violet-300 text-violet-600 rounded-xl hover:bg-violet-50 cursor-pointer bg-white"
-            >+ Add Section</button>
-          </div>
+              </Group>
+              <Group title="Sections" badge={{ text: `${horoscopeSections.length} section${horoscopeSections.length === 1 ? '' : 's'}` }}>
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">Horoscope Sections</label>
             <p className="text-xs text-slate-400 mb-1.5">
@@ -884,6 +840,8 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
               )}
             </div>
           </div>
+              </Group>
+              <Group title="Titles, instructions and closing note">
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">Special Note (Final Page)</label>
             <p className="text-xs text-slate-400 mb-1.5">
@@ -898,31 +856,129 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
             />
           </div>
 
-          {/* Report labels and writing instructions. Nothing here is inherited from
-              another client — a blank field simply means the text is omitted. */}
-          <div className="mt-2 pt-4 border-t border-slate-200 flex flex-col gap-4">
-            <div>
-              <p className="text-sm font-semibold text-slate-800">Report Labels &amp; Instructions</p>
-              <p className="text-xs text-slate-400 mt-0.5">
-                These have no built-in defaults. A blank field is omitted from the report;
-                a blank system prompt stops generation rather than producing an unbranded one.
-              </p>
+                {extrasFor('horoscope').map(f => (
+                  <ExtraField key={f.key} field={f} value={extras[f.key]} onChange={setExtra} />
+                ))}
+              </Group>
             </div>
-            {HOROSCOPE_EXTRAS.map(f => (
-              <ExtraField key={f.key} field={f} value={extras[f.key]} onChange={setExtra} />
-            ))}
-            {showMatch && MATCH_EXTRAS.map(f => (
-              <ExtraField key={f.key} field={f} value={extras[f.key]} onChange={setExtra} />
-            ))}
-          </div>
+          )}
 
-          {/* ── Marriage Reading (💍) ─────────────────────────────────────── */}
-          <div className="mt-2 pt-4 border-t border-slate-200">
-            <p className="text-sm font-semibold text-slate-800">💍 Marriage Reading</p>
-            <p className="text-xs text-slate-400 mt-0.5">
-              A separate report generated from the same chart data as the horoscope. Admins run it from the 💍 button on an order (the horoscope chart must exist first). It has its own system prompt, sections, PDF and WhatsApp message.
-            </p>
+          {reportTab === 'quantum' && (
+            <div className="flex flex-col gap-3">
+              <PanelIntro>Aura and Quantum analysis that can be added to the full report.</PanelIntro>
+          <div className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-slate-50">
+            <div>
+              <p className="text-sm font-medium text-slate-700">Aura &amp; Quantum Feature</p>
+              <p className="text-xs text-slate-400 mt-0.5">When off, the Full report option is hidden and no Aura/Quantum analysis is run.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setQuantumEnabled(v => !v)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer border-0 ${quantumEnabled ? 'bg-violet-600' : 'bg-slate-300'}`}
+            >
+              <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${quantumEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+            </button>
           </div>
+              <Group title="Prompts" defaultOpen>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Quantum Reading System Prompt</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              House style for the Quantum Code reading (Aura + numerology section).
+            </p>
+            <textarea
+              value={quantumSystemPrompt}
+              onChange={e => setQuantumSystemPrompt(e.target.value)}
+              rows={12}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
+              placeholder="Leave blank to use built-in default…"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Aura Analysis Prompt</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              How aura selfies should be read and what to report back.
+            </p>
+            <textarea
+              value={auraSystemPrompt}
+              onChange={e => setAuraSystemPrompt(e.target.value)}
+              rows={10}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
+              placeholder="Leave blank to use built-in default…"
+            />
+          </div>
+              </Group>
+              <Group title="Sections" badge={{ text: `${quantumSections.length} section${quantumSections.length === 1 ? '' : 's'}` }}>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Quantum Sections</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              Each section is written separately using the Quantum Reading house style, with the full horoscope as context.
+            </p>
+            {quantumSections.map((sec, i) => (
+              <div key={i} className="flex gap-2 mb-2 items-start">
+                <div className="flex flex-col gap-1 shrink-0 mt-1">
+                  <button
+                    onClick={() => { if (i === 0) return; const u = [...quantumSections]; [u[i-1], u[i]] = [u[i], u[i-1]]; setQuantumSections(u); }}
+                    disabled={i === 0}
+                    className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 disabled:opacity-30 cursor-pointer bg-white text-xs"
+                  >▲</button>
+                  <button
+                    onClick={() => { if (i === quantumSections.length - 1) return; const u = [...quantumSections]; [u[i], u[i+1]] = [u[i+1], u[i]]; setQuantumSections(u); }}
+                    disabled={i === quantumSections.length - 1}
+                    className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-slate-700 disabled:opacity-30 cursor-pointer bg-white text-xs"
+                  >▼</button>
+                </div>
+                <input
+                  type="text"
+                  value={sec.label}
+                  onChange={e => { const u = [...quantumSections]; u[i] = { ...u[i], label: e.target.value }; setQuantumSections(u); }}
+                  placeholder="Section label…"
+                  className="w-40 shrink-0 px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                />
+                <textarea
+                  value={sec.guide}
+                  onChange={e => { const u = [...quantumSections]; u[i] = { ...u[i], guide: e.target.value }; setQuantumSections(u); }}
+                  placeholder="Writing guide for this section…"
+                  rows={3}
+                  className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono"
+                />
+                <button
+                  onClick={() => setQuantumSections(quantumSections.filter((_, j) => j !== i))}
+                  className="mt-1 w-7 h-7 shrink-0 flex items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-300 cursor-pointer bg-white text-xs font-bold"
+                >×</button>
+              </div>
+            ))}
+            <button
+              onClick={() => setQuantumSections([...quantumSections, { label: '', guide: '' }])}
+              className="mt-1 px-3 py-1.5 text-xs border border-dashed border-violet-300 text-violet-600 rounded-xl hover:bg-violet-50 cursor-pointer bg-white"
+            >+ Add Section</button>
+          </div>
+              </Group>
+              <Group title="Titles">
+                {extrasFor('quantum').map(f => (
+                  <ExtraField key={f.key} field={f} value={extras[f.key]} onChange={setExtra} />
+                ))}
+              </Group>
+            </div>
+          )}
+
+          {reportTab === 'porondam' && (
+            <div className="flex flex-col gap-3">
+              <PanelIntro>Titles for the 20-Porondam report. Its data comes from the pahantharu_web site.</PanelIntro>
+              <Group title="Titles and closing note" defaultOpen>
+                {extrasFor('porondam').map(f => (
+                  <ExtraField key={f.key} field={f} value={extras[f.key]} onChange={setExtra} />
+                ))}
+              </Group>
+            </div>
+          )}
+
+          {reportTab === 'marriage' && (
+            <div className="flex flex-col gap-3">
+              <PanelIntro>
+                A separate report generated from the same chart data as the horoscope. Admins run it from the Marriage tab
+                of the order&apos;s generate window, after Check Lagna. It has its own prompt, sections, PDF and WhatsApp message.
+              </PanelIntro>
+              <Group title="Prompts" defaultOpen badge={marriageSystemPrompt.trim() ? null : { text: 'System prompt not set', tone: 'warn' }}>
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">Marriage System Prompt</label>
             <p className="text-xs text-slate-400 mb-1.5">
@@ -936,6 +992,38 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
               placeholder="Leave blank to use built-in default…"
             />
           </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Marriage WhatsApp Message Prompt</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              System prompt used to turn the finished marriage report into a WhatsApp message. Leave blank to disable the message.
+            </p>
+            <textarea
+              value={marriageWaPrompt}
+              onChange={e => setMarriageWaPrompt(e.target.value)}
+              rows={6}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-pink-400 focus:ring-2 focus:ring-pink-100 resize-y font-mono"
+              placeholder="e.g. ලබාදෙන විවාහ පලාපල වාර්තාව පදනම් කරගෙන කෙටි WhatsApp පණිවිඩයක් ලියන්න…"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Marriage AI Fill Prompt</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              Used by the “AI Fill from chat” button on the marriage report’s Special Questions tab. Must keep {'{{chat_log}}'} and return the JSON schema. Leave blank for the built-in default.
+            </p>
+            <textarea
+              value={marriageAiFillPrompt}
+              onChange={e => setMarriageAiFillPrompt(e.target.value)}
+              rows={6}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-pink-400 focus:ring-2 focus:ring-pink-100 resize-y font-mono"
+              placeholder="(not set — built-in default is used)"
+            />
+          </div>
+              </Group>
+              <Group
+                title="Sections"
+                defaultOpen={marriageSections.length === 0}
+                badge={marriageSections.length ? { text: `${marriageSections.length} section${marriageSections.length === 1 ? '' : 's'}` } : { text: 'None yet', tone: 'warn' }}
+              >
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">Marriage Sections</label>
             <p className="text-xs text-slate-400 mb-1.5">
@@ -980,32 +1068,8 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
               className="mt-1 px-3 py-1.5 text-xs border border-dashed border-pink-300 text-pink-600 rounded-xl hover:bg-pink-50 cursor-pointer bg-white"
             >+ Add Section</button>
           </div>
-          <div>
-            <label className="text-xs font-medium text-slate-500 block mb-1">Marriage WhatsApp Message Prompt</label>
-            <p className="text-xs text-slate-400 mb-1.5">
-              System prompt used to turn the finished marriage report into a WhatsApp message. Leave blank to disable the message.
-            </p>
-            <textarea
-              value={marriageWaPrompt}
-              onChange={e => setMarriageWaPrompt(e.target.value)}
-              rows={6}
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-pink-400 focus:ring-2 focus:ring-pink-100 resize-y font-mono"
-              placeholder="e.g. ලබාදෙන විවාහ පලාපල වාර්තාව පදනම් කරගෙන කෙටි WhatsApp පණිවිඩයක් ලියන්න…"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-slate-500 block mb-1">Marriage AI Fill Prompt</label>
-            <p className="text-xs text-slate-400 mb-1.5">
-              Used by the “AI Fill from chat” button on the marriage report’s Special Questions tab. Must keep {'{{chat_log}}'} and return the JSON schema. Leave blank for the built-in default.
-            </p>
-            <textarea
-              value={marriageAiFillPrompt}
-              onChange={e => setMarriageAiFillPrompt(e.target.value)}
-              rows={6}
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-pink-400 focus:ring-2 focus:ring-pink-100 resize-y font-mono"
-              placeholder="(not set — built-in default is used)"
-            />
-          </div>
+              </Group>
+              <Group title="Titles, instructions and closing note">
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">Marriage Special Note (Final Page)</label>
             <p className="text-xs text-slate-400 mb-1.5">
@@ -1019,16 +1083,29 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
               placeholder="විශේෂ සටහන…"
             />
           </div>
+                {extrasFor('marriage').map(f => (
+                  <ExtraField key={f.key} field={f} value={extras[f.key]} onChange={setExtra} />
+                ))}
+              </Group>
+            </div>
+          )}
 
-          {/* ── Match Making (💑) ─────────────────────────────────────────── */}
-          {showMatch && (
-          <>
-          <div className="mt-2 pt-4 border-t border-slate-200">
-            <p className="text-sm font-semibold text-slate-800">💑 Match Making (ගැළපීම)</p>
-            <p className="text-xs text-slate-400 mt-0.5">
-              A couple compatibility report built from TWO charts. Admins run it from the 💑 button on an order — the Match Making tab collects both partners&apos; birth details and a &ldquo;Check Sign&rdquo; per person. It has its own house style, sections, Auto Fill instructions and PDF.
-            </p>
-          </div>
+          {SECTION_KIND_LIST.map(k => reportTab === k.key && (
+            <SectionReportSettings
+              key={k.key}
+              kind={k.key}
+              value={sectionCfg[k.key] || {}}
+              onChange={(field, val) => setSectionField(k.key, field, val)}
+            />
+          ))}
+
+          {showMatch && reportTab === 'match' && (
+            <div className="flex flex-col gap-3">
+              <PanelIntro>
+                A couple compatibility report built from two charts. Admins run it from the Match Making tab of the order&apos;s
+                generate window, which collects both partners&apos; birth details.
+              </PanelIntro>
+              <Group title="Prompts" defaultOpen>
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">Match Making System Prompt</label>
             <p className="text-xs text-slate-400 mb-1.5">
@@ -1042,6 +1119,21 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
               placeholder="Leave blank to use built-in default…"
             />
           </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Match Making Auto Fill Instructions</label>
+            <p className="text-xs text-slate-400 mb-1.5">
+              Separate from the horoscope Auto Fill because a compatibility chat contains TWO people. It must say how to decide which details belong to the boy and which to the girl. Placeholder: <code className="text-teal-600">{'{{chat_log}}'}</code>
+            </p>
+            <textarea
+              value={matchAiFillPrompt}
+              onChange={e => setMatchAiFillPrompt(e.target.value)}
+              rows={10}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 resize-y font-mono"
+              placeholder="Leave blank to use built-in default…"
+            />
+          </div>
+              </Group>
+              <Group title="Sections" badge={{ text: `${matchSections.length} section${matchSections.length === 1 ? '' : 's'}` }}>
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">Match Making Sections</label>
             <p className="text-xs text-slate-400 mb-1.5">
@@ -1086,19 +1178,8 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
               className="mt-1 px-3 py-1.5 text-xs border border-dashed border-teal-300 text-teal-600 rounded-xl hover:bg-teal-50 cursor-pointer bg-white"
             >+ Add Section</button>
           </div>
-          <div>
-            <label className="text-xs font-medium text-slate-500 block mb-1">Match Making Auto Fill Instructions</label>
-            <p className="text-xs text-slate-400 mb-1.5">
-              Separate from the horoscope Auto Fill because a compatibility chat contains TWO people. It must say how to decide which details belong to the boy and which to the girl. Placeholder: <code className="text-teal-600">{'{{chat_log}}'}</code>
-            </p>
-            <textarea
-              value={matchAiFillPrompt}
-              onChange={e => setMatchAiFillPrompt(e.target.value)}
-              rows={10}
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 resize-y font-mono"
-              placeholder="Leave blank to use built-in default…"
-            />
-          </div>
+              </Group>
+              <Group title="Titles, instructions and closing note">
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">Match Making Special Note (Final Page)</label>
             <p className="text-xs text-slate-400 mb-1.5">
@@ -1112,16 +1193,24 @@ function PluginCard({ pluginMeta, clientId, superAdmin, enabledAddons = [] }) {
               placeholder="විශේෂ සටහන…"
             />
           </div>
-          </>
+                {extrasFor('match').map(f => (
+                  <ExtraField key={f.key} field={f} value={extras[f.key]} onChange={setExtra} />
+                ))}
+              </Group>
+            </div>
           )}
         </>
       )}
 
-      <div className="flex justify-end">
+      {/* Stays at the bottom of the screen while the form is long, so saving never means scrolling to the end. */}
+      <div
+        className="sticky bottom-0 z-10 -mx-4 -mb-4 px-4 pt-3 bg-white border-t border-slate-200 rounded-b-xl flex justify-end"
+        style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+      >
         <button
           onClick={save}
           disabled={saving}
-          className="px-4 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm font-medium rounded-xl cursor-pointer border-0 transition-colors"
+          className="min-h-[44px] md:min-h-0 px-5 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm font-medium rounded-xl cursor-pointer border-0 transition-colors"
         >
           {saving ? 'Saving…' : 'Save'}
         </button>
@@ -1155,6 +1244,19 @@ function LockedPluginCard({ pluginMeta, onOpen }) {
   );
 }
 
+/** True from the tablet breakpoint up. Follows the window as it is resized or rotated. */
+function useIsWide() {
+  const query = '(min-width: 768px)';
+  const [wide, setWide] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches);
+  useEffect(() => {
+    const m = window.matchMedia(query);
+    const onChange = () => setWide(m.matches);
+    m.addEventListener('change', onChange);
+    return () => m.removeEventListener('change', onChange);
+  }, []);
+  return wide;
+}
+
 export default function Plugins() {
   const { user, selectedClientId } = useAuthStore();
   const superAdmin = isSuperAdmin(user);
@@ -1172,21 +1274,82 @@ export default function Plugins() {
   const unlocked = (catalog || []).filter(p => p.configurable && isEnabled(p.id));
   const locked   = (catalog || []).filter(p => !isEnabled(p.id));
 
+  // One plugin open at a time. A wide screen keeps the list beside the settings;
+  // a phone shows the list, then the settings with a way back.
+  const isWide = useIsWide();
+  const scrollRef = useRef(null);
+  const [activeId, setActiveId] = useState(() => {
+    try { return localStorage.getItem('plugins.active') || null; } catch { return null; }
+  });
+  const current = unlocked.some(p => p.id === activeId) ? activeId : (isWide ? (unlocked[0]?.id || null) : null);
+  // A card stays mounted once opened, hidden when another is showing, so edits that
+  // have not been saved yet survive a trip to a different plugin.
+  const [opened, setOpened] = useState(() => new Set());
+  useEffect(() => {
+    if (current) setOpened(prev => (prev.has(current) ? prev : new Set(prev).add(current)));
+  }, [current]);
+
+  const open = (id) => {
+    setActiveId(id);
+    try { localStorage.setItem('plugins.active', id || ''); } catch { /* storage can be blocked */ }
+    scrollRef.current?.scrollTo({ top: 0 });
+  };
+
   return (
     <Layout>
       {lockModal}
-      <div className="p-6 overflow-y-auto h-full">
+      <div ref={scrollRef} className="p-4 md:p-6 overflow-y-auto h-full">
         <h1 className="text-lg font-bold text-slate-800 mb-1">Plugins</h1>
-        <p className="text-sm text-slate-500 mb-6">
+        <p className="text-sm text-slate-500 mb-4 md:mb-6">
           Configure plugin settings and custom prompts.
           {!clientId && <span className="text-amber-600 font-medium"> Select a client from the sidebar first.</span>}
         </p>
 
         {clientId && unlocked.length > 0 && (
-          <div className="flex flex-col gap-4">
-            {unlocked.map(p => (
-              <PluginCard key={p.id} pluginMeta={p} clientId={clientId} superAdmin={superAdmin} enabledAddons={enabledAddons} />
-            ))}
+          <div className="md:grid md:grid-cols-[250px_minmax(0,1fr)] md:gap-6 md:items-start">
+            <nav
+              aria-label="Plugins"
+              className={`${current ? 'hidden md:flex' : 'flex'} flex-col gap-2 md:sticky md:top-0`}
+            >
+              {unlocked.map(p => {
+                const active = p.id === current;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    aria-current={active ? 'page' : undefined}
+                    onClick={() => open(p.id)}
+                    className={`text-left w-full rounded-xl border px-4 py-3 min-h-[56px] cursor-pointer transition-colors ${
+                      active
+                        ? 'bg-violet-50 border-violet-300'
+                        : 'bg-white border-slate-200 hover:border-violet-300'
+                    }`}
+                  >
+                    <span className={`block text-sm font-semibold ${active ? 'text-violet-800' : 'text-slate-800'}`}>{p.name}</span>
+                    {p.description && (
+                      <span className="block text-xs text-slate-500 mt-0.5 line-clamp-2">{p.description}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+
+            <div key={clientId} className={`${current ? 'block' : 'hidden md:block'} min-w-0`}>
+              {current && (
+                <button
+                  type="button"
+                  onClick={() => open(null)}
+                  className="md:hidden mb-3 min-h-[44px] px-1 text-sm font-medium text-violet-700 bg-transparent border-0 cursor-pointer"
+                >
+                  &larr; All plugins
+                </button>
+              )}
+              {unlocked.filter(p => opened.has(p.id) || p.id === current).map(p => (
+                <div key={p.id} className={p.id === current ? 'block' : 'hidden'}>
+                  <PluginCard pluginMeta={p} clientId={clientId} superAdmin={superAdmin} enabledAddons={enabledAddons} />
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

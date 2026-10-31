@@ -5,6 +5,8 @@ import { customerNameFrom } from '../../lib/utils';
 import ChatThread from '../chat/ChatThread';
 import MatchMakingPanel from './MatchMakingPanel';
 import MarriagePanel from './MarriagePanel';
+import SectionReportPanel from './SectionReportPanel';
+import { SECTION_KINDS } from './sectionReports';
 
 const HOURS   = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
 const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
@@ -47,11 +49,11 @@ function auraScoreColor(score) {
   return '#dc2626';
 }
 
-export default function HoroscopeModal({ order, clientId, onClose, onGenerated, showMatch = false, showMarriage = false, initialTab = 'horoscope' }) {
+export default function HoroscopeModal({ order, clientId, onClose, onGenerated, showMatch = false, showMarriage = false, sectionKinds = [], initialTab = 'horoscope' }) {
   const toast  = useToast();
   // Which report the right-hand pane is editing. The chat stays mounted on the left in
   // every tab — reading the thread is exactly what you need while filling any form.
-  const hasTabs = showMatch || showMarriage;
+  const hasTabs = showMatch || showMarriage || sectionKinds.length > 0;
   const [tab, setTab] = useState(hasTabs ? initialTab : 'horoscope');
   const geoRef = useRef();
   const auraFileRef = useRef();
@@ -381,6 +383,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
             <h2 className="text-base font-semibold text-slate-800 truncate">
               {tab === 'match' ? '💑 Generate Match Making Report'
                 : tab === 'marriage' ? '💍 Generate Marriage Report'
+                : SECTION_KINDS[tab] ? `${SECTION_KINDS[tab].emoji} ${SECTION_KINDS[tab].heading}`
                 : '🔮 Generate Horoscope Reading'}
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">#{order?.order_id}</p>
@@ -422,11 +425,13 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
 
         {/* Report tabs */}
         {hasTabs && (
-          <div className="flex gap-1 px-3 md:px-5 pt-2 md:pt-3 border-b border-slate-100 shrink-0">
+          <div className="flex gap-1 px-3 md:px-5 pt-2 md:pt-3 border-b border-slate-100 shrink-0 overflow-x-auto">
             {[
               { key: 'horoscope', label: '🔮 Horoscope', accent: '#6366f1' },
               ...(showMatch    ? [{ key: 'match',    label: '💑 Match Making', accent: '#0d9488' }] : []),
               ...(showMarriage ? [{ key: 'marriage', label: '💍 Marriage',     accent: '#db2777' }] : []),
+              ...sectionKinds.filter(k => SECTION_KINDS[k]).map(k => (
+                { key: k, label: SECTION_KINDS[k].tabLabel, accent: SECTION_KINDS[k].accent })),
             ].map(t => (
               <button
                 key={t.key}
@@ -455,6 +460,16 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
           />
         ) : tab === 'marriage' ? (
           <MarriagePanel
+            order={order}
+            clientId={clientId}
+            existingHd={existingHd}
+            onClose={onClose}
+            onGenerated={onGenerated}
+          />
+        ) : SECTION_KINDS[tab] ? (
+          <SectionReportPanel
+            key={tab}
+            kind={tab}
             order={order}
             clientId={clientId}
             existingHd={existingHd}

@@ -109,7 +109,8 @@ function normalizeOrderRow(row) {
 
   const sections = hd.sections && typeof hd.sections === 'object'
     ? sectionsObjectToArray(hd.sections)
-    : (Array.isArray(hd.marriage_sections_data) ? hd.marriage_sections_data : []);
+    : (['marriage_sections_data', 'abroad_sections_data', 'pregnancy_sections_data']
+        .map(k => hd[k]).find(v => Array.isArray(v) && v.length) || []);
 
   if (sections.length) {
     return {

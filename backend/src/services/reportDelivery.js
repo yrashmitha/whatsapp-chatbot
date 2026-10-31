@@ -63,6 +63,9 @@ function detectKind(order) {
   const td = parseJson(order.tarot_data);
   if (Array.isArray(hd.match_sections_data) && hd.match_sections_data.length) return 'match';
   if (Array.isArray(hd.marriage_sections_data) && hd.marriage_sections_data.length) return 'marriage';
+  for (const k of SECTION_KINDS) {
+    if (Array.isArray(hd[`${k}_sections_data`]) && hd[`${k}_sections_data`].length) return k;
+  }
   if (hd.sections && Object.keys(hd.sections).length) return 'horoscope';
   if ((Array.isArray(hd.quantum_sections_data) && hd.quantum_sections_data.length) || hd.quantum_reading) return 'quantum';
   if (td && td.reading && td.cards) return 'tarot';
@@ -79,11 +82,17 @@ function hasContentForKind(order, kind) {
     case 'horoscope': return !!hd.sections && Object.keys(hd.sections).length > 0;
     case 'quantum':   return (Array.isArray(hd.quantum_sections_data) && hd.quantum_sections_data.length > 0) || !!hd.quantum_reading;
     case 'tarot':     return !!td && !!td.reading && !!td.cards;
-    default:          return false;
+    default:
+      return SECTION_KINDS.includes(kind)
+        && Array.isArray(hd[`${kind}_sections_data`]) && hd[`${kind}_sections_data`].length > 0;
   }
 }
 
-const VALID_KINDS = ['horoscope', 'marriage', 'match', 'quantum', 'tarot'];
+// Reports built like the marriage report: content is <kind>_sections_data.
+// Kept here, not imported from sectionReport.js, so this module stays light.
+const SECTION_KINDS = ['abroad', 'pregnancy'];
+
+const VALID_KINDS = ['horoscope', 'marriage', 'match', 'quantum', 'tarot', ...SECTION_KINDS];
 
 const KIND_LABELS = {
   horoscope: 'සම්පූර්ණ ජීවන වාර්තාව',
@@ -91,6 +100,8 @@ const KIND_LABELS = {
   match:     'කේන්දර ගැලපීම වාර්තාව',
   quantum:   'ක්වොන්ටම් වාර්තාව',
   tarot:     'ටැරෝ කියවීම',
+  abroad:    'විදේශගත වීමේ වාර්තාව',
+  pregnancy: 'දරු සම්භවය පිළිබඳ වාර්තාව',
 };
 
 /** Every report kind this order carries finished content for, in reading order. */

@@ -31,6 +31,11 @@ const {
   buildMarriageSectionPrompt, buildMarriageQuestionPrompt,
   historyFromSections, buildMarriageDoc,
 } = require('./marriage');
+const {
+  tryParseSpec, specToSections, renderGlobalRules, renderLedger,
+  buildSpecSectionPrompt, buildReviewPrompt, REVIEW_SCHEMA,
+  wordCount, codeChecks,
+} = require('./sectionSpec');
 
 /**
  * Per-kind facts that are not editorial content. Titles, prompts and sections
@@ -58,14 +63,14 @@ function hdKey(kind, name) { return `${kind}_${name}`; }
 
 /** Every horoscope_data key a generated report of this kind owns (delete wipes these). */
 function reportKeys(kind) {
-  return ['sections_data', 'special_answers', 'generated_at', 'wa_message',
+  return ['sections_data', 'special_answers', 'generated_at', 'wa_message', 'review',
     'progress', 'generating', 'generating_at', 'error'].map(n => hdKey(kind, n));
 }
 
 /** Every plugin config key a kind owns, so save and load stay in step. */
 const CONFIG_FIELDS = ['system_prompt', 'sections', 'special_note', 'wa_prompt',
   'report_title', 'fixed_instructions', 'questions_title', 'question_instructions',
-  'ai_fill_prompt'];
+  'ai_fill_prompt', 'spec'];
 
 function configKeys(kind) { return CONFIG_FIELDS.map(f => hdKey(kind, f)); }
 
@@ -77,8 +82,12 @@ function configKeys(kind) { return CONFIG_FIELDS.map(f => hdKey(kind, f)); }
 function resolveConfig(kind, config = {}) {
   const get = (f) => config[hdKey(kind, f)];
   const raw = get('sections');
+  // A valid spec is the source of the section list, so the editor, the document
+  // and generation can never disagree about which sections exist.
+  const spec = tryParseSpec(get('spec'));
   return {
-    sections: Array.isArray(raw) ? raw.filter(s => s && s.label) : [],
+    spec,
+    sections: spec ? specToSections(spec) : (Array.isArray(raw) ? raw.filter(s => s && s.label) : []),
     systemPrompt:         String(get('system_prompt') || '').trim(),
     specialNote:          String(get('special_note') || '').trim(),
     reportTitle:          String(get('report_title') || '').trim(),
@@ -129,9 +138,10 @@ function parseJson(v) {
  */
 async function generateReading(kind, clientId, orderId) {
   const tag = kind.toUpperCase();
-  const r = await db.pgQuery('SELECT horoscope_data FROM orders WHERE order_id=$1', [orderId]);
+  const r = await db.pgQuery('SELECT horoscope_data, custom_fields FROM orders WHERE order_id=$1', [orderId]);
   if (!r.rows.length) throw new Error('Order not found');
   const hd = parseJson(r.rows[0].horoscope_data);
+  const cf = parseJson(r.rows[0].custom_fields);
 
   if (!hd.chart_data) {
     throw new Error('No chart data found for this order. Press Check Lagna first.');
@@ -150,7 +160,9 @@ async function generateReading(kind, clientId, orderId) {
     throw err;
   }
 
-  console.log(`[${tag}] generating ${cfg.sections.length} sections for order ${orderId}`);
+  console.log(`[${tag}] generating ${cfg.sections.length} sections for order ${orderId}${cfg.spec ? ' (spec mode)' : ''}`);
+
+  if (cfg.spec) return generateSpecReading({ kind, clientId, orderId, hd, cf, cfg, config });
 
   // One session for the whole run: every section sees what came before it.
   const chat = (await buildModel({ clientId, chartData: hd.chart_data, systemPrompt: cfg.systemPrompt })).startChat({});
@@ -207,6 +219,246 @@ async function generateReading(kind, clientId, orderId) {
     }
   }
   return out;
+}
+
+// ─── Spec mode: ledger, review, targeted fixes ───────────────────────────────
+
+const SECTION_SCHEMA = {
+  type: 'object',
+  properties: { content: { type: 'string' }, ledger: { type: 'array', items: { type: 'string' } } },
+  required: ['content', 'ledger'],
+};
+
+/** How many review rounds may rewrite flagged sections before the report is accepted as it is. */
+const MAX_REVIEW_ROUNDS = 2;
+
+/**
+ * The chart, the customer's own order details, the client's house style and the
+ * spec's global rules, as one system instruction. Constant across every call.
+ */
+function specSystemInstruction({ systemPrompt, spec, cf, chartData }) {
+  const rules = renderGlobalRules(spec.globalRules);
+  return [
+    systemPrompt,
+    rules.length ? `ගෝලීය නීති:\n${rules.map(r => `- ${r}`).join('\n')}` : '',
+    `ජන්මියාගේ ඇණවුමේ තොරතුරු (ඉල්ලීම, අරමුණු, සුදුසුකම් ආදිය):\n${describeOrderDetails(cf)}`,
+    `මෙම කේන්ද්‍ර දත්ත සම්පූර්ණ වාර්තාව සඳහා පදනම වේ:\n\n${JSON.stringify(chartData, null, 2)}${todayContextBlock()}`,
+  ].filter(Boolean).join('\n\n');
+}
+
+async function specModel(clientId, systemInstruction, { schema, temperature = 0.4 } = {}) {
+  return (await getGenAI(clientId)).getGenerativeModel({
+    model: 'gemini-2.5-flash',
+    systemInstruction,
+    generationConfig: {
+      temperature, topP: 0.8, topK: 40,
+      ...(schema && { responseMimeType: 'application/json', responseSchema: schema }),
+    },
+  });
+}
+
+/** One JSON reply, retried once when it comes back empty or unparsable. */
+async function jsonCall(model, prompt, label, meter) {
+  let lastErr;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const result = await model.generateContent(prompt);
+      if (meter) meter.add(result.response.usageMetadata);
+      const parsed = JSON.parse(result.response.text().trim());
+      if (parsed && typeof parsed === 'object') return parsed;
+      lastErr = new Error('reply was not an object');
+    } catch (e) { lastErr = e; }
+  }
+  const err = new Error(`"${label}" could not be written (${lastErr && lastErr.message}). Nothing was saved; try generating again.`);
+  err.statusCode = 502;
+  throw err;
+}
+
+const cleanLedger = (v) => (Array.isArray(v) ? v.map(x => String(x || '').trim()).filter(Boolean).slice(0, 5) : []);
+
+/** Write (or rewrite) one section of a spec. Returns { content, ledger }. */
+async function writeSpecSection({ model, section, ledger, fixedInstructions, issues, current, meter }) {
+  let prompt = buildSpecSectionPrompt(section, { ledger, fixedInstructions, issues });
+  if (current) prompt = `වත්මන් අනුවාදය:\n${current}\n\n${prompt}`;
+  const out = await jsonCall(model, prompt, section.title, meter);
+  const content = String(out.content || '').trim();
+  if (!content) {
+    const err = new Error(`"${section.title}" came back empty. Nothing was saved; try generating again.`);
+    err.statusCode = 502;
+    throw err;
+  }
+  return { content, ledger: cleanLedger(out.ledger) };
+}
+
+/** The review record saved beside the sections: counts, and per-section words and open issues. */
+function buildReviewRecord(items, rounds, found, spec, reviewError) {
+  const open = codeChecks(items, spec.globalRules);
+  const sections = {};
+  items.forEach(({ section, content, remaining }, i) => {
+    sections[section.title] = {
+      words: wordCount(content), target: section.targetWords || null, max: section.maxWords || null,
+      issues: [...(open.get(i) || []), ...(remaining || [])],
+    };
+  });
+  const remainingCount = Object.values(sections).reduce((n, s) => n + s.issues.length, 0);
+  return {
+    rounds, found, fixed: Math.max(0, found - remainingCount), remaining: remainingCount,
+    ...(reviewError && { review_error: reviewError }),
+    checked_at: new Date().toISOString(), sections,
+  };
+}
+
+/**
+ * Whole-report review followed by targeted rewrites.
+ *
+ * Each round: code checks (length, English text, repeated wording) plus one AI
+ * read of the entire report for repetition, contradictions and scope breaches.
+ * Only sections with findings are rewritten, with the findings in the prompt.
+ * Stops when a round finds nothing or after MAX_REVIEW_ROUNDS.
+ *
+ * Mutates `items` ({section, content, ledger}) in place.
+ */
+async function reviewAndFix({ items, spec, writer, reviewer, fixedInstructions, meter }) {
+  let found = 0;
+  let rounds = 0;
+  let reviewError = null;
+
+  for (let round = 1; round <= MAX_REVIEW_ROUNDS; round += 1) {
+    const flagged = new Map(); // index -> notes
+    for (const [i, notes] of codeChecks(items, spec.globalRules)) flagged.set(i, [...notes]);
+
+    if (!reviewError) {
+      try {
+        const res = await jsonCall(reviewer, buildReviewPrompt(items, spec.globalRules), 'report review', meter);
+        for (const iss of (Array.isArray(res.issues) ? res.issues : [])) {
+          const i = Number(iss.section_index);
+          if (Number.isInteger(i) && i >= 0 && i < items.length && String(iss.note || '').trim()) {
+            flagged.set(i, [...(flagged.get(i) || []), `${iss.type || 'issue'}: ${String(iss.note).trim()}`]);
+          }
+        }
+      } catch (e) {
+        // A review that cannot run must not cost the report. The code checks still apply.
+        reviewError = e.message;
+        console.warn('[SECTION-REVIEW] AI review skipped:', e.message);
+      }
+    }
+
+    if (flagged.size === 0) break;
+    rounds = round;
+    found += [...flagged.values()].reduce((n, notes) => n + notes.length, 0);
+
+    for (const [i, notes] of flagged) {
+      const others = items.map((it, j) => ({ title: it.section.title, items: it.ledger })).filter((_, j) => j !== i);
+      const redo = await writeSpecSection({
+        model: writer, section: items[i].section, ledger: others, fixedInstructions,
+        issues: notes, current: items[i].content, meter,
+      });
+      items[i] = { ...items[i], content: redo.content, ledger: redo.ledger.length ? redo.ledger : items[i].ledger };
+    }
+  }
+  return { found, rounds, reviewError };
+}
+
+/**
+ * Spec-mode generation: independent section calls that share a short ledger,
+ * then review and targeted fixes, then the customer's own questions.
+ */
+async function generateSpecReading({ kind, clientId, orderId, hd, cf, cfg, config }) {
+  const tag = kind.toUpperCase();
+  const { spec } = cfg;
+  const system = specSystemInstruction({ systemPrompt: cfg.systemPrompt, spec, cf, chartData: hd.chart_data });
+  const writer = await specModel(clientId, system, { schema: SECTION_SCHEMA });
+  const reviewer = await specModel(clientId, 'You are a careful editor of Sinhala astrology reports. Answer only in the requested JSON.', { schema: REVIEW_SCHEMA, temperature: 0.1 });
+  const meter = makeMeter();
+
+  const items = [];
+  for (const section of spec.sections) {
+    const ledger = items.map(it => ({ title: it.section.title, items: it.ledger }));
+    const w = await writeSpecSection({ model: writer, section, ledger, fixedInstructions: cfg.fixedInstructions, meter });
+    items.push({ section, content: w.content, ledger: w.ledger });
+    console.log(`[${tag}] "${section.title}" ${wordCount(w.content)} words`);
+  }
+
+  const { found, rounds, reviewError } = await reviewAndFix({
+    items, spec, writer, reviewer, fixedInstructions: cfg.fixedInstructions, meter,
+  });
+  console.log(`[${tag}] review: ${rounds} round(s), ${found} finding(s)`);
+
+  // The customer's own questions, told what the sections already covered.
+  const questions = Array.isArray(hd[hdKey(kind, 'special_questions')]) ? hd[hdKey(kind, 'special_questions')] : [];
+  const answers = [];
+  if (questions.length) {
+    const answerer = await specModel(clientId, system);
+    const covered = renderLedger(items.map(it => ({ title: it.section.title, items: it.ledger })));
+    for (const q of questions) {
+      const questionText = (q.prompt && q.prompt.trim()) ? q.prompt : (q.question || '');
+      if (!questionText.trim()) continue;
+      const entry = { question: q.question || questionText, prompt: q.prompt || '', answer: '' };
+      try {
+        const result = await answerer.generateContent(`${buildMarriageQuestionPrompt(questionText, cfg.questionInstructions)}\n\n${covered}`);
+        meter.add(result.response.usageMetadata);
+        entry.answer = String(result.response.text() || '').trim();
+        if (!entry.answer) entry.error = 'No answer returned. Regenerate this question.';
+      } catch (e) { entry.error = `Could not answer: ${e.message}`; }
+      answers.push(entry);
+    }
+  }
+
+  const fresh = (await db.pgQuery('SELECT horoscope_data FROM orders WHERE order_id=$1', [orderId])).rows[0];
+  const base = parseJson(fresh && fresh.horoscope_data);
+  const sectionsData = items.map(it => ({ label: it.section.title, content: it.content, ledger: it.ledger }));
+  const updated = {
+    ...base,
+    [hdKey(kind, 'sections_data')]:   sectionsData,
+    [hdKey(kind, 'special_answers')]: answers,
+    [hdKey(kind, 'review')]:          buildReviewRecord(items, rounds, found, spec, reviewError),
+    [hdKey(kind, 'generated_at')]:    new Date().toISOString(),
+  };
+  delete updated[hdKey(kind, 'generating')];
+  delete updated[hdKey(kind, 'error')];
+  await db.pgQuery('UPDATE orders SET horoscope_data=$1 WHERE order_id=$2', [JSON.stringify(updated), orderId]);
+  await recordOrderGenCost(orderId, kind, meter, { sections: items.length, questions: answers.length, review_rounds: rounds, mode: 'spec' });
+
+  if (cfg.waPrompt) {
+    try { await generateWaMessage(kind, clientId, orderId, sectionsData, cfg.waPrompt); }
+    catch (e) { console.error(`[${tag}] WhatsApp message failed (non-fatal):`, e.message); }
+  }
+  return sectionsData;
+}
+
+/**
+ * Rewrite one section of a spec report from the saved report: the other
+ * sections' ledgers go in, not their text. Updates the section's review entry.
+ * @returns {Promise<string>} the new content
+ */
+async function regenerateSpecSection({ kind, clientId, orderId, label, hd, cf, cfg }) {
+  const { spec } = cfg;
+  const section = spec.sections.find(s => s.title === label);
+  if (!section) { const e = new Error(`Section "${label}" not found in the spec.`); e.statusCode = 404; throw e; }
+  const dataKey = hdKey(kind, 'sections_data');
+  const existing = Array.isArray(hd[dataKey]) ? hd[dataKey] : [];
+
+  const system = specSystemInstruction({ systemPrompt: cfg.systemPrompt, spec, cf, chartData: hd.chart_data });
+  const writer = await specModel(clientId, system, { schema: SECTION_SCHEMA });
+  const meter = makeMeter();
+  const ledger = existing.filter(s => s.label !== label).map(s => ({ title: s.label, items: cleanLedger(s.ledger) }));
+  const w = await writeSpecSection({ model: writer, section, ledger, fixedInstructions: cfg.fixedInstructions, meter });
+  await recordOrderGenCost(orderId, 'section', meter, { report: kind, section: label, mode: 'spec' });
+
+  const idx = existing.findIndex(s => s.label === label);
+  const next = idx >= 0
+    ? existing.map((s, i) => (i === idx ? { ...s, content: w.content, ledger: w.ledger } : s))
+    : [...existing, { label, content: w.content, ledger: w.ledger }];
+
+  const review = { ...(hd[hdKey(kind, 'review')] || {}) };
+  const ordered = spec.sections.map(s => ({ section: s, content: (next.find(n => n.label === s.title) || {}).content || '' }));
+  const own = codeChecks(ordered, spec.globalRules).get(ordered.findIndex(o => o.section.title === label)) || [];
+  review.sections = { ...(review.sections || {}), [label]: { words: wordCount(w.content), target: section.targetWords || null, max: section.maxWords || null, issues: own } };
+  await db.pgQuery(
+    `UPDATE orders SET horoscope_data = jsonb_set(jsonb_set(COALESCE(horoscope_data,'{}'::jsonb), ARRAY[$1]::text[], $2::jsonb), ARRAY[$3]::text[], $4::jsonb) WHERE order_id=$5`,
+    [dataKey, JSON.stringify(next), hdKey(kind, 'review'), JSON.stringify(review), orderId]
+  );
+  return w.content;
 }
 
 /** Generate (or regenerate) the WhatsApp summary and save it on the order. */
@@ -370,4 +622,5 @@ module.exports = {
   KINDS, KIND_LIST, isKind, hdKey, reportKeys, configKeys, CONFIG_FIELDS,
   resolveConfig, generateReading, generateSectionText, generateWaMessage,
   historyFromSections, buildDoc, defaultAiFillPrompt, buildAiFillPrompt, describeOrderDetails,
+  regenerateSpecSection, reviewAndFix, generateSpecReading,
 };

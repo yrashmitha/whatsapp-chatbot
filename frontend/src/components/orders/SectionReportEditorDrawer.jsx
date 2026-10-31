@@ -10,6 +10,39 @@ import { SECTION_KINDS, hdKey, parseJsonField } from './sectionReports';
 const textareaCls = 'w-full px-3 py-2.5 text-base md:text-sm border border-slate-300 rounded-lg outline-none bg-white text-slate-800 resize-y leading-relaxed';
 const btnBase = 'min-h-[44px] md:min-h-0 px-4 py-2 text-sm rounded-lg cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 whitespace-nowrap';
 
+/** Words in the text as the editor shows it, counted the way the generator counts them. */
+const countWords = (t) => String(t || '').split(/\s+/).filter(w => /[\p{L}\p{N}]/u.test(w)).length;
+
+/**
+ * What the automatic review found for the section on screen: its length against
+ * the target, and any problem still open. The word count follows the text as it
+ * is edited, so a fix by hand is seen at once. Renders nothing for a report made
+ * without a spec.
+ */
+function SectionReviewNote({ review, label, content, accent }) {
+  const info = review && review.sections && review.sections[label];
+  if (!info) return null;
+  const words = countWords(content);
+  const over = info.max && words > info.max * 1.15;
+  const under = info.target && words < info.target * 0.5;
+  const open = Array.isArray(info.issues) ? info.issues : [];
+  return (
+    <div className="mb-3 text-xs">
+      <p className="m-0 text-slate-500">
+        <span className={over || under ? 'text-amber-700 font-semibold' : ''}>{words} words</span>
+        {info.target ? `, target ${info.target}` : ''}{info.max ? `, limit ${info.max}` : ''}
+        {review.rounds ? `. Review: ${review.found} found, ${review.fixed} fixed in ${review.rounds} round${review.rounds === 1 ? '' : 's'}.` : '. Review found nothing to fix.'}
+      </p>
+      {open.length > 0 && (
+        <ul className="mt-1.5 mb-0 pl-4 text-amber-800">
+          {open.map((m, i) => <li key={i}>{m}</li>)}
+        </ul>
+      )}
+      {review.review_error && <p className="m-0 mt-1 text-slate-400">The AI review did not run ({review.review_error}); only the automatic checks were applied.</p>}
+    </div>
+  );
+}
+
 /**
  * Editor for a generated section report (abroad, pregnancy): edit each section,
  * the customer's questions and answers, the WhatsApp message, preview and
@@ -393,6 +426,7 @@ export default function SectionReportEditorDrawer({ kind, order, clientId, open,
                       {regeneratingSection === active.label ? '⏳ Generating…' : '↺ Regenerate'}
                     </button>
                   </div>
+                  <SectionReviewNote review={hd[k('review')]} label={active.label} content={active.content} accent={meta.accent} />
                   {regeneratingSection === active.label ? (
                     <div className="flex flex-col items-center justify-center gap-3 h-72">
                       <span className="w-8 h-8 border-2 border-slate-200 rounded-full animate-spin block" style={{ borderTopColor: meta.accent }} />

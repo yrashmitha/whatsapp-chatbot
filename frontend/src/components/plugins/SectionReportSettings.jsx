@@ -22,6 +22,30 @@ function Area({ label, hint, value, onChange, rows = 4, placeholder }) {
 }
 
 /**
+ * Read the pasted spec for display. Mirrors the backend's rules (a title on every
+ * section, no duplicate titles) so a bad paste is explained before Save.
+ * @returns {null | {error:string} | {sections:{title:string,target:number}[], words:number}}
+ */
+export function readSpec(text) {
+  const t = String(text || '').trim();
+  if (!t) return null;
+  let o;
+  try { o = JSON.parse(t); } catch (e) { return { error: `not valid JSON (${e.message})` }; }
+  if (!o || typeof o !== 'object' || !Array.isArray(o.sections) || o.sections.length === 0) return { error: 'it has no sections' };
+  const seen = new Set();
+  for (let i = 0; i < o.sections.length; i += 1) {
+    const title = String((o.sections[i] || {}).title || '').trim();
+    if (!title) return { error: `section ${i + 1} has no title` };
+    if (seen.has(title)) return { error: `two sections share the title "${title}"` };
+    seen.add(title);
+  }
+  const sections = [...o.sections]
+    .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0))
+    .map(s => ({ title: String(s.title).trim(), target: Number(s.targetWords) || 0 }));
+  return { sections, words: sections.reduce((n, s) => n + s.target, 0) };
+}
+
+/**
  * What stops a section report from generating: no system prompt, or no sections.
  * The same rule the backend enforces, so the badge and the error agree.
  * @returns {string|null} the reason, or null when it is ready
@@ -29,7 +53,8 @@ function Area({ label, hint, value, onChange, rows = 4, placeholder }) {
 export function sectionReportGap(value = {}) {
   const missing = [];
   if (!String(value.system_prompt || '').trim()) missing.push('system prompt');
-  if (!(Array.isArray(value.sections) && value.sections.some(s => s && s.label))) missing.push('sections');
+  const fromSpec = readSpec(value.spec);
+  if (!(fromSpec && fromSpec.sections) && !(Array.isArray(value.sections) && value.sections.some(s => s && s.label))) missing.push('sections');
   return missing.length ? `Cannot generate yet: add ${missing.join(' and ')}` : null;
 }
 
@@ -62,6 +87,9 @@ export default function SectionReportSettings({ kind, value, onChange }) {
     setSections(meta.suggestedSections.map(s => ({ ...s })));
   };
 
+  const spec = readSpec(value.spec);
+  const specActive = !!(spec && spec.sections);
+
   return (
     <div className="flex flex-col gap-3">
       <PanelIntro>
@@ -89,10 +117,44 @@ export default function SectionReportSettings({ kind, value, onChange }) {
       <Group
         title="Sections"
         defaultOpen={sections.length === 0}
-        badge={sections.length
-          ? { text: `${sections.length} section${sections.length === 1 ? '' : 's'}` }
-          : { text: 'None yet', tone: 'warn' }}
+        badge={specActive
+          ? { text: `${spec.sections.length} from spec` }
+          : sections.length
+            ? { text: `${sections.length} section${sections.length === 1 ? '' : 's'}` }
+            : { text: 'None yet', tone: 'warn' }}
       >
+        <div>
+          <label className={labelCls}>Section spec (JSON, optional)</label>
+          <p className="text-xs text-slate-400 mb-1.5">
+            Paste a structured spec to control each section&apos;s length, scope and rules. With a spec the sections are written one by one,
+            share only a short summary of what earlier sections said, then the whole report is reviewed and only flagged sections are rewritten.
+            The list below is replaced by the spec. Clear this box to go back to the plain list.
+          </p>
+          <textarea
+            value={value.spec || ''}
+            onChange={e => onChange('spec', e.target.value)}
+            rows={8}
+            spellCheck={false}
+            className={areaCls}
+            placeholder='{ "globalRules": { ... }, "sections": [ { "order": 1, "title": "...", "targetWords": 120, "maxWords": 150, ... } ] }'
+          />
+          {spec && spec.error && (
+            <p className="text-xs text-red-600 mt-1.5">Not saved until fixed: {spec.error}</p>
+          )}
+          {specActive && (
+            <p className="text-xs text-emerald-700 mt-1.5">
+              Spec active: {spec.sections.length} sections, about {spec.words} words in total.
+            </p>
+          )}
+          {specActive && (
+            <ol className="mt-2 mb-0 pl-5 text-xs text-slate-600 leading-relaxed">
+              {spec.sections.map((s, i) => (
+                <li key={i}>{s.title}{s.target ? ` (${s.target} words)` : ''}</li>
+              ))}
+            </ol>
+          )}
+        </div>
+        {!specActive && (
         <div>
           <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
             <p className="text-xs text-slate-400 m-0 flex-1 min-w-[200px]">
@@ -158,6 +220,7 @@ export default function SectionReportSettings({ kind, value, onChange }) {
             style={{ color: meta.accent, borderColor: meta.accentBorder }}
           >+ Add Section</button>
         </div>
+        )}
       </Group>
 
       <Group title="Titles, instructions and closing note">

@@ -24,6 +24,7 @@ const {
 } = require('../services/matchReport');
 const { buildPorondamDoc } = require('../services/porondamReport');
 const sectionReport = require('../services/sectionReport');
+const { parseSpec, specToSections } = require('../services/sectionSpec');
 const { makeMeter, recordOrderGenCost } = require('../services/genCost');
 const { formatChatLog } = require('../utils/chatLog');
 
@@ -464,6 +465,19 @@ async function updatePluginConfig(req, res) {
     if (match_question_instructions !== undefined) update.match_question_instructions = match_question_instructions;
     for (const k of SECTION_REPORT_CONFIG_KEYS) {
       if (req.body[k] !== undefined) update[k] = req.body[k];
+    }
+    // A spec defines the section list. Validate it here so a bad paste is refused
+    // with the reason, and keep <kind>_sections in step so the editor, the document
+    // and generation agree.
+    for (const kind of sectionReport.KIND_LIST) {
+      const specKey = sectionReport.hdKey(kind, 'spec');
+      if (req.body[specKey] === undefined) continue;
+      try {
+        const spec = parseSpec(req.body[specKey]);
+        if (spec) update[sectionReport.hdKey(kind, 'sections')] = specToSections(spec);
+      } catch (e) {
+        return res.status(400).json({ error: `${kind} spec: ${e.message}` });
+      }
     }
     if (page1_heading !== undefined) update.page1_heading = page1_heading;
     if (page2_heading !== undefined) update.page2_heading = page2_heading;
@@ -2470,6 +2484,14 @@ async function regenerateSectionReportSectionHandler(req, res) {
     const cfg = sectionReport.resolveConfig(kind, config);
     const sectionDef = cfg.sections.find(s => s.label === label);
     if (!sectionDef) return res.status(404).json({ error: `Section "${label}" not found in config.` });
+
+    // With a spec, one section is rewritten from the other sections' ledgers.
+    if (cfg.spec) {
+      const content = await sectionReport.regenerateSpecSection({
+        kind, clientId, orderId, label, hd: order.hd, cf: order.cf, cfg,
+      });
+      return res.json({ ok: true, label, content });
+    }
 
     const dataKey = sectionReport.hdKey(kind, 'sections_data');
     const existing = Array.isArray(order.hd[dataKey]) ? order.hd[dataKey] : [];

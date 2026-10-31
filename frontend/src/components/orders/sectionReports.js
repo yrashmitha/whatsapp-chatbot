@@ -97,7 +97,7 @@ export function sectionReportState(hd, kind) {
 
 /** The plugin config fields a kind owns, without the `<kind>_` prefix. */
 export const SECTION_CONFIG_FIELDS = ['system_prompt', 'sections', 'special_note', 'wa_prompt',
-  'report_title', 'fixed_instructions', 'questions_title', 'question_instructions', 'ai_fill_prompt'];
+  'report_title', 'fixed_instructions', 'questions_title', 'question_instructions', 'ai_fill_prompt', 'spec'];
 
 /** Settings state for every kind, read from a plugin config response (or empty). */
 export function sectionConfigFromApi(data = {}) {

@@ -1,5 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import api, { GEO_USER_AGENT } from '../../lib/api';
+import api from '../../lib/api';
+import { usePlaceSearch, formatCoords } from '../../lib/usePlaceSearch';
+import PlaceDropdown from '../ui/PlaceDropdown';
 import { useToast } from '../ui/Toast';
 
 const HOURS   = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
@@ -71,32 +73,8 @@ export default function MatchMakingPanel({ order, clientId, existingHd, onClose,
   const [newQuestion, setNewQuestion] = useState('');
   const [expandedQIdx, setExpandedQIdx] = useState(null);
 
-  // ── Geo autocomplete (one debounce timer per side) ─────────────────────────
-  const [suggestions, setSuggestions] = useState({ boy: [], girl: [] });
-  const debounceRef = useRef({ boy: null, girl: null });
-
-  const searchGeo = useCallback((side, q) => {
-    clearTimeout(debounceRef.current[side]);
-    if (!q.trim()) { setSuggestions(s => ({ ...s, [side]: [] })); return; }
-    debounceRef.current[side] = setTimeout(async () => {
-      try {
-        const r = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5`,
-          { headers: { 'User-Agent': GEO_USER_AGENT } }
-        );
-        const data = await r.json();
-        setSuggestions(s => ({
-          ...s,
-          [side]: data.map(d => ({ name: d.display_name, lat: parseFloat(d.lat), lng: parseFloat(d.lon) })),
-        }));
-      } catch { setSuggestions(s => ({ ...s, [side]: [] })); }
-    }, 400);
-  }, []);
-
-  useEffect(() => () => {
-    clearTimeout(debounceRef.current.boy);
-    clearTimeout(debounceRef.current.girl);
-  }, []);
+  // ── Place search, one per person ───────────────────────────────────────────
+  const geos = { boy: usePlaceSearch(), girl: usePlaceSearch() };
 
   const setters = { boy: setBoy, girl: setGirl };
   const people  = { boy, girl };
@@ -108,11 +86,11 @@ export default function MatchMakingPanel({ order, clientId, existingHd, onClose,
   // from a chart that no longer matches the form.
   const handleGeoInput = (side, value) => {
     patch(side, { geoQuery: value, place: null, lagna: null });
-    searchGeo(side, value);
+    geos[side].search(value);
   };
   const selectPlace = (side, place) => {
-    patch(side, { place, geoQuery: place.name, lagna: null });
-    setSuggestions(s => ({ ...s, [side]: [] }));
+    patch(side, { place, geoQuery: place.typed ? `${place.lat}, ${place.lng}` : place.name, lagna: null });
+    geos[side].clear();
   };
 
   // ── Auto Fill — one pass over the chat, both people ──────────────────────────
@@ -333,23 +311,12 @@ export default function MatchMakingPanel({ order, clientId, existingHd, onClose,
             autoComplete="off"
             className={inputCls}
           />
-          {suggestions[side].length > 0 && (
-            <ul className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
-              {suggestions[side].map((s, i) => (
-                <li key={i}>
-                  <button
-                    onClick={() => selectPlace(side, s)}
-                    className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-teal-50 cursor-pointer bg-transparent border-0"
-                  >
-                    {s.name}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          {p.place && (
-            <p className="text-xs text-emerald-600 mt-1">✓ {p.place.lat.toFixed(4)}, {p.place.lng.toFixed(4)}</p>
-          )}
+          <PlaceDropdown geo={geos[side]} onPick={(s) => selectPlace(side, s)} hover="hover:bg-teal-50" />
+          {p.place ? (
+              <p className="text-xs text-emerald-600 mt-1">✓ {formatCoords(p.place)}</p>
+            ) : p.geoQuery.trim().length > 1 && geos[side].status !== 'loading' ? (
+              <p className="text-xs text-amber-600 mt-1">Pick a place from the list to set its coordinates.</p>
+            ) : null}
         </div>
       </div>
     );

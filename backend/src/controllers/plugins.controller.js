@@ -2566,12 +2566,11 @@ async function aiPrepareSectionReport(req, res) {
     const config = await db.getPluginConfig(clientId, 'horoscope_reading');
     const cfg = sectionReport.resolveConfig(kind, config);
     const template = cfg.aiFillPrompt || sectionReport.defaultAiFillPrompt(kind);
-    const prompt = template
-      .replace(/\{\{customer_name\}\}/g, customerNameFrom(cf))
-      .replace(/\{\{birth_date\}\}/g,    cf.birth_date || '')
-      .replace(/\{\{birth_time\}\}/g,    cf.birth_time || '')
-      .replace(/\{\{birth_place\}\}/g,   cf.birth_place || '')
-      .replace(/\{\{chat_log\}\}/g,      () => chatLog || '(no messages found)');
+    // The order's own details are read alongside the chat, so a manual order with
+    // no chat still has something to fill from.
+    const prompt = sectionReport.buildAiFillPrompt(template, {
+      customerName: customerNameFrom(cf), cf, chatLog,
+    });
 
     const geminiModel = (await getGenAI(clientId)).getGenerativeModel({
       model: 'gemini-2.5-flash',
@@ -2602,21 +2601,26 @@ async function aiPrepareSectionReport(req, res) {
     });
 
     const result = await geminiModel.generateContent(prompt);
-    const meter = makeMeter();
-    meter.add(result.response.usageMetadata);
-    await recordOrderGenCost(orderId, 'ai_fill', meter, { report: kind });
 
-    const raw = result.response.text().trim();
-    let parsed;
-    try { parsed = JSON.parse(raw); } catch { return res.status(500).json({ error: 'Gemini returned invalid JSON', raw }); }
+    // Whatever could not be read comes back empty. A reply that is not valid JSON
+    // is treated the same way: the operator fills the form by hand, no error.
+    let parsed = {};
+    try { parsed = JSON.parse(result.response.text().trim()) || {}; }
+    catch { console.warn(`[AI-PREPARE-${kind.toUpperCase()}] reply was not JSON, returning empty fill`); }
+
+    const hasNum = (v) => typeof v === 'number' && Number.isFinite(v);
+    const questions = (Array.isArray(parsed.special_questions) ? parsed.special_questions : [])
+      .filter(q => q && String(q.question || '').trim())
+      .map(q => ({ question: String(q.question).trim(), prompt: String(q.prompt || '').trim() }));
 
     res.json({
       birth_date_iso:    parsed.birth_date_iso || null,
       birth_time_24h:    parsed.birth_time_24h || null,
       birth_place_en:    parsed.birth_place_en || null,
-      lat:               parsed.lat ?? null,
-      lng:               parsed.lng ?? null,
-      special_questions: Array.isArray(parsed.special_questions) ? parsed.special_questions : [],
+      // Both or neither: one coordinate alone cannot place a chart.
+      lat:               hasNum(parsed.lat) && hasNum(parsed.lng) ? parsed.lat : null,
+      lng:               hasNum(parsed.lat) && hasNum(parsed.lng) ? parsed.lng : null,
+      special_questions: questions,
     });
   } catch (e) {
     console.error(`[AI-PREPARE-${kind.toUpperCase()}]`, e.message);

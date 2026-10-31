@@ -1,5 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import api, { GEO_USER_AGENT } from '../../lib/api';
+import api from '../../lib/api';
+import { usePlaceSearch, formatCoords } from '../../lib/usePlaceSearch';
+import PlaceDropdown from '../ui/PlaceDropdown';
 import { useToast } from '../ui/Toast';
 import { customerNameFrom } from '../../lib/utils';
 import ChatThread from '../chat/ChatThread';
@@ -118,31 +120,15 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
 
   // ── Location picker ────────────────────────────────────────────────────────
   const [geoQuery, setGeoQuery]           = useState(cf.birth_place || '');
-  const [geoSuggestions, setGeoSuggestions] = useState([]);
+  const geo = usePlaceSearch();
   const [selectedPlace, setSelectedPlace]   = useState(
     hasChart && existingHd.lat
       ? { lat: existingHd.lat, lng: existingHd.lng, name: existingHd.birth_place_name || cf.birth_place || '' }
       : null
   );
-  const debounceRef = useRef(null);
 
-  const searchGeo = useCallback((q) => {
-    clearTimeout(debounceRef.current);
-    if (!q.trim()) { setGeoSuggestions([]); return; }
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const r = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5`,
-          { headers: { 'User-Agent': GEO_USER_AGENT } }
-        );
-        const data = await r.json();
-        setGeoSuggestions(data.map(d => ({ name: d.display_name, lat: parseFloat(d.lat), lng: parseFloat(d.lon) })));
-      } catch { setGeoSuggestions([]); }
-    }, 400);
-  }, []);
-
-  const handleGeoInput = (e) => { setGeoQuery(e.target.value); setSelectedPlace(null); searchGeo(e.target.value); };
-  const selectPlace    = (place) => { setSelectedPlace(place); setGeoQuery(place.name); setGeoSuggestions([]); };
+  const handleGeoInput = (e) => { setGeoQuery(e.target.value); setSelectedPlace(null); geo.search(e.target.value); };
+  const selectPlace    = (place) => { setSelectedPlace(place); setGeoQuery(place.typed ? `${place.lat}, ${place.lng}` : place.name); geo.clear(); };
 
   useEffect(() => { setSignChecked(false); },
     [birthDate, birthHour, birthMinute, selectedPlace?.lat, selectedPlace?.lng]);
@@ -585,7 +571,7 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
                   const place = { lat, lng, name: birth_place_en || '' };
                   setSelectedPlace(place);
                   setGeoQuery(birth_place_en || '');
-                  setGeoSuggestions([]);
+                  geo.clear();
                 }
                 if (Array.isArray(special_questions) && special_questions.length) {
                   setSpecialQuestions(special_questions);
@@ -647,21 +633,12 @@ export default function HoroscopeModal({ order, clientId, onClose, onGenerated, 
               autoComplete="off"
               className={inputCls}
             />
-            {geoSuggestions.length > 0 && (
-              <ul className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
-                {geoSuggestions.map((s, i) => (
-                  <li key={i}>
-                    <button onClick={() => selectPlace(s)}
-                      className="w-full text-left px-3 py-3 md:py-2 text-sm md:text-xs text-violet-950 hover:bg-violet-50 cursor-pointer bg-transparent border-0">
-                      {s.name}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {selectedPlace && (
-              <p className="text-xs text-emerald-600 mt-1">✓ {selectedPlace.lat.toFixed(4)}, {selectedPlace.lng.toFixed(4)}</p>
-            )}
+            <PlaceDropdown geo={geo} onPick={selectPlace} hover="hover:bg-violet-50" />
+            {selectedPlace ? (
+              <p className="text-xs text-emerald-600 mt-1">✓ {formatCoords(selectedPlace)}</p>
+            ) : geoQuery.trim().length > 1 && geo.status !== 'loading' ? (
+              <p className="text-xs text-amber-600 mt-1">Pick a place from the list to set its coordinates.</p>
+            ) : null}
           </div>
 
           {/* Check Sign */}

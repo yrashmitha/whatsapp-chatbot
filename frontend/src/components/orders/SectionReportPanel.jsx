@@ -1,5 +1,7 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
-import api, { GEO_USER_AGENT } from '../../lib/api';
+import { useState } from 'react';
+import api from '../../lib/api';
+import { usePlaceSearch, formatCoords } from '../../lib/usePlaceSearch';
+import PlaceDropdown from '../ui/PlaceDropdown';
 import { useToast } from '../ui/Toast';
 import {
   SECTION_KINDS, hdKey, sectionReportState, parseJsonField,
@@ -61,35 +63,19 @@ export default function SectionReportPanel({ kind, order, clientId, existingHd =
   const hasChart = !!detectedLagna || !!existingHd.chart_data;
 
   // ── Geo autocomplete ───────────────────────────────────────────────────────
-  const [suggestions, setSuggestions] = useState([]);
-  const debounceRef = useRef(null);
-  const searchGeo = useCallback((q) => {
-    clearTimeout(debounceRef.current);
-    if (!q.trim()) { setSuggestions([]); return; }
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const r = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5`,
-          { headers: { 'User-Agent': GEO_USER_AGENT } }
-        );
-        const data = await r.json();
-        setSuggestions(data.map(d => ({ name: d.display_name, lat: parseFloat(d.lat), lng: parseFloat(d.lon) })));
-      } catch { setSuggestions([]); }
-    }, 400);
-  }, []);
-  useEffect(() => () => clearTimeout(debounceRef.current), []);
+  const geo = usePlaceSearch();
 
   const handleGeoInput = (value) => {
     setGeoQuery(value);
     setPlace(null);
     setDetectedLagna(null);
-    searchGeo(value);
+    geo.search(value);
   };
   const selectPlace = (p) => {
     setPlace(p);
-    setGeoQuery(p.name);
+    setGeoQuery(p.typed ? `${p.lat}, ${p.lng}` : p.name);
     setDetectedLagna(null);
-    setSuggestions([]);
+    geo.clear();
   };
 
   const withClient = (body = {}) => ({ ...body, ...(clientId && { client_id: clientId }) });
@@ -112,18 +98,39 @@ export default function SectionReportPanel({ kind, order, clientId, existingHd =
         setGeoQuery(d.birth_place_en || '');
       }
       if (d.birth_date_iso || (d.lat != null && d.lng != null)) setDetectedLagna(null);
-      if (Array.isArray(d.special_questions) && d.special_questions.length) {
-        setQuestions(d.special_questions.map(q => ({ question: q.question, prompt: q.prompt || q.question })));
+
+      // Questions are added to what is already there, never replacing questions
+      // the operator typed.
+      const found = Array.isArray(d.special_questions) ? d.special_questions : [];
+      if (found.length) {
+        setQuestions(prev => {
+          const seen = new Set(prev.map(q => (q.question || '').trim().toLowerCase()));
+          const fresh = found
+            .filter(q => (q.question || '').trim() && !seen.has(q.question.trim().toLowerCase()))
+            .map(q => ({ question: q.question.trim(), prompt: (q.prompt || q.question).trim() }));
+          return [...prev, ...fresh];
+        });
       }
 
+      // Whatever could be read is filled in. Missing birth details are not an
+      // error: the operator types them, or uses coordinates, and goes on.
       const gotBirth = !!d.birth_date_iso;
       const gotPlace = d.lat != null && d.lng != null;
-      if (!gotBirth && !gotPlace) {
-        toast.error('Could not read birth details from the chat. Fill them in by hand.');
-      } else if (!gotBirth || !gotPlace) {
-        toast.error('Only part of the birth details were found. Check the form before Check Lagna.');
+      const filled = [
+        gotBirth && 'birth date',
+        d.birth_time_24h && 'birth time',
+        gotPlace && 'birth place',
+        found.length && `${found.length} question${found.length === 1 ? '' : 's'}`,
+      ].filter(Boolean);
+      const missing = [!gotBirth && 'birth date', !gotPlace && 'birth place'].filter(Boolean);
+
+      if (!filled.length) {
+        toast.info('Nothing to fill from this order or its chat yet. Enter the details by hand.');
       } else {
-        toast.success('Filled from the chat. Check the details, then Check Lagna.');
+        toast.success(
+          `Filled: ${filled.join(', ')}.`
+          + (missing.length ? ` Not found: ${missing.join(' and ')}, enter ${missing.length === 1 ? 'it' : 'them'} by hand.` : ' Check them, then Check Lagna.')
+        );
       }
     } catch (e) {
       toast.error(e?.response?.data?.error || 'AI Fill failed');
@@ -215,7 +222,7 @@ export default function SectionReportPanel({ kind, order, clientId, existingHd =
                 })}
               </div>
               {order?.ai_summary && (
-                <div className="bg-violet-50 border border-violet-200 rounded-lg px-3 py-2 text-xs text-slate-700 leading-relaxed whitespace-pre-wrap mt-1">
+                <div className="bg-violet-50 border border-violet-200 rounded-lg px-3 py-2 text-xs text-violet-950 leading-relaxed whitespace-pre-wrap mt-1">
                   <span className="text-violet-600 font-semibold block mb-1">✨ Summary</span>
                   {order.ai_summary}
                 </div>
@@ -298,24 +305,12 @@ export default function SectionReportPanel({ kind, order, clientId, existingHd =
               autoComplete="off"
               className={fieldCls}
             />
-            {suggestions.length > 0 && (
-              <ul className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden list-none p-0 m-0">
-                {suggestions.map((s, i) => (
-                  <li key={i}>
-                    <button
-                      type="button"
-                      onClick={() => selectPlace(s)}
-                      className="w-full text-left px-3 py-3 md:py-2 text-sm md:text-xs text-slate-700 hover:bg-slate-50 cursor-pointer bg-transparent border-0 border-b border-slate-100"
-                    >
-                      {s.name}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {place && (
-              <p className="text-xs text-emerald-600 mt-1">✓ {place.lat.toFixed(4)}, {place.lng.toFixed(4)}</p>
-            )}
+            <PlaceDropdown geo={geo} onPick={selectPlace} />
+            {place ? (
+              <p className="text-xs text-emerald-600 mt-1">✓ {formatCoords(place)}</p>
+            ) : geoQuery.trim().length > 1 && geo.status !== 'loading' ? (
+              <p className="text-xs text-amber-600 mt-1">Pick a place from the list to set its coordinates.</p>
+            ) : null}
           </div>
         </div>
 

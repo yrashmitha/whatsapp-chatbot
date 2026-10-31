@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import api, { GEO_USER_AGENT } from '../../lib/api';
+import api from '../../lib/api';
+import { usePlaceSearch, formatCoords } from '../../lib/usePlaceSearch';
+import PlaceDropdown from '../ui/PlaceDropdown';
 import { useToast } from '../ui/Toast';
 
 const SINHALA_MONTHS = {
@@ -46,11 +48,10 @@ export default function AstroChartModal({ phone, clientId, onClose, onResult }) 
   const [birthHour, setBirthHour] = useState('10');
   const [birthMinute, setBirthMinute] = useState('00');
   const [geoQuery, setGeoQuery] = useState('');
-  const [geoSuggestions, setGeoSuggestions] = useState([]);
+  const geo = usePlaceSearch();
   const [selectedPlace, setSelectedPlace] = useState(null);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
-  const debounceRef = useRef(null);
 
   // Raw values from DB for display
   const [rawDate, setRawDate] = useState('');
@@ -102,31 +103,17 @@ export default function AstroChartModal({ phone, clientId, onClose, onResult }) 
     load();
   }, [phone, clientId]);
 
-  const searchGeo = useCallback((q) => {
-    clearTimeout(debounceRef.current);
-    if (!q.trim()) { setGeoSuggestions([]); return; }
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const r = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5`,
-          { headers: { 'User-Agent': GEO_USER_AGENT } }
-        );
-        const data = await r.json();
-        setGeoSuggestions(data.map(d => ({ name: d.display_name, lat: parseFloat(d.lat), lng: parseFloat(d.lon) })));
-      } catch (_) { setGeoSuggestions([]); }
-    }, 400);
-  }, []);
 
   const handleGeoInput = (e) => {
     setGeoQuery(e.target.value);
     setSelectedPlace(null);
-    searchGeo(e.target.value);
+    geo.search(e.target.value);
   };
 
   const selectPlace = (place) => {
     setSelectedPlace(place);
-    setGeoQuery(place.name);
-    setGeoSuggestions([]);
+    setGeoQuery(place.typed ? `${place.lat}, ${place.lng}` : place.name);
+    geo.clear();
   };
 
   const birthTime = `${birthHour}:${birthMinute}`;
@@ -237,25 +224,12 @@ export default function AstroChartModal({ phone, clientId, onClose, onResult }) 
                 autoComplete="off"
                 className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
               />
-              {geoSuggestions.length > 0 && (
-                <ul className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
-                  {geoSuggestions.map((s, i) => (
-                    <li key={i}>
-                      <button
-                        onClick={() => selectPlace(s)}
-                        className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-violet-50 cursor-pointer bg-transparent border-0"
-                      >
-                        {s.name}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {selectedPlace && (
-                <p className="text-xs text-emerald-600 mt-1">
-                  ✓ {selectedPlace.lat.toFixed(4)}, {selectedPlace.lng.toFixed(4)}
-                </p>
-              )}
+              <PlaceDropdown geo={geo} onPick={selectPlace} hover="hover:bg-violet-50" />
+              {selectedPlace ? (
+              <p className="text-xs text-emerald-600 mt-1">✓ {formatCoords(selectedPlace)}</p>
+            ) : geoQuery.trim().length > 1 && geo.status !== 'loading' ? (
+              <p className="text-xs text-amber-600 mt-1">Pick a place from the list to set its coordinates.</p>
+            ) : null}
             </div>
 
             <p className="text-xs text-slate-400">Timezone: Asia/Colombo (GMT+5:30)</p>

@@ -1,5 +1,7 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
-import api, { GEO_USER_AGENT } from '../../lib/api';
+import { useState } from 'react';
+import api from '../../lib/api';
+import { usePlaceSearch, formatCoords } from '../../lib/usePlaceSearch';
+import PlaceDropdown from '../ui/PlaceDropdown';
 import { useToast } from '../ui/Toast';
 
 const HOURS   = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
@@ -82,35 +84,19 @@ export default function MarriagePanel({ order, clientId, existingHd = {}, onClos
   const hasChart  = !!detectedLagna || !!existingHd.chart_data;
 
   // ── Geo autocomplete ───────────────────────────────────────────────────────
-  const [suggestions, setSuggestions] = useState([]);
-  const debounceRef = useRef(null);
-  const searchGeo = useCallback((q) => {
-    clearTimeout(debounceRef.current);
-    if (!q.trim()) { setSuggestions([]); return; }
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const r = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5`,
-          { headers: { 'User-Agent': GEO_USER_AGENT } }
-        );
-        const data = await r.json();
-        setSuggestions(data.map(d => ({ name: d.display_name, lat: parseFloat(d.lat), lng: parseFloat(d.lon) })));
-      } catch { setSuggestions([]); }
-    }, 400);
-  }, []);
-  useEffect(() => () => clearTimeout(debounceRef.current), []);
+  const geo = usePlaceSearch();
 
   const handleGeoInput = (value) => {
     setGeoQuery(value);
     setPlace(null);
     setDetectedLagna(null);
-    searchGeo(value);
+    geo.search(value);
   };
   const selectPlace = (p) => {
     setPlace(p);
-    setGeoQuery(p.name);
+    setGeoQuery(p.typed ? `${p.lat}, ${p.lng}` : p.name);
     setDetectedLagna(null);
-    setSuggestions([]);
+    geo.clear();
   };
 
   // ── AI Fill — one pass over the chat ───────────────────────────────────────
@@ -317,23 +303,12 @@ export default function MarriagePanel({ order, clientId, existingHd = {}, onClos
               autoComplete="off"
               className={inputCls}
             />
-            {suggestions.length > 0 && (
-              <ul className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
-                {suggestions.map((s, i) => (
-                  <li key={i}>
-                    <button
-                      onClick={() => selectPlace(s)}
-                      className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-pink-50 cursor-pointer bg-transparent border-0"
-                    >
-                      {s.name}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {place && (
-              <p className="text-xs text-emerald-600 mt-1">✓ {place.lat.toFixed(4)}, {place.lng.toFixed(4)}</p>
-            )}
+            <PlaceDropdown geo={geo} onPick={selectPlace} hover="hover:bg-pink-50" />
+            {place ? (
+              <p className="text-xs text-emerald-600 mt-1">✓ {formatCoords(place)}</p>
+            ) : geoQuery.trim().length > 1 && geo.status !== 'loading' ? (
+              <p className="text-xs text-amber-600 mt-1">Pick a place from the list to set its coordinates.</p>
+            ) : null}
           </div>
         </div>
 

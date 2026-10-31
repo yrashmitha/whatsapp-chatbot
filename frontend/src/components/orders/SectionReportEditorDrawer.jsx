@@ -315,7 +315,7 @@ export default function SectionReportEditorDrawer({ kind, order, clientId, open,
                   })}
                 </div>
                 {order?.ai_summary && (
-                  <div className="bg-violet-50 border border-violet-200 rounded-lg px-3 py-2 text-xs text-slate-700 leading-relaxed whitespace-pre-wrap mt-1">
+                  <div className="bg-violet-50 border border-violet-200 rounded-lg px-3 py-2 text-xs text-violet-950 leading-relaxed whitespace-pre-wrap mt-1">
                     <span className="text-violet-600 font-semibold block mb-1">✨ Summary</span>
                     {order.ai_summary}
                   </div>

@@ -246,11 +246,16 @@ const BIRTH_BLOCK = `## Order Details
 - Birth date (raw): {{birth_date}}
 - Birth time (raw): {{birth_time}}
 - Birth place (raw): {{birth_place}}
+- Other details on the order:
+{{order_details}}
 
 ## Full Customer Chat Conversation
 {{chat_log}}
 
 ## Your Task: return the exact JSON schema below, nothing else.
+
+### Sources
+Use BOTH the chat and the order details above. The chat may be empty (a customer who ordered another way), in which case work from the order details alone. Every birth field may be null when it is genuinely not there: never guess one. Even then, still return the special_questions you can support from what the customer wrote.
 
 ### birth_date_iso
 Normalize the birth date to exactly "YYYY-MM-DD" (e.g. "1990-03-15").
@@ -318,8 +323,51 @@ function defaultAiFillPrompt(kind) {
   return KIND_AI_FILL_INTRO[kind] + KIND_AI_FILL[kind].replace('{{BIRTH}}', () => BIRTH_BLOCK);
 }
 
+/** Order fields the prompt already carries on their own line, so they are not repeated. */
+const COVERED_FIELDS = new Set(['customer_name', 'birth_date', 'birth_time', 'birth_place']);
+
+/**
+ * The order's own details as prompt lines. A manual order has no chat, and what
+ * the customer wanted (their "needs", problem, country) is written here, so this
+ * is often the only thing AI Fill has to read.
+ *
+ * @param {object} cf  the order's custom_fields
+ * @returns {string}   "- key: value" lines, or "(none)"
+ */
+function describeOrderDetails(cf = {}) {
+  const lines = [];
+  for (const [k, v] of Object.entries(cf || {})) {
+    if (COVERED_FIELDS.has(k) || v == null || typeof v === 'object') continue;
+    const text = String(v).trim();
+    if (!text || /^(n\/?a|na|-)$/i.test(text)) continue;
+    lines.push(`- ${k.replace(/_/g, ' ')}: ${text.slice(0, 800)}`);
+  }
+  return lines.length ? lines.join('\n') : '(none)';
+}
+
+/**
+ * Fill a prompt template for one order. A client template written before
+ * {{order_details}} existed does not have it, so the details are added ahead of
+ * the task section rather than silently dropped.
+ */
+function buildAiFillPrompt(template, { customerName, cf = {}, chatLog }) {
+  const details = describeOrderDetails(cf);
+  let t = template;
+  if (!t.includes('{{order_details}}') && details !== '(none)') {
+    const block = `## Other details on the order\n${details}\n\n`;
+    t = t.includes('## Your Task') ? t.replace('## Your Task', () => `${block}## Your Task`) : `${t}\n\n${block}`;
+  }
+  return t
+    .replace(/\{\{customer_name\}\}/g, () => customerName || '')
+    .replace(/\{\{birth_date\}\}/g,    () => cf.birth_date || '')
+    .replace(/\{\{birth_time\}\}/g,    () => cf.birth_time || '')
+    .replace(/\{\{birth_place\}\}/g,   () => cf.birth_place || '')
+    .replace(/\{\{order_details\}\}/g, () => details)
+    .replace(/\{\{chat_log\}\}/g,      () => chatLog || '(no messages found)');
+}
+
 module.exports = {
   KINDS, KIND_LIST, isKind, hdKey, reportKeys, configKeys, CONFIG_FIELDS,
   resolveConfig, generateReading, generateSectionText, generateWaMessage,
-  historyFromSections, buildDoc, defaultAiFillPrompt,
+  historyFromSections, buildDoc, defaultAiFillPrompt, buildAiFillPrompt, describeOrderDetails,
 };

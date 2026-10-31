@@ -49,6 +49,9 @@ function parseSpec(raw) {
       title: String(s.title).trim(),
       targetWords: target,
       maxWords: max,
+      minWords: Number(s.minWords) || 0,
+      // The written description of the section, in the client's own words. Optional.
+      guide: String(s.guide || '').trim(),
     };
     for (const f of LIST_FIELDS) out[f] = strList(s[f]);
     return out;
@@ -78,7 +81,8 @@ function tryParseSpec(raw) {
 function specToSections(spec) {
   return spec.sections.map(s => ({
     label: s.title,
-    guide: [
+    // The client's own description wins; the structured fields are the fallback.
+    guide: s.guide || [
       s.allowedTopics.length && `ඇතුළත් කළ යුතු: ${s.allowedTopics.join('; ')}`,
       s.excludedTopics.length && `නොලිය යුතු: ${s.excludedTopics.join('; ')}`,
       s.outputRequirements.length && `අවශ්‍යතා: ${s.outputRequirements.join('; ')}`,
@@ -117,12 +121,16 @@ function renderLedger(ledger) {
 
 /** The writer prompt for one section of a spec. */
 function buildSpecSectionPrompt(section, { ledger, fixedInstructions, issues } = {}) {
-  const words = section.targetWords
-    ? `වචන ප්‍රමාණය: ආසන්න වශයෙන් ${section.targetWords}, උපරිම ${section.maxWords || Math.round(section.targetWords * 1.25)}.\n`
-    : '';
+  const max = section.maxWords || (section.targetWords ? Math.round(section.targetWords * 1.25) : 0);
+  const words = section.minWords && max
+    ? `වචන ප්‍රමාණය: වචන ${section.minWords} ත් ${max} ත් අතර. කෙටි නොවී, උපරිමය ඉක්මවා නොයන්න.\n`
+    : section.targetWords
+      ? `වචන ප්‍රමාණය: ආසන්න වශයෙන් ${section.targetWords}, උපරිම ${max}.\n`
+      : '';
   return [
     `ඔබ දැන් ලිවිය යුත්තේ [${section.title}] යන අංශය පමණි. වෙනත් අංශ ගැන මෙහිදී විස්තර නොකරන්න.`,
     words,
+    section.guide ? `මෙම අංශය සඳහා විස්තරය:\n${section.guide}\n` : '',
     bulletList('මෙම අංශයේ ඇතුළත් කළ හැකි මාතෘකා', section.allowedTopics),
     bulletList('මෙම අංශයේ කිසිවිටෙක නොලිය යුතු මාතෘකා (වෙනත් අංශවලට අයිතියි)', section.excludedTopics),
     bulletList('අවධානය යොමු කළ යුතු ජ්‍යෝතිෂ සාධක', section.astrologicalFocus),
@@ -178,8 +186,10 @@ function codeChecks(items, rules = {}) {
   const add = (i, msg) => { found.set(i, [...(found.get(i) || []), msg]); };
   items.forEach(({ section, content }, i) => {
     const words = wordCount(content);
-    if (section.maxWords && words > section.maxWords * 1.15) add(i, `Too long: ${words} words, the limit is ${section.maxWords}. Cut it down without losing the main answer.`);
-    if (section.targetWords && words < section.targetWords * 0.5) add(i, `Too short: ${words} words, the target is ${section.targetWords}.`);
+    // A few words either side of the range is counting noise, not a miss.
+    const floor = section.minWords || (section.targetWords ? section.targetWords * 0.5 : 0);
+    if (section.maxWords && words > section.maxWords * 1.05) add(i, `Too long: ${words} words, the limit is ${section.maxWords}. Cut it down without losing the main answer.`);
+    if (floor && words < floor * 0.9) add(i, `Too short: ${words} words, it should be ${section.minWords ? `at least ${section.minWords}` : `about ${section.targetWords}`}. Develop the section further with new substance from the chart, not repeated points.`);
     if (rules.language === 'si') {
       const eng = englishLetters(content);
       if (eng.length) add(i, `Contains English text (${eng.join(', ')}). Write these in Sinhala.`);

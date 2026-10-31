@@ -257,12 +257,24 @@ async function specModel(clientId, systemInstruction, { schema, temperature = 0.
   });
 }
 
-/** One JSON reply, retried once when it comes back empty or unparsable. */
+/** How long one model call may take before it is abandoned and retried. */
+const CALL_TIMEOUT_MS = 150 * 1000;
+
+/** Reject if `promise` has not settled in `ms`. A model call that never returns would otherwise leave a report "generating" forever. */
+function withTimeout(promise, ms, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`"${label}" timed out after ${Math.round(ms / 1000)}s`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+/** One JSON reply, retried once when it comes back empty, unparsable or too slow. */
 async function jsonCall(model, prompt, label, meter) {
   let lastErr;
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
-      const result = await model.generateContent(prompt);
+      const result = await withTimeout(model.generateContent(prompt), CALL_TIMEOUT_MS, label);
       if (meter) meter.add(result.response.usageMetadata);
       const parsed = JSON.parse(result.response.text().trim());
       if (parsed && typeof parsed === 'object') return parsed;
@@ -291,12 +303,12 @@ async function writeSpecSection({ model, section, ledger, fixedInstructions, iss
 }
 
 /** The review record saved beside the sections: counts, and per-section words and open issues. */
-function buildReviewRecord(items, rounds, found, spec, reviewError) {
+function buildReviewRecord(items, rounds, found, spec, reviewError, detail = []) {
   const open = codeChecks(items, spec.globalRules);
   const sections = {};
   items.forEach(({ section, content, remaining }, i) => {
     sections[section.title] = {
-      words: wordCount(content), target: section.targetWords || null, max: section.maxWords || null,
+      words: wordCount(content), target: section.targetWords || null, min: section.minWords || null, max: section.maxWords || null,
       issues: [...(open.get(i) || []), ...(remaining || [])],
     };
   });
@@ -304,6 +316,7 @@ function buildReviewRecord(items, rounds, found, spec, reviewError) {
   return {
     rounds, found, fixed: Math.max(0, found - remainingCount), remaining: remainingCount,
     ...(reviewError && { review_error: reviewError }),
+    detail,
     checked_at: new Date().toISOString(), sections,
   };
 }
@@ -322,10 +335,13 @@ async function reviewAndFix({ items, spec, writer, reviewer, fixedInstructions, 
   let found = 0;
   let rounds = 0;
   let reviewError = null;
+  const detail = [];
 
   for (let round = 1; round <= MAX_REVIEW_ROUNDS; round += 1) {
     const flagged = new Map(); // index -> notes
-    for (const [i, notes] of codeChecks(items, spec.globalRules)) flagged.set(i, [...notes]);
+    let codeFound = 0;
+    let aiFound = 0;
+    for (const [i, notes] of codeChecks(items, spec.globalRules)) { flagged.set(i, [...notes]); codeFound += notes.length; }
 
     if (!reviewError) {
       try {
@@ -334,6 +350,7 @@ async function reviewAndFix({ items, spec, writer, reviewer, fixedInstructions, 
           const i = Number(iss.section_index);
           if (Number.isInteger(i) && i >= 0 && i < items.length && String(iss.note || '').trim()) {
             flagged.set(i, [...(flagged.get(i) || []), `${iss.type || 'issue'}: ${String(iss.note).trim()}`]);
+            aiFound += 1;
           }
         }
       } catch (e) {
@@ -345,6 +362,7 @@ async function reviewAndFix({ items, spec, writer, reviewer, fixedInstructions, 
 
     if (flagged.size === 0) break;
     rounds = round;
+    detail.push({ round, code_findings: codeFound, ai_findings: aiFound, rewritten: [...flagged.keys()].map(i => items[i].section.title) });
     found += [...flagged.values()].reduce((n, notes) => n + notes.length, 0);
 
     for (const [i, notes] of flagged) {
@@ -356,7 +374,7 @@ async function reviewAndFix({ items, spec, writer, reviewer, fixedInstructions, 
       items[i] = { ...items[i], content: redo.content, ledger: redo.ledger.length ? redo.ledger : items[i].ledger };
     }
   }
-  return { found, rounds, reviewError };
+  return { found, rounds, reviewError, detail };
 }
 
 /**
@@ -379,7 +397,7 @@ async function generateSpecReading({ kind, clientId, orderId, hd, cf, cfg, confi
     console.log(`[${tag}] "${section.title}" ${wordCount(w.content)} words`);
   }
 
-  const { found, rounds, reviewError } = await reviewAndFix({
+  const { found, rounds, reviewError, detail } = await reviewAndFix({
     items, spec, writer, reviewer, fixedInstructions: cfg.fixedInstructions, meter,
   });
   console.log(`[${tag}] review: ${rounds} round(s), ${found} finding(s)`);
@@ -395,7 +413,9 @@ async function generateSpecReading({ kind, clientId, orderId, hd, cf, cfg, confi
       if (!questionText.trim()) continue;
       const entry = { question: q.question || questionText, prompt: q.prompt || '', answer: '' };
       try {
-        const result = await answerer.generateContent(`${buildMarriageQuestionPrompt(questionText, cfg.questionInstructions)}\n\n${covered}`);
+        const result = await withTimeout(
+          answerer.generateContent(`${buildMarriageQuestionPrompt(questionText, cfg.questionInstructions)}\n\n${covered}`),
+          CALL_TIMEOUT_MS, `question: ${entry.question}`);
         meter.add(result.response.usageMetadata);
         entry.answer = String(result.response.text() || '').trim();
         if (!entry.answer) entry.error = 'No answer returned. Regenerate this question.';
@@ -411,7 +431,7 @@ async function generateSpecReading({ kind, clientId, orderId, hd, cf, cfg, confi
     ...base,
     [hdKey(kind, 'sections_data')]:   sectionsData,
     [hdKey(kind, 'special_answers')]: answers,
-    [hdKey(kind, 'review')]:          buildReviewRecord(items, rounds, found, spec, reviewError),
+    [hdKey(kind, 'review')]:          buildReviewRecord(items, rounds, found, spec, reviewError, detail),
     [hdKey(kind, 'generated_at')]:    new Date().toISOString(),
   };
   delete updated[hdKey(kind, 'generating')];
@@ -453,12 +473,40 @@ async function regenerateSpecSection({ kind, clientId, orderId, label, hd, cf, c
   const review = { ...(hd[hdKey(kind, 'review')] || {}) };
   const ordered = spec.sections.map(s => ({ section: s, content: (next.find(n => n.label === s.title) || {}).content || '' }));
   const own = codeChecks(ordered, spec.globalRules).get(ordered.findIndex(o => o.section.title === label)) || [];
-  review.sections = { ...(review.sections || {}), [label]: { words: wordCount(w.content), target: section.targetWords || null, max: section.maxWords || null, issues: own } };
+  review.sections = { ...(review.sections || {}), [label]: { words: wordCount(w.content), target: section.targetWords || null, min: section.minWords || null, max: section.maxWords || null, issues: own } };
   await db.pgQuery(
     `UPDATE orders SET horoscope_data = jsonb_set(jsonb_set(COALESCE(horoscope_data,'{}'::jsonb), ARRAY[$1]::text[], $2::jsonb), ARRAY[$3]::text[], $4::jsonb) WHERE order_id=$5`,
     [dataKey, JSON.stringify(next), hdKey(kind, 'review'), JSON.stringify(review), orderId]
   );
   return w.content;
+}
+
+/**
+ * Keep <kind>_sections in step with a spec being saved, without losing the plain
+ * list it replaces. The first time a spec is saved the existing list is set aside
+ * as <kind>_sections_before_spec; clearing the spec puts it back.
+ *
+ * @param {string} kind
+ * @param {object} existing  the stored config before this save
+ * @param {object} update    the config being written (mutated)
+ * @param {string} specText  the spec field from the request
+ * @returns {string|null} the reason a spec was refused, or null
+ */
+function syncSectionsWithSpec(kind, existing, update, specText) {
+  const sectionsKey = hdKey(kind, 'sections');
+  const backupKey = hdKey(kind, 'sections_before_spec');
+  const hadSpec = !!String(existing[hdKey(kind, 'spec')] || '').trim();
+  let spec;
+  try { spec = require('./sectionSpec').parseSpec(specText); } catch (e) { return e.message; }
+
+  if (spec) {
+    if (!hadSpec && Array.isArray(existing[sectionsKey]) && existing[sectionsKey].length) update[backupKey] = existing[sectionsKey];
+    update[sectionsKey] = specToSections(spec);
+  } else if (hadSpec && Array.isArray(existing[backupKey])) {
+    update[sectionsKey] = existing[backupKey];
+    delete update[backupKey];
+  }
+  return null;
 }
 
 /** Generate (or regenerate) the WhatsApp summary and save it on the order. */
@@ -622,5 +670,5 @@ module.exports = {
   KINDS, KIND_LIST, isKind, hdKey, reportKeys, configKeys, CONFIG_FIELDS,
   resolveConfig, generateReading, generateSectionText, generateWaMessage,
   historyFromSections, buildDoc, defaultAiFillPrompt, buildAiFillPrompt, describeOrderDetails,
-  regenerateSpecSection, reviewAndFix, generateSpecReading,
+  regenerateSpecSection, reviewAndFix, generateSpecReading, syncSectionsWithSpec,
 };

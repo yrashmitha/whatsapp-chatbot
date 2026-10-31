@@ -28,7 +28,7 @@ import TarotEditorDrawer from '../components/orders/TarotEditorDrawer';
 import MarriageEditorDrawer from '../components/orders/MarriageEditorDrawer';
 import SectionReportEditorDrawer from '../components/orders/SectionReportEditorDrawer';
 import SectionReportBadges from '../components/orders/SectionReportBadges';
-import { SECTION_KIND_LIST } from '../components/orders/sectionReports';
+import { SECTION_KIND_LIST, isGenerating } from '../components/orders/sectionReports';
 import MatchEditorDrawer from '../components/orders/MatchEditorDrawer';
 
 function parseCustomFields(raw) {
@@ -147,7 +147,7 @@ export default function OrdersWeb() {
         ? (() => { try { return JSON.parse(o.horoscope_data); } catch { return {}; } })()
         : (o.horoscope_data || {});
       if (hd.generating === true || hd.quantum_generating === true || hd.marriage_generating === true || hd.match_generating === true) return true;
-      if (SECTION_KIND_LIST.some(k => hd[`${k.key}_generating`] === true)) return true;
+      if (SECTION_KIND_LIST.some(k => isGenerating(hd, k.key))) return true;
       const td = o.tarot_data && typeof o.tarot_data === 'string'
         ? (() => { try { return JSON.parse(o.tarot_data); } catch { return {}; } })()
         : (o.tarot_data || {});

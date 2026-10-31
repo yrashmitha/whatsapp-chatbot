@@ -83,11 +83,22 @@ export const SECTION_KIND_LIST = Object.values(SECTION_KINDS);
 /** The horoscope_data key for a kind, e.g. hdKey('abroad', 'sections_data'). */
 export const hdKey = (kind, name) => `${kind}_${name}`;
 
+/** A run that has said "generating" for longer than this has stopped (a restart, a hung call), not still working. */
+const STALE_RUN_MS = 20 * 60 * 1000;
+
+/** True while a run is genuinely in progress: flagged, and started recently enough to be believed. */
+export function isGenerating(hd, kind) {
+  if (hd?.[hdKey(kind, 'generating')] !== true) return false;
+  const at = Date.parse(String(hd?.[hdKey(kind, 'generating_at')] || '').replace(' ', 'T'));
+  return Number.isNaN(at) ? true : Date.now() - at < STALE_RUN_MS;
+}
+
 /** State of one kind on one order, from its parsed horoscope_data. */
 export function sectionReportState(hd, kind) {
   const data = hd?.[hdKey(kind, 'sections_data')];
   return {
-    generating: hd?.[hdKey(kind, 'generating')] === true,
+    generating: isGenerating(hd, kind),
+    stale: hd?.[hdKey(kind, 'generating')] === true && !isGenerating(hd, kind),
     error: hd?.[hdKey(kind, 'error')] || null,
     done: Array.isArray(data) && data.length > 0,
   };

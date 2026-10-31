@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { SECTION_KINDS } from '../orders/sectionReports';
+import SpecSectionsEditor from './SpecSectionsEditor';
 import { Group, PanelIntro } from './settingsLayout';
 
 const areaCls = 'w-full px-3 py-2 text-base md:text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-y font-mono';
@@ -89,6 +91,24 @@ export default function SectionReportSettings({ kind, value, onChange }) {
 
   const spec = readSpec(value.spec);
   const specActive = !!(spec && spec.sections);
+  const specObj = specActive ? (() => { try { return JSON.parse(value.spec); } catch { return null; } })() : null;
+  const [showRaw, setShowRaw] = useState(false);
+
+  // The plain list becomes a spec with the same headings; each guide turns into one
+  // writing rule. Generation then uses the ledger and the review for this report.
+  const convertToSpec = () => {
+    if (!window.confirm(`Switch ${lower} to structured sections? The ${sections.length} guide(s) become writing rules, and generation will review the whole report and rewrite flagged sections. Nothing is saved until you press Save.`)) return;
+    onChange('spec', JSON.stringify({
+      reportTitle: '',
+      globalRules: { language: 'si', answerFirst: true, avoidRepetition: true, avoidGenericContent: true },
+      sections: sections.map((s, i) => ({
+        order: i + 1, sectionKey: `section_${i + 1}`, title: s.label || '',
+        targetWords: 150, maxWords: 200,
+        allowedTopics: [], excludedTopics: [], astrologicalFocus: [], requiredCustomerContext: [],
+        outputRequirements: s.guide ? [s.guide] : [],
+      })),
+    }, null, 2));
+  };
 
   return (
     <div className="flex flex-col gap-3">
@@ -123,35 +143,55 @@ export default function SectionReportSettings({ kind, value, onChange }) {
             ? { text: `${sections.length} section${sections.length === 1 ? '' : 's'}` }
             : { text: 'None yet', tone: 'warn' }}
       >
+        {specActive && specObj && (
+          <div>
+            <p className="text-xs text-emerald-700 mt-0 mb-1">
+              Structured sections: {spec.sections.length} sections, about {spec.words} words in total. Each section has its own scope and rules below.
+              They are written one by one with a short summary of what came before, then the whole report is reviewed and only flagged sections are rewritten.
+            </p>
+            <SpecSectionsEditor
+              spec={specObj}
+              onChange={(next) => onChange('spec', JSON.stringify(next, null, 2))}
+              accent={meta.accent}
+              accentBorder={meta.accentBorder}
+            />
+          </div>
+        )}
+
         <div>
-          <label className={labelCls}>Section spec (JSON, optional)</label>
-          <p className="text-xs text-slate-400 mb-1.5">
-            Paste a structured spec to control each section&apos;s length, scope and rules. With a spec the sections are written one by one,
-            share only a short summary of what earlier sections said, then the whole report is reviewed and only flagged sections are rewritten.
-            The list below is replaced by the spec. Clear this box to go back to the plain list.
-          </p>
-          <textarea
-            value={value.spec || ''}
-            onChange={e => onChange('spec', e.target.value)}
-            rows={8}
-            spellCheck={false}
-            className={areaCls}
-            placeholder='{ "globalRules": { ... }, "sections": [ { "order": 1, "title": "...", "targetWords": 120, "maxWords": 150, ... } ] }'
-          />
+          <button
+            type="button"
+            aria-expanded={showRaw}
+            onClick={() => setShowRaw(v => !v)}
+            className="min-h-[44px] md:min-h-0 px-0 text-xs font-medium bg-transparent border-0 cursor-pointer text-slate-500 hover:text-slate-700"
+          >
+            {showRaw ? '▲' : '▼'} Raw spec JSON {specActive ? '(global rules and everything)' : '(paste a spec)'}
+          </button>
+          {showRaw && (
+            <div className="mt-1">
+              <p className="text-xs text-slate-400 mb-1.5 mt-0">
+                The whole spec as JSON, including the global rules. Editing the cards above rewrites this. Clear it to go back to the plain section list.
+              </p>
+              <textarea
+                value={value.spec || ''}
+                onChange={e => onChange('spec', e.target.value)}
+                rows={10}
+                spellCheck={false}
+                className={areaCls}
+                placeholder='{ "globalRules": { ... }, "sections": [ { "order": 1, "title": "...", "targetWords": 120, "maxWords": 150, ... } ] }'
+              />
+            </div>
+          )}
           {spec && spec.error && (
             <p className="text-xs text-red-600 mt-1.5">Not saved until fixed: {spec.error}</p>
           )}
-          {specActive && (
-            <p className="text-xs text-emerald-700 mt-1.5">
-              Spec active: {spec.sections.length} sections, about {spec.words} words in total.
-            </p>
-          )}
-          {specActive && (
-            <ol className="mt-2 mb-0 pl-5 text-xs text-slate-600 leading-relaxed">
-              {spec.sections.map((s, i) => (
-                <li key={i}>{s.title}{s.target ? ` (${s.target} words)` : ''}</li>
-              ))}
-            </ol>
+          {!specActive && sections.length > 0 && (
+            <button
+              type="button"
+              onClick={convertToSpec}
+              className="mt-2 min-h-[44px] md:min-h-0 px-3 py-1.5 text-xs border rounded-xl cursor-pointer bg-white hover:bg-slate-50"
+              style={{ color: meta.accent, borderColor: meta.accentBorder }}
+            >Switch to structured sections</button>
           )}
         </div>
         {!specActive && (

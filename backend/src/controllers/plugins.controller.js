@@ -24,7 +24,6 @@ const {
 } = require('../services/matchReport');
 const { buildPorondamDoc } = require('../services/porondamReport');
 const sectionReport = require('../services/sectionReport');
-const { parseSpec, specToSections } = require('../services/sectionSpec');
 const { makeMeter, recordOrderGenCost } = require('../services/genCost');
 const { formatChatLog } = require('../utils/chatLog');
 
@@ -472,12 +471,10 @@ async function updatePluginConfig(req, res) {
     for (const kind of sectionReport.KIND_LIST) {
       const specKey = sectionReport.hdKey(kind, 'spec');
       if (req.body[specKey] === undefined) continue;
-      try {
-        const spec = parseSpec(req.body[specKey]);
-        if (spec) update[sectionReport.hdKey(kind, 'sections')] = specToSections(spec);
-      } catch (e) {
-        return res.status(400).json({ error: `${kind} spec: ${e.message}` });
-      }
+      // The plain section list is set aside when a spec first replaces it, and put
+      // back when the spec is cleared, so its guide texts are never lost to a save.
+      const refused = sectionReport.syncSectionsWithSpec(kind, existing, update, req.body[specKey]);
+      if (refused) return res.status(400).json({ error: `${kind} spec: ${refused}` });
     }
     if (page1_heading !== undefined) update.page1_heading = page1_heading;
     if (page2_heading !== undefined) update.page2_heading = page2_heading;

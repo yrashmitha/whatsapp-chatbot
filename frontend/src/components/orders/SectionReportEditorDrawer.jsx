@@ -5,7 +5,7 @@ import { useToast } from '../ui/Toast';
 import api from '../../lib/api';
 import DeleteReportButton from './DeleteReportButton';
 import DeliveryPanel from './DeliveryPanel';
-import { SECTION_KINDS, hdKey, parseJsonField } from './sectionReports';
+import { SECTION_KINDS, hdKey, parseJsonField, isGenerating } from './sectionReports';
 
 const textareaCls = 'w-full px-3 py-2.5 text-base md:text-sm border border-slate-300 rounded-lg outline-none bg-white text-slate-800 resize-y leading-relaxed';
 const btnBase = 'min-h-[44px] md:min-h-0 px-4 py-2 text-sm rounded-lg cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 whitespace-nowrap';
@@ -23,14 +23,15 @@ function SectionReviewNote({ review, label, content, accent }) {
   const info = review && review.sections && review.sections[label];
   if (!info) return null;
   const words = countWords(content);
-  const over = info.max && words > info.max * 1.15;
-  const under = info.target && words < info.target * 0.5;
+  const over = info.max && words > info.max * 1.05;
+  const floor = info.min || (info.target ? info.target * 0.5 : 0);
+  const under = floor && words < floor * 0.9;
   const open = Array.isArray(info.issues) ? info.issues : [];
   return (
     <div className="mb-3 text-xs">
       <p className="m-0 text-slate-500">
         <span className={over || under ? 'text-amber-700 font-semibold' : ''}>{words} words</span>
-        {info.target ? `, target ${info.target}` : ''}{info.max ? `, limit ${info.max}` : ''}
+        {info.min && info.max ? `, range ${info.min} to ${info.max}` : `${info.target ? `, target ${info.target}` : ''}${info.max ? `, limit ${info.max}` : ''}`}
         {review.rounds ? `. Review: ${review.found} found, ${review.fixed} fixed in ${review.rounds} round${review.rounds === 1 ? '' : 's'}.` : '. Review found nothing to fix.'}
       </p>
       {open.length > 0 && (
@@ -87,7 +88,7 @@ export default function SectionReportEditorDrawer({ kind, order, clientId, open,
 
   const setFlag = (name, v) => setBusy(b => ({ ...b, [name]: v }));
   const waDirty = waMessage !== savedWa;
-  const generating = !!hd[k('generating')];
+  const generating = isGenerating(hd, kind || 'abroad');
 
   // Saved sections follow the order the client has configured now, which may
   // have changed since the report was generated.

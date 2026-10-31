@@ -2443,18 +2443,21 @@ async function generateSectionReportHandler(req, res) {
       });
     }
 
-    await db.pgQuery(
-      `UPDATE orders SET horoscope_data = jsonb_set(jsonb_set(COALESCE(horoscope_data,'{}'::jsonb) - $2::text, ARRAY[$3]::text[], 'true'::jsonb), ARRAY[$4]::text[], to_jsonb(NOW()::text)) WHERE order_id=$1`,
-      [orderId, errorKey, generating, generatingAt]
+    // The start time doubles as this run's id. A slower earlier run that finishes or
+    // fails after a newer one began recognises it is no longer the current run.
+    const started = await db.pgQuery(
+      `UPDATE orders SET horoscope_data = jsonb_set(jsonb_set(COALESCE(horoscope_data,'{}'::jsonb) - $2::text - $5::text, ARRAY[$3]::text[], 'true'::jsonb), ARRAY[$4]::text[], to_jsonb(NOW()::text)) WHERE order_id=$1 RETURNING horoscope_data->>$4::text AS stamp`,
+      [orderId, errorKey, generating, generatingAt, sectionReport.hdKey(kind, 'progress')]
     );
+    const stamp = started.rows[0] && started.rows[0].stamp;
 
     res.json({ ok: true, generating: true });
 
-    sectionReport.generateReading(kind, clientId, orderId).catch(async (e) => {
+    sectionReport.generateReading(kind, clientId, orderId, { stamp }).catch(async (e) => {
       console.error(`[${kind.toUpperCase()}] generate error:`, e.message);
       await db.pgQuery(
-        `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'::jsonb) - $2::text, ARRAY[$3]::text[], $4::jsonb) WHERE order_id=$1`,
-        [orderId, generating, errorKey, JSON.stringify(e.message)]
+        `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'::jsonb) - $2::text - $6::text, ARRAY[$3]::text[], $4::jsonb) WHERE order_id=$1 AND horoscope_data->>$5::text = $7::text`,
+        [orderId, generating, errorKey, JSON.stringify(e.message), generatingAt, sectionReport.hdKey(kind, 'progress'), stamp]
       ).catch(() => {});
     });
   } catch (e) {

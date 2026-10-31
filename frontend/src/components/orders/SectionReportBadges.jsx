@@ -17,7 +17,7 @@ export default function SectionReportBadges({ hd, guard, onOpen }) {
       return (
         <span key={k.key} className="flex items-center gap-1 text-xs font-medium" style={{ color: k.accent }}>
           <span className="w-3 h-3 border-2 border-slate-200 rounded-full animate-spin inline-block" style={{ borderTopColor: k.accent }} />
-          {k.emoji} Generating…
+          {k.emoji} {s.percent != null ? `${s.percent}%` : 'Generating…'}
         </span>
       );
     }

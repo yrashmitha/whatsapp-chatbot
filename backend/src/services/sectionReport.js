@@ -132,12 +132,48 @@ function parseJson(v) {
 }
 
 /**
+ * Record how far a run has got, for the percentage the order screens show.
+ * Cosmetic: a failed write must never stop the report.
+ */
+async function setProgress(orderId, kind, done, total, phase) {
+  try {
+    await db.pgQuery(
+      `UPDATE orders SET horoscope_data = jsonb_set(COALESCE(horoscope_data,'{}'::jsonb), ARRAY[$1]::text[], $2::jsonb) WHERE order_id=$3`,
+      [hdKey(kind, 'progress'), JSON.stringify({ done, total, phase, at: new Date().toISOString() }), orderId]
+    );
+  } catch (_) { /* progress is only for display */ }
+}
+
+/**
+ * Has a newer run taken over this order? Each run is stamped when it starts. If a
+ * slower earlier run finishes after a newer one began, saving would replace the
+ * newer run's work with older output, so it stops instead.
+ */
+async function isSuperseded(orderId, kind, stamp) {
+  if (!stamp) return false;
+  const r = await db.pgQuery('SELECT horoscope_data FROM orders WHERE order_id=$1', [orderId]);
+  const hd = parseJson(r.rows[0] && r.rows[0].horoscope_data);
+  return hd[hdKey(kind, 'generating_at')] !== stamp;
+}
+
+/** What goes into each section prompt after the first, so the writer is told what is already covered. */
+function alreadyWrittenNote(titles) {
+  const story = 'මුළු වාර්තාවම එකම කතාවක් මෙන් එක් අංශයකින් තවත් අංශයකට ස්වභාවිකව ගලා යා යුතුය.';
+  const calm = 'ජන්මියා තොරතුරු රාශියකින් අපහසුතාවයට පත් නොකරන්න: මෙම අංශයේ එක් ප්‍රධාන කරුණක් පැහැදිලිව සහ සංක්ෂිප්තව පවසන්න.';
+  if (!titles.length) {
+    return `\n\n${story} මෙය වාර්තාවේ ආරම්භයයි. පසුව ලියන අංශවලට අයත් කරුණු මෙහිදී කල්තියා නොකියන්න. ${calm}`;
+  }
+  return `\n\nමෙම අංශය ලිවීමට පෙර, මෙම සංවාදයේ ඉහත ඔබ ලියා ඇති සියලු අංශ (${titles.map(t => `[${t}]`).join(' ')}) පළමුව සම්පූර්ණයෙන් කියවන්න. ඒවායේ සඳහන් කළ කරුණු, ග්‍රහ පිහිටීම්, කාල පරාස, වර්ෂ, නිගමන සහ උපදෙස් නැවත නොකියන්න; ඔබම ඔබව පුනරුච්චාරණය නොකරන්න. ${story} පෙර අංශයෙන් ඉතිරි වූ තැනින් ඉදිරියට ගොස්, මෙම අංශයට විශේෂිත නව කරුණු පමණක් එක් කරන්න. පෙර අංශයක කරුණක් අත්‍යවශ්‍ය නම් එය වාක්‍ය කොටසකින් පමණක් සඳහන් කරන්න. ${calm}`;
+}
+
+/**
  * Generate every configured section for an order, answer the customer's own
  * questions, save the result, and build the WhatsApp message when a prompt is set.
  * Requires chart_data on the order (fetched by Check Lagna).
  */
-async function generateReading(kind, clientId, orderId) {
+async function generateReading(kind, clientId, orderId, opts = {}) {
   const tag = kind.toUpperCase();
+  const stamp = opts.stamp || null;
   const r = await db.pgQuery('SELECT horoscope_data, custom_fields FROM orders WHERE order_id=$1', [orderId]);
   if (!r.rows.length) throw new Error('Order not found');
   const hd = parseJson(r.rows[0].horoscope_data);
@@ -162,28 +198,34 @@ async function generateReading(kind, clientId, orderId) {
 
   console.log(`[${tag}] generating ${cfg.sections.length} sections for order ${orderId}${cfg.spec ? ' (spec mode)' : ''}`);
 
-  if (cfg.spec) return generateSpecReading({ kind, clientId, orderId, hd, cf, cfg, config });
+  if (cfg.spec) return generateSpecReading({ kind, clientId, orderId, hd, cf, cfg, config, stamp });
 
   // One session for the whole run: every section sees what came before it.
   const chat = (await buildModel({ clientId, chartData: hd.chart_data, systemPrompt: cfg.systemPrompt })).startChat({});
+
+  const questions = (Array.isArray(hd[hdKey(kind, 'special_questions')]) ? hd[hdKey(kind, 'special_questions')] : [])
+    .filter(q => ((q.prompt && q.prompt.trim()) ? q.prompt : (q.question || '')).trim());
+  const total = cfg.sections.length + questions.length;
+  await setProgress(orderId, kind, 0, total, 'sections');
 
   const meter = makeMeter();
   const out = [];
   for (const sec of cfg.sections) {
     const content = await generateSectionText({
       kind, clientId, label: sec.label, guide: sec.guide || '',
-      fixedInstructions: cfg.fixedInstructions, chat, meter,
+      // The titles written so far are named in each prompt, on top of the shared history.
+      fixedInstructions: `${cfg.fixedInstructions || ''}${alreadyWrittenNote(out.map(o => o.label))}`.trim(),
+      chat, meter,
     });
     out.push({ label: sec.label, content });
+    await setProgress(orderId, kind, out.length, total, 'sections');
   }
 
   // The customer's own questions, answered in the same session so the answers
   // do not restate what the sections already covered.
-  const questions = Array.isArray(hd[hdKey(kind, 'special_questions')]) ? hd[hdKey(kind, 'special_questions')] : [];
   const answers = [];
   for (const q of questions) {
     const questionText = (q.prompt && q.prompt.trim()) ? q.prompt : (q.question || '');
-    if (!questionText.trim()) continue;
     const { text: answer, finishReason, usage } = await sendChecked(
       chat, buildMarriageQuestionPrompt(questionText, cfg.questionInstructions), `question: ${q.question || questionText}`);
     meter.add(usage);
@@ -197,16 +239,27 @@ async function generateReading(kind, clientId, orderId) {
       console.error(`[${tag}] unanswered question "${q.question || questionText}": ${entry.error}`);
     }
     answers.push(entry);
+    await setProgress(orderId, kind, out.length + answers.length, total, 'questions');
   }
 
+  // A newer run has taken over: leave its work alone, and bill nothing to this one's result.
+  if (await isSuperseded(orderId, kind, stamp)) {
+    console.warn(`[${tag}] run for ${orderId} was superseded by a newer one, result discarded`);
+    return out;
+  }
+
+  // Merge into what is saved now, not into the snapshot from when this run began,
+  // so edits made while it ran (questions, a saved section) are not undone.
+  const fresh = (await db.pgQuery('SELECT horoscope_data FROM orders WHERE order_id=$1', [orderId])).rows[0];
   const updated = {
-    ...hd,
+    ...parseJson(fresh && fresh.horoscope_data),
     [hdKey(kind, 'sections_data')]:   out,
     [hdKey(kind, 'special_answers')]: answers,
     [hdKey(kind, 'generated_at')]:    new Date().toISOString(),
   };
   delete updated[hdKey(kind, 'generating')];
   delete updated[hdKey(kind, 'error')];
+  delete updated[hdKey(kind, 'progress')];
 
   await db.pgQuery('UPDATE orders SET horoscope_data=$1 WHERE order_id=$2', [JSON.stringify(updated), orderId]);
   await recordOrderGenCost(orderId, kind, meter, { sections: out.length, questions: answers.length });
@@ -381,7 +434,7 @@ async function reviewAndFix({ items, spec, writer, reviewer, fixedInstructions, 
  * Spec-mode generation: independent section calls that share a short ledger,
  * then review and targeted fixes, then the customer's own questions.
  */
-async function generateSpecReading({ kind, clientId, orderId, hd, cf, cfg, config }) {
+async function generateSpecReading({ kind, clientId, orderId, hd, cf, cfg, config, stamp }) {
   const tag = kind.toUpperCase();
   const { spec } = cfg;
   const system = specSystemInstruction({ systemPrompt: cfg.systemPrompt, spec, cf, chartData: hd.chart_data });
@@ -389,18 +442,26 @@ async function generateSpecReading({ kind, clientId, orderId, hd, cf, cfg, confi
   const reviewer = await specModel(clientId, 'You are a careful editor of Sinhala astrology reports. Answer only in the requested JSON.', { schema: REVIEW_SCHEMA, temperature: 0.1 });
   const meter = makeMeter();
 
+  const qCount = (Array.isArray(hd[hdKey(kind, 'special_questions')]) ? hd[hdKey(kind, 'special_questions')] : []).length;
+  // sections, then one step for the review and fixes, then the questions
+  const total = spec.sections.length + 1 + qCount;
+  await setProgress(orderId, kind, 0, total, 'sections');
+
   const items = [];
   for (const section of spec.sections) {
     const ledger = items.map(it => ({ title: it.section.title, items: it.ledger }));
     const w = await writeSpecSection({ model: writer, section, ledger, fixedInstructions: cfg.fixedInstructions, meter });
     items.push({ section, content: w.content, ledger: w.ledger });
     console.log(`[${tag}] "${section.title}" ${wordCount(w.content)} words`);
+    await setProgress(orderId, kind, items.length, total, 'sections');
   }
+  await setProgress(orderId, kind, items.length, total, 'review');
 
   const { found, rounds, reviewError, detail } = await reviewAndFix({
     items, spec, writer, reviewer, fixedInstructions: cfg.fixedInstructions, meter,
   });
   console.log(`[${tag}] review: ${rounds} round(s), ${found} finding(s)`);
+  await setProgress(orderId, kind, items.length + 1, total, 'questions');
 
   // The customer's own questions, told what the sections already covered.
   const questions = Array.isArray(hd[hdKey(kind, 'special_questions')]) ? hd[hdKey(kind, 'special_questions')] : [];
@@ -424,6 +485,10 @@ async function generateSpecReading({ kind, clientId, orderId, hd, cf, cfg, confi
     }
   }
 
+  if (await isSuperseded(orderId, kind, stamp)) {
+    console.warn(`[${tag}] run for ${orderId} was superseded by a newer one, result discarded`);
+    return items.map(it => ({ label: it.section.title, content: it.content }));
+  }
   const fresh = (await db.pgQuery('SELECT horoscope_data FROM orders WHERE order_id=$1', [orderId])).rows[0];
   const base = parseJson(fresh && fresh.horoscope_data);
   const sectionsData = items.map(it => ({ label: it.section.title, content: it.content, ledger: it.ledger }));
@@ -436,6 +501,7 @@ async function generateSpecReading({ kind, clientId, orderId, hd, cf, cfg, confi
   };
   delete updated[hdKey(kind, 'generating')];
   delete updated[hdKey(kind, 'error')];
+  delete updated[hdKey(kind, 'progress')];
   await db.pgQuery('UPDATE orders SET horoscope_data=$1 WHERE order_id=$2', [JSON.stringify(updated), orderId]);
   await recordOrderGenCost(orderId, kind, meter, { sections: items.length, questions: answers.length, review_rounds: rounds, mode: 'spec' });
 

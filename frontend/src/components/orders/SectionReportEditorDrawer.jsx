@@ -89,6 +89,8 @@ export default function SectionReportEditorDrawer({ kind, order, clientId, open,
   const setFlag = (name, v) => setBusy(b => ({ ...b, [name]: v }));
   const waDirty = waMessage !== savedWa;
   const generating = isGenerating(hd, kind || 'abroad');
+  const progress = hd[k('progress')];
+  const percent = generating && progress && progress.total > 0 ? Math.min(99, Math.round((progress.done / progress.total) * 100)) : null;
 
   // Saved sections follow the order the client has configured now, which may
   // have changed since the report was generated.
@@ -408,7 +410,7 @@ export default function SectionReportEditorDrawer({ kind, order, clientId, open,
               ))}
               {noSections && (
                 <span className="text-xs text-slate-400">
-                  {regenerating ? 'Generating…' : `No ${meta.name.toLowerCase()} sections generated yet.`}
+                  {regenerating ? `Generating${percent != null ? ` ${percent}%` : '…'}` : `No ${meta.name.toLowerCase()} sections generated yet.`}
                 </span>
               )}
             </div>
@@ -693,7 +695,7 @@ export default function SectionReportEditorDrawer({ kind, order, clientId, open,
             className={`${btnBase} md:mr-auto md:order-first border-0`}
             style={{ background: regenerating ? '#e2e8f0' : '#0f766e', color: regenerating ? '#94a3b8' : '#fff' }}
           >
-            {regenerating ? '⏳ Generating…' : '↺ Regenerate All'}
+            {regenerating ? `⏳ Generating${percent != null ? ` ${percent}%` : '…'}` : '↺ Regenerate All'}
           </button>
           <DeleteReportButton order={order} clientId={clientId} kind={kind} visible={!noSections} onDone={onClose} />
         </div>

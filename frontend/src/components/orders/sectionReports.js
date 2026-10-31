@@ -98,6 +98,11 @@ export function sectionReportState(hd, kind) {
   const data = hd?.[hdKey(kind, 'sections_data')];
   return {
     generating: isGenerating(hd, kind),
+    // 0 to 100 while a run reports progress, otherwise null
+    percent: (() => {
+      const p = hd?.[hdKey(kind, 'progress')];
+      return isGenerating(hd, kind) && p && p.total > 0 ? Math.min(99, Math.round((p.done / p.total) * 100)) : null;
+    })(),
     stale: hd?.[hdKey(kind, 'generating')] === true && !isGenerating(hd, kind),
     error: hd?.[hdKey(kind, 'error')] || null,
     done: Array.isArray(data) && data.length > 0,

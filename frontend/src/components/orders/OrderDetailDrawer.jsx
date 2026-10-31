@@ -230,7 +230,7 @@ export default function OrderDetailDrawer({
                     if (!(s.generating || s.done || s.error || sold)) return null;
                     return (
                       <ReportRow key={k.key} icon={k.emoji} label={`${k.name} report`}
-                        state={s.generating ? { busy: true, text: 'Generating...' }
+                        state={s.generating ? { busy: true, text: `Generating${s.percent != null ? ` ${s.percent}%` : '...'}` }
                           : s.error && !s.done ? { tone: 'error', text: 'Failed, tap Retry', title: s.error }
                           : s.done ? { text: 'Ready' } : { text: 'Not started' }}>
                         {s.done && <ActionBtn onClick={guard('horoscope_reading', () => open.sectionReport(k.key))}>View / edit</ActionBtn>}

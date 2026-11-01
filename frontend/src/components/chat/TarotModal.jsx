@@ -17,6 +17,7 @@ export default function TarotModal({ phone, orderId, clientId, savedData = null,
   const toast = useToast();
 
   const [question, setQuestion]       = useState(savedData?.question || '');
+  const [ritual, setRitual]           = useState(savedData?.ritual_cross_sell !== false);
   const [loading, setLoading]         = useState(false);
   const [result, setResult]           = useState(savedData || null);
   const [downloading, setDownloading] = useState(false);
@@ -34,6 +35,7 @@ export default function TarotModal({ phone, orderId, clientId, savedData = null,
         question: question.trim(),
         ...(orderId && { order_id: orderId }),
         ...(regenerate && { regenerate: true }),
+        ritual_cross_sell: ritual,
       }, params);
       setResult({ ...res.data, question: question.trim() });
       if (orderId) onResult?.();   // triggers orders refetch
@@ -130,6 +132,10 @@ export default function TarotModal({ phone, orderId, clientId, savedData = null,
               placeholder="Describe the customer's question, problem, or situation they need guidance on…"
               disabled={loading}
             />
+            <label className="flex items-center gap-2 mt-2 text-xs text-slate-600 cursor-pointer">
+              <input type="checkbox" checked={ritual} onChange={e => setRitual(e.target.checked)} disabled={loading} />
+              <span><span className="font-medium text-slate-700">Ritual cross-sell</span> (adds the ritual prompt from Plugins)</span>
+            </label>
           </div>
 
           {/* Cards drawn */}

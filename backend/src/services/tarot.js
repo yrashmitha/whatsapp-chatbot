@@ -113,9 +113,10 @@ function formatSpread(drawn) {
  * @param {string|null} orderId - Order to bill the Gemini cost to (optional)
  * @param {string}      chartContext - Vedic birth chart JSON to give Gemini as background (optional)
  * @param {string}      previousReadings - Earlier readings this one follows on from, already formatted (optional)
+ * @param {string}      ritualText - Ritual cross-sell text to append to the prompt; empty means none (optional)
  * @returns {Promise<{ reading: string, cards: Array }>}
  */
-async function generateTarotReading(clientId, question, customPrompt = null, orderId = null, chartContext = '', previousReadings = '') {
+async function generateTarotReading(clientId, question, customPrompt = null, orderId = null, chartContext = '', previousReadings = '', ritualText = '') {
   // Fall back to the built-in prompt rather than refusing — a client that
   // enabled the addon but never opened Plugins should still get a usable
   // reading, and the default already encodes the "one real problem" framing.
@@ -163,6 +164,14 @@ async function generateTarotReading(clientId, question, customPrompt = null, ord
 PREVIOUS READINGS FOR THIS CUSTOMER (this reading follows on from them, oldest first). Use them as continuity: refer back to what the customer was told, note what has changed or held, and stay consistent. Do NOT repeat them, and the cards drawn above remain the only cards you interpret:
 ${previous}`;
     console.log('[TAROT] appended previous readings as context');
+  }
+
+  // The ritual cross-sell is optional per reading. Callers pass the text only when
+  // the operator left the tick on, so an unticked reading gets nothing appended.
+  const ritual = (ritualText || '').trim();
+  if (ritual) {
+    prompt += `\n\n---\n${ritual}`;
+    console.log('[TAROT] appended ritual cross-sell text');
   }
 
   console.log(`[TAROT] Injected spread:\n${spreadText}`);

@@ -826,7 +826,9 @@ async function listLinkableTarot(req, res) {
  */
 async function triggerTarotReading(req, res) {
   const clientId = resolveClientId(req);
-  const { phone, question, order_id, regenerate, linked_order_ids } = req.body;
+  const { phone, question, order_id, regenerate, linked_order_ids, ritual_cross_sell } = req.body;
+  // Ticked by default. Only an explicit false leaves the ritual text out.
+  const ritualOn = ritual_cross_sell !== false;
 
   if (!phone)    return res.status(400).json({ error: 'phone required' });
   if (!question) return res.status(400).json({ error: 'question required' });
@@ -839,14 +841,15 @@ async function triggerTarotReading(req, res) {
 
     // ── Chat context (no order_id): synchronous — return reading directly ──
     if (!order_id) {
-      let customPrompt = null;
+      let customPrompt = null, ritualText = '';
       try {
         const config = await db.getPluginConfig(clientId, 'tarot_reading');
         customPrompt = config?.prompt || null;
+        if (ritualOn) ritualText = config?.ritual_prompt || '';
       } catch { /* no config */ }
 
-      console.log(`[TAROT] Sync reading for ${phone} | client=${clientId}`);
-      const { reading, cards } = await generateTarotReading(clientId, question, customPrompt);
+      console.log(`[TAROT] Sync reading for ${phone} | client=${clientId} | ritual=${!!ritualText}`);
+      const { reading, cards } = await generateTarotReading(clientId, question, customPrompt, null, '', '', ritualText);
       return res.json({ ok: true, reading, cards, question });
     }
 
@@ -882,13 +885,14 @@ async function triggerTarotReading(req, res) {
     res.json({ ok: true, generating: true });
 
     // Load optional custom prompt
-    let customPrompt = null;
+    let customPrompt = null, ritualText = '';
     try {
       const config = await db.getPluginConfig(clientId, 'tarot_reading');
       customPrompt = config?.prompt || null;
+      if (ritualOn) ritualText = config?.ritual_prompt || '';
     } catch { /* no config */ }
 
-    console.log(`[TAROT] Background generation for ${phone} | order=${order_id} | client=${clientId}`);
+    console.log(`[TAROT] Background generation for ${phone} | order=${order_id} | client=${clientId} | ritual=${!!ritualText}`);
     // The response is already sent, so a throw here would leave the order stuck on
     // "generating". A missing chart only means a reading without chart context.
     let chartContext = '', chart = null;
@@ -897,8 +901,8 @@ async function triggerTarotReading(req, res) {
     } catch (e) {
       console.warn('[TAROT] Chart fetch failed, generating without it:', e.message);
     }
-    generateTarotReading(clientId, question, customPrompt, order_id, chartContext, linked.text).then(async ({ reading, cards }) => {
-      const tarotData = { question, reading, cards, linked_order_ids: linked.ids, generated_at: new Date().toISOString(), ...(chart && { chart_data: chart }) };
+    generateTarotReading(clientId, question, customPrompt, order_id, chartContext, linked.text, ritualText).then(async ({ reading, cards }) => {
+      const tarotData = { question, reading, cards, linked_order_ids: linked.ids, ritual_cross_sell: ritualOn, generated_at: new Date().toISOString(), ...(chart && { chart_data: chart }) };
       await db.pgQuery(
         `UPDATE orders SET tarot_data=$1 WHERE order_id=$2`,
         [JSON.stringify(tarotData), order_id]

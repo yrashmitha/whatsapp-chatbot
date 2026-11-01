@@ -35,6 +35,8 @@ export default function TarotGenerateModal({ order, clientId, onClose, onGenerat
   })();
 
   const [question, setQuestion]   = useState(existingQuestion);
+  // Ticked by default. A regenerate keeps whatever the last run used.
+  const [ritual, setRitual] = useState(parseJson(order?.tarot_data).ritual_cross_sell !== false);
   const [generating, setGenerating] = useState(false);
   const [aiFilling, setAiFilling]   = useState(false);
   const [fetchingChart, setFetchingChart] = useState(false);
@@ -181,6 +183,7 @@ export default function TarotGenerateModal({ order, clientId, onClose, onGenerat
         order_id: order.order_id,
         regenerate: true,
         linked_order_ids: linkedIds,
+        ritual_cross_sell: ritual,
         // Only pass birth params when the chart has NOT been fetched yet — a
         // fetched chart is already cached on the order and reused server-side.
         ...(birth && birth.birth_time && !chartFetched ? {
@@ -385,6 +388,21 @@ export default function TarotGenerateModal({ order, clientId, onClose, onGenerat
               )}
             </div>
           )}
+          <label className="flex items-start gap-2 text-xs text-slate-600 cursor-pointer rounded-xl border border-slate-200 px-3 py-2.5">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={ritual}
+              onChange={e => setRitual(e.target.checked)}
+              disabled={generating}
+            />
+            <span>
+              <span className="font-medium text-slate-700">Ritual cross-sell</span>
+              <span className="block text-slate-400">
+                Adds the ritual prompt from Plugins, Tarot Reading to this reading. Untick to leave it out.
+              </span>
+            </span>
+          </label>
           <p className="text-xs text-slate-400">
             Generation runs in the background (~30 seconds). You can navigate away after clicking Generate.
           </p>

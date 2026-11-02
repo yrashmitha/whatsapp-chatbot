@@ -8,7 +8,7 @@ import DeliveryPanel from './DeliveryPanel';
 
 const POSITION_COLORS = { Past: '#8b5cf6', Present: '#3b82f6', Future: '#10b981' };
 
-export default function TarotEditorDrawer({ order, clientId, open, onClose }) {
+export default function TarotEditorDrawer({ order, clientId, open, onClose, onRegenerate }) {
   const toast = useToast();
   const qc    = useQueryClient();
   const previewRef = useRef(null);
@@ -186,7 +186,21 @@ export default function TarotEditorDrawer({ order, clientId, open, onClose }) {
               {/* Reading tab */}
               {activeInnerTab === 'reading' && (
                 <>
-                  <p style={{ margin: '0 0 6px 0', fontSize: 13, fontWeight: 700, color: '#6366f1' }}>Question / Brief</p>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '0 0 6px 0' }}>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#6366f1' }}>Question / Brief</p>
+                    {/* AI Fill lives in the generate modal, which knows the pack
+                        position. Once a reading exists the phone card opens this
+                        editor instead, so without this the only way back to it
+                        was Regenerate buried in the order drawer. */}
+                    {onRegenerate && (
+                      <button
+                        onClick={onRegenerate}
+                        style={{ fontSize: 12, fontWeight: 500, padding: '4px 10px', borderRadius: 8, border: 0, cursor: 'pointer', background: 'rgba(124,58,237,0.1)', color: '#7c3aed' }}
+                      >
+                        ✨ AI Fill & Regenerate
+                      </button>
+                    )}
+                  </div>
                   <textarea
                     style={{ width: '100%', padding: '10px 12px', fontSize: 13, border: '1px solid #cbd5e1', borderRadius: 8, outline: 'none', background: '#ffffff', color: '#1e293b', resize: 'vertical', lineHeight: 1.6, boxSizing: 'border-box', marginBottom: 16 }}
                     value={question}

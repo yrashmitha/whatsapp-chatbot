@@ -31,6 +31,8 @@ export default function TarotEditorDrawer({ order, clientId, open, onClose }) {
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [aiFilling, setAiFilling]         = useState(false);
+  const [newProblems, setNewProblems]     = useState([]); // questions found with no order yet
+  const [creating, setCreating]           = useState(false);
 
   // Reset state whenever a different order is opened
   useEffect(() => {
@@ -40,32 +42,52 @@ export default function TarotEditorDrawer({ order, clientId, open, onClose }) {
     setCards(fresh.cards ? fresh.cards.map(c => ({ ...c })) : []);
     setActiveInnerTab('reading');
     setOuterTab('edit');
+    setNewProblems([]);
   }, [order?.order_id]);
 
-  // Fills only the question box. The reading is left alone and nothing is saved
-  // until Save, so a wrong fill costs nothing. Same pack rule as the generate
-  // modal: reading N of a pack takes problem N, not always the first.
+  // Looks for questions the customer asked that have no order yet. It never
+  // touches this order: its question and reading are what was already delivered,
+  // and a later question belongs to a new order for the same customer.
   const handleAiFill = async () => {
     setAiFilling(true);
     try {
       const params = clientId ? { params: { client_id: clientId } } : {};
-      const [{ data }, lk] = await Promise.all([
-        api.post(`/crm/tarot-reading/ai-prepare/${order.order_id}`, {}, params),
-        api.get(`/crm/tarot-reading/linkable/${order.order_id}`, params).catch(() => null),
-      ]);
-      const pack  = lk?.data?.pack || null;
+      const { data } = await api.post(`/crm/tarot-reading/ai-prepare/${order.order_id}`, { new_only: true }, params);
       const found = Array.isArray(data.problems) ? data.problems : [];
-      const mine  = pack ? found[pack.seq - 1]?.question : found[0]?.question || data.question;
-      if (mine) {
-        setQuestion(mine);
-        toast.success(pack ? `Filled — problem ${pack.seq} of ${pack.of}. Press Save to keep it.` : 'Filled. Press Save to keep it.');
-      } else {
-        toast.error('No clear question found in the chat');
-      }
+      setNewProblems(found);
+      toast[found.length ? 'success' : 'info'](
+        found.length
+          ? `${found.length} new question${found.length > 1 ? 's' : ''} found. Check the wording, then create the order.`
+          : 'No new question in the chat. Everything asked already has an order.');
     } catch (e) {
       toast.error(e?.response?.data?.error || 'AI fill failed');
     } finally {
       setAiFilling(false);
+    }
+  };
+
+  const handleCreateOrders = async () => {
+    const list = newProblems.filter(p => p.question.trim());
+    if (!list.length) return;
+    setCreating(true);
+    const params = clientId ? { params: { client_id: clientId } } : {};
+    const made = [];
+    try {
+      // One at a time: each one extends the pack the previous one joined.
+      for (const p of list) {
+        const { data } = await api.post(`/crm/tarot-reading/add-reading/${order.order_id}`,
+          { question: p.question.trim(), topic: p.topic }, params);
+        made.push(data.created.order_id);
+      }
+      toast.success(`Created ${made.join(', ')}. Generate ${made.length > 1 ? 'them' : 'it'} from the orders list.`);
+      setNewProblems([]);
+    } catch (e) {
+      toast.error((made.length ? `Created ${made.join(', ')} before this failed: ` : '') + (e?.response?.data?.error || 'Could not create the order'));
+      // Whatever was created is no longer "new". Keep only the ones still to do.
+      setNewProblems(ps => ps.slice(made.length));
+    } finally {
+      setCreating(false);
+      qc.invalidateQueries({ queryKey: ['orders'] });
     }
   };
 
@@ -231,6 +253,49 @@ export default function TarotEditorDrawer({ order, clientId, open, onClose }) {
                     rows={4}
                     placeholder="The customer's question / brief (shown on the report cover)…"
                   />
+                  {newProblems.length > 0 && (
+                    <div style={{ margin: '-8px 0 16px 0', padding: 12, border: '1px solid #fcd34d', background: '#fffbeb', borderRadius: 10 }}>
+                      <p style={{ margin: '0 0 4px 0', fontSize: 13, fontWeight: 700, color: '#92400e' }}>
+                        New question{newProblems.length > 1 ? 's' : ''} from the customer
+                      </p>
+                      <p style={{ margin: '0 0 8px 0', fontSize: 12, color: '#b45309', lineHeight: 1.5 }}>
+                        This reading stays as it is. Each question below becomes a new order for the same customer, as the next reading of their pack at Rs 0.
+                      </p>
+                      {newProblems.map((p, i) => (
+                        <div key={i} style={{ marginBottom: 8 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 500, color: '#78350f', marginBottom: 2 }}>
+                            <span>{p.topic || `Question ${i + 1}`}</span>
+                            <button
+                              onClick={() => setNewProblems(ps => ps.filter((_, j) => j !== i))}
+                              disabled={creating}
+                              style={{ fontSize: 12, color: '#b45309', background: 'transparent', border: 0, cursor: 'pointer' }}
+                            >remove</button>
+                          </div>
+                          <textarea
+                            style={{ width: '100%', padding: '8px 10px', fontSize: 12, border: '1px solid #fcd34d', borderRadius: 8, outline: 'none', background: '#ffffff', color: '#1e293b', resize: 'vertical', lineHeight: 1.5, boxSizing: 'border-box' }}
+                            rows={3}
+                            value={p.question}
+                            onChange={e => setNewProblems(ps => ps.map((x, j) => (j === i ? { ...x, question: e.target.value } : x)))}
+                            disabled={creating}
+                          />
+                        </div>
+                      ))}
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                          onClick={handleCreateOrders}
+                          disabled={creating || !newProblems.some(p => p.question.trim())}
+                          style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 8, border: 0, cursor: creating ? 'not-allowed' : 'pointer', opacity: creating ? 0.6 : 1, background: '#b45309', color: '#fff' }}
+                        >
+                          {creating ? 'Creating…' : `Create ${newProblems.length} new order${newProblems.length > 1 ? 's' : ''}`}
+                        </button>
+                        <button
+                          onClick={() => setNewProblems([])}
+                          disabled={creating}
+                          style={{ fontSize: 12, color: '#92400e', background: 'transparent', border: 0, cursor: 'pointer' }}
+                        >Dismiss</button>
+                      </div>
+                    </div>
+                  )}
                   <p style={{ margin: '0 0 8px 0', fontSize: 13, fontWeight: 700, color: '#6366f1' }}>Full Reading</p>
                   <textarea
                     style={{ width: '100%', padding: '10px 12px', fontSize: 13, fontFamily: 'monospace', border: '1px solid #cbd5e1', borderRadius: 8, outline: 'none', background: '#ffffff', color: '#1e293b', resize: 'vertical', lineHeight: 1.6, boxSizing: 'border-box' }}

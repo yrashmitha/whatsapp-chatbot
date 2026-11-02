@@ -244,10 +244,34 @@ async function fetchTarotChart(req, res) {
 }
 
 /**
+ * For "new questions only" fills: the matters this customer already has a tarot
+ * order for, as a prompt block. A customer who bought a pack often sends the
+ * second question after the first reading was delivered, and the plain fill
+ * would list the first question again (or put the new one into the old order).
+ */
+async function alreadyCoveredBlock(clientId, order) {
+  const { rows } = await db.pgQuery(
+    `SELECT tarot_data, custom_fields FROM orders
+      WHERE phone_number=$1 AND client_id IS NOT DISTINCT FROM $2
+        AND (tarot_data IS NOT NULL OR custom_fields->'tarot_pack' IS NOT NULL
+             OR order_id=$3)
+      ORDER BY created_at`,
+    [order.phone_number, clientId ?? null, order.order_id]);
+  const asObj = v => (typeof v === 'string' ? JSON.parse(v || '{}') : (v || {}));
+  const covered = rows
+    .map(r => (asObj(r.tarot_data).question || asObj(r.custom_fields).needs || '').trim())
+    .filter(Boolean);
+  return `
+
+ALREADY HANDLED — each of these matters already has its own tarot order. Do NOT return any of them again, even reworded. Return ONLY matters the customer raised in the conversation that are NOT covered below. This overrides the rule above about always returning at least one entry: if the chat holds nothing new, return an empty "problems" array.
+${covered.length ? covered.map((q, i) => `${i + 1}. ${q}`).join('\n') : '(none recorded)'}`;
+}
+
+/**
  * POST /api/crm/tarot-reading/ai-prepare/:orderId — read the chat and fill the
  * question box + birth details for a tarot reading.
  */
-async function prepareTarotBrief(clientId, order) {
+async function prepareTarotBrief(clientId, order, { newOnly = false } = {}) {
   const cf = (typeof order.custom_fields === 'string') ? JSON.parse(order.custom_fields || '{}') : (order.custom_fields || {});
   const messages = await db.getMessagesByPhone(order.phone_number, clientId);
   // Fold in transcribed voice notes / read slips so the brief is not built
@@ -259,7 +283,8 @@ async function prepareTarotBrief(clientId, order) {
     .replace('{{birth_date}}',    cf.birth_date || '')
     .replace('{{birth_time}}',    cf.birth_time || '')
     .replace('{{birth_place}}',   cf.birth_place || cf.birth_place_name || '')
-    .replace('{{chat_log}}',      chatLog || '(no messages found)');
+    .replace('{{chat_log}}',      chatLog || '(no messages found)')
+    + (newOnly ? await alreadyCoveredBlock(clientId, order) : '');
 
   const model = (await getGenAI(clientId)).getGenerativeModel({
     model: 'gemini-2.5-flash',
@@ -318,7 +343,7 @@ async function aiPrepareTarot(req, res) {
   try {
     const oRes = await db.pgQuery('SELECT * FROM orders WHERE order_id=$1', [orderId]);
     if (!oRes.rows.length) return res.status(404).json({ error: 'Order not found' });
-    res.json(await prepareTarotBrief(clientId, oRes.rows[0]));
+    res.json(await prepareTarotBrief(clientId, oRes.rows[0], { newOnly: req.body?.new_only === true }));
   } catch (e) {
     console.error('[TAROT-AI-PREPARE]', e.message);
     res.status(e.statusCode || 500).json({ error: e.message });
@@ -404,6 +429,88 @@ async function splitTarotPack(req, res) {
     res.json({ ok: true, pack_id: packId, of: clean.length, parent: parent.order_id, created });
   } catch (e) {
     console.error('[TAROT-SPLIT-PACK]', e.message);
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
+}
+
+/**
+ * POST /api/crm/tarot-reading/add-reading/:orderId — the customer sent another
+ * question after (or alongside) the readings already made. Creates one new order
+ * for it and leaves every existing order, and its reading, exactly as it is.
+ *
+ * Unlike split-pack this works on an order that is already in a pack, and on one
+ * whose reading was delivered long ago: a pack of 2 becomes a pack of 3, and an
+ * order that was never part of a pack becomes reading 1 of 2.
+ *
+ * The extra reading is part of what was already paid for, so it is priced at 0
+ * and carries no payment slip: a copy of the slip would count the same money
+ * again in the income and sales-credit totals. Its status is "paid, waiting to
+ * be made". A delivered parent's own status would drop it straight into the
+ * delivered list, where nobody looks for work.
+ *
+ * Body: { question, topic }
+ */
+async function addTarotReading(req, res) {
+  const clientId = resolveClientId(req);
+  const { orderId } = req.params;
+  const question = String(req.body?.question || '').trim();
+  const topic    = String(req.body?.topic || '').trim();
+  if (!question) return res.status(400).json({ error: 'The new reading needs a question' });
+
+  try {
+    const oRes = await db.pgQuery(
+      'SELECT * FROM orders WHERE order_id=$1 AND client_id IS NOT DISTINCT FROM $2', [orderId, clientId ?? null]);
+    const base = oRes.rows[0];
+    if (!base) return res.status(404).json({ error: 'Order not found' });
+
+    const asObj = v => (typeof v === 'string' ? JSON.parse(v || '{}') : (v || {}));
+    const bcf = asObj(base.custom_fields);
+    const existing = bcf.tarot_pack || null;
+    const packId = existing?.pack_id || `${base.order_id}-P`;
+
+    let members = [];
+    if (existing) {
+      const m = await db.pgQuery(
+        `SELECT order_id, custom_fields FROM orders
+          WHERE phone_number=$1 AND client_id IS NOT DISTINCT FROM $2
+            AND custom_fields->'tarot_pack'->>'pack_id' = $3`,
+        [base.phone_number, clientId ?? null, packId]);
+      members = m.rows;
+    }
+    const of = Math.max(existing?.of || 1, ...members.map(r => asObj(r.custom_fields).tarot_pack?.of || 1)) + 1;
+    const parentId = existing?.parent || base.order_id;
+
+    const client = clientId ? await clientRouter.getClientById(clientId) : null;
+    const newId = await generateOrderId(client);
+    const cf = {
+      ...bcf,
+      needs: question,
+      price: '0',
+      items: [],
+      tarot_pack: { pack_id: packId, seq: of, of, parent: parentId, topic },
+    };
+    delete cf.price_backfilled;
+    delete cf.payment_identified;
+    await db.insertOrder(newId, base.phone_number, clientId || null, cf);
+    const DONE = ['delivered', 'done', 'complete'];
+    await db.pgQuery('UPDATE orders SET status=$1 WHERE order_id=$2',
+      [DONE.includes(base.status) ? 'payment_received' : base.status, newId]);
+
+    // Only the pack bookkeeping on the others changes. Their readings, questions
+    // and delivery state are not touched.
+    const everyone = existing ? members : [{ order_id: base.order_id, custom_fields: bcf }];
+    for (const r of everyone) {
+      const rcf = asObj(r.custom_fields);
+      rcf.tarot_pack = existing
+        ? { ...rcf.tarot_pack, of }
+        : { pack_id: packId, seq: 1, of, parent: base.order_id, topic: '' };
+      await db.pgQuery('UPDATE orders SET custom_fields=$2::jsonb WHERE order_id=$1', [r.order_id, JSON.stringify(rcf)]);
+    }
+
+    console.log(`[TAROT-PACK] ${packId}: added reading ${of} as ${newId} (from ${base.order_id})`);
+    res.json({ ok: true, pack_id: packId, of, created: { order_id: newId, seq: of, topic } });
+  } catch (e) {
+    console.error('[TAROT-ADD-READING]', e.message);
     res.status(e.statusCode || 500).json({ error: e.message });
   }
 }
@@ -1174,4 +1281,4 @@ async function downloadTarotPdf(req, res) {
 }
 
 module.exports = {
-  addonCatalog, ADDON_CATALOG, listAddons, toggleAddon, getAddonsStatus, sendMedia, reextractMedia, triggerTarotReading, listLinkableTarot, aiFillOrderDraft, aiPrepareTarot, splitTarotPack, fetchTarotChart, updateTarotSections, downloadTarotDocx, downloadTarotPdfByOrder, downloadTarotPdf };
+  addonCatalog, ADDON_CATALOG, listAddons, toggleAddon, getAddonsStatus, sendMedia, reextractMedia, triggerTarotReading, listLinkableTarot, aiFillOrderDraft, aiPrepareTarot, splitTarotPack, addTarotReading, fetchTarotChart, updateTarotSections, downloadTarotDocx, downloadTarotPdfByOrder, downloadTarotPdf };

@@ -23,6 +23,7 @@ const {
   aiFillOrderDraft,
   aiPrepareTarot,
   splitTarotPack,
+  addTarotReading,
   fetchTarotChart,
   updateTarotSections,
   downloadTarotDocx,
@@ -58,6 +59,8 @@ router.post('/crm/tarot-reading/ai-prepare/:orderId',   jwtAuth, requirePermissi
 // Split a confirmed multi-problem pack into one order per problem — POST /api/crm/tarot-reading/split-pack/:orderId
 // Creating orders, so it needs the same permission as creating one by hand.
 router.post('/crm/tarot-reading/split-pack/:orderId',   jwtAuth, requirePermission('orders.create'), orderScope, splitTarotPack);
+// One more reading for a customer who asked something new after earlier readings — POST /api/crm/tarot-reading/add-reading/:orderId
+router.post('/crm/tarot-reading/add-reading/:orderId',  jwtAuth, requirePermission('orders.create'), orderScope, addTarotReading);
 // Fetch + save the birth chart, return lagna — POST /api/crm/tarot-reading/fetch-chart/:orderId
 router.post('/crm/tarot-reading/fetch-chart/:orderId',  jwtAuth, requirePermission('ai.astro_chart'), orderScope, fetchTarotChart);
 // Update reading text/cards — PATCH /api/crm/tarot-reading/sections/:orderId

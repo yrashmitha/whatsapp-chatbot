@@ -69,13 +69,13 @@ async function listSeenAds(clientId) {
     `SELECT * FROM (
        SELECT r.source_id AS ad_id, max(r.headline) AS headline, max(r.thumb_url) AS thumb_url,
               max(r.created_at) AS last_seen, count(*)::int AS clicks,
-              d.name AS ad_name, d.campaign_name
+              d.name AS ad_name, d.campaign_name, d.effective_status
          FROM ad_referrals r
          LEFT JOIN ad_details d ON d.ad_id = r.source_id
         WHERE r.client_id=$1 AND r.source_id IS NOT NULL
-        GROUP BY r.source_id, d.name, d.campaign_name
+        GROUP BY r.source_id, d.name, d.campaign_name, d.effective_status
        UNION ALL
-       SELECT d.ad_id, NULL, NULL, NULL::timestamptz, 0, d.name, d.campaign_name
+       SELECT d.ad_id, NULL, NULL, NULL::timestamptz, 0, d.name, d.campaign_name, d.effective_status
          FROM ad_details d
         WHERE d.client_id=$1
           AND COALESCE(d.effective_status, '') NOT IN ('DELETED', 'ARCHIVED')

@@ -127,6 +127,7 @@ export default function AdRulesPanel({ clientId }) {
   const toast = useToast();
   const qc = useQueryClient();
   const params = { client_id: clientId };
+  const [activeOnly, setActiveOnly] = useState(true);
 
   const { data: seen, isLoading: seenLoading } = useQuery({
     queryKey: ['ad-seen', clientId],
@@ -156,7 +157,9 @@ export default function AdRulesPanel({ clientId }) {
   if (seenLoading || rulesLoading) return <p className="text-sm text-slate-400">Loading…</p>;
 
   const ruleByAd = new Map((rules || []).map(r => [r.ad_id, r]));
-  const ads = seen || [];
+  const allAds = seen || [];
+  // An ad Sync has never seen has no status; keep it rather than hide it.
+  const ads = activeOnly ? allAds.filter(a => !a.effective_status || a.effective_status === 'ACTIVE') : allAds;
 
   return (
     <div className="flex flex-col gap-3">
@@ -176,8 +179,16 @@ export default function AdRulesPanel({ clientId }) {
           {sync.isPending ? 'Syncing…' : '↻ Sync from Meta'}
         </button>
       </div>
+      <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer w-fit">
+        <input type="checkbox" checked={activeOnly} onChange={e => setActiveOnly(e.target.checked)} />
+        Active ads only ({ads.length} of {allAds.length})
+      </label>
       {!ads.length && (
-        <p className="text-sm text-slate-400">No ad clicks recorded yet. Press Sync from Meta to list the ads in your ad account.</p>
+        <p className="text-sm text-slate-400">
+          {allAds.length
+            ? 'No active ads. Press Sync from Meta to refresh their status, or untick Active ads only.'
+            : 'No ad clicks recorded yet. Press Sync from Meta to list the ads in your ad account.'}
+        </p>
       )}
       {ads.map(ad => (
         <AdRow key={ad.ad_id} ad={ad} rule={ruleByAd.get(ad.ad_id)} clientId={clientId} qc={qc} toast={toast} />

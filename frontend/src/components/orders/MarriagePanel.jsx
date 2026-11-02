@@ -78,9 +78,36 @@ export default function MarriagePanel({ order, clientId, existingHd = {}, onClos
   const [checking, setChecking]       = useState(false);
   const [saving, setSaving]           = useState(false);
   const [generating, setGenerating]   = useState(false);
+  const [downloading, setDownloading] = useState(null); // 'pdf' | 'docx' | null
   const [showOrderDetails, setShowOrderDetails] = useState(true);
 
   const hasReport = Array.isArray(existingHd.marriage_sections_data) && existingHd.marriage_sections_data.length > 0;
+
+  // Same endpoints as MarriageEditorDrawer, so the report can be taken straight
+  // from this modal without closing it and opening the editor.
+  const handleDownload = async (kind) => {
+    setDownloading(kind);
+    try {
+      const token  = localStorage.getItem('crm_token');
+      const params = clientId ? `?client_id=${clientId}` : '';
+      const url = `/api/plugins/horoscope/download-marriage-${kind}/${order.order_id}${params}`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        throw new Error(errJson?.error || `Server error ${res.status}`);
+      }
+      const blob = await res.blob();
+      const match = (res.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/);
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objUrl; a.download = match ? match[1] : `marriage-${order.order_id}.${kind}`; a.click();
+      URL.revokeObjectURL(objUrl);
+    } catch (e) {
+      toast.error(e?.message || 'Download failed');
+    } finally {
+      setDownloading(null);
+    }
+  };
   const hasChart  = !!detectedLagna || !!existingHd.chart_data;
 
   // ── Geo autocomplete ───────────────────────────────────────────────────────
@@ -237,6 +264,24 @@ export default function MarriagePanel({ order, clientId, existingHd = {}, onClos
           <div className="rounded-xl border border-pink-200 bg-pink-50 px-3 py-2 text-xs text-pink-800">
             A marriage report already exists for this order. Generating again replaces the sections —
             use the 💍 ✏ editor afterwards to tweak the text.
+            <div className="flex gap-2 mt-2">
+              <button
+                type="button"
+                onClick={() => handleDownload('pdf')}
+                disabled={!!downloading}
+                className="flex-1 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-xl border-0 cursor-pointer disabled:opacity-60"
+              >
+                {downloading === 'pdf' ? 'Preparing…' : '⬇ Download PDF'}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDownload('docx')}
+                disabled={!!downloading}
+                className="flex-1 py-2 text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-xl cursor-pointer disabled:opacity-60"
+              >
+                {downloading === 'docx' ? 'Downloading…' : '⬇ Download Word'}
+              </button>
+            </div>
           </div>
         )}
 

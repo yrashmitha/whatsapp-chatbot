@@ -8,7 +8,7 @@ import DeliveryPanel from './DeliveryPanel';
 
 const POSITION_COLORS = { Past: '#8b5cf6', Present: '#3b82f6', Future: '#10b981' };
 
-export default function TarotEditorDrawer({ order, clientId, open, onClose, onRegenerate }) {
+export default function TarotEditorDrawer({ order, clientId, open, onClose }) {
   const toast = useToast();
   const qc    = useQueryClient();
   const previewRef = useRef(null);
@@ -30,6 +30,7 @@ export default function TarotEditorDrawer({ order, clientId, open, onClose, onRe
   const [downloading, setDownloading]     = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [loadingPreview, setLoadingPreview] = useState(false);
+  const [aiFilling, setAiFilling]         = useState(false);
 
   // Reset state whenever a different order is opened
   useEffect(() => {
@@ -40,6 +41,33 @@ export default function TarotEditorDrawer({ order, clientId, open, onClose, onRe
     setActiveInnerTab('reading');
     setOuterTab('edit');
   }, [order?.order_id]);
+
+  // Fills only the question box. The reading is left alone and nothing is saved
+  // until Save, so a wrong fill costs nothing. Same pack rule as the generate
+  // modal: reading N of a pack takes problem N, not always the first.
+  const handleAiFill = async () => {
+    setAiFilling(true);
+    try {
+      const params = clientId ? { params: { client_id: clientId } } : {};
+      const [{ data }, lk] = await Promise.all([
+        api.post(`/crm/tarot-reading/ai-prepare/${order.order_id}`, {}, params),
+        api.get(`/crm/tarot-reading/linkable/${order.order_id}`, params).catch(() => null),
+      ]);
+      const pack  = lk?.data?.pack || null;
+      const found = Array.isArray(data.problems) ? data.problems : [];
+      const mine  = pack ? found[pack.seq - 1]?.question : found[0]?.question || data.question;
+      if (mine) {
+        setQuestion(mine);
+        toast.success(pack ? `Filled — problem ${pack.seq} of ${pack.of}. Press Save to keep it.` : 'Filled. Press Save to keep it.');
+      } else {
+        toast.error('No clear question found in the chat');
+      }
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'AI fill failed');
+    } finally {
+      setAiFilling(false);
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -188,18 +216,13 @@ export default function TarotEditorDrawer({ order, clientId, open, onClose, onRe
                 <>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '0 0 6px 0' }}>
                     <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#6366f1' }}>Question / Brief</p>
-                    {/* AI Fill lives in the generate modal, which knows the pack
-                        position. Once a reading exists the phone card opens this
-                        editor instead, so without this the only way back to it
-                        was Regenerate buried in the order drawer. */}
-                    {onRegenerate && (
-                      <button
-                        onClick={onRegenerate}
-                        style={{ fontSize: 12, fontWeight: 500, padding: '4px 10px', borderRadius: 8, border: 0, cursor: 'pointer', background: 'rgba(124,58,237,0.1)', color: '#7c3aed' }}
-                      >
-                        ✨ AI Fill & Regenerate
-                      </button>
-                    )}
+                    <button
+                      onClick={handleAiFill}
+                      disabled={aiFilling}
+                      style={{ fontSize: 12, fontWeight: 500, padding: '4px 10px', borderRadius: 8, border: 0, cursor: aiFilling ? 'not-allowed' : 'pointer', opacity: aiFilling ? 0.6 : 1, background: 'rgba(124,58,237,0.1)', color: '#7c3aed' }}
+                    >
+                      {aiFilling ? 'Reading chat…' : '✨ AI Fill'}
+                    </button>
                   </div>
                   <textarea
                     style={{ width: '100%', padding: '10px 12px', fontSize: 13, border: '1px solid #cbd5e1', borderRadius: 8, outline: 'none', background: '#ffffff', color: '#1e293b', resize: 'vertical', lineHeight: 1.6, boxSizing: 'border-box', marginBottom: 16 }}

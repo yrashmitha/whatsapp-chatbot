@@ -848,7 +848,6 @@ export default function OrdersWeb() {
         clientId={clientId}
         open={!!tarotEditorOrder}
         onClose={() => setTarotEditorOrder(null)}
-        onRegenerate={guard('tarot_reading', () => { const o = tarotEditorOrder; setTarotEditorOrder(null); setTarotOrder(o); })}
       />
       <HoroscopeEditorDrawer
         order={editorOrder}

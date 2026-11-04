@@ -50,6 +50,35 @@ function genCostTooltip(runs) {
   return `${list.length} generation run(s) — total $${total.toFixed(6)}\n\n${lines.join('\n')}`;
 }
 
+const DATE_PRESETS = [
+  { key: 'today', label: 'Today' },
+  { key: 'yesterday', label: 'Yesterday' },
+  { key: 'week', label: 'This week' },
+  { key: 'lastweek', label: 'Last week' },
+  { key: 'month', label: 'This month' },
+  { key: 'lastmonth', label: 'Last month' },
+  { key: 'all', label: 'All time' },
+];
+
+/** Local calendar day as YYYY-MM-DD. */
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/** {from, to} (inclusive, YYYY-MM-DD) for a quick preset. Weeks start Monday. */
+function presetRange(key) {
+  const now = new Date();
+  const day = (off = 0) => new Date(now.getFullYear(), now.getMonth(), now.getDate() + off);
+  const monOff = -((now.getDay() + 6) % 7);
+  switch (key) {
+    case 'today':     return { from: ymd(day()), to: ymd(day()) };
+    case 'yesterday': return { from: ymd(day(-1)), to: ymd(day(-1)) };
+    case 'week':      return { from: ymd(day(monOff)), to: ymd(day()) };
+    case 'lastweek':  return { from: ymd(day(monOff - 7)), to: ymd(day(monOff - 1)) };
+    case 'month':     return { from: ymd(new Date(now.getFullYear(), now.getMonth(), 1)), to: ymd(day()) };
+    case 'lastmonth': return { from: ymd(new Date(now.getFullYear(), now.getMonth() - 1, 1)), to: ymd(new Date(now.getFullYear(), now.getMonth(), 0)) };
+    default:          return { from: '', to: '' };
+  }
+}
+
 export default function OrdersWeb() {
   const { user, selectedClientId } = useAuthStore();
   const superAdmin = isSuperAdmin(user);
@@ -62,8 +91,9 @@ export default function OrdersWeb() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  // Defaults to the current month; the income badges follow the same range.
+  const [dateFrom, setDateFrom] = useState(() => presetRange('month').from);
+  const [dateTo, setDateTo] = useState(() => presetRange('month').to);
   const [dir, setDir] = useState('desc'); // order date sort direction
   // '' every sale, 'bot' the ones nobody claimed, or a crm_users id.
   const [operator, setOperator] = useState('');
@@ -112,9 +142,12 @@ export default function OrdersWeb() {
   });
 
   const { data: incomeData } = useQuery({
-    queryKey: ['orders-income-summary', clientId, operator],
+    queryKey: ['orders-income-summary', clientId, operator, dateFrom, dateTo],
     queryFn: () => api.get('/orders/income-summary', {
-      params: { ...(clientId && { client_id: clientId }), ...(operator && { operator }) },
+      params: {
+        ...(clientId && { client_id: clientId }), ...(operator && { operator }),
+        ...(dateFrom && { date_from: dateFrom }), ...(dateTo && { date_to: dateTo }),
+      },
     }).then(r => r.data),
     enabled: isEnabled('income_summary'),
   });
@@ -294,6 +327,14 @@ export default function OrdersWeb() {
               ))}
             </select>
           )}
+          <select
+            value={DATE_PRESETS.find(p => { const r = presetRange(p.key); return r.from === dateFrom && r.to === dateTo; })?.key || 'custom'}
+            onChange={e => { if (e.target.value === 'custom') return; const r = presetRange(e.target.value); setDateFrom(r.from); setDateTo(r.to); setPage(1); }}
+            className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-violet-400 bg-white"
+            title="Quick date range">
+            {DATE_PRESETS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+            <option value="custom">Custom</option>
+          </select>
           <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }}
             className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-violet-400"
             title="From date" />

@@ -23,7 +23,7 @@ function Badge({ tone = 'slate', title, children, onClick }) {
 }
 
 /**
- * What this month brought in, answered for whoever is looking.
+ * What the selected date range (by payment date) brought in, answered for whoever is looking.
  *
  * Three shapes, because three different questions are being asked. An operator
  * sees what they sold. The owner sees the split, or - once they filter to one
@@ -40,7 +40,7 @@ export default function IncomeBadges({ income, operator, onPick }) {
   // An operator looking at their own figures.
   if (income.scope === 'own') {
     return (
-      <Badge tone="emerald" title={`${income.order_count} sale${income.order_count === 1 ? '' : 's'} credited to you this month`}>
+      <Badge tone="emerald" title={`${income.order_count} sale${income.order_count === 1 ? '' : 's'} credited to you in this period`}>
         💰 My sales: {money(income.total)}
         <span className="opacity-60">({income.order_count})</span>
       </Badge>
@@ -85,8 +85,8 @@ export default function IncomeBadges({ income, operator, onPick }) {
   const ops = income.operators || [];
   return (
     <>
-      <Badge tone="emerald" title={`${income.order_count} paid order${income.order_count === 1 ? '' : 's'} this month`}>
-        💰 This month: {money(income.total)}
+      <Badge tone="emerald" title={`${income.order_count} paid order${income.order_count === 1 ? '' : 's'} paid in the selected range`}>
+        💰 Income: {money(income.total)}
       </Badge>
       <Badge tone="slate" onClick={() => onPick('bot')}
              title={`${income.bot?.order_count || 0} sale(s) the bot closed with no operator involved`}>

@@ -49,8 +49,8 @@ async function listOrders(req, res) {
     if (clientId)   { params.push(clientId);        conditions.push(`o.client_id=$${params.length}`); }
     if (status)     { params.push(status);           conditions.push(`o.status=$${params.length}`); }
     if (search)     { params.push(`%${search}%`);   conditions.push(`(o.order_id ILIKE $${params.length} OR o.phone_number ILIKE $${params.length})`); }
-    if (date_from)  { params.push(date_from);        conditions.push(`o.created_at >= $${params.length}::date`); }
-    if (date_to)    { params.push(date_to);          conditions.push(`o.created_at < ($${params.length}::date + INTERVAL '1 day')`); }
+    if (date_from)  { params.push(date_from);        conditions.push(`(o.created_at AT TIME ZONE '${TZ}')::date >= $${params.length}::date`); }
+    if (date_to)    { params.push(date_to);          conditions.push(`(o.created_at AT TIME ZONE '${TZ}')::date <= $${params.length}::date`); }
     if (operator === 'bot') { conditions.push(`o.credited_to IS NULL`); }
     else if (operator)      { params.push(parseInt(operator, 10)); conditions.push(`o.credited_to=$${params.length}`); }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -61,8 +61,8 @@ async function listOrders(req, res) {
     if (clientId)   { countParams.push(clientId);       countConditions.push(`client_id=$${countParams.length}`); }
     if (status)     { countParams.push(status);          countConditions.push(`status=$${countParams.length}`); }
     if (search)     { countParams.push(`%${search}%`);  countConditions.push(`(order_id ILIKE $${countParams.length} OR phone_number ILIKE $${countParams.length})`); }
-    if (date_from)  { countParams.push(date_from);       countConditions.push(`created_at >= $${countParams.length}::date`); }
-    if (date_to)    { countParams.push(date_to);         countConditions.push(`created_at < ($${countParams.length}::date + INTERVAL '1 day')`); }
+    if (date_from)  { countParams.push(date_from);       countConditions.push(`(created_at AT TIME ZONE '${TZ}')::date >= $${countParams.length}::date`); }
+    if (date_to)    { countParams.push(date_to);         countConditions.push(`(created_at AT TIME ZONE '${TZ}')::date <= $${countParams.length}::date`); }
     if (operator === 'bot') { countConditions.push(`credited_to IS NULL`); }
     else if (operator)      { countParams.push(parseInt(operator, 10)); countConditions.push(`credited_to=$${countParams.length}`); }
     const countWhere = countConditions.length ? `WHERE ${countConditions.join(' AND ')}` : '';
@@ -97,8 +97,8 @@ async function exportOrders(req, res) {
     if (clientId)  { params.push(clientId);       conditions.push(`o.client_id=$${params.length}`); }
     if (status)    { params.push(status);          conditions.push(`o.status=$${params.length}`); }
     if (search)    { params.push(`%${search}%`);  conditions.push(`(o.order_id ILIKE $${params.length} OR o.phone_number ILIKE $${params.length})`); }
-    if (date_from) { params.push(date_from);       conditions.push(`o.created_at >= $${params.length}::date`); }
-    if (date_to)   { params.push(date_to);         conditions.push(`o.created_at < ($${params.length}::date + INTERVAL '1 day')`); }
+    if (date_from) { params.push(date_from);       conditions.push(`(o.created_at AT TIME ZONE '${TZ}')::date >= $${params.length}::date`); }
+    if (date_to)   { params.push(date_to);         conditions.push(`(o.created_at AT TIME ZONE '${TZ}')::date <= $${params.length}::date`); }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const r = await db.pgQuery(
       `SELECT o.order_id, o.phone_number, cu.name AS customer_name, o.status,
@@ -144,7 +144,8 @@ async function exportOrders(req, res) {
 const PAID_STATUSES = ['payment_received', 'paid', 'delivered', 'done', 'complete'];
 
 /**
- * GET /api/orders/income-summary — total income for the current calendar month.
+ * GET /api/orders/income-summary — total income for a paid-date range (default: current calendar month).
+ * Accepts date_from / date_to (YYYY-MM-DD, Colombo days, inclusive), matched on when the order was paid.
  * Amount per order: custom_fields.payment_identified.amount (confirmed payment),
  * falling back to the sum of custom_fields.items[].price (selected package) when
  * no payment record was captured. Only orders in a "paid" status are counted.
@@ -170,8 +171,23 @@ async function incomeSummary(req, res) {
   // The month a sale belongs to is the month it was in Sri Lanka. Colombo is
   // UTC+5:30, so a payment before 05:30 on the first falls in the previous
   // month in UTC, which on a tiered commission changes what it pays.
-  const MONTH = `date_trunc('month', o.created_at AT TIME ZONE '${TZ}')
+  // Income belongs to the day the money was confirmed (credited_at is stamped
+  // the first time an order reads as paid), not the day the order was opened.
+  // Older paid orders have no credited_at, so they fall back to created_at.
+  const PAID_AT = `COALESCE(o.credited_at, o.created_at)`;
+  const MONTH = `date_trunc('month', ${PAID_AT} AT TIME ZONE '${TZ}')
                    = date_trunc('month', (NOW() AT TIME ZONE '${TZ}'))`;
+
+  // An explicit date range (Colombo calendar days, inclusive) replaces the
+  // current-month default. The dates are validated to YYYY-MM-DD before they
+  // are placed in the SQL, so nothing user-controlled reaches it unchecked.
+  const isDay = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d || '');
+  const from = isDay(req.query.date_from) ? req.query.date_from : null;
+  const to   = isDay(req.query.date_to)   ? req.query.date_to   : null;
+  const PERIOD = (from || to)
+    ? [from && `(${PAID_AT} AT TIME ZONE '${TZ}')::date >= DATE '${from}'`,
+       to   && `(${PAID_AT} AT TIME ZONE '${TZ}')::date <= DATE '${to}'`].filter(Boolean).join(' AND ')
+    : MONTH;
 
   try {
     if (uid && !hasPermission(req.user, 'finance.income')) {
@@ -182,7 +198,7 @@ async function incomeSummary(req, res) {
                 ), 0) AS total
            FROM orders o
           WHERE o.client_id = $1 AND o.status = ANY($2)
-            AND o.credited_to = $3 AND ${MONTH}`,
+            AND o.credited_to = $3 AND ${PERIOD}`,
         [clientId, PAID_STATUSES, uid]
       );
       return res.json({
@@ -190,6 +206,7 @@ async function incomeSummary(req, res) {
         total: parseFloat(own.rows[0].total) || 0,
         order_count: parseInt(own.rows[0].order_count, 10) || 0,
         month: colomboMonth(),
+        date_from: from, date_to: to,
       });
     }
 
@@ -206,7 +223,7 @@ async function incomeSummary(req, res) {
                 ) AS amount, u.display_name
            FROM orders o
            LEFT JOIN crm_users u ON u.id = o.credited_to
-          WHERE o.client_id = $1 AND o.status = ANY($2) AND ${MONTH}
+          WHERE o.client_id = $1 AND o.status = ANY($2) AND ${PERIOD}
             AND ${isBot ? 'o.credited_to IS NULL' : 'o.credited_to = $3'}`,
         isBot ? [clientId, PAID_STATUSES] : [clientId, PAID_STATUSES, parseInt(pick, 10)]
       );
@@ -219,6 +236,7 @@ async function incomeSummary(req, res) {
         scope: isBot ? 'bot' : 'operator',
         operator: isBot ? null : { user_id: parseInt(pick, 10), name: rowsP[0]?.display_name || `user ${pick}` },
         month: colomboMonth(),
+        date_from: from, date_to: to,
         total: income,
         order_count: rowsP.length,
         commission: owed,
@@ -236,7 +254,7 @@ async function incomeSummary(req, res) {
               ), 0) AS total
          FROM orders o
          LEFT JOIN crm_users u ON u.id = o.credited_to
-        WHERE o.client_id = $1 AND o.status = ANY($2) AND ${MONTH}
+        WHERE o.client_id = $1 AND o.status = ANY($2) AND ${PERIOD}
         GROUP BY o.credited_to, u.display_name
         ORDER BY total DESC`,
       [clientId, PAID_STATUSES]
@@ -262,7 +280,7 @@ async function incomeSummary(req, res) {
               ${VALUE_SQL}
             ) AS amount
              FROM orders o
-            WHERE o.client_id=$1 AND o.status = ANY($2) AND o.credited_to=$3 AND ${MONTH}`,
+            WHERE o.client_id=$1 AND o.status = ANY($2) AND o.credited_to=$3 AND ${PERIOD}`,
           [clientId, PAID_STATUSES, o.user_id]);
         o.commission = commission.totalFor(scheme, seqs.rows).total;
       }
@@ -271,6 +289,7 @@ async function incomeSummary(req, res) {
     res.json({
       scope: 'all',
       month: colomboMonth(),
+        date_from: from, date_to: to,
       bot: { total: num(houseRow?.total), order_count: houseRow?.order_count || 0 },
       operators,
       operator_total: operators.reduce((a, o) => a + o.total, 0),

@@ -205,13 +205,19 @@ async function getMessages(req, res) {
  */
 async function sendMessage(req, res) {
   const clientId = resolveClientId(req);
-  const { phone, message: rawMessage, type = 'text', mediaUrl: rawMediaUrl } = req.body;
-  // A picture from the media library goes with no words under it unless the
-  // operator typed some, so an image needs a link rather than a message.
+  const { phone, message: rawMessage, type = 'text', mediaUrl: rawMediaUrl, filename } = req.body;
+  // A picture or file from the media library goes with no words under it unless
+  // the operator typed some, so those need a link rather than a message.
   const message  = rawMessage || '';
   const mediaUrl = rawMediaUrl && rawMediaUrl.startsWith('/') ? `${PUBLIC_URL || ''}${rawMediaUrl}` : rawMediaUrl;
-  if (!phone || (type === 'image' ? !mediaUrl : !message)) {
-    return res.status(400).json({ error: type === 'image' ? 'phone and mediaUrl required' : 'phone and message required' });
+  const isMedia  = type === 'image' || type === 'document';
+  if (!phone || (isMedia ? !mediaUrl : !message)) {
+    return res.status(400).json({ error: isMedia ? 'phone and mediaUrl required' : 'phone and message required' });
+  }
+  // Files are what customers pay for, so sending one takes the same permission
+  // as the attach button rather than the plain reply permission.
+  if (type === 'document' && !hasPermission(req.user, 'chat.send_media')) {
+    return res.status(403).json({ error: 'You do not have permission to send files' });
   }
   try {
     const client = clientId ? await clientRouter.getClientById(clientId) : null;
@@ -256,6 +262,19 @@ async function sendMessage(req, res) {
       const wamid = imgResp.data?.messages?.[0]?.id || null;
       await ownership.pauseForManualReply(clientId, phone, req.user?.uid ?? null);
       await db.insertMessage(phone, message ? `[Image] ${message}` : '[Image]', 'bot', null, clientId, 'image', mediaUrl, wamid, null, { sentBy: req.user?.uid ?? null, sentManual: true });
+    } else if (type === 'document') {
+      // WhatsApp shows this name on the file, so give it a readable one rather
+      // than the random name it was stored under.
+      const base = String(filename || '').replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'document';
+      const docName = /\.pdf$/i.test(base) ? base : `${base}.pdf`;
+      const docResp = await axios.post(
+        `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
+        { messaging_product: 'whatsapp', to: phone, type: 'document', document: { link: mediaUrl, filename: docName, ...(message && { caption: message }) } },
+        { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
+      );
+      const wamid = docResp.data?.messages?.[0]?.id || null;
+      await ownership.pauseForManualReply(clientId, phone, req.user?.uid ?? null);
+      await db.insertMessage(phone, `[Document: ${docName}]${message ? ` ${message}` : ''}`, 'bot', null, clientId, 'pdf', mediaUrl, wamid, null, { sentBy: req.user?.uid ?? null, sentManual: true });
     }
     res.json({ ok: true, window_warning: !windowOpen });
   } catch (e) { res.status(500).json({ error: e?.response?.data?.error?.message || e.message }); }

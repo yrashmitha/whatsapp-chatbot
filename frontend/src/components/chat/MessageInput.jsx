@@ -73,13 +73,15 @@ function VoiceClipPickerModal({ open, onClose, phone, clientId, onSent }) {
   );
 }
 
+const isPdfUrl = (u) => /\.pdf(\?|$)/i.test(u || '');
+
 /**
- * Pick one of the business's saved images (the Media library) and send it.
+ * Pick one of the business's saved images or PDFs (the Media library) and send it.
  *
- * Tapping a picture only selects it. Sending is a second, deliberate tap, because
- * on a phone the grid is easy to brush and a wrong image to a customer cannot be
- * taken back. Only png/jpg are offered: those are what WhatsApp accepts as an
- * image, and the library can also hold PDFs.
+ * Tapping an item only selects it. Sending is a second, deliberate tap, because
+ * on a phone the grid is easy to brush and a wrong file to a customer cannot be
+ * taken back. Images go as images (png/jpg are what WhatsApp accepts) and PDFs
+ * go as documents.
  */
 function ImagePickerModal({ open, onClose, phone, clientId, onSent }) {
   const [items, setItems]     = useState([]);
@@ -96,7 +98,7 @@ function ImagePickerModal({ open, onClose, phone, clientId, onSent }) {
     setCaption('');
     setLoading(true);
     api.get('/media', { params })
-      .then(r => setItems((r.data.media || []).filter(m => /\.(png|jpe?g)$/i.test(m.image_url || ''))))
+      .then(r => setItems((r.data.media || []).filter(m => /\.(png|jpe?g|pdf)(\?|$)/i.test(m.image_url || ''))))
       .catch(() => setItems([]))
       .finally(() => setLoading(false));
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -107,15 +109,17 @@ function ImagePickerModal({ open, onClose, phone, clientId, onSent }) {
     if (!chosen) return;
     setSending(true);
     try {
+      const pdf = isPdfUrl(chosen.image_url);
       await api.post('/send', {
-        phone, type: 'image', mediaUrl: chosen.image_url, message: caption.trim(),
+        phone, type: pdf ? 'document' : 'image', mediaUrl: chosen.image_url, message: caption.trim(),
+        ...(pdf && { filename: chosen.title }),
         ...(clientId && { client_id: clientId }),
       });
       toast.success(`Sent: ${chosen.title}`);
       onSent?.();
       onClose();
     } catch (e) {
-      toast.error(e.response?.data?.error || 'Failed to send image');
+      toast.error(e.response?.data?.error || 'Failed to send');
     } finally {
       setSending(false);
     }
@@ -125,14 +129,14 @@ function ImagePickerModal({ open, onClose, phone, clientId, onSent }) {
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center bg-black/40" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-4 flex flex-col gap-3 mx-4 mb-4 sm:mb-0 max-h-[85vh]" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-800">Send Image</h3>
+          <h3 className="text-sm font-semibold text-slate-800">Send Image or PDF</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg leading-none cursor-pointer border-0 bg-transparent">×</button>
         </div>
 
         {loading ? (
           <div className="py-6 flex justify-center text-slate-400 text-sm">Loading images…</div>
         ) : items.length === 0 ? (
-          <p className="py-6 text-center text-slate-400 text-sm">No images saved yet. Add some on the Media page.</p>
+          <p className="py-6 text-center text-slate-400 text-sm">No images or PDFs saved yet. Add some on the Media page.</p>
         ) : (
           <div className="grid grid-cols-3 gap-2 overflow-y-auto min-h-0">
             {items.map(m => (
@@ -144,7 +148,16 @@ function ImagePickerModal({ open, onClose, phone, clientId, onSent }) {
                   chosen?.id === m.id ? 'border-violet-500 bg-violet-50' : 'border-transparent hover:border-violet-200'
                 }`}
               >
-                <img src={m.image_url} alt={m.title} loading="lazy" className="w-full aspect-square object-cover rounded-lg bg-slate-100" />
+                {isPdfUrl(m.image_url) ? (
+                  <div className="w-full aspect-square rounded-lg bg-red-50 flex flex-col items-center justify-center text-red-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span className="text-xs font-bold mt-1">PDF</span>
+                  </div>
+                ) : (
+                  <img src={m.image_url} alt={m.title} loading="lazy" className="w-full aspect-square object-cover rounded-lg bg-slate-100" />
+                )}
                 <span className="text-xs text-slate-600 truncate">{m.title}</span>
               </button>
             ))}
@@ -424,7 +437,7 @@ export default function MessageInput({ phone, clientId, strategy, crmMediaEnable
               <button
                 onClick={() => setShowImagePicker(true)}
                 disabled={sending}
-                title="Send a saved image" aria-label="Send a saved image"
+                title="Send a saved image or PDF" aria-label="Send a saved image or PDF"
                 className="shrink-0 w-10 h-10 @xl:w-9 @xl:h-9 border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-violet-500 hover:border-violet-300 transition-colors disabled:opacity-50 bg-white cursor-pointer"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -516,7 +529,7 @@ export default function MessageInput({ phone, clientId, strategy, crmMediaEnable
               <button
                 onClick={() => setShowImagePicker(true)}
                 disabled={sending}
-                title="Send a saved image" aria-label="Send a saved image"
+                title="Send a saved image or PDF" aria-label="Send a saved image or PDF"
                 className="shrink-0 w-10 h-10 @xl:w-9 @xl:h-9 border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-violet-500 hover:border-violet-300 transition-colors disabled:opacity-50 bg-white cursor-pointer"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

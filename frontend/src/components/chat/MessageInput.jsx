@@ -73,12 +73,113 @@ function VoiceClipPickerModal({ open, onClose, phone, clientId, onSent }) {
   );
 }
 
+/**
+ * Pick one of the business's saved images (the Media library) and send it.
+ *
+ * Tapping a picture only selects it. Sending is a second, deliberate tap, because
+ * on a phone the grid is easy to brush and a wrong image to a customer cannot be
+ * taken back. Only png/jpg are offered: those are what WhatsApp accepts as an
+ * image, and the library can also hold PDFs.
+ */
+function ImagePickerModal({ open, onClose, phone, clientId, onSent }) {
+  const [items, setItems]     = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [chosen, setChosen]   = useState(null);
+  const [caption, setCaption] = useState('');
+  const [sending, setSending] = useState(false);
+  const toast = useToast();
+  const params = clientId ? { client_id: clientId } : {};
+
+  useEffect(() => {
+    if (!open) return;
+    setChosen(null);
+    setCaption('');
+    setLoading(true);
+    api.get('/media', { params })
+      .then(r => setItems((r.data.media || []).filter(m => /\.(png|jpe?g)$/i.test(m.image_url || ''))))
+      .catch(() => setItems([]))
+      .finally(() => setLoading(false));
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!open) return null;
+
+  const handleSend = async () => {
+    if (!chosen) return;
+    setSending(true);
+    try {
+      await api.post('/send', {
+        phone, type: 'image', mediaUrl: chosen.image_url, message: caption.trim(),
+        ...(clientId && { client_id: clientId }),
+      });
+      toast.success(`Sent: ${chosen.title}`);
+      onSent?.();
+      onClose();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to send image');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center bg-black/40" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-4 flex flex-col gap-3 mx-4 mb-4 sm:mb-0 max-h-[85vh]" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-800">Send Image</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg leading-none cursor-pointer border-0 bg-transparent">×</button>
+        </div>
+
+        {loading ? (
+          <div className="py-6 flex justify-center text-slate-400 text-sm">Loading images…</div>
+        ) : items.length === 0 ? (
+          <p className="py-6 text-center text-slate-400 text-sm">No images saved yet. Add some on the Media page.</p>
+        ) : (
+          <div className="grid grid-cols-3 gap-2 overflow-y-auto min-h-0">
+            {items.map(m => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => setChosen(m)}
+                className={`flex flex-col gap-1 p-1 rounded-xl border-2 bg-white cursor-pointer text-left transition-colors ${
+                  chosen?.id === m.id ? 'border-violet-500 bg-violet-50' : 'border-transparent hover:border-violet-200'
+                }`}
+              >
+                <img src={m.image_url} alt={m.title} loading="lazy" className="w-full aspect-square object-cover rounded-lg bg-slate-100" />
+                <span className="text-xs text-slate-600 truncate">{m.title}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {chosen && (
+          <div className="flex flex-col gap-2 shrink-0">
+            <input
+              value={caption}
+              onChange={e => setCaption(e.target.value)}
+              placeholder="Caption (optional)"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400"
+            />
+            <button
+              onClick={handleSend}
+              disabled={sending}
+              className="w-full py-2.5 text-sm font-medium bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white rounded-xl cursor-pointer border-0"
+            >
+              {sending ? 'Sending…' : `Send "${chosen.title}"`}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function MessageInput({ phone, clientId, strategy, crmMediaEnabled, followUpEnabled, reportLink, reportReleased, prefill, onPrefillConsumed, onSent }) {
   const [text, setText] = useState('');
   // Which follow-up variant is currently drafting ('1' | '2' | null).
   const [drafting, setDrafting] = useState(null);
   const [sending, setSending] = useState(false);
   const [showVoicePicker, setShowVoicePicker] = useState(false);
+  const [showImagePicker, setShowImagePicker] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const toast = useToast();
   const fileRef = useRef();
@@ -321,6 +422,16 @@ export default function MessageInput({ phone, clientId, strategy, crmMediaEnable
                 </svg>
               </button>
               <button
+                onClick={() => setShowImagePicker(true)}
+                disabled={sending}
+                title="Send a saved image" aria-label="Send a saved image"
+                className="shrink-0 w-10 h-10 @xl:w-9 @xl:h-9 border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-violet-500 hover:border-violet-300 transition-colors disabled:opacity-50 bg-white cursor-pointer"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </button>
+              <button
                 onClick={() => setShowVoicePicker(true)}
                 disabled={sending}
                 title="Send voice clip" aria-label="Send voice clip"
@@ -400,6 +511,16 @@ export default function MessageInput({ phone, clientId, strategy, crmMediaEnable
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                </svg>
+              </button>
+              <button
+                onClick={() => setShowImagePicker(true)}
+                disabled={sending}
+                title="Send a saved image" aria-label="Send a saved image"
+                className="shrink-0 w-10 h-10 @xl:w-9 @xl:h-9 border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-violet-500 hover:border-violet-300 transition-colors disabled:opacity-50 bg-white cursor-pointer"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
               </button>
               <button
@@ -569,6 +690,13 @@ export default function MessageInput({ phone, clientId, strategy, crmMediaEnable
         </div>
       )}
 
+      <ImagePickerModal
+        open={showImagePicker}
+        onClose={() => setShowImagePicker(false)}
+        phone={phone}
+        clientId={clientId}
+        onSent={onSent}
+      />
       <VoiceClipPickerModal
         open={showVoicePicker}
         onClose={() => setShowVoicePicker(false)}

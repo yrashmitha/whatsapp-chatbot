@@ -12,6 +12,7 @@ const clientRouter = require('../services/clientRouter');
 const { sendWhatsAppMessage, waToken, waPhoneId, markMessageRead } = require('../services/whatsapp');
 const { chatSessions } = require('../workers/sessionManager');
 const resolveClientId  = require('../middleware/resolveClientId');
+const { PUBLIC_URL }   = require('../config/env');
 const ownership        = require('../services/chatOwnership');
 const { IDLE_RELEASE_HOURS } = require('../services/chatOwnership');
 const { hasPermission } = require('../services/permissions');
@@ -204,8 +205,14 @@ async function getMessages(req, res) {
  */
 async function sendMessage(req, res) {
   const clientId = resolveClientId(req);
-  const { phone, message, type = 'text', mediaUrl } = req.body;
-  if (!phone || !message) return res.status(400).json({ error: 'phone and message required' });
+  const { phone, message: rawMessage, type = 'text', mediaUrl: rawMediaUrl } = req.body;
+  // A picture from the media library goes with no words under it unless the
+  // operator typed some, so an image needs a link rather than a message.
+  const message  = rawMessage || '';
+  const mediaUrl = rawMediaUrl && rawMediaUrl.startsWith('/') ? `${PUBLIC_URL || ''}${rawMediaUrl}` : rawMediaUrl;
+  if (!phone || (type === 'image' ? !mediaUrl : !message)) {
+    return res.status(400).json({ error: type === 'image' ? 'phone and mediaUrl required' : 'phone and message required' });
+  }
   try {
     const client = clientId ? await clientRouter.getClientById(clientId) : null;
 
@@ -243,12 +250,12 @@ async function sendMessage(req, res) {
     } else if (type === 'image' && mediaUrl) {
       const imgResp = await axios.post(
         `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
-        { messaging_product: 'whatsapp', to: phone, type: 'image', image: { link: mediaUrl, caption: message } },
+        { messaging_product: 'whatsapp', to: phone, type: 'image', image: { link: mediaUrl, ...(message && { caption: message }) } },
         { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
       );
       const wamid = imgResp.data?.messages?.[0]?.id || null;
       await ownership.pauseForManualReply(clientId, phone, req.user?.uid ?? null);
-      await db.insertMessage(phone, `[Image] ${message}`, 'bot', null, clientId, 'image', mediaUrl, wamid, null, { sentBy: req.user?.uid ?? null, sentManual: true });
+      await db.insertMessage(phone, message ? `[Image] ${message}` : '[Image]', 'bot', null, clientId, 'image', mediaUrl, wamid, null, { sentBy: req.user?.uid ?? null, sentManual: true });
     }
     res.json({ ok: true, window_warning: !windowOpen });
   } catch (e) { res.status(500).json({ error: e?.response?.data?.error?.message || e.message }); }

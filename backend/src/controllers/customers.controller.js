@@ -210,13 +210,13 @@ async function sendMessage(req, res) {
   // the operator typed some, so those need a link rather than a message.
   const message  = rawMessage || '';
   const mediaUrl = rawMediaUrl && rawMediaUrl.startsWith('/') ? `${PUBLIC_URL || ''}${rawMediaUrl}` : rawMediaUrl;
-  const isMedia  = type === 'image' || type === 'document';
+  const isMedia  = type === 'image' || type === 'document' || type === 'video';
   if (!phone || (isMedia ? !mediaUrl : !message)) {
     return res.status(400).json({ error: isMedia ? 'phone and mediaUrl required' : 'phone and message required' });
   }
   // Files are what customers pay for, so sending one takes the same permission
   // as the attach button rather than the plain reply permission.
-  if (type === 'document' && !hasPermission(req.user, 'chat.send_media')) {
+  if ((type === 'document' || type === 'video') && !hasPermission(req.user, 'chat.send_media')) {
     return res.status(403).json({ error: 'You do not have permission to send files' });
   }
   try {
@@ -262,6 +262,15 @@ async function sendMessage(req, res) {
       const wamid = imgResp.data?.messages?.[0]?.id || null;
       await ownership.pauseForManualReply(clientId, phone, req.user?.uid ?? null);
       await db.insertMessage(phone, message ? `[Image] ${message}` : '[Image]', 'bot', null, clientId, 'image', mediaUrl, wamid, null, { sentBy: req.user?.uid ?? null, sentManual: true });
+    } else if (type === 'video') {
+      const vidResp = await axios.post(
+        `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
+        { messaging_product: 'whatsapp', to: phone, type: 'video', video: { link: mediaUrl, ...(message && { caption: message }) } },
+        { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
+      );
+      const wamid = vidResp.data?.messages?.[0]?.id || null;
+      await ownership.pauseForManualReply(clientId, phone, req.user?.uid ?? null);
+      await db.insertMessage(phone, message ? `[Video] ${message}` : '[Video]', 'bot', null, clientId, 'video', mediaUrl, wamid, null, { sentBy: req.user?.uid ?? null, sentManual: true });
     } else if (type === 'document') {
       // WhatsApp shows this name on the file, so give it a readable one rather
       // than the random name it was stored under.

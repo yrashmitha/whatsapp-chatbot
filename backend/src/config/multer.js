@@ -29,7 +29,7 @@ const upload = multer({
 });
 
 /**
- * Disk-storage upload that saves images to the persistent UPLOADS_DIR.
+ * Disk-storage upload that saves images, PDFs and mp4 videos to the persistent UPLOADS_DIR.
  * @type {multer.Multer}
  */
 const uploadDisk = multer({
@@ -42,7 +42,9 @@ const uploadDisk = multer({
     },
   }),
   limits: { fileSize: 16 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => cb(null, /^(image\/|application\/pdf)/.test(file.mimetype)),
+  // mp4 and 3gpp are the only video containers WhatsApp accepts, and 16 MB is its
+  // ceiling for a video, so anything else would upload fine and then fail on send.
+  fileFilter: (req, file, cb) => cb(null, /^(image\/|application\/pdf|video\/(mp4|3gpp)$)/.test(file.mimetype)),
 });
 
 /**

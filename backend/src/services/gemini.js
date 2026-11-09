@@ -454,7 +454,9 @@ async function buildChatSession(phoneNumber, client, opts = {}) {
     const baseInstruction = buildSystemInstruction.forClient(client);
     const orderFieldsBlock = buildOrderFieldsInstruction(client.order_fields || []);
     const contactBlock = buildContactInstruction(client.contact_number || null);
-    const mediaItems = await db.getClientMedia(client.id);
+    // Videos are for the operator to send from the chat panel. The bot's send_image
+    // tool sends images and PDFs only, so offering it a video would just fail.
+    const mediaItems = (await db.getClientMedia(client.id)).filter(m => !/\.(mp4|3gp)(\?|$)/i.test(m.image_url || ''));
     let mediaBlock = '';
     if (mediaItems.length > 0) {
       mediaBlock = '\n\n━━━ Media Files You Can Send ━━━\n'

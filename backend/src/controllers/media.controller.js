@@ -20,7 +20,7 @@ const resolveClientId = require('../middleware/resolveClientId');
  * @returns {void}
  */
 function uploadMediaFile(req, res) {
-  if (!req.file) return res.status(400).json({ error: 'No image file received' });
+  if (!req.file) return res.status(400).json({ error: 'No file received. Use an image, a PDF or an MP4 video (max 16 MB).' });
   const base = PUBLIC_URL || '';
   const url  = `${base}/uploads/${req.file.filename}`;
   res.json({ ok: true, url });

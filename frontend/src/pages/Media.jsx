@@ -106,16 +106,18 @@ function MediaModal({ open, onClose, clientId, onSaved, item }) {
             {tab === 'url' ? (
               <input
                 value={imageUrl} onChange={e => setImageUrl(e.target.value)}
-                placeholder="https://example.com/image.jpg or file.pdf"
+                placeholder="https://example.com/image.jpg, file.pdf or video.mp4"
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-violet-400"
               />
             ) : (
               <label className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${uploading ? 'border-violet-300 bg-violet-50' : 'border-slate-200 hover:border-violet-300 hover:bg-slate-50'}`}>
-                <span className="text-xs text-slate-400">{uploading ? 'Uploading…' : 'Click to choose an image or PDF (max 16 MB)'}</span>
-                <input type="file" accept="image/*,application/pdf" className="hidden" onChange={handleFileChange} disabled={uploading} />
+                <span className="text-xs text-slate-400">{uploading ? 'Uploading…' : 'Click to choose an image, PDF or MP4 video (max 16 MB)'}</span>
+                <input type="file" accept="image/*,application/pdf,video/mp4,video/3gpp" className="hidden" onChange={handleFileChange} disabled={uploading} />
               </label>
             )}
-            {imageUrl && (/\.pdf(\?|$)/i.test(imageUrl) ? (
+            {imageUrl && (/\.(mp4|3gp)(\?|$)/i.test(imageUrl) ? (
+              <video src={imageUrl} controls preload="metadata" playsInline className="mt-2 rounded-lg max-h-40 border border-slate-200" />
+            ) : /\.pdf(\?|$)/i.test(imageUrl) ? (
               <div className="mt-2 flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50">
                 <span className="text-2xl">📄</span>
                 <a href={imageUrl} target="_blank" rel="noreferrer" className="text-xs text-violet-600 underline truncate">{imageUrl.split('/').pop()}</a>
@@ -203,14 +205,19 @@ export default function Media() {
 
           {clientId && !isLoading && items.length === 0 && (
             <div className="text-center py-12 text-sm text-slate-400">
-              No media yet. Add images or PDFs with instructions so Nova knows when to send them.
+              No media yet. Add images or PDFs with instructions so Nova knows when to send them. Videos are sent by you from the chat panel.
             </div>
           )}
 
           <div className="flex flex-col gap-3">
             {items.map(item => (
               <div key={item.id} className="bg-white border border-slate-200 rounded-xl p-4 flex gap-4">
-                {/\.pdf(\?|$)/i.test(item.image_url) ? (
+                {/\.(mp4|3gp)(\?|$)/i.test(item.image_url) ? (
+                  <a href={item.image_url} target="_blank" rel="noreferrer"
+                    className="w-20 h-20 rounded-lg border border-slate-200 shrink-0 bg-slate-50 flex items-center justify-center text-3xl">
+                    🎬
+                  </a>
+                ) : /\.pdf(\?|$)/i.test(item.image_url) ? (
                   <a href={item.image_url} target="_blank" rel="noreferrer"
                     className="w-20 h-20 rounded-lg border border-slate-200 shrink-0 bg-slate-50 flex items-center justify-center text-3xl">
                     📄

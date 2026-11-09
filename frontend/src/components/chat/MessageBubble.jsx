@@ -202,6 +202,7 @@ export default function MessageBubble({ msg, onDelete }) {
 
   const hasImage = msg.media_type === 'image' && msg.media_url;
   const hasPdf   = msg.media_type === 'pdf'   && msg.media_url;
+  const hasVideo = msg.media_type === 'video' && msg.media_url;
   const hasAudio = msg.media_type === 'audio' && msg.media_url;
   const mediaUrl = resolveMediaUrl(msg.media_url);
 
@@ -255,6 +256,20 @@ export default function MessageBubble({ msg, onDelete }) {
                 View full size
               </a>
             </div>
+          </div>
+        )}
+
+        {/* Video media */}
+        {hasVideo && (
+          <div className="mb-1">
+            <video
+              src={mediaUrl}
+              controls
+              preload="metadata"
+              playsInline
+              className="rounded-lg max-w-full"
+              style={{ maxHeight: 240 }}
+            />
           </div>
         )}
 

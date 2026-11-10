@@ -197,7 +197,33 @@ async function getMessages(req, res) {
 }
 
 /**
- * POST /api/send — send a WhatsApp text or image message from the CRM.
+ * What WhatsApp will deliver, in MB, by message type. A file over its cap is
+ * accepted by our upload and then refused by Meta with an error that reads as a
+ * temporary fault, so the operator would retry it and never learn why.
+ */
+const WA_MEDIA_LIMITS = { image: 5, video: 16, document: 100 };
+
+/**
+ * Size of a file at a public URL, from its Content-Length. Null when it cannot
+ * be told (no HEAD support, no header, slow host): the caller then lets Meta
+ * decide rather than blocking a send on a guess.
+ *
+ * @param {string} url
+ * @returns {Promise<number|null>}
+ */
+async function remoteFileSize(url) {
+  try {
+    const r = await axios.head(url, { timeout: 5000, maxRedirects: 3 });
+    const n = parseInt(r.headers['content-length'], 10);
+    return Number.isFinite(n) ? n : null;
+  } catch { return null; }
+}
+
+/**
+ * POST /api/send — send a WhatsApp text, image, document or video message from the CRM.
+ *
+ * Body: { phone, message, type: 'text'|'image'|'document'|'video', mediaUrl, filename }.
+ * Media types take their link in mediaUrl and an optional caption in message.
  *
  * @param {import('express').Request}  req
  * @param {import('express').Response} res
@@ -220,6 +246,15 @@ async function sendMessage(req, res) {
     return res.status(403).json({ error: 'You do not have permission to send files' });
   }
   try {
+    if (isMedia) {
+      const capMb = WA_MEDIA_LIMITS[type];
+      const size  = await remoteFileSize(mediaUrl);
+      if (size != null && size > capMb * 1024 * 1024) {
+        return res.status(400).json({
+          error: `This file is ${(size / 1048576).toFixed(1)} MB. WhatsApp only delivers ${type === 'document' ? 'documents' : type + 's'} up to ${capMb} MB, so it would not reach the customer. Make it smaller and upload it again.`,
+        });
+      }
+    }
     const client = clientId ? await clientRouter.getClientById(clientId) : null;
 
     // Check 24-hour window — warn admin if window may be closed

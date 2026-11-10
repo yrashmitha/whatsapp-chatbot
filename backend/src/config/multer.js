@@ -41,7 +41,10 @@ const uploadDisk = multer({
       cb(null, name);
     },
   }),
-  limits: { fileSize: 16 * 1024 * 1024 },
+  // The library holds what the team keeps to send, and a PDF can be far bigger
+  // than WhatsApp's 16 MB media cap (documents may be 100 MB). What WhatsApp will
+  // actually deliver is checked when a file is sent, not here.
+  limits: { fileSize: 50 * 1024 * 1024 },
   // mp4 and 3gpp are the only video containers WhatsApp accepts, and 16 MB is its
   // ceiling for a video, so anything else would upload fine and then fail on send.
   fileFilter: (req, file, cb) => cb(null, /^(image\/|application\/pdf|video\/(mp4|3gpp)$)/.test(file.mimetype)),

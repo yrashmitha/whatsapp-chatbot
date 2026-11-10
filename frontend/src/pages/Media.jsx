@@ -111,7 +111,7 @@ function MediaModal({ open, onClose, clientId, onSaved, item }) {
               />
             ) : (
               <label className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${uploading ? 'border-violet-300 bg-violet-50' : 'border-slate-200 hover:border-violet-300 hover:bg-slate-50'}`}>
-                <span className="text-xs text-slate-400">{uploading ? 'Uploading…' : 'Click to choose an image, PDF or MP4 video (max 16 MB)'}</span>
+                <span className="text-xs text-slate-400">{uploading ? 'Uploading…' : 'Click to choose an image, PDF or MP4 video (max 50 MB)'}</span>
                 <input type="file" accept="image/*,application/pdf,video/mp4,video/3gpp" className="hidden" onChange={handleFileChange} disabled={uploading} />
               </label>
             )}

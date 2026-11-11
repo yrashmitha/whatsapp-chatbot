@@ -184,6 +184,23 @@ export default function MessageBubble({ msg, onDelete }) {
   const shownText = tplMatch ? text.slice(tplMatch[0].length) : text;
   const extraParts = parts.slice(1);
 
+  // The customer's reaction sits on the bubble it was made to, as WhatsApp shows
+  // it. A split reply is several bubbles here, so the stored part number says
+  // which one; without it (one-piece messages, older replies) it goes on the
+  // last bubble, the part whose id the row carries.
+  const partCount = 1 + extraParts.length;
+  const reactIdx = msg.reaction_emoji
+    ? Math.min(msg.reaction_part ?? partCount - 1, partCount - 1)
+    : -1;
+  const reactionBadge = msg.reaction_emoji && (
+    <span
+      title={`Customer reacted${msg.reaction_at ? ` at ${formatMessageTime(msg.reaction_at)}` : ''}`}
+      className={`absolute -bottom-3.5 ${isUser ? 'left-2' : 'right-2'} px-1.5 py-0.5 rounded-full bg-white border border-slate-200 shadow-sm text-sm leading-none text-slate-800 select-none`}
+    >
+      {msg.reaction_emoji}
+    </span>
+  );
+
   let interactive = msg.interactive || null;
   if (typeof interactive === 'string') {
     try { interactive = JSON.parse(interactive); } catch { interactive = null; }
@@ -216,7 +233,7 @@ export default function MessageBubble({ msg, onDelete }) {
         <AdReferral referral={msg.referral} />
       </div>
     )}
-    <div className={`group flex ${isUser ? 'justify-start' : 'justify-end'} items-end gap-1 mb-2`}>
+    <div className={`group flex ${isUser ? 'justify-start' : 'justify-end'} items-end gap-1 ${reactIdx === 0 ? 'mb-5' : 'mb-2'}`}>
       {/* Delete button — left of bubble for outbound, visible on hover */}
       {!isUser && onDelete && (
         <button
@@ -231,7 +248,7 @@ export default function MessageBubble({ msg, onDelete }) {
       )}
 
       <div
-        className={`max-w-[88%] @xl:max-w-[75%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed
+        className={`relative max-w-[88%] @xl:max-w-[75%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed
           ${isUser
             ? 'bg-white border border-slate-200 text-slate-800 rounded-tl-sm'
             : isAdmin
@@ -379,6 +396,7 @@ export default function MessageBubble({ msg, onDelete }) {
             />
           )}
         </div>
+        {reactIdx === 0 && reactionBadge}
       </div>
     </div>
     {traceOpen && <TraceModal messageId={msg.id} clientId={traceClientId} onClose={() => setTraceOpen(false)} />}
@@ -391,9 +409,9 @@ export default function MessageBubble({ msg, onDelete }) {
     <>
       {bubble}
       {extraParts.map((part, i) => (
-        <div key={i} className={`flex ${isUser ? 'justify-start' : 'justify-end'} items-end gap-1 mb-2`}>
+        <div key={i} className={`flex ${isUser ? 'justify-start' : 'justify-end'} items-end gap-1 ${reactIdx === i + 1 ? 'mb-5' : 'mb-2'}`}>
           <div
-            className={`max-w-[88%] @xl:max-w-[75%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words
+            className={`relative max-w-[88%] @xl:max-w-[75%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words
               ${isUser
                 ? 'bg-white border border-slate-200 text-slate-800'
                 : isAdmin
@@ -401,6 +419,7 @@ export default function MessageBubble({ msg, onDelete }) {
                 : 'bg-emerald-600 text-white'}`}
           >
             {formatWhatsApp(part)}
+            {reactIdx === i + 1 && reactionBadge}
           </div>
         </div>
       ))}

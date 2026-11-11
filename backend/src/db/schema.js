@@ -365,6 +365,33 @@ async function init() {
     // Every status callback looks a message up by wamid, several per message.
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_messages_wamid ON messages(wamid) WHERE wamid IS NOT NULL`);
     await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT FALSE`);
+    // Reactions. Kept apart from the rest of startup on purpose: if any of this
+    // fails, the error is logged and startup carries on, so the bot, the chat
+    // and the workers run exactly as before; only reactions fall back to the old
+    // "[Reaction]" line in the thread.
+    try {
+      // The customer's reaction (an emoji) to this message. WhatsApp allows one
+      // reaction per person per message, a new one replaces the old and an empty
+      // one removes it, so a pair of columns is the whole model.
+      await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS reaction_emoji TEXT`);
+      await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS reaction_at TIMESTAMPTZ`);
+      // Which part of a split reply was reacted to (0 = first). NULL when the
+      // message went out in one piece, or when it is not known.
+      await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS reaction_part INT`);
+      // One bot reply can go out as several WhatsApp messages (split on
+      // [[MSG_BREAK]]) but is stored as one row, and messages.wamid holds only the
+      // last part's id. A customer can react to any part, so every part's id is
+      // kept here against the row it belongs to.
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS message_wamids (
+          wamid      TEXT PRIMARY KEY,
+          message_id INT  NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+          part_idx   INT  NOT NULL DEFAULT 0
+        )`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_message_wamids_message ON message_wamids(message_id)`);
+    } catch (e) {
+      console.error('[DB] reactions schema could not be added, carrying on without it:', e.message);
+    }
 
     // ── CRM auth tables ──────────────────────────────────────────────────────
     await pool.query(`

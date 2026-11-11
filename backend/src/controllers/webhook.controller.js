@@ -270,6 +270,7 @@ async function applyAdRule(client, phone, adId, log) {
       const wamids = await sendBotReply(phone, welcome, client);
       const wamid = wamids?.[0] || null;
       await db.insertMessage(phone, welcome, 'bot', null, client.id, null, null, wamid);
+      db.linkWamids(wamid, wamids).catch(() => {});
       db.noteAdWelcome(client.id, phone, wamid);
       // A customer who already has a live session (clicking a second ad) would
       // otherwise never see this message; rebuilding reads it from the DB.
@@ -382,6 +383,22 @@ function receiveWebhook(req, res) {
       const traceId = genTraceId();
       log = makeLogger(traceId, client.id, from);
 
+      // A reaction is not something the customer said, it is a mark on a message
+      // already in the thread, so it goes on that message the way WhatsApp shows
+      // it. No new bubble, no attention flag, no jump to the top of the chat list,
+      // and no bot turn. Handled before anything else so it works with the bot off.
+      // Only when the reacted-to message is unknown (sent from the phone itself,
+      // or before ids were kept) does it fall through and get stored as a line.
+      if (msg.type === 'reaction' && msg.reaction?.message_id) {
+        const placed = await db.setMessageReaction(client.id, from, msg.reaction.message_id, msg.reaction.emoji)
+          .catch(e => { log.warn('[REACTION] could not record:', e.message); return false; });
+        if (placed) {
+          log.info(`[REACTION] ${msg.reaction.emoji || '(removed)'} on ${msg.reaction.message_id}`);
+          return;
+        }
+        log.info(`[REACTION] target ${msg.reaction.message_id} not found, storing it as a line`);
+      }
+
       // Before anything that can return early. The reply can be retried; the
       // referral arrives exactly once and is gone if this turn bails out.
       let adWelcome = null;
@@ -420,7 +437,9 @@ function receiveWebhook(req, res) {
               ? '[Voice message]'
               : (msg.text?.body || msg.interactive?.list_reply?.title
                  || msg.interactive?.button_reply?.title
-                 || msg.button?.text || `[${msg.type}]`);
+                 || msg.button?.text
+                 || (msg.type === 'reaction' ? `[Reaction] ${msg.reaction?.emoji || '(removed)'} on a previous message` : null)
+                 || `[${msg.type}]`);
         const mediaType = msg.type === 'image' ? 'image'
           : msg.type === 'document' ? 'pdf'
           : msg.type === 'audio' ? 'audio' : null;
@@ -482,6 +501,7 @@ function receiveWebhook(req, res) {
               if (welcomeText) {
                 const wamids = await sendBotReply(from, welcomeText, client);
                 await db.insertMessage(from, welcomeText, 'bot', null, client.id, null, null, wamids?.[0] || null);
+                db.linkWamids(wamids?.[0], wamids).catch(() => {});
                 markMessageRead(msg.id, client).catch(() => {});
                 log.info('[WEBHOOK] bot off - sent the welcome only');
                 return;
@@ -1210,6 +1230,9 @@ function receiveWebhook(req, res) {
 
         const wamids = await sendBotReply(from, botReply, client);
         await db.attachWamidToLatestBotMessage(from, client.id, wamids[wamids.length - 1])
+          // Every part, so a reaction to the first part of a split reply still
+          // finds this row.
+          .then(() => db.linkWamids(wamids[wamids.length - 1], wamids))
           .catch(e => log.warn('[WA-STATUS] Could not attach wamid:', e.message));
       }
 

@@ -150,6 +150,7 @@ async function getMessages(req, res) {
     const q = `
       SELECT id, phone_number, message_text, sender_type, created_at, cost_usd, media_type, media_url, wamid, is_deleted,
              delivery_status, delivered_at, read_at, error_code, error_message, interactive, extracted, sent_by, sent_manual,
+             reaction_emoji, reaction_at, reaction_part,
              (trace IS NOT NULL) AS has_trace,
              (SELECT COALESCE(display_name, username) FROM crm_users WHERE id = messages.sent_by) AS sent_by_name
       FROM messages
@@ -157,7 +158,16 @@ async function getMessages(req, res) {
       ${before ? `AND created_at < ${clientId ? '$3' : '$2'}` : ''}
       ORDER BY created_at DESC
       LIMIT ${before ? (clientId ? '$4' : '$3') : (clientId ? '$3' : '$2')}`;
-    const r = await db.pgQuery(q, params);
+    // The reaction columns are added at startup. Should that ever not have
+    // happened, read the thread without them rather than fail the whole chat.
+    let r;
+    try {
+      r = await db.pgQuery(q, params);
+    } catch (e) {
+      if (e.code !== '42703') throw e; // undefined_column; anything else is a real error
+      console.warn('[MESSAGES] reaction columns missing, reading the thread without them');
+      r = await db.pgQuery(q.replace('reaction_emoji, reaction_at, reaction_part,', ''), params);
+    }
     const msgs = r.rows.reverse(); // oldest first
 
     // Attach the ad someone arrived through to the message they arrived with.

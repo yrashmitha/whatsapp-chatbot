@@ -259,6 +259,70 @@ async function attachWamidToLatestBotMessage(phoneNumber, clientId, wamid) {
 }
 
 /**
+ * Remember every WhatsApp id of one bot reply, so a reaction to any part of it
+ * finds the row. The row's own wamid (the last part's, for delivery receipts) is
+ * how the row is found here, so call this after that id is attached.
+ *
+ * @param {string}   primaryWamid - the wamid already stored on the message row
+ * @param {string[]} wamids       - every part's id, in the order they were sent
+ * @returns {Promise<void>}
+ */
+async function linkWamids(primaryWamid, wamids) {
+  const ids = (wamids || []).filter(Boolean);
+  if (!IS_PG || !primaryWamid || ids.length < 2) return;
+  await pool.query(
+    `INSERT INTO message_wamids (wamid, message_id, part_idx)
+     SELECT w.wamid, m.id, w.idx - 1
+       FROM messages m,
+            unnest($2::text[]) WITH ORDINALITY AS w(wamid, idx)
+      WHERE m.wamid = $1
+     ON CONFLICT (wamid) DO NOTHING`,
+    [primaryWamid, ids]
+  );
+}
+
+/**
+ * Record the customer's reaction on the message it was made to.
+ *
+ * Scoped to the customer and client as well as the id, so a reaction can never
+ * land on another tenant's message. An empty emoji is the customer taking the
+ * reaction back. Returns false when the message is not one we know (sent before
+ * ids were kept, sent from the phone itself, or deleted), so the caller can keep
+ * the reaction somewhere rather than lose it.
+ *
+ * @param {string}      clientId
+ * @param {string}      phoneNumber
+ * @param {string}      targetWamid - the id of the message that was reacted to
+ * @param {string|null} emoji       - null or '' when the reaction was removed
+ * @returns {Promise<boolean>} whether a message was found
+ */
+async function setMessageReaction(clientId, phoneNumber, targetWamid, emoji) {
+  if (!IS_PG || !targetWamid) return false;
+  const e = (emoji || '').trim() || null;
+  // The parts table first: it knows exactly which part of a split reply this
+  // was. The row's own wamid is the fallback, for messages sent in one piece
+  // and for replies sent before every part's id was kept.
+  const res = await pool.query(
+    `WITH target AS (
+       SELECT id, part_idx FROM (
+         SELECT message_id AS id, part_idx, 0 AS pri FROM message_wamids WHERE wamid = $3
+         UNION ALL
+         SELECT id, NULL::int, 1 FROM messages WHERE wamid = $3
+       ) t ORDER BY pri LIMIT 1
+     )
+     UPDATE messages m
+        SET reaction_emoji = $4::text,
+            reaction_at    = CASE WHEN $4::text IS NULL THEN NULL ELSE NOW() END,
+            reaction_part  = CASE WHEN $4::text IS NULL THEN NULL ELSE target.part_idx END
+       FROM target
+      WHERE m.id = target.id
+        AND m.phone_number = $2 AND m.client_id IS NOT DISTINCT FROM $1`,
+    [clientId ?? null, phoneNumber, targetWamid, e]
+  );
+  return res.rowCount > 0;
+}
+
+/**
  * Store what was read out of an attachment, against the message that carried it.
  *
  * Keyed on the WhatsApp message id, which is unique and already recorded when
@@ -280,4 +344,4 @@ async function setMessageExtraction(wamid, data) {
   return r.changes > 0;
 }
 
-module.exports = { insertMessage, getMessagesByPhone, deleteMessages, deleteMessage, updateMessageStatus, attachWamidToLatestBotMessage, setMessageExtraction, getLatestBotMessageId, noteAdWelcome };
+module.exports = { insertMessage, getMessagesByPhone, deleteMessages, deleteMessage, updateMessageStatus, attachWamidToLatestBotMessage, linkWamids, setMessageReaction, setMessageExtraction, getLatestBotMessageId, noteAdWelcome };

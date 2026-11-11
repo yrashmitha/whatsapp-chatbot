@@ -1,6 +1,6 @@
 'use strict';
 // TEMPORARY: one-off route to restore /data/uploads after a volume wipe.
-// Key = sha256 of DATABASE_URL (no new env var needed). Never overwrites.
+// Key = sha256 of the DB password (no new env var needed). Never overwrites.
 // Remove this file and its mount in app.js once the restore is done.
 const crypto = require('crypto');
 const fs = require('fs');
@@ -9,7 +9,7 @@ const express = require('express');
 const { UPLOADS_DIR } = require('./config/env');
 
 module.exports = function mountTempRestore(app) {
-  const key = crypto.createHash('sha256').update(process.env.DATABASE_URL || 'none').digest('hex');
+  const key = crypto.createHash('sha256').update((() => { try { return decodeURIComponent(new URL(process.env.DATABASE_URL).password); } catch { return 'none-' + Math.random(); } })()).digest('hex');
   app.put('/__restore/:name', express.raw({ type: '*/*', limit: '40mb' }), async (req, res) => {
     const given = String(req.get('x-restore-key') || '');
     if (given.length !== key.length || !crypto.timingSafeEqual(Buffer.from(given), Buffer.from(key))) {

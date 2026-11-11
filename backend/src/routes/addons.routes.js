@@ -10,7 +10,7 @@ const router        = require('express').Router();
 const requirePermission = require('../middleware/requirePermission');
 const jwtAuth       = require('../middleware/jwtAuth');
 const orderScope    = require('../middleware/orderScope');
-const { uploadMedia } = require('../config/multer');
+const { uploadOutboundMedia } = require('../config/multer');
 const {
   addonCatalog,
   listAddons,
@@ -44,7 +44,7 @@ router.put('/addons/:addonId',     jwtAuth, requirePermission('settings.plugins'
 router.get('/crm/addons-status',   jwtAuth, getAddonsStatus);
 
 // CRM agent send media — POST /api/crm/send-media
-router.post('/crm/send-media',     jwtAuth, requirePermission('chat.send_media'), uploadMedia.single('file'), sendMedia);
+router.post('/crm/send-media',     jwtAuth, requirePermission('chat.send_media'), uploadOutboundMedia.single('file'), sendMedia);
 
 // Re-run extraction on a customer's stored media — POST /api/crm/media/reextract  { phone }
 router.post('/crm/media/reextract', jwtAuth, requirePermission('chat.read'), reextractMedia);

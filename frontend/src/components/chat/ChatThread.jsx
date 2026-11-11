@@ -4,7 +4,6 @@ import api from '../../lib/api';
 import MetaTracking from '../orders/MetaTracking';
 import MetaTrackingBadge from '../orders/MetaTrackingBadge';
 import MessageBubble from './MessageBubble';
-import { checkFile, sendInOrder } from '../../lib/sendFiles';
 import MessageInput from './MessageInput';
 import AstroChartModal from './AstroChartModal';
 import HoroscopeQaPanel from './HoroscopeQaPanel';
@@ -39,6 +38,7 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
   const [ordersOpen, setOrdersOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [droppedFiles, setDroppedFiles] = useState(null);
   const [astroModalOpen, setAstroModalOpen]   = useState(false);
   const [horoscopeQaOpen, setHoroscopeQaOpen] = useState(false);
   const [tarotModalOpen, setTarotModalOpen]   = useState(false);
@@ -229,23 +229,6 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
     onError: (e) => toast.error(e?.response?.data?.error || 'Re-extract failed'),
   });
 
-  const uploadFile = async (file) => {
-    try {
-      const form = new FormData();
-      form.append('file', file);
-      form.append('phone', phone);
-      if (clientId) form.append('client_id', clientId);
-      await api.post('/crm/send-media', form, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        params: clientId ? { client_id: clientId } : {},
-      });
-      qc.invalidateQueries({ queryKey: ['messages', phone] });
-      toast.success('File sent');
-    } catch (err) {
-      toast.error(err?.response?.data?.error || 'Failed to send file');
-    }
-  };
-
   const handleDragOver = (e) => {
     if (!crmMediaEnabled) return;
     e.preventDefault();
@@ -254,32 +237,14 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
   const handleDragLeave = (e) => {
     if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(false);
   };
-  const handleDrop = async (e) => {
+  // Dropped files are handed to the composer, which sends them with the same
+  // checks and the same progress banner as files picked with the paperclip.
+  const handleDrop = (e) => {
     if (!crmMediaEnabled) return;
     e.preventDefault();
     setDragOver(false);
     const files = Array.from(e.dataTransfer.files || []);
-    // One file: exactly as before.
-    if (files.length <= 1) { if (files[0]) await uploadFile(files[0]); return; }
-    // Several: checked first, then sent one after another in the order dropped.
-    const ok = files.filter(f => !checkFile(f).error);
-    const skipped = files.filter(f => checkFile(f).error).map(f => `${f.name} (${checkFile(f).error})`);
-    if (skipped.length) toast.error(`Not sent: ${skipped.join('; ')}`);
-    if (!ok.length) return;
-    toast.info(`Sending ${ok.length} files in order…`);
-    const { sent, failed } = await sendInOrder(ok, async (file) => {
-      const form = new FormData();
-      form.append('file', file);
-      form.append('phone', phone);
-      if (clientId) form.append('client_id', clientId);
-      await api.post('/crm/send-media', form, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        params: clientId ? { client_id: clientId } : {},
-      });
-      qc.invalidateQueries({ queryKey: ['messages', phone] });
-    });
-    if (failed.length) toast.error(`Sent ${sent} of ${ok.length}. Failed: ${failed.map(f => `${f.item.name} (${f.error})`).join('; ')}`);
-    else toast.success(`Sent ${sent} files`);
+    if (files.length) setDroppedFiles(files);
   };
 
   // Claiming silences the bot and records who is working the chat. Releasing
@@ -593,6 +558,8 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
         reportReleased={!!(customerOrders.find(o => o.delivery_url) || {}).delivery_released_at}
         prefill={messagePrefill}
         onPrefillConsumed={() => setMessagePrefill('')}
+        droppedFiles={droppedFiles}
+        onDropConsumed={() => setDroppedFiles(null)}
         onSent={() => qc.invalidateQueries({ queryKey: ['messages', phone] })}
       />
         </div>

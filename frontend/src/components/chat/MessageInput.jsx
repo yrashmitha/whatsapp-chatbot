@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import api from '../../lib/api';
 import VoiceRecordButton from './VoiceRecordButton';
 import { useToast } from '../ui/Toast';
-import { checkFile, sendInOrder } from '../../lib/sendFiles';
+import { checkFile, sendInOrder, prepareForUpload } from '../../lib/sendFiles';
 
 function VoiceClipPickerModal({ open, onClose, phone, clientId, onSent }) {
   const [clips, setClips]   = useState([]);
@@ -91,6 +91,7 @@ function ImagePickerModal({ open, onClose, phone, clientId, onSent }) {
   const [items, setItems]     = useState([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState([]); // item ids, in the order tapped
+  const [sentCount, setSentCount] = useState(0);  // for "Sending 2 of 5…"
   const [caption, setCaption] = useState('');
   const [sending, setSending] = useState(false);
   const toast = useToast();
@@ -118,7 +119,8 @@ function ImagePickerModal({ open, onClose, phone, clientId, onSent }) {
     try {
       // A caption only makes sense on a single item; with several it is not offered.
       const one = chosen.length === 1;
-      const { sent, failed } = await sendInOrder(chosen, async (m) => {
+      const { sent, failed } = await sendInOrder(chosen, async (m, i) => {
+        setSentCount(i + 1);
         const pdf = isPdfUrl(m.image_url);
         await api.post('/send', {
           phone, type: pdf ? 'document' : isVideoUrl(m.image_url) ? 'video' : 'image',
@@ -214,7 +216,7 @@ function ImagePickerModal({ open, onClose, phone, clientId, onSent }) {
               disabled={sending}
               className="w-full py-2.5 text-sm font-medium bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white rounded-xl cursor-pointer border-0"
             >
-              {sending ? 'Sending…' : chosen.length === 1 ? `Send "${chosen[0].title}"` : `Send ${chosen.length} items in this order`}
+              {sending ? (chosen.length > 1 ? `Sending ${sentCount} of ${chosen.length}…` : 'Sending…') : chosen.length === 1 ? `Send "${chosen[0].title}"` : `Send ${chosen.length} items in this order`}
             </button>
           </div>
         )}
@@ -223,7 +225,7 @@ function ImagePickerModal({ open, onClose, phone, clientId, onSent }) {
   );
 }
 
-export default function MessageInput({ phone, clientId, strategy, crmMediaEnabled, followUpEnabled, reportLink, reportReleased, prefill, onPrefillConsumed, onSent }) {
+export default function MessageInput({ phone, clientId, strategy, crmMediaEnabled, followUpEnabled, reportLink, reportReleased, prefill, onPrefillConsumed, droppedFiles, onDropConsumed, onSent }) {
   const [text, setText] = useState('');
   // Which follow-up variant is currently drafting ('1' | '2' | null).
   const [drafting, setDrafting] = useState(null);
@@ -405,13 +407,20 @@ export default function MessageInput({ phone, clientId, strategy, crmMediaEnable
     }
   };
 
-  // One or many files from the phone or computer, sent one after another in the
-  // order they were picked. Anything WhatsApp would refuse is named up front with
-  // the reason and left out, so one bad file does not stop the rest.
-  const handleFile = async (e) => {
-    const picked = Array.from(e.target.files || []);
-    e.target.value = '';
+  // What is being sent right now, for the banner: which file, how far along,
+  // and whether the server is converting a video. Sending a phone video can take
+  // a minute between the upload and the conversion, and with only a toast that
+  // vanished after four seconds the operator could not tell anything was
+  // happening and tapped again.
+  const [upload, setUpload] = useState(null); // { index, total, name, video, phase, pct }
+
+  // One or many files from the phone or computer (picked, or dropped on the
+  // chat), sent one after another in the order given. Anything WhatsApp would
+  // refuse is named up front with the reason and left out, so one bad file does
+  // not stop the rest.
+  const sendFiles = async (picked) => {
     if (!picked.length) return;
+    if (upload) { toast.error('Wait for the files being sent to finish'); return; }
     const ok = [];
     const skipped = [];
     for (const f of picked) {
@@ -421,16 +430,26 @@ export default function MessageInput({ phone, clientId, strategy, crmMediaEnable
     if (skipped.length) toast.error(`Not sent: ${skipped.join('; ')}`);
     if (!ok.length) return;
     setSending(true);
-    if (ok.length > 1) toast.info(`Sending ${ok.length} files in order…`);
     try {
-      const { sent, failed } = await sendInOrder(ok, async (file) => {
+      const { sent, failed } = await sendInOrder(ok, async (file, i) => {
+        const kind = checkFile(file).kind;
+        const step = { index: i + 1, total: ok.length, name: file.name, video: kind === 'video', pct: 0 };
+        setUpload({ ...step, phase: kind === 'image' && file.size > 5 * 1024 * 1024 ? 'preparing' : 'uploading' });
+        const ready = await prepareForUpload(file);
+        setUpload({ ...step, phase: 'uploading' });
         const form = new FormData();
-        form.append('file', file);
+        form.append('file', ready);
         form.append('phone', phone);
         if (clientId) form.append('client_id', clientId);
         await api.post('/crm/send-media', form, {
           headers: { 'Content-Type': 'multipart/form-data' },
           params,
+          // Once every byte is up, the wait is the server: converting a video,
+          // or handing the file to WhatsApp.
+          onUploadProgress: (ev) => {
+            const pct = ev.total ? Math.min(100, Math.round((ev.loaded / ev.total) * 100)) : null;
+            setUpload(u => (u ? { ...u, pct, phase: pct === 100 ? (step.video ? 'converting' : 'sending') : 'uploading' } : u));
+          },
         });
         onSent?.();
       });
@@ -442,17 +461,62 @@ export default function MessageInput({ phone, clientId, strategy, crmMediaEnable
         toast.success(`Sent ${sent} files`);
       }
     } finally {
+      setUpload(null);
       setSending(false);
     }
   };
 
+  const handleFile = (e) => {
+    const picked = Array.from(e.target.files || []);
+    e.target.value = '';
+    sendFiles(picked);
+  };
+
+  // Files dropped on the chat come here, so they get the same checks and the
+  // same progress banner as picked ones.
+  useEffect(() => {
+    if (droppedFiles?.length) {
+      sendFiles(droppedFiles);
+      onDropConsumed?.();
+    }
+  }, [droppedFiles]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const phaseText = !upload ? '' : {
+    preparing: 'Making the photo small enough for WhatsApp…',
+    uploading: upload.pct != null ? `Uploading ${upload.pct}%` : 'Uploading…',
+    converting: 'Converting the video for WhatsApp. This can take a minute, keep this page open…',
+    sending: 'Handing it to WhatsApp…',
+  }[upload.phase];
+
   return (
     <div className="relative shrink-0">
+      {/* Across the composer for the whole send, so it is plain that something is
+          happening and that it is not finished, however long a video takes. */}
+      {upload && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="absolute bottom-full left-0 right-0 z-30 px-3 py-2 flex items-center gap-3 bg-violet-700 text-white shadow-lg"
+        >
+          <span className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-semibold truncate">
+              {upload.total > 1 ? `Sending ${upload.index} of ${upload.total}` : 'Sending'}{upload.video ? ' video' : ''} · {upload.name}
+            </div>
+            <div className="text-xs opacity-90">{phaseText}</div>
+            {upload.phase === 'uploading' && upload.pct != null && (
+              <div className="mt-1 h-1 rounded-full bg-white/25 overflow-hidden">
+                <div className="h-full bg-white transition-all" style={{ width: `${upload.pct}%` }} />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       <input
         ref={fileRef}
         type="file"
         multiple
-        accept="image/jpeg,image/png,video/mp4,video/3gpp,application/pdf,audio/*"
+        accept="image/jpeg,image/png,video/*,application/pdf,audio/*"
         className="hidden"
         onChange={handleFile}
       />

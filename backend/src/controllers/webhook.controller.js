@@ -435,6 +435,8 @@ function receiveWebhook(req, res) {
             ? `[Document: ${msg.document?.filename || 'file'}]`
             : msg.type === 'audio'
               ? '[Voice message]'
+              : msg.type === 'video'
+                ? `[Video]${msg.video?.caption ? ` ${msg.video.caption}` : ''}`
               : (msg.text?.body || msg.interactive?.list_reply?.title
                  || msg.interactive?.button_reply?.title
                  || msg.button?.text
@@ -442,11 +444,12 @@ function receiveWebhook(req, res) {
                  || `[${msg.type}]`);
         const mediaType = msg.type === 'image' ? 'image'
           : msg.type === 'document' ? 'pdf'
-          : msg.type === 'audio' ? 'audio' : null;
+          : msg.type === 'audio' ? 'audio'
+          : msg.type === 'video' ? 'video' : null;
 
         // Keep the file as well as the label. The bot is not going to look at
         // it, but the person handling this chat certainly wants to.
-        const mediaId = msg.image?.id || msg.document?.id || msg.audio?.id || null;
+        const mediaId = msg.image?.id || msg.document?.id || msg.audio?.id || msg.video?.id || null;
         const kept = mediaType ? await keepInboundMedia(mediaId, from, client) : null;
 
         await db.upsertCustomer(from, null, client.id);
@@ -1009,6 +1012,15 @@ function receiveWebhook(req, res) {
             .map(i => `${i.product_retailer_id} x${i.quantity}${i.item_price ? ` @ ${i.item_price} ${i.currency || ''}` : ''}`)
             .join(', ');
           contentLabel = `[Order] ${items || '(no items)'}`;
+        } else if (msg.type === 'video' && msg.video?.id) {
+          // A customer's video used to land here as raw JSON, with nothing
+          // downloaded, so nobody could watch it. Keep it and show it in the
+          // thread. The bot does not watch videos, so as before it stays quiet
+          // and the chat is flagged for a person.
+          const kept = await keepInboundMedia(msg.video.id, from, client);
+          const cap = msg.video.caption ? ` ${msg.video.caption}` : '';
+          if (kept) { mediaType = 'video'; mediaUrl = kept.url; contentLabel = `[Video]${cap}`; }
+          else contentLabel = `[Video] (could not download)${cap}`;
         } else if (msg.type === 'sticker' && msg.sticker?.id) {
           const kept = await keepInboundMedia(msg.sticker.id, from, client);
           if (kept) { mediaType = 'image'; mediaUrl = kept.url; contentLabel = msg.sticker.animated ? '[Animated sticker]' : '[Sticker]'; }

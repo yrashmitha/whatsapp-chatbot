@@ -23,6 +23,7 @@ const { parseSinhalaDate, parseSinhalaTime } = require('../services/horoscope');
 const { extractFromBuffer } = require('../services/mediaExtractor');
 const { analyzePaymentDocument } = require('../services/imageAnalysis');
 const { formatChatLog } = require('../utils/chatLog');
+const { prepareVideo, WA_VIDEO_BYTES } = require('../services/mediaPrep');
 const { generateOrderId } = require('../services/gemini');
 
 /** Best-effort mime type for a stored upload from its extension. */
@@ -785,17 +786,43 @@ async function sendMedia(req, res) {
   if (!phone) return res.status(400).json({ error: 'phone required' });
   // No file here usually means the upload filter turned it away, most often an
   // iPhone .mov video, so say what is accepted rather than just "file required".
-  if (!req.file) return res.status(400).json({ error: 'That file type cannot be sent. Use a photo, PDF, audio, or an MP4 video (up to 16 MB).' });
+  if (!req.file) return res.status(400).json({ error: 'That file type cannot be sent. Use a photo, PDF, audio, or a video.' });
   try {
     // Verify addon is enabled for this client
     const addonCheckOk = await db.hasAddon(clientId, 'crm_media_send');
     if (!addonCheckOk) return res.status(403).json({ error: 'crm_media_send addon not enabled' });
 
     const client = clientId ? await clientRouter.getClientById(clientId) : null;
-    const base = PUBLIC_URL || '';
-    const fileUrl = `${base}/uploads/${req.file.filename}`;
-    const mime = req.file.mimetype;
+    let fileName = req.file.filename;
+    let mime = req.file.mimetype;
     const origName = req.file.originalname;
+
+    if (/^video\//.test(mime)) {
+      // A phone video (an iPhone .mov, HEVC, or just big) is converted to an
+      // MP4 WhatsApp will deliver; one that is already fine goes as it is.
+      try {
+        const v = await prepareVideo(req.file.path, mime);
+        fileName = path.basename(v.path);
+        mime = 'video/mp4';
+      } catch (e) {
+        // No ffmpeg on this machine: an MP4 that fits still goes, as before.
+        const fits = mime === 'video/mp4' && req.file.size <= WA_VIDEO_BYTES;
+        if (e.code === 'ENOENT' && fits) {
+          console.warn('[CRM MEDIA] ffmpeg not available, sending the video unchanged');
+        } else {
+          fs.unlink(req.file.path, () => {});
+          console.warn('[CRM MEDIA] video not sendable:', e.message);
+          const forOperator = /^This /.test(e.message || '') ? e.message : 'This video could not be prepared for WhatsApp. Try saving it as MP4.';
+          return res.status(400).json({ error: forOperator });
+        }
+      }
+    } else if (/^image\//.test(mime) && req.file.size > 5 * 1024 * 1024) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ error: `This photo is ${(req.file.size / 1048576).toFixed(1)} MB. WhatsApp takes photos up to 5 MB.` });
+    }
+
+    const base = PUBLIC_URL || '';
+    const fileUrl = `${base}/uploads/${fileName}`;
 
     let waPayload;
     let mediaType;

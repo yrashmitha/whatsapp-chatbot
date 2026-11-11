@@ -51,9 +51,7 @@ const uploadDisk = multer({
 });
 
 /**
- * Disk-storage upload for CRM media send: images, PDFs, audio and mp4/3gp video
- * up to 16 MB, WhatsApp's cap for audio and video. Anything else is dropped here
- * and the handler answers with what is accepted.
+ * Disk-storage upload for CRM media send: images, PDFs, and audio up to 16 MB.
  * @type {multer.Multer}
  */
 const uploadMedia = multer({
@@ -66,9 +64,31 @@ const uploadMedia = multer({
   }),
   limits: { fileSize: 16 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    // mp4 and 3gpp are the only video containers WhatsApp takes. An iPhone .mov
-    // (video/quicktime) is left out on purpose: it would upload and then fail.
-    cb(null, /^(image\/|application\/pdf|audio\/|video\/(mp4|3gpp)$)/.test(file.mimetype));
+    cb(null, /^(image\/|application\/pdf|audio\/)/.test(file.mimetype));
+  },
+});
+
+/**
+ * Upload for the chat's attach button: images, PDFs, audio and video.
+ *
+ * Its own settings so the voice-note routes, which share uploadMedia, are not
+ * touched. Videos may be up to 100 MB here because a phone's are big and an
+ * iPhone's arrive as .mov: the server converts them to an MP4 under WhatsApp's
+ * 16 MB (services/mediaPrep). Anything else is dropped and the handler says
+ * what is accepted.
+ * @type {multer.Multer}
+ */
+const uploadOutboundMedia = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, UPLOADS_DIR),
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase() || '';
+      cb(null, `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${ext}`);
+    },
+  }),
+  limits: { fileSize: 100 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    cb(null, /^(image\/|application\/pdf|audio\/|video\/(mp4|3gpp|quicktime|webm|x-m4v)$)/.test(file.mimetype));
   },
 });
 
@@ -94,4 +114,4 @@ const uploadVoiceClip = multer({
   },
 });
 
-module.exports = { upload, uploadDisk, uploadMedia, uploadVoiceClip };
+module.exports = { upload, uploadDisk, uploadMedia, uploadOutboundMedia, uploadVoiceClip };

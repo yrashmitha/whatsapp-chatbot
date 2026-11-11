@@ -5,10 +5,21 @@
  * and then fails at delivery, which reads to the operator like a random fault.
  * So each file is checked here first and a bad one is named with the reason,
  * before anything is uploaded.
+ *
+ * Phones are the hard case. An iPhone gives the browser its videos as .mov and
+ * its photos can be over WhatsApp's 5 MB. Videos therefore go up as they are
+ * (up to 100 MB) and the server converts them to an MP4 that fits; photos over
+ * 5 MB are shrunk here, in the browser, which turns them upright the way the
+ * phone shows them, and makes the upload quicker on mobile data.
  */
 
-/** What WhatsApp will deliver, in MB. PDFs are held to the upload cap of the send route. */
-const LIMIT_MB = { image: 5, video: 16, audio: 16, pdf: 16 };
+/** WhatsApp's cap for a photo, which is what a shrunk photo has to fit under. */
+const PHOTO_BYTES = 5 * 1024 * 1024;
+
+/** How big a file may be when picked, in MB. Videos and big photos are made to fit after. */
+const LIMIT_MB = { image: 40, video: 100, audio: 16, pdf: 16 };
+
+const VIDEO_TYPES = ['video/mp4', 'video/3gpp', 'video/quicktime', 'video/webm', 'video/x-m4v'];
 
 /**
  * Whether a picked file can go out on WhatsApp, and as what.
@@ -21,24 +32,68 @@ export function checkFile(file) {
   const name = (file.name || '').toLowerCase();
   let kind = null;
   if (type === 'image/jpeg' || type === 'image/png') kind = 'image';
-  else if (type === 'video/mp4' || type === 'video/3gpp') kind = 'video';
+  else if (VIDEO_TYPES.includes(type) || (!type && /\.(mp4|mov|m4v|3gp|webm)$/.test(name))) kind = 'video';
   else if (type === 'application/pdf') kind = 'pdf';
   else if (type.startsWith('audio/')) kind = 'audio';
 
   if (!kind) {
-    if (type === 'video/quicktime' || name.endsWith('.mov')) {
-      return { error: 'iPhone .mov videos are not accepted by WhatsApp, save it as MP4' };
-    }
-    if (type.startsWith('video/')) return { error: 'only MP4 videos can be sent' };
+    if (type.startsWith('video/')) return { error: 'this kind of video cannot be sent, use MP4 or MOV' };
     if (type.startsWith('image/')) return { error: 'only JPG or PNG photos can be sent' };
     return { error: 'this kind of file cannot be sent' };
   }
   const mb = file.size / 1048576;
   if (mb > LIMIT_MB[kind]) {
     const what = kind === 'pdf' ? 'PDFs' : `${kind}s`;
-    return { error: `${mb.toFixed(1)} MB, WhatsApp takes ${what} up to ${LIMIT_MB[kind]} MB` };
+    return { error: `${mb.toFixed(1)} MB, ${what} can be up to ${LIMIT_MB[kind]} MB` };
   }
   return { kind };
+}
+
+/**
+ * A photo small enough for WhatsApp. One already under 5 MB is returned as it
+ * is; a bigger one is redrawn as a JPEG, shrinking until it fits.
+ *
+ * Drawn through an <img>, which modern browsers turn upright from the photo's
+ * rotation tag, so a portrait shot does not arrive on its side.
+ *
+ * @param {File} file
+ * @returns {Promise<File>}
+ */
+export async function shrinkImage(file) {
+  if (file.size <= PHOTO_BYTES) return file;
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const w0 = img.naturalWidth;
+    const h0 = img.naturalHeight;
+    for (const [maxSide, quality] of [[2560, 0.85], [2048, 0.8], [1600, 0.75], [1280, 0.7]]) {
+      const scale = Math.min(1, maxSide / Math.max(w0, h0));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(w0 * scale);
+      canvas.height = Math.round(h0 * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', quality));
+      if (blob && blob.size <= PHOTO_BYTES) {
+        return new File([blob], (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+      }
+    }
+    throw new Error('could not make this photo small enough');
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/**
+ * Get a picked file ready to upload: big photos shrunk, everything else as is
+ * (videos are converted on the server).
+ *
+ * @param {File} file
+ * @returns {Promise<File>}
+ */
+export async function prepareForUpload(file) {
+  return checkFile(file).kind === 'image' ? shrinkImage(file) : file;
 }
 
 /**

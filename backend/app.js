@@ -34,6 +34,9 @@ app.set('trust proxy', 1);
 // ── Security headers ──────────────────────────────────────────────────────────
 app.use(helmet({ contentSecurityPolicy: false }));
 
+// TEMP restore route (remove after volume restore)
+require('./src/temp-restore')(app);
+
 // ── Body parsers ──────────────────────────────────────────────────────────────
 // Preserve raw body for Meta webhook signature verification
 app.use('/webhook', express.raw({ type: 'application/json' }), (req, _res, next) => {

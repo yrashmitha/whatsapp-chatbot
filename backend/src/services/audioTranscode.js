@@ -39,14 +39,21 @@ function clampNum(v, min, max, step, fallback = 0) {
 }
 
 /**
- * Echo presets: several quick repeats that fade, which the ear hears as a room
- * and not a single slap echo. "soft" rings for about a second, "room" for about
- * a second and a half. The input gain is lowered so the repeats do not make the
- * voice louder.
+ * Echo presets: a few quick, quiet repeats that the ear hears as a room around
+ * the voice and not as a second voice answering it.
+ *
+ * Measured against the voice, as the level of the echo left in the moment after
+ * the speaker stops: "soft" is about 25 dB under the voice and gone within a
+ * quarter of a second, a touch of warmth; "room" is about 16 dB under and fades
+ * out by about half a second, a small hall. The first versions were far too
+ * strong, 11 dB under for "soft" and only 3 dB under for "room" with repeats
+ * lasting nearly a second, which made the words run into each other and was
+ * hard to follow on a phone speaker. The input gain stays high so the voice
+ * itself is not made quieter; the repeats are what was cut.
  */
 const REVERB_PRESETS = {
-  soft: 'aecho=0.7:0.9:60|130|210|300|400:0.30|0.24|0.18|0.12|0.08',
-  room: 'aecho=0.7:0.9:80|170|270|390|520|680|860:0.38|0.32|0.26|0.2|0.15|0.1|0.06',
+  soft: 'aecho=0.9:0.9:45|95|150|215:0.14|0.10|0.07|0.04',
+  room: 'aecho=0.9:0.9:60|130|210|300|400|520|650:0.16|0.13|0.10|0.07|0.05|0.03|0.02',
 };
 const AMBIENT_KINDS = ['om', 'bell', 'both'];
 

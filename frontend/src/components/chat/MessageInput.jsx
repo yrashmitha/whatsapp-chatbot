@@ -229,6 +229,11 @@ function ImagePickerModal({ open, onClose, phone, clientId, onSent }) {
 const STALL_WARN_S = 20;
 /** No progress for this long and the upload is stopped as a dead connection. */
 const STALL_STOP_MS = 2 * 60 * 1000;
+/**
+ * After the last byte is up, how long to wait for the server: the longest video
+ * conversion it allows (5 minutes) and the hand-off to WhatsApp.
+ */
+const SERVER_WAIT_MS = 6 * 60 * 1000;
 
 export default function MessageInput({ phone, clientId, strategy, crmMediaEnabled, followUpEnabled, reportLink, reportReleased, prefill, onPrefillConsumed, droppedFiles, onDropConsumed, onSent }) {
   const [text, setText] = useState('');
@@ -412,20 +417,33 @@ export default function MessageInput({ phone, clientId, strategy, crmMediaEnable
     }
   };
 
-  // What is being sent right now, for the banner: which file, how far along,
-  // and whether the server is converting a video. Sending a phone video can take
-  // minutes on mobile data, and a bare percentage that did not move looked stuck,
-  // so the banner shows the megabytes, the speed and the time left, says when
-  // nothing has got through for a while, and has a Cancel.
-  const [upload, setUpload] = useState(null);
-  // { index, count, name, video, phase, pct, loaded, bytes, startedAt, lastAt }
+  // The files being sent, one row each, so the operator can see where every
+  // one of them is: waiting, uploading (with megabytes, speed and time left),
+  // converting, sent, failed and why, or left out and why. A phone upload can
+  // take minutes, and a single percentage for a whole batch said nothing about
+  // which file was stuck or which had gone.
+  //
+  // batch: { items: [{ key, file, name, video, status, error, pct, loaded, bytes,
+  //   startedAt, lastAt }], done }
+  // status: waiting | preparing | uploading | converting | sending | sent |
+  //   failed | skipped | cancelled
+  const [batch, setBatch] = useState(null);
   const [now, setNow] = useState(() => Date.now());
-  const abortRef = useRef(null);      // the request in flight, so Cancel can stop it
-  const cancelledRef = useRef(false); // the operator pressed Cancel: send nothing more
+  const abortRef = useRef(null);      // the upload in flight, so Cancel can stop it
+  const cancelledRef = useRef(false); // Cancel pressed: send nothing more
   const stalledRef = useRef(false);   // stopped because nothing got through
+  const serverSlowRef = useRef(false); // stopped waiting for the server's answer
+  const closeTimer = useRef(null);
 
-  // A clock for the banner while something is being sent.
-  const busy = !!upload;
+  const patchItem = (key, fields) => setBatch(b => (b ? {
+    ...b,
+    items: b.items.map(it => (it.key === key ? { ...it, ...(typeof fields === 'function' ? fields(it) : fields) } : it)),
+  } : b));
+  const ACTIVE = ['preparing', 'uploading', 'converting', 'sending'];
+  const active = batch?.items.find(it => ACTIVE.includes(it.status)) || null;
+  const busy = !!batch && !batch.done;
+
+  // A clock for the speed, the time left and the stall check while sending.
   useEffect(() => {
     if (!busy) return undefined;
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -433,96 +451,120 @@ export default function MessageInput({ phone, clientId, strategy, crmMediaEnable
   }, [busy]);
 
   // Two minutes with not one more byte reaching the server is a dead
-  // connection, not a slow one. Stop it and say so, rather than leave the
-  // banner up forever.
+  // connection, not a slow one. Stop it and say so, rather than wait forever.
   useEffect(() => {
-    if (upload?.phase === 'uploading' && upload.lastAt && now - upload.lastAt > STALL_STOP_MS) {
+    if (active?.status === 'uploading' && active.lastAt && now - active.lastAt > STALL_STOP_MS) {
       stalledRef.current = true;
+      abortRef.current?.abort();
+    }
+    // Uploaded, but no answer for far longer than any conversion takes. Stop
+    // waiting so the rest can go, and say it may have gone through after all.
+    if ((active?.status === 'converting' || active?.status === 'sending') && active.uploadedAt
+        && now - active.uploadedAt > SERVER_WAIT_MS) {
+      serverSlowRef.current = true;
       abortRef.current?.abort();
     }
   }, [now]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => () => clearTimeout(closeTimer.current), []);
+
+  // Stops what has not gone yet. The file being uploaded is stopped too; one
+  // already on the server is not, because it will reach the customer anyway,
+  // and saying it was cancelled would be untrue.
   const cancelUpload = () => {
     cancelledRef.current = true;
-    abortRef.current?.abort();
+    if (active && (active.status === 'uploading' || active.status === 'preparing')) abortRef.current?.abort();
   };
 
   // One or many files from the phone or computer (picked, or dropped on the
   // chat), sent one after another in the order given. Anything WhatsApp would
-  // refuse is named up front with the reason and left out, so one bad file does
-  // not stop the rest.
+  // refuse is listed with the reason and left out, so one bad file does not
+  // stop the rest.
   const sendFiles = async (picked) => {
     if (!picked.length) return;
-    if (upload) { toast.error('Wait for the files being sent to finish'); return; }
-    const ok = [];
-    const skipped = [];
-    for (const f of picked) {
-      const c = checkFile(f);
-      if (c.error) skipped.push(`${f.name} (${c.error})`); else ok.push(f);
-    }
-    if (skipped.length) toast.error(`Not sent: ${skipped.join('; ')}`);
-    if (!ok.length) return;
+    if (busy) { toast.error('Wait for the files being sent to finish'); return; }
+    clearTimeout(closeTimer.current);
+    const items = picked.map((file, i) => {
+      const c = checkFile(file);
+      return { key: `${Date.now()}-${i}`, file, name: file.name, video: c.kind === 'video',
+        status: c.error ? 'skipped' : 'waiting', error: c.error || null };
+    });
+    setBatch({ items, done: false });
+    const toSend = items.filter(it => it.status === 'waiting');
+    if (!toSend.length) { setBatch(b => ({ ...b, done: true })); return; }
+
     cancelledRef.current = false;
     setSending(true);
     try {
-      const { sent, failed } = await sendInOrder(ok, async (file, i) => {
+      await sendInOrder(toSend, async (it) => {
         if (cancelledRef.current) throw new Error('cancelled');
-        const kind = checkFile(file).kind;
-        const step = { index: i + 1, count: ok.length, name: file.name, video: kind === 'video' };
-        setUpload({ ...step, phase: kind === 'image' && file.size > 5 * 1024 * 1024 ? 'preparing' : 'uploading', pct: 0 });
-        const ready = await prepareForUpload(file);
-        if (cancelledRef.current) throw new Error('cancelled');
-        const t0 = Date.now();
-        setUpload({ ...step, phase: 'uploading', pct: 0, loaded: 0, bytes: ready.size, startedAt: t0, lastAt: t0 });
-        const form = new FormData();
-        form.append('file', ready);
-        form.append('phone', phone);
-        if (clientId) form.append('client_id', clientId);
-        const ctrl = new AbortController();
-        abortRef.current = ctrl;
-        stalledRef.current = false;
+        const big = !it.video && checkFile(it.file).kind === 'image' && it.file.size > 5 * 1024 * 1024;
+        patchItem(it.key, { status: big ? 'preparing' : 'uploading', pct: 0 });
         try {
-          await api.post('/crm/send-media', form, {
-            headers: { 'Content-Type': 'multipart/form-data' },
-            params,
-            signal: ctrl.signal,
-            // Once every byte is up, the wait is the server: converting a video,
-            // or handing the file to WhatsApp.
-            onUploadProgress: (ev) => {
-              const pct = ev.total ? Math.min(100, Math.round((ev.loaded / ev.total) * 100)) : null;
-              setUpload(u => (u ? {
-                ...u, pct, loaded: ev.loaded, bytes: ev.total || u.bytes,
-                lastAt: ev.loaded > (u.loaded || 0) ? Date.now() : u.lastAt,
-                phase: pct === 100 ? (step.video ? 'converting' : 'sending') : 'uploading',
-              } : u));
-            },
-          });
-        } catch (e) {
-          if (e?.code === 'ERR_CANCELED') {
-            throw new Error(stalledRef.current
-              ? `upload stopped, nothing got through for ${STALL_STOP_MS / 60000} minutes. Check the connection and try again`
-              : 'cancelled');
+          const ready = await prepareForUpload(it.file);
+          if (cancelledRef.current) throw new Error('cancelled');
+          const t0 = Date.now();
+          patchItem(it.key, { status: 'uploading', pct: 0, loaded: 0, bytes: ready.size, startedAt: t0, lastAt: t0 });
+          const form = new FormData();
+          form.append('file', ready);
+          form.append('phone', phone);
+          if (clientId) form.append('client_id', clientId);
+          const ctrl = new AbortController();
+          abortRef.current = ctrl;
+          stalledRef.current = false;
+          serverSlowRef.current = false;
+          try {
+            await api.post('/crm/send-media', form, {
+              headers: { 'Content-Type': 'multipart/form-data' },
+              params,
+              signal: ctrl.signal,
+              // Once every byte is up, the wait is the server: converting a
+              // video, or handing the file to WhatsApp.
+              onUploadProgress: (ev) => {
+                const pct = ev.total ? Math.min(100, Math.round((ev.loaded / ev.total) * 100)) : null;
+                patchItem(it.key, (cur) => ({
+                  pct, loaded: ev.loaded, bytes: ev.total || cur.bytes,
+                  lastAt: ev.loaded > (cur.loaded || 0) ? Date.now() : cur.lastAt,
+                  uploadedAt: pct === 100 ? (cur.uploadedAt || Date.now()) : cur.uploadedAt,
+                  status: pct === 100 ? (it.video ? 'converting' : 'sending') : 'uploading',
+                }));
+              },
+            });
+          } catch (e) {
+            if (e?.code === 'ERR_CANCELED') {
+              throw new Error(stalledRef.current
+                ? `Stopped: nothing got through for ${STALL_STOP_MS / 60000} minutes. Check the connection and try again.`
+                : serverSlowRef.current
+                  ? `No answer from the server for ${SERVER_WAIT_MS / 60000} minutes. It may still have gone through, so check the chat before sending it again.`
+                  : 'cancelled');
+            }
+            throw e;
+          } finally {
+            abortRef.current = null;
           }
+          patchItem(it.key, { status: 'sent' });
+          onSent?.();
+        } catch (e) {
+          const msg = e?.response?.data?.error || e?.message || 'Failed';
+          patchItem(it.key, msg === 'cancelled' ? { status: 'cancelled' } : { status: 'failed', error: msg });
           throw e;
-        } finally {
-          abortRef.current = null;
         }
-        onSent?.();
       });
-      if (cancelledRef.current) {
-        toast.info(sent ? `Cancelled. ${sent} of ${ok.length} already sent.` : 'Cancelled, nothing was sent.');
-      } else if (failed.length) {
-        toast.error(ok.length === 1
-          ? (failed[0].error || 'Failed to send file')
-          : `Sent ${sent} of ${ok.length}. Failed: ${failed.map(f => `${f.item.name} (${f.error})`).join('; ')}`);
-      } else if (ok.length > 1) {
-        toast.success(`Sent ${sent} files`);
-      }
     } finally {
-      setUpload(null);
+      // Anything Cancel left untouched is cancelled too.
+      setBatch(b => ({ ...b, done: true, items: b.items.map(x => (x.status === 'waiting' ? { ...x, status: 'cancelled' } : x)) }));
       setSending(false);
     }
   };
+
+  // Close the list by itself only when everything went; when anything did
+  // not, it stays until closed, so nobody misses which ones.
+  useEffect(() => {
+    if (!batch?.done) return;
+    if (batch.items.every(it => it.status === 'sent')) {
+      closeTimer.current = setTimeout(() => setBatch(null), 2500);
+    }
+  }, [batch?.done]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFile = (e) => {
     const picked = Array.from(e.target.files || []);
@@ -540,60 +582,100 @@ export default function MessageInput({ phone, clientId, strategy, crmMediaEnable
   }, [droppedFiles]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // "12.4 of 43.0 MB · 1.2 MB/s · about 30 s left", from what has gone up so far.
-  const mb = (b) => (b / 1048576).toFixed(1);
-  const stalledFor = upload?.phase === 'uploading' && upload.lastAt ? Math.floor((now - upload.lastAt) / 1000) : 0;
-  const uploadLine = () => {
-    if (!upload?.bytes) return upload?.pct != null ? `Uploading ${upload.pct}%` : 'Uploading…';
-    const elapsed = Math.max(1, (now - upload.startedAt) / 1000);
-    const speed = (upload.loaded || 0) / elapsed; // bytes per second
-    const left = speed > 0 ? (upload.bytes - upload.loaded) / speed : null;
-    const eta = left == null || upload.loaded < 64 * 1024 ? ''
+  const mb = (n) => (n / 1048576).toFixed(1);
+  const stalledFor = (it) => (it.status === 'uploading' && it.lastAt ? Math.floor((now - it.lastAt) / 1000) : 0);
+  const uploadLine = (it) => {
+    if (!it.bytes) return it.pct != null ? `Uploading ${it.pct}%` : 'Uploading…';
+    const elapsed = Math.max(1, (now - it.startedAt) / 1000);
+    const speed = (it.loaded || 0) / elapsed;
+    const left = speed > 0 ? (it.bytes - (it.loaded || 0)) / speed : null;
+    const eta = left == null || (it.loaded || 0) < 64 * 1024 ? ''
       : left < 60 ? ` · about ${Math.max(1, Math.round(left))} s left` : ` · about ${Math.round(left / 60)} min left`;
-    return `Uploading ${mb(upload.loaded || 0)} of ${mb(upload.bytes)} MB${speed > 0 ? ` · ${mb(speed)} MB/s` : ''}${eta}`;
+    return `Uploading ${mb(it.loaded || 0)} of ${mb(it.bytes)} MB${speed > 0 ? ` · ${mb(speed)} MB/s` : ''}${eta}`;
   };
-  const phaseText = !upload ? '' : {
-    preparing: 'Making the photo small enough for WhatsApp…',
-    uploading: uploadLine(),
-    converting: 'Uploaded. Converting the video for WhatsApp, this can take a minute. Keep this page open…',
-    sending: 'Uploaded. Handing it to WhatsApp…',
-  }[upload.phase];
+  const statusLine = (it) => {
+    if (it.status === 'uploading' && stalledFor(it) >= STALL_WARN_S) {
+      return `Nothing has got through for ${stalledFor(it)} s. The connection may be slow or lost. It stops by itself after ${STALL_STOP_MS / 60000} minutes.`;
+    }
+    return {
+      waiting: 'Waiting',
+      preparing: 'Making the photo small enough for WhatsApp…',
+      uploading: uploadLine(it),
+      converting: 'Uploaded. Converting the video for WhatsApp, this can take a minute…',
+      sending: 'Uploaded. Handing it to WhatsApp…',
+      sent: 'Sent',
+      failed: it.error || 'Failed',
+      skipped: `Not sent: ${it.error}`,
+      cancelled: 'Cancelled',
+    }[it.status];
+  };
+  const STATUS_STYLE = {
+    waiting:    { icon: '•', cls: 'text-slate-400' },
+    sent:       { icon: '✓', cls: 'text-emerald-600' },
+    failed:     { icon: '!', cls: 'text-red-600' },
+    skipped:    { icon: '!', cls: 'text-amber-600' },
+    cancelled:  { icon: '×', cls: 'text-slate-400' },
+  };
+  const counted = batch ? batch.items.filter(it => it.status !== 'skipped') : [];
+  const sentCount = counted.filter(it => it.status === 'sent').length;
+  const badCount = batch ? batch.items.filter(it => ['failed', 'skipped'].includes(it.status)).length : 0;
+  const position = active ? counted.indexOf(active) + 1 : 0;
+  const stalled = active && stalledFor(active) >= STALL_WARN_S;
+  const headerText = !batch ? '' : !batch.done
+    ? (counted.length > 1 ? `Sending ${position || sentCount + 1} of ${counted.length}` : 'Sending')
+    : `Sent ${sentCount} of ${batch.items.length}${badCount ? ` · ${badCount} not sent` : ''}${batch.items.some(it => it.status === 'cancelled') ? ' · cancelled' : ''}`;
+  const headerCls = !batch ? '' : !batch.done
+    ? (stalled ? 'bg-amber-600' : 'bg-violet-700')
+    : (badCount ? 'bg-red-600' : batch.items.some(it => it.status === 'cancelled') ? 'bg-slate-600' : 'bg-emerald-600');
+  // Cancel stops the rest; while a file is still uploading it stops that one too.
+  const canCancel = busy && (batch.items.some(it => it.status === 'waiting')
+    || (active && (active.status === 'uploading' || active.status === 'preparing')));
 
   return (
     <div className="relative shrink-0">
-      {/* Across the composer for the whole send, so it is plain that something is
-          happening and that it is not finished, however long a video takes. */}
-      {upload && (
-        <div
-          role="status"
-          aria-live="polite"
-          className={`absolute bottom-full left-0 right-0 z-30 px-3 py-2 flex items-center gap-3 text-white shadow-lg ${stalledFor >= STALL_WARN_S ? 'bg-amber-600' : 'bg-violet-700'}`}
-        >
-          <span className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin shrink-0" />
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold truncate">
-              {upload.count > 1 ? `Sending ${upload.index} of ${upload.count}` : 'Sending'}{upload.video ? ' video' : ''} · {upload.name}
-            </div>
-            <div className="text-xs opacity-90">
-              {stalledFor >= STALL_WARN_S
-                ? `Nothing has got through for ${stalledFor} s. The connection may be slow or lost. It stops by itself after ${STALL_STOP_MS / 60000} minutes.`
-                : phaseText}
-            </div>
-            {upload.phase === 'uploading' && upload.pct != null && (
-              <div className="mt-1 h-1 rounded-full bg-white/25 overflow-hidden">
-                <div className="h-full bg-white transition-all" style={{ width: `${upload.pct}%` }} />
-              </div>
+      {/* One row per file, across the composer, for the whole send and after it
+          when anything did not go. */}
+      {batch && (
+        <div role="status" aria-live="polite" className="absolute bottom-full left-0 right-0 z-30 bg-white border-t border-slate-200 shadow-lg">
+          <div className={`flex items-center gap-2 px-3 py-2 text-white ${headerCls}`}>
+            {busy && <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin shrink-0" />}
+            <span className="flex-1 min-w-0 text-sm font-semibold truncate">{headerText}</span>
+            {canCancel && (
+              <button onClick={cancelUpload} className="shrink-0 px-3 h-7 rounded-lg border border-white/60 bg-transparent text-white text-xs font-medium cursor-pointer">
+                {active && (active.status === 'uploading' || active.status === 'preparing') ? 'Cancel' : 'Stop the rest'}
+              </button>
+            )}
+            {!busy && (
+              <button onClick={() => setBatch(null)} className="shrink-0 px-3 h-7 rounded-lg border border-white/60 bg-transparent text-white text-xs font-medium cursor-pointer">
+                Close
+              </button>
             )}
           </div>
-          {/* Only while the file is still going up. Once it is on the server the
-              send will finish, and a Cancel then would claim to stop what it cannot. */}
-          {(upload.phase === 'uploading' || upload.phase === 'preparing') && (
-            <button
-              onClick={cancelUpload}
-              className="shrink-0 px-3 h-8 rounded-lg border border-white/50 bg-transparent text-white text-xs font-medium cursor-pointer"
-            >
-              Cancel
-            </button>
-          )}
+          <ul className="max-h-60 overflow-y-auto divide-y divide-slate-100 m-0 p-0 list-none">
+            {batch.items.map(it => {
+              const st = STATUS_STYLE[it.status];
+              const isActive = ACTIVE.includes(it.status);
+              const warn = isActive && stalledFor(it) >= STALL_WARN_S;
+              return (
+                <li key={it.key} className={`px-3 py-2 flex items-start gap-2.5 ${isActive ? 'bg-violet-50' : ''}`}>
+                  <span className="w-5 h-5 mt-0.5 shrink-0 flex items-center justify-center">
+                    {isActive
+                      ? <span className={`w-4 h-4 border-2 rounded-full animate-spin ${warn ? 'border-amber-200 border-t-amber-600' : 'border-violet-200 border-t-violet-600'}`} />
+                      : <span className={`text-base font-bold leading-none ${st.cls}`}>{st.icon}</span>}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-slate-800 truncate">{it.video ? '🎬 ' : ''}{it.name}</div>
+                    <div className={`text-xs ${warn ? 'text-amber-700' : isActive ? 'text-violet-700' : st.cls}`}>{statusLine(it)}</div>
+                    {it.status === 'uploading' && it.pct != null && (
+                      <div className="mt-1 h-1 rounded-full bg-violet-100 overflow-hidden">
+                        <div className={`h-full transition-all ${warn ? 'bg-amber-500' : 'bg-violet-600'}`} style={{ width: `${it.pct}%` }} />
+                      </div>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
       <input

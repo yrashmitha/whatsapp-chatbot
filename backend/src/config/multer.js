@@ -83,7 +83,11 @@ const uploadOutboundMedia = multer({
     destination: (req, file, cb) => cb(null, UPLOADS_DIR),
     filename: (req, file, cb) => {
       const ext = path.extname(file.originalname).toLowerCase() || '';
-      cb(null, `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${ext}`);
+      const name = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${ext}`;
+      // Remembered so a failed or interrupted upload can delete its half-written
+      // file. Left behind, those pile up on the disk with every failed video.
+      (req.uploadPaths = req.uploadPaths || []).push(path.join(UPLOADS_DIR, name));
+      cb(null, name);
     },
   }),
   limits: { fileSize: 100 * 1024 * 1024 },

@@ -24,6 +24,47 @@ const { extractFromBuffer } = require('../services/mediaExtractor');
 const { analyzePaymentDocument } = require('../services/imageAnalysis');
 const { formatChatLog } = require('../utils/chatLog');
 const { prepareVideo, WA_VIDEO_BYTES } = require('../services/mediaPrep');
+const { uploadOutboundMedia } = require('../config/multer');
+
+/** Free space where uploads are kept, in MB, or null when it cannot be read. */
+function uploadsFreeMb() {
+  try {
+    const s = fs.statfsSync(UPLOADS_DIR);
+    return Math.round((s.bavail * s.bsize) / 1048576);
+  } catch { return null; }
+}
+// Once at startup, so the logs say how much room there is before anyone asks.
+console.log(`[CRM MEDIA] upload folder ${UPLOADS_DIR}: ${uploadsFreeMb() ?? 'unknown'} MB free`);
+
+/**
+ * Receive the attach button's file, and when that fails, say why.
+ *
+ * A failure here (the disk full, a file over the limit, the folder missing)
+ * used to fall through to the app's catch-all, which answers only "Internal
+ * server error", so the operator saw that on every photo and nobody could tell
+ * what was wrong. A disk that has filled up also stops the server reading the
+ * upload part way, which on the phone looks like an upload stuck at some
+ * percentage that then ends in "Network Error".
+ */
+function receiveOutboundUpload(req, res, next) {
+  // An upload that dies part way (the phone's connection drops, the operator
+  // cancels) leaves a half-written file; delete it whichever way it ended.
+  const cleanup = () => (req.uploadPaths || []).forEach(p => fs.unlink(p, () => {}));
+  req.on('aborted', () => { console.warn('[CRM MEDIA] upload interrupted by the phone or browser'); cleanup(); });
+  uploadOutboundMedia.single('file')(req, res, (err) => {
+    if (!err) return next();
+    cleanup();
+    const free = uploadsFreeMb();
+    console.error(`[CRM MEDIA] upload failed: ${err.code || ''} ${err.message} (free space: ${free ?? 'unknown'} MB)`);
+    let msg;
+    if (err.code === 'ENOSPC') msg = 'The server has run out of storage space, so it cannot take files. Free up space on the server and try again.';
+    else if (err.code === 'LIMIT_FILE_SIZE') msg = 'This file is over 100 MB, the most the server takes.';
+    else if (err.code === 'EACCES' || err.code === 'ENOENT') msg = 'The server cannot write to its upload folder. Check the storage volume.';
+    else if (err.code === 'ECONNRESET' || /abort/i.test(err.message || '')) msg = 'The upload was interrupted before it finished. Try again.';
+    else msg = `The server could not receive the file (${err.code || err.message}).`;
+    if (!res.headersSent) res.status(err.code === 'LIMIT_FILE_SIZE' ? 413 : 500).json({ error: msg });
+  });
+}
 const { generateOrderId } = require('../services/gemini');
 
 /** Best-effort mime type for a stored upload from its extension. */
@@ -798,7 +839,7 @@ async function sendMedia(req, res) {
     const origName = req.file.originalname;
     // Seen in the logs only once the whole upload has arrived. An upload that
     // stalls on the phone never gets this far, which is how to tell the two apart.
-    console.log(`[CRM MEDIA] received ${origName} (${(req.file.size / 1048576).toFixed(1)} MB, ${mime}) for ${phone}`);
+    console.log(`[CRM MEDIA] received ${origName} (${(req.file.size / 1048576).toFixed(1)} MB, ${mime}) for ${phone}, ${uploadsFreeMb() ?? '?'} MB free`);
 
     if (/^video\//.test(mime)) {
       // A phone video (an iPhone .mov, HEVC, or just big) is converted to an
@@ -817,7 +858,11 @@ async function sendMedia(req, res) {
         } else {
           fs.unlink(req.file.path, () => {});
           console.warn('[CRM MEDIA] video not sendable:', e.message);
-          const forOperator = /^This /.test(e.message || '') ? e.message : 'This video could not be prepared for WhatsApp. Try saving it as MP4.';
+          // Converting writes a second copy, so a nearly full disk fails here first.
+          const free = uploadsFreeMb();
+          const forOperator = /^This /.test(e.message || '') ? e.message
+            : free != null && free < 200 ? 'The server is almost out of storage space, so the video could not be converted. Free up space on the server and try again.'
+            : 'This video could not be prepared for WhatsApp. Try saving it as MP4.';
           return res.status(400).json({ error: forOperator });
         }
       }
@@ -1401,4 +1446,5 @@ async function triggerGuardianAngel(req, res) {
 
 module.exports = {
   triggerGuardianAngel,
+  receiveOutboundUpload,
   addonCatalog, ADDON_CATALOG, listAddons, toggleAddon, getAddonsStatus, sendMedia, reextractMedia, triggerTarotReading, listLinkableTarot, aiFillOrderDraft, aiPrepareTarot, splitTarotPack, addTarotReading, fetchTarotChart, updateTarotSections, downloadTarotDocx, downloadTarotPdfByOrder, downloadTarotPdf };

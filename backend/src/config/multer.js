@@ -51,7 +51,9 @@ const uploadDisk = multer({
 });
 
 /**
- * Disk-storage upload for CRM media send: images, PDFs, and audio up to 16 MB.
+ * Disk-storage upload for CRM media send: images, PDFs, audio and mp4/3gp video
+ * up to 16 MB, WhatsApp's cap for audio and video. Anything else is dropped here
+ * and the handler answers with what is accepted.
  * @type {multer.Multer}
  */
 const uploadMedia = multer({
@@ -64,7 +66,9 @@ const uploadMedia = multer({
   }),
   limits: { fileSize: 16 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    cb(null, /^(image\/|application\/pdf|audio\/)/.test(file.mimetype));
+    // mp4 and 3gpp are the only video containers WhatsApp takes. An iPhone .mov
+    // (video/quicktime) is left out on purpose: it would upload and then fail.
+    cb(null, /^(image\/|application\/pdf|audio\/|video\/(mp4|3gpp)$)/.test(file.mimetype));
   },
 });
 

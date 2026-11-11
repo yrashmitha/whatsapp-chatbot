@@ -4,6 +4,7 @@ import api from '../../lib/api';
 import MetaTracking from '../orders/MetaTracking';
 import MetaTrackingBadge from '../orders/MetaTrackingBadge';
 import MessageBubble from './MessageBubble';
+import { checkFile, sendInOrder } from '../../lib/sendFiles';
 import MessageInput from './MessageInput';
 import AstroChartModal from './AstroChartModal';
 import HoroscopeQaPanel from './HoroscopeQaPanel';
@@ -257,8 +258,28 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
     if (!crmMediaEnabled) return;
     e.preventDefault();
     setDragOver(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) await uploadFile(file);
+    const files = Array.from(e.dataTransfer.files || []);
+    // One file: exactly as before.
+    if (files.length <= 1) { if (files[0]) await uploadFile(files[0]); return; }
+    // Several: checked first, then sent one after another in the order dropped.
+    const ok = files.filter(f => !checkFile(f).error);
+    const skipped = files.filter(f => checkFile(f).error).map(f => `${f.name} (${checkFile(f).error})`);
+    if (skipped.length) toast.error(`Not sent: ${skipped.join('; ')}`);
+    if (!ok.length) return;
+    toast.info(`Sending ${ok.length} files in order…`);
+    const { sent, failed } = await sendInOrder(ok, async (file) => {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('phone', phone);
+      if (clientId) form.append('client_id', clientId);
+      await api.post('/crm/send-media', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        params: clientId ? { client_id: clientId } : {},
+      });
+      qc.invalidateQueries({ queryKey: ['messages', phone] });
+    });
+    if (failed.length) toast.error(`Sent ${sent} of ${ok.length}. Failed: ${failed.map(f => `${f.item.name} (${f.error})`).join('; ')}`);
+    else toast.success(`Sent ${sent} files`);
   };
 
   // Claiming silences the bot and records who is working the chat. Releasing

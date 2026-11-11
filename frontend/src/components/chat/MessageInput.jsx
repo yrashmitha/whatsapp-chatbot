@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import api from '../../lib/api';
 import VoiceRecordButton from './VoiceRecordButton';
 import { useToast } from '../ui/Toast';
+import { checkFile, sendInOrder } from '../../lib/sendFiles';
 
 function VoiceClipPickerModal({ open, onClose, phone, clientId, onSent }) {
   const [clips, setClips]   = useState([]);
@@ -77,17 +78,19 @@ const isPdfUrl   = (u) => /\.pdf(\?|$)/i.test(u || '');
 const isVideoUrl = (u) => /\.(mp4|3gp)(\?|$)/i.test(u || '');
 
 /**
- * Pick one of the business's saved images, PDFs or videos (the Media library) and send it.
+ * Pick one or several of the business's saved images, PDFs or videos (the Media
+ * library) and send them.
  *
- * Tapping an item only selects it. Sending is a second, deliberate tap, because
- * on a phone the grid is easy to brush and a wrong file to a customer cannot be
- * taken back. Images go as images (png/jpg are what WhatsApp accepts), PDFs as
- * documents and mp4 videos as videos.
+ * Tapping an item selects it, tapping again unselects, and the number on each
+ * tile is the order they will arrive in. Sending is a separate, deliberate tap,
+ * because on a phone the grid is easy to brush and a wrong file to a customer
+ * cannot be taken back. Images go as images (png/jpg are what WhatsApp
+ * accepts), PDFs as documents and mp4 videos as videos.
  */
 function ImagePickerModal({ open, onClose, phone, clientId, onSent }) {
   const [items, setItems]     = useState([]);
   const [loading, setLoading] = useState(false);
-  const [chosen, setChosen]   = useState(null);
+  const [selected, setSelected] = useState([]); // item ids, in the order tapped
   const [caption, setCaption] = useState('');
   const [sending, setSending] = useState(false);
   const toast = useToast();
@@ -95,7 +98,7 @@ function ImagePickerModal({ open, onClose, phone, clientId, onSent }) {
 
   useEffect(() => {
     if (!open) return;
-    setChosen(null);
+    setSelected([]);
     setCaption('');
     setLoading(true);
     api.get('/media', { params })
@@ -106,22 +109,33 @@ function ImagePickerModal({ open, onClose, phone, clientId, onSent }) {
 
   if (!open) return null;
 
+  const chosen = selected.map(id => items.find(m => m.id === id)).filter(Boolean);
+  const toggle = (id) => setSelected(s => (s.includes(id) ? s.filter(x => x !== id) : [...s, id]));
+
   const handleSend = async () => {
-    if (!chosen) return;
+    if (!chosen.length) return;
     setSending(true);
     try {
-      const pdf = isPdfUrl(chosen.image_url);
-      await api.post('/send', {
-        phone, type: pdf ? 'document' : isVideoUrl(chosen.image_url) ? 'video' : 'image',
-        mediaUrl: chosen.image_url, message: caption.trim(),
-        ...(pdf && { filename: chosen.title }),
-        ...(clientId && { client_id: clientId }),
+      // A caption only makes sense on a single item; with several it is not offered.
+      const one = chosen.length === 1;
+      const { sent, failed } = await sendInOrder(chosen, async (m) => {
+        const pdf = isPdfUrl(m.image_url);
+        await api.post('/send', {
+          phone, type: pdf ? 'document' : isVideoUrl(m.image_url) ? 'video' : 'image',
+          mediaUrl: m.image_url, message: one ? caption.trim() : '',
+          ...(pdf && { filename: m.title }),
+          ...(clientId && { client_id: clientId }),
+        });
+        onSent?.();
       });
-      toast.success(`Sent: ${chosen.title}`);
-      onSent?.();
-      onClose();
-    } catch (e) {
-      toast.error(e.response?.data?.error || 'Failed to send');
+      if (!failed.length) {
+        toast.success(one ? `Sent: ${chosen[0].title}` : `Sent ${sent} items`);
+        onClose();
+      } else {
+        toast.error(`Sent ${sent} of ${chosen.length}. Not sent: ${failed.map(f => `${f.item.title} (${f.error})`).join('; ')}`);
+        // Keep only what failed selected, so it can be retried as it is.
+        setSelected(failed.map(f => f.item.id));
+      }
     } finally {
       setSending(false);
     }
@@ -131,7 +145,10 @@ function ImagePickerModal({ open, onClose, phone, clientId, onSent }) {
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center bg-black/40" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-4 flex flex-col gap-3 mx-4 mb-4 sm:mb-0 max-h-[85vh]" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-800">Send Image, PDF or Video</h3>
+          <h3 className="text-sm font-semibold text-slate-800">
+            Send Images, PDFs or Videos
+            <span className="block text-xs font-normal text-slate-400">Tap to select one or more</span>
+          </h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg leading-none cursor-pointer border-0 bg-transparent">×</button>
         </div>
 
@@ -141,15 +158,23 @@ function ImagePickerModal({ open, onClose, phone, clientId, onSent }) {
           <p className="py-6 text-center text-slate-400 text-sm">No images, PDFs or videos saved yet. Add some on the Media page.</p>
         ) : (
           <div className="grid grid-cols-3 gap-2 overflow-y-auto min-h-0">
-            {items.map(m => (
+            {items.map(m => {
+              const order = selected.indexOf(m.id);
+              return (
               <button
                 key={m.id}
                 type="button"
-                onClick={() => setChosen(m)}
-                className={`flex flex-col gap-1 p-1 rounded-xl border-2 bg-white cursor-pointer text-left transition-colors ${
-                  chosen?.id === m.id ? 'border-violet-500 bg-violet-50' : 'border-transparent hover:border-violet-200'
+                onClick={() => toggle(m.id)}
+                disabled={sending}
+                className={`relative flex flex-col gap-1 p-1 rounded-xl border-2 bg-white cursor-pointer text-left transition-colors ${
+                  order >= 0 ? 'border-violet-500 bg-violet-50' : 'border-transparent hover:border-violet-200'
                 }`}
               >
+                {order >= 0 && (
+                  <span className="absolute top-2 right-2 z-10 w-6 h-6 rounded-full bg-violet-600 text-white text-xs font-bold flex items-center justify-center shadow">
+                    {order + 1}
+                  </span>
+                )}
                 {isVideoUrl(m.image_url) ? (
                   <div className="w-full aspect-square rounded-lg bg-slate-800 flex flex-col items-center justify-center text-white">
                     <svg xmlns="http://www.w3.org/2000/svg" className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
@@ -169,24 +194,27 @@ function ImagePickerModal({ open, onClose, phone, clientId, onSent }) {
                 )}
                 <span className="text-xs text-slate-600 truncate">{m.title}</span>
               </button>
-            ))}
+              );
+            })}
           </div>
         )}
 
-        {chosen && (
+        {chosen.length > 0 && (
           <div className="flex flex-col gap-2 shrink-0">
-            <input
-              value={caption}
-              onChange={e => setCaption(e.target.value)}
-              placeholder="Caption (optional)"
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400"
-            />
+            {chosen.length === 1 && (
+              <input
+                value={caption}
+                onChange={e => setCaption(e.target.value)}
+                placeholder="Caption (optional)"
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-violet-400"
+              />
+            )}
             <button
               onClick={handleSend}
               disabled={sending}
               className="w-full py-2.5 text-sm font-medium bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white rounded-xl cursor-pointer border-0"
             >
-              {sending ? 'Sending…' : `Send "${chosen.title}"`}
+              {sending ? 'Sending…' : chosen.length === 1 ? `Send "${chosen[0].title}"` : `Send ${chosen.length} items in this order`}
             </button>
           </div>
         )}
@@ -377,23 +405,42 @@ export default function MessageInput({ phone, clientId, strategy, crmMediaEnable
     }
   };
 
+  // One or many files from the phone or computer, sent one after another in the
+  // order they were picked. Anything WhatsApp would refuse is named up front with
+  // the reason and left out, so one bad file does not stop the rest.
   const handleFile = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const picked = Array.from(e.target.files || []);
     e.target.value = '';
+    if (!picked.length) return;
+    const ok = [];
+    const skipped = [];
+    for (const f of picked) {
+      const c = checkFile(f);
+      if (c.error) skipped.push(`${f.name} (${c.error})`); else ok.push(f);
+    }
+    if (skipped.length) toast.error(`Not sent: ${skipped.join('; ')}`);
+    if (!ok.length) return;
     setSending(true);
+    if (ok.length > 1) toast.info(`Sending ${ok.length} files in order…`);
     try {
-      const form = new FormData();
-      form.append('file', file);
-      form.append('phone', phone);
-      if (clientId) form.append('client_id', clientId);
-      await api.post('/crm/send-media', form, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        params,
+      const { sent, failed } = await sendInOrder(ok, async (file) => {
+        const form = new FormData();
+        form.append('file', file);
+        form.append('phone', phone);
+        if (clientId) form.append('client_id', clientId);
+        await api.post('/crm/send-media', form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          params,
+        });
+        onSent?.();
       });
-      onSent?.();
-    } catch (err) {
-      toast.error(err?.response?.data?.error || 'Failed to send file');
+      if (failed.length) {
+        toast.error(ok.length === 1
+          ? (failed[0].error || 'Failed to send file')
+          : `Sent ${sent} of ${ok.length}. Failed: ${failed.map(f => `${f.item.name} (${f.error})`).join('; ')}`);
+      } else if (ok.length > 1) {
+        toast.success(`Sent ${sent} files`);
+      }
     } finally {
       setSending(false);
     }
@@ -404,7 +451,8 @@ export default function MessageInput({ phone, clientId, strategy, crmMediaEnable
       <input
         ref={fileRef}
         type="file"
-        accept="image/*,application/pdf,audio/*"
+        multiple
+        accept="image/jpeg,image/png,video/mp4,video/3gpp,application/pdf,audio/*"
         className="hidden"
         onChange={handleFile}
       />
@@ -436,7 +484,7 @@ export default function MessageInput({ phone, clientId, strategy, crmMediaEnable
               <button
                 onClick={() => fileRef.current?.click()}
                 disabled={sending}
-                title="Send image, PDF or audio" aria-label="Send image, PDF or audio"
+                title="Send photos, videos, PDFs or audio (select several at once)" aria-label="Send photos, videos, PDFs or audio"
                 className="shrink-0 w-10 h-10 @xl:w-9 @xl:h-9 border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-violet-500 hover:border-violet-300 transition-colors disabled:opacity-50 bg-white cursor-pointer"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -528,7 +576,7 @@ export default function MessageInput({ phone, clientId, strategy, crmMediaEnable
               <button
                 onClick={() => fileRef.current?.click()}
                 disabled={sending}
-                title="Send image, PDF or audio" aria-label="Send image, PDF or audio"
+                title="Send photos, videos, PDFs or audio (select several at once)" aria-label="Send photos, videos, PDFs or audio"
                 className="shrink-0 w-10 h-10 @xl:w-9 @xl:h-9 border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-violet-500 hover:border-violet-300 transition-colors disabled:opacity-50 bg-white cursor-pointer"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

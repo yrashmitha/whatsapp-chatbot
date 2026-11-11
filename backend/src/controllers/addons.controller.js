@@ -773,7 +773,7 @@ async function getAddonsStatus(req, res) {
 }
 
 /**
- * POST /api/crm/send-media — CRM agent sends image/pdf/audio to a WhatsApp customer.
+ * POST /api/crm/send-media — CRM agent sends an image, PDF, audio or mp4 video to a WhatsApp customer.
  *
  * @param {import('express').Request}  req
  * @param {import('express').Response} res
@@ -783,7 +783,9 @@ async function sendMedia(req, res) {
   const clientId = resolveClientId(req);
   const { phone, caption = '' } = req.body;
   if (!phone) return res.status(400).json({ error: 'phone required' });
-  if (!req.file) return res.status(400).json({ error: 'file required' });
+  // No file here usually means the upload filter turned it away, most often an
+  // iPhone .mov video, so say what is accepted rather than just "file required".
+  if (!req.file) return res.status(400).json({ error: 'That file type cannot be sent. Use a photo, PDF, audio, or an MP4 video (up to 16 MB).' });
   try {
     // Verify addon is enabled for this client
     const addonCheckOk = await db.hasAddon(clientId, 'crm_media_send');
@@ -807,6 +809,12 @@ async function sendMedia(req, res) {
       waPayload = { type: 'document', document: { link: fileUrl, filename: origName, ...(caption && { caption }) } };
       mediaType = 'pdf';
       msgText = `[PDF: ${origName}]`;
+    } else if (/^video\//.test(mime)) {
+      // Before this branch a video fell through to the audio one below and went
+      // out as a broken voice note.
+      waPayload = { type: 'video', video: { link: fileUrl, ...(caption && { caption }) } };
+      mediaType = 'video';
+      msgText = caption ? `[Video] ${caption}` : `[Video: ${origName}]`;
     } else {
       waPayload = { type: 'audio', audio: { link: fileUrl } };
       mediaType = 'audio';

@@ -166,8 +166,12 @@ function InteractiveMenu({ menu }) {
   );
 }
 
-export default function MessageBubble({ msg, onDelete }) {
+/** The quick reactions WhatsApp offers first. */
+const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+
+export default function MessageBubble({ msg, onDelete, onReact }) {
   const [traceOpen, setTraceOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const { user, selectedClientId } = useAuthStore();
   const traceClientId = isSuperAdmin(user) ? (selectedClientId || null) : user?.clientId;
   const senderType = msg.sender_type || msg.role;
@@ -184,21 +188,62 @@ export default function MessageBubble({ msg, onDelete }) {
   const shownText = tplMatch ? text.slice(tplMatch[0].length) : text;
   const extraParts = parts.slice(1);
 
-  // The customer's reaction sits on the bubble it was made to, as WhatsApp shows
-  // it. A split reply is several bubbles here, so the stored part number says
-  // which one; without it (one-piece messages, older replies) it goes on the
-  // last bubble, the part whose id the row carries.
+  // Reactions sit on the bubble they were made to, as WhatsApp shows them. A
+  // split reply is several bubbles here: the customer's reaction carries the part
+  // it was made to (without it, one-piece messages and older replies, it goes on
+  // the last bubble, the part whose id the row carries). Ours is always sent
+  // against the row's own id, which is that last part. Both share one badge.
   const partCount = 1 + extraParts.length;
-  const reactIdx = msg.reaction_emoji
-    ? Math.min(msg.reaction_part ?? partCount - 1, partCount - 1)
-    : -1;
-  const reactionBadge = msg.reaction_emoji && (
+  const lastIdx = partCount - 1;
+  const theirIdx = msg.reaction_emoji ? Math.min(msg.reaction_part ?? lastIdx, lastIdx) : -1;
+  const ourIdx = msg.our_reaction_emoji ? lastIdx : -1;
+  const hasBadge = (i) => theirIdx === i || ourIdx === i;
+  const badgeFor = (i) => hasBadge(i) && (
     <span
-      title={`Customer reacted${msg.reaction_at ? ` at ${formatMessageTime(msg.reaction_at)}` : ''}`}
-      className={`absolute -bottom-3.5 ${isUser ? 'left-2' : 'right-2'} px-1.5 py-0.5 rounded-full bg-white border border-slate-200 shadow-sm text-sm leading-none text-slate-800 select-none`}
+      title={[
+        theirIdx === i && `Customer reacted ${msg.reaction_emoji}${msg.reaction_at ? ` at ${formatMessageTime(msg.reaction_at)}` : ''}`,
+        ourIdx === i && `You reacted ${msg.our_reaction_emoji}${msg.our_reaction_at ? ` at ${formatMessageTime(msg.our_reaction_at)}` : ''}`,
+      ].filter(Boolean).join(' · ')}
+      className={`absolute -bottom-3.5 ${isUser ? 'left-2' : 'right-2'} px-1.5 py-0.5 rounded-full bg-white border border-slate-200 shadow-sm text-sm leading-none text-slate-800 select-none whitespace-nowrap`}
     >
-      {msg.reaction_emoji}
+      {theirIdx === i && msg.reaction_emoji}{ourIdx === i && msg.our_reaction_emoji}
     </span>
+  );
+
+  // Only a message WhatsApp knows by id can be reacted to.
+  const canReact = !!(onReact && msg.wamid);
+  const pick = (emoji) => {
+    setPickerOpen(false);
+    // Tapping the reaction already there takes it back, as in WhatsApp.
+    onReact(msg, emoji === msg.our_reaction_emoji ? '' : emoji);
+  };
+  const reactButton = canReact && (
+    <button
+      onClick={() => setPickerOpen(o => !o)}
+      title="React" aria-label="React to this message"
+      className="opacity-50 @xl:opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-slate-400 hover:text-amber-500 shrink-0 bg-transparent border-0 cursor-pointer"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    </button>
+  );
+  const picker = pickerOpen && (
+    <>
+      <div className="fixed inset-0 z-30" onClick={() => setPickerOpen(false)} />
+      <div className={`absolute bottom-full mb-1 ${isUser ? 'left-0' : 'right-0'} z-40 flex gap-0.5 px-1.5 py-1 rounded-full bg-white border border-slate-200 shadow-lg`}>
+        {QUICK_REACTIONS.map(e => (
+          <button
+            key={e}
+            onClick={() => pick(e)}
+            title={e === msg.our_reaction_emoji ? 'Remove your reaction' : `React ${e}`}
+            className={`w-9 h-9 rounded-full text-xl leading-none border-0 cursor-pointer transition-transform hover:scale-125 ${e === msg.our_reaction_emoji ? 'bg-slate-200' : 'bg-transparent'}`}
+          >
+            {e}
+          </button>
+        ))}
+      </div>
+    </>
   );
 
   let interactive = msg.interactive || null;
@@ -233,7 +278,7 @@ export default function MessageBubble({ msg, onDelete }) {
         <AdReferral referral={msg.referral} />
       </div>
     )}
-    <div className={`group flex ${isUser ? 'justify-start' : 'justify-end'} items-end gap-1 ${reactIdx === 0 ? 'mb-5' : 'mb-2'}`}>
+    <div className={`group flex ${isUser ? 'justify-start' : 'justify-end'} items-end gap-1 ${hasBadge(0) ? 'mb-5' : 'mb-2'}`}>
       {/* Delete button — left of bubble for outbound, visible on hover */}
       {!isUser && onDelete && (
         <button
@@ -246,6 +291,7 @@ export default function MessageBubble({ msg, onDelete }) {
           </svg>
         </button>
       )}
+      {!isUser && reactButton}
 
       <div
         className={`relative max-w-[88%] @xl:max-w-[75%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed
@@ -255,6 +301,7 @@ export default function MessageBubble({ msg, onDelete }) {
             ? 'bg-violet-600 text-white rounded-tr-sm'
             : 'bg-emerald-600 text-white rounded-tr-sm'}`}
       >
+        {picker}
         {isAdmin && <div className="text-xs opacity-70 mb-0.5 font-medium">Admin</div>}
 
         {/* Image media */}
@@ -396,8 +443,9 @@ export default function MessageBubble({ msg, onDelete }) {
             />
           )}
         </div>
-        {reactIdx === 0 && reactionBadge}
+        {badgeFor(0)}
       </div>
+      {isUser && reactButton}
     </div>
     {traceOpen && <TraceModal messageId={msg.id} clientId={traceClientId} onClose={() => setTraceOpen(false)} />}
     </>
@@ -409,7 +457,7 @@ export default function MessageBubble({ msg, onDelete }) {
     <>
       {bubble}
       {extraParts.map((part, i) => (
-        <div key={i} className={`flex ${isUser ? 'justify-start' : 'justify-end'} items-end gap-1 ${reactIdx === i + 1 ? 'mb-5' : 'mb-2'}`}>
+        <div key={i} className={`flex ${isUser ? 'justify-start' : 'justify-end'} items-end gap-1 ${hasBadge(i + 1) ? 'mb-5' : 'mb-2'}`}>
           <div
             className={`relative max-w-[88%] @xl:max-w-[75%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words
               ${isUser
@@ -419,7 +467,7 @@ export default function MessageBubble({ msg, onDelete }) {
                 : 'bg-emerald-600 text-white'}`}
           >
             {formatWhatsApp(part)}
-            {reactIdx === i + 1 && reactionBadge}
+            {badgeFor(i + 1)}
           </div>
         </div>
       ))}

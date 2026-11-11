@@ -378,6 +378,10 @@ async function init() {
       // Which part of a split reply was reacted to (0 = first). NULL when the
       // message went out in one piece, or when it is not known.
       await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS reaction_part INT`);
+      // Our own reaction to the message, sent from the CRM, and who sent it.
+      await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS our_reaction_emoji TEXT`);
+      await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS our_reaction_at TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS our_reaction_by INT`);
       // One bot reply can go out as several WhatsApp messages (split on
       // [[MSG_BREAK]]) but is stored as one row, and messages.wamid holds only the
       // last part's id. A customer can react to any part, so every part's id is

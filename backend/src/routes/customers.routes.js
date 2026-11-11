@@ -15,6 +15,7 @@ const {
   sendMessage,
   deleteCustomerMessages,
   deleteMessage,
+  reactToMessage,
   deleteCustomer,
   markRead,
   getAiMode,
@@ -42,6 +43,8 @@ router.delete('/customers/:phone/messages',          jwtAuth, requirePermission(
 
 // Soft-delete a single message — DELETE /api/messages/:id
 router.delete('/messages/:id',                       jwtAuth, requirePermission('chat.delete'), deleteMessage);
+// React to a message with an emoji, sent to the customer on WhatsApp
+router.post('/messages/:id/react',                   jwtAuth, requirePermission('chat.reply'),  reactToMessage);
 
 // Delete a customer — DELETE /api/customers/:phone
 router.delete('/customers/:phone',                   jwtAuth, requirePermission('chat.delete'), deleteCustomer);

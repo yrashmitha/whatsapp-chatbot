@@ -207,6 +207,14 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
     onError: () => toast.error('Failed to update status'),
   });
 
+  // React to a message with an emoji. WhatsApp shows it to the customer; the
+  // thread is refreshed so the badge appears without waiting for the poll.
+  const reactMutation = useMutation({
+    mutationFn: ({ id, emoji }) => api.post(`/messages/${id}/react`, { emoji }, { params: cp }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['messages', phone] }),
+    onError: (e) => toast.error(e?.response?.data?.error || 'Could not send the reaction'),
+  });
+
   const reextractMutation = useMutation({
     mutationFn: () => api.post('/crm/media/reextract', { phone }, { params: cp }),
     onSuccess: (r) => {
@@ -543,7 +551,7 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
                   </span>
                 </div>
               )}
-              <MessageBubble msg={msg} onDelete={() => handleDeleteMessage(msg.id)} />
+              <MessageBubble msg={msg} onDelete={() => handleDeleteMessage(msg.id)} onReact={(m, emoji) => reactMutation.mutate({ id: m.id, emoji })} />
             </Fragment>
           );
         })}

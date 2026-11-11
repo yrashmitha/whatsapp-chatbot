@@ -9,7 +9,7 @@
 const axios        = require('axios');
 const db           = require('../db');
 const clientRouter = require('../services/clientRouter');
-const { sendWhatsAppMessage, waToken, waPhoneId, markMessageRead } = require('../services/whatsapp');
+const { sendWhatsAppMessage, sendWhatsAppReaction, waToken, waPhoneId, markMessageRead } = require('../services/whatsapp');
 const { chatSessions } = require('../workers/sessionManager');
 const resolveClientId  = require('../middleware/resolveClientId');
 const { PUBLIC_URL }   = require('../config/env');
@@ -18,6 +18,12 @@ const { IDLE_RELEASE_HOURS } = require('../services/chatOwnership');
 const { hasPermission } = require('../services/permissions');
 const { timezoneFor } = require('../services/scheduledFollowUps');
 const { LEAD_STATUSES, todayLocal } = require('./leads.controller');
+
+/**
+ * The reaction columns, added at startup by an isolated step. Kept in one string
+ * so the thread query can drop them as a unit if they are ever missing.
+ */
+const REACTION_COLS = 'reaction_emoji, reaction_at, reaction_part, our_reaction_emoji, our_reaction_at,';
 
 /**
  * GET /api/customers — paginated customer list with unread badge counts.
@@ -148,9 +154,8 @@ async function getMessages(req, res) {
       ? (clientId ? [phone, clientId, before, limit] : [phone, before, limit])
       : (clientId ? [phone, clientId, limit] : [phone, limit]);
     const q = `
-      SELECT id, phone_number, message_text, sender_type, created_at, cost_usd, media_type, media_url, wamid, is_deleted,
+      SELECT ${REACTION_COLS} id, phone_number, message_text, sender_type, created_at, cost_usd, media_type, media_url, wamid, is_deleted,
              delivery_status, delivered_at, read_at, error_code, error_message, interactive, extracted, sent_by, sent_manual,
-             reaction_emoji, reaction_at, reaction_part,
              (trace IS NOT NULL) AS has_trace,
              (SELECT COALESCE(display_name, username) FROM crm_users WHERE id = messages.sent_by) AS sent_by_name
       FROM messages
@@ -166,7 +171,7 @@ async function getMessages(req, res) {
     } catch (e) {
       if (e.code !== '42703') throw e; // undefined_column; anything else is a real error
       console.warn('[MESSAGES] reaction columns missing, reading the thread without them');
-      r = await db.pgQuery(q.replace('reaction_emoji, reaction_at, reaction_part,', ''), params);
+      r = await db.pgQuery(q.replace(REACTION_COLS, ''), params);
     }
     const msgs = r.rows.reverse(); // oldest first
 
@@ -357,6 +362,56 @@ async function deleteCustomerMessages(req, res) {
  * @param {import('express').Response} res
  * @returns {Promise<void>}
  */
+/**
+ * POST /api/messages/:id/react — react to a message in the customer's chat with
+ * an emoji, as in WhatsApp. Body: { emoji } (one emoji, or '' to take it back).
+ *
+ * The reaction is what WhatsApp shows the customer, so it is sent first and only
+ * recorded once Meta accepts it. Recording is best effort: if it fails the
+ * customer still got the reaction, and the reply says so. Reacting is not a
+ * reply, so it neither pauses the bot nor adds a line to the thread.
+ *
+ * @param {import('express').Request}  req
+ * @param {import('express').Response} res
+ * @returns {Promise<void>}
+ */
+async function reactToMessage(req, res) {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ error: 'Invalid message id' });
+  const emoji = String(req.body?.emoji ?? '').trim();
+  // One emoji, which with skin tones and joiners can be a few code units long.
+  if (emoji.length > 16 || /[\s\w]/.test(emoji)) return res.status(400).json({ error: 'Send a single emoji' });
+  const clientId = resolveClientId(req);
+  try {
+    const { rows } = await db.pgQuery(
+      `SELECT id, phone_number, wamid FROM messages
+        WHERE id=$1 AND client_id IS NOT DISTINCT FROM $2 AND NOT is_deleted`,
+      [id, clientId ?? null]);
+    const m = rows[0];
+    if (!m) return res.status(404).json({ error: 'Message not found' });
+    if (!m.wamid) return res.status(400).json({ error: 'This message has no WhatsApp id, so it cannot be reacted to' });
+
+    const client = clientId ? await clientRouter.getClientById(clientId) : null;
+    await sendWhatsAppReaction(m.phone_number, m.wamid, emoji, client);
+
+    let saved = true;
+    try {
+      await db.pgQuery(
+        `UPDATE messages SET our_reaction_emoji=$2::text,
+                our_reaction_at = CASE WHEN $2::text IS NULL THEN NULL ELSE NOW() END,
+                our_reaction_by = $3
+          WHERE id=$1`,
+        [id, emoji || null, req.user?.uid ?? null]);
+    } catch (e) {
+      saved = false;
+      console.warn('[REACT] sent but could not record it:', e.message);
+    }
+    res.json({ ok: true, saved });
+  } catch (e) {
+    res.status(500).json({ error: e?.response?.data?.error?.message || e.message });
+  }
+}
+
 async function deleteMessage(req, res) {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) return res.status(400).json({ error: 'Invalid message id' });
@@ -576,6 +631,7 @@ async function listClients(req, res) {
 module.exports = {
   listCustomers,
   getMessages,
+  reactToMessage,
   sendMessage,
   deleteCustomerMessages,
   deleteMessage,

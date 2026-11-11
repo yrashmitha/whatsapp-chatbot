@@ -143,6 +143,33 @@ async function sendWhatsAppMessage(to, text, client) {
 }
 
 /**
+ * React to a message in the customer's chat with an emoji, the way a person
+ * does in WhatsApp. An empty emoji takes the reaction back. Throws Meta's error
+ * so the operator sees why it failed (for example the 24 hour window).
+ *
+ * @param {string}      to          - the customer's number
+ * @param {string}      messageWamid - the id of the message being reacted to
+ * @param {string}      emoji       - one emoji, or '' to remove
+ * @param {Object|null} client
+ * @returns {Promise<string|null>} the reaction's own wamid
+ */
+async function sendWhatsAppReaction(to, messageWamid, emoji, client) {
+  try {
+    const resp = await axios.post(
+      `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
+      { messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'reaction',
+        reaction: { message_id: messageWamid, emoji: emoji || '' } },
+      { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
+    );
+    console.log(`[WA-REACT] ${emoji || '(removed)'} on ${messageWamid} to ${to}`);
+    return resp.data?.messages?.[0]?.id || null;
+  } catch (err) {
+    console.error(`[WA-REACT] failed to ${to}:`, err?.response?.data ?? err.message);
+    throw err;
+  }
+}
+
+/**
  * Split a bot reply on [[MSG_BREAK]] markers and send each part as a
  * separate WhatsApp message with an 800 ms inter-message delay.
  *
@@ -514,6 +541,7 @@ module.exports = {
   templateMediaIds,
   sendWhatsAppImage,
   sendWhatsAppMessage,
+  sendWhatsAppReaction,
   sendWhatsAppAudio,
   sendBotReply,
   markMessageRead,

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import api from '../../lib/api';
 import { useToast } from '../ui/Toast';
+import PitchVoiceRecorder from './PitchVoiceRecorder';
 
 /**
  * GuardianAngelModal: the operator drafts a Guardian Angel message for a
@@ -154,6 +155,8 @@ export default function GuardianAngelModal({ phone, clientId, orders = [], onClo
               />
             </div>
           )}
+
+          {message && <PitchVoiceRecorder phone={phone} clientId={clientId} onSent={onClose} />}
         </div>
 
         <div className="px-5 py-4 border-t border-slate-100 flex gap-2 shrink-0 flex-wrap">

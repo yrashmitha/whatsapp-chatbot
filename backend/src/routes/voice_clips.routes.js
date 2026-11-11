@@ -10,6 +10,7 @@ const {
   deleteVoiceClip,
   sendVoiceClip,
   sendRecording,
+  pitchPreviewHandler,
 } = require('../controllers/voice_clips.controller');
 
 router.get   ('/',     jwtAuth, listVoiceClips);
@@ -20,5 +21,8 @@ router.delete('/:id',  jwtAuth, requirePermission('settings.voice_clips'), delet
 router.post('/send',   jwtAuth, requirePermission('chat.send_media'), sendVoiceClip);
 router.post('/send-recording', jwtAuth, requirePermission('chat.send_media'),
   uploadMedia.single('audio'), sendRecording);
+// Hear a recording at a different pitch before sending: POST /api/voice-clips/pitch-preview
+router.post('/pitch-preview', jwtAuth, requirePermission('chat.send_media'),
+  uploadMedia.single('audio'), pitchPreviewHandler);
 
 module.exports = router;

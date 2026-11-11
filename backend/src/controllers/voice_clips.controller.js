@@ -5,8 +5,9 @@ const clientRouter = require('../services/clientRouter');
 const { sendWhatsAppAudio } = require('../services/whatsapp');
 const { PUBLIC_URL } = require('../config/env');
 const resolveClientId = require('../middleware/resolveClientId');
-const { transcodeToOggOpus, writeBrowserCopy } = require('../services/audioTranscode');
+const { transcodeToOggOpus, writeBrowserCopy, pitchPreview } = require('../services/audioTranscode');
 const path = require('path');
+const fs = require('fs');
 
 /**
  * POST /api/voice-clips/send-recording - record in the chat and send it now.
@@ -27,7 +28,9 @@ async function sendRecording(req, res) {
   if (!phone) return res.status(400).json({ error: 'phone required' });
 
   try {
-    const stored = await transcodeToOggOpus(req.file.path);
+    // Optional pitch change, in semitones. The server does it, so what the
+    // operator heard in the preview is exactly what the customer receives.
+    const stored = await transcodeToOggOpus(req.file.path, { semitones: req.body?.semitones });
     await writeBrowserCopy(stored);
     const audioUrl = `${PUBLIC_URL || ''}/uploads/${path.basename(stored)}`;
     const client = await clientRouter.getClientById(clientId);
@@ -38,6 +41,27 @@ async function sendRecording(req, res) {
                            wamid, null, { sentBy: req.user?.uid ?? null, sentManual: true });
     res.json({ ok: true, audio_url: audioUrl });
   } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
+
+/**
+ * POST /api/voice-clips/pitch-preview: hear a recording at a different pitch
+ * before sending it. Nothing is stored or sent; the processed audio is streamed
+ * back and the temporary files are deleted.
+ *
+ * Body (multipart): audio, semitones
+ */
+async function pitchPreviewHandler(req, res) {
+  if (!req.file) return res.status(400).json({ error: 'audio file required' });
+  const cleanup = [req.file.path];
+  try {
+    const out = await pitchPreview(req.file.path, req.body?.semitones);
+    cleanup.push(out);
+    res.type('audio/mp4');
+    res.sendFile(path.resolve(out), () => cleanup.forEach(p => fs.unlink(p, () => {})));
+  } catch (e) {
+    cleanup.forEach(p => fs.unlink(p, () => {}));
     res.status(500).json({ error: e.message });
   }
 }
@@ -126,4 +150,4 @@ async function sendVoiceClip(req, res) {
 }
 
 module.exports = {
-  sendRecording, listVoiceClips, createVoiceClip, deleteVoiceClip, sendVoiceClip };
+  sendRecording, pitchPreviewHandler, listVoiceClips, createVoiceClip, deleteVoiceClip, sendVoiceClip };

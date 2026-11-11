@@ -19,6 +19,56 @@ const fs = require('fs');
 const path = require('path');
 
 /**
+ * Semitones to shift the voice by, kept inside a range that still sounds like a
+ * person. Anything unusable means no change.
+ *
+ * @param {*} v
+ * @returns {number} a multiple of 0.5 between -8 and 8; 0 means untouched
+ */
+function clampSemitones(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(Math.max(-8, Math.min(8, n)) * 2) / 2;
+}
+
+/**
+ * ffmpeg arguments that move the pitch and leave the speed alone. Playing the
+ * samples at a different rate shifts the pitch and the speed together, and
+ * atempo then undoes the speed change, so a 40 second recording stays 40 seconds.
+ *
+ * @param {number} semitones
+ * @returns {string[]} empty when there is nothing to do
+ */
+function pitchArgs(semitones) {
+  if (!semitones) return [];
+  const ratio = Math.pow(2, semitones / 12);
+  return ['-af', `aresample=48000,asetrate=${Math.round(48000 * ratio)},aresample=48000,atempo=${(1 / ratio).toFixed(5)}`];
+}
+
+/**
+ * A pitch-shifted AAC copy of a recording, for the preview in the CRM. Plays in
+ * every browser, which Ogg does not. The caller deletes the file.
+ *
+ * @param {string} inputPath
+ * @param {number} semitones
+ * @returns {Promise<string>} path to the .m4a
+ */
+function pitchPreview(inputPath, semitones) {
+  const dir = path.dirname(inputPath);
+  const base = path.basename(inputPath, path.extname(inputPath));
+  const outputPath = path.join(dir, `${base}-preview.m4a`);
+  return new Promise((resolve, reject) => {
+    execFile(
+      'ffmpeg',
+      ['-y', '-i', inputPath, '-map', '0:a:0?', '-vn', ...pitchArgs(clampSemitones(semitones)),
+       '-c:a', 'aac', '-b:a', '64k', '-ac', '1', outputPath],
+      { timeout: 30000 },
+      (err) => (err ? reject(new Error('Could not process the audio: ' + err.message)) : resolve(outputPath))
+    );
+  });
+}
+
+/**
  * Transcode a file to Ogg/Opus beside itself, removing the original on success.
  *
  * Never throws and never rejects. A machine without ffmpeg - a local dev box,
@@ -29,13 +79,16 @@ const path = require('path');
  * @param {string} inputPath - absolute path to the uploaded audio
  * @returns {Promise<string>} the resulting path, or the input if it could not be converted
  */
-function transcodeToOggOpus(inputPath) {
+function transcodeToOggOpus(inputPath, opts = {}) {
   const dir = path.dirname(inputPath);
   const base = path.basename(inputPath, path.extname(inputPath));
-  const outputPath = path.join(dir, `${base}.ogg`);
+  const semitones = clampSemitones(opts.semitones);
+  const isOgg = path.extname(inputPath).toLowerCase() === '.ogg';
+  // A pitched file is a new file even when the source is already .ogg.
+  const outputPath = path.join(dir, semitones && isOgg ? `${base}-pitched.ogg` : `${base}.ogg`);
 
   return new Promise((resolve) => {
-    if (path.extname(inputPath).toLowerCase() === '.ogg') return resolve(inputPath);
+    if (isOgg && !semitones) return resolve(inputPath);
     execFile(
       'ffmpeg',
       // 32k mono 48kHz opus, voice-tuned. Take only the first audio stream and
@@ -45,6 +98,7 @@ function transcodeToOggOpus(inputPath) {
       [
         '-y', '-i', inputPath,
         '-map', '0:a:0?', '-map_metadata', '-1', '-vn', '-dn',
+        ...pitchArgs(semitones),
         '-c:a', 'libopus', '-b:a', '32k', '-ar', '48000', '-ac', '1',
         '-application', 'voip',
         '-f', 'ogg', outputPath,
@@ -96,4 +150,4 @@ function writeBrowserCopy(inputPath) {
   });
 }
 
-module.exports = { transcodeToOggOpus, writeBrowserCopy };
+module.exports = { transcodeToOggOpus, writeBrowserCopy, pitchPreview, clampSemitones };

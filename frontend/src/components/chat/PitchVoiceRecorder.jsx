@@ -19,7 +19,8 @@ const PITCH_PRESETS = [
   { label: 'Much higher', st: 6 },
 ];
 
-const DEFAULT_FX = { semitones: 0, warmth: 0, reverb: 'off', denoise: false, ambient: 'none', ambientLevel: 10 };
+// Levelling is on from the start: a microphone recording is often far quieter than a normal voice note.
+const DEFAULT_FX = { semitones: 0, warmth: 0, reverb: 'off', denoise: false, ambient: 'none', ambientLevel: 10, normalize: true, boost: 0 };
 const FX_KEY = 'ga_voice_fx';
 const LAST_SENT_KEY = 'ga_voice_last_sent_fx';
 
@@ -38,6 +39,8 @@ function readFx(key) {
       denoise: !!o.denoise,
       ambient: ['om', 'bell', 'both'].includes(o.ambient) ? o.ambient : 'none',
       ambientLevel: clamp(Number(o.ambientLevel) || 10, 1, 30, 1),
+      normalize: o.normalize !== false,                 // settings saved before this existed get levelling too
+      boost: clamp(Number(o.boost) || 0, 0, 12, 1),
     };
   } catch { return null; }
 }
@@ -49,6 +52,8 @@ const AMBIENT_NAMES = { om: 'Om hum', bell: 'Bell ring', both: 'Om + bell' };
 function summary(fx) {
   const parts = [`Pitch ${signed(fx.semitones)}`, `Warmth ${signed(fx.warmth)}`, `Echo ${fx.reverb}`, fx.denoise ? 'Clean' : 'No cleanup'];
   parts.push(fx.ambient === 'none' ? 'No background' : `${AMBIENT_NAMES[fx.ambient]} ${fx.ambientLevel}`);
+  parts.push(fx.normalize ? 'Levelled' : 'Not levelled');
+  if (fx.boost) parts.push(`Boost +${fx.boost} dB`);
   return parts.join(' · ');
 }
 
@@ -184,6 +189,8 @@ export default function PitchVoiceRecorder({ phone, clientId, onSent }) {
     form.append('denoise', fx.denoise ? '1' : '0');
     form.append('ambient', fx.ambient);
     form.append('ambient_level', String(fx.ambientLevel));
+    form.append('normalize', fx.normalize ? '1' : '0');
+    form.append('boost', String(fx.boost));
     return form;
   };
 
@@ -310,6 +317,17 @@ export default function PitchVoiceRecorder({ phone, clientId, onSent }) {
                   hint="quiet 5 … 10 … 20 louder" onChange={v => change({ ambientLevel: v })}
                 />
               )}
+            </div>
+
+            <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
+              <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer h-9">
+                <input type="checkbox" checked={fx.normalize} onChange={e => change({ normalize: e.target.checked })} />
+                Make the volume normal (fixes a quiet recording)
+              </label>
+              <NumberField
+                label="Extra loudness (dB)" value={fx.boost} min={0} max={12} step={1}
+                hint="0 = none, 3 = a bit louder, 6 = much louder" onChange={v => change({ boost: v })}
+              />
             </div>
 
             <p className="text-xs text-slate-600 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5">

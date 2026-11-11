@@ -61,15 +61,19 @@ function parseVoiceFx(src = {}) {
   const semitones = clampSemitones(src.semitones);
   const reverb = Object.prototype.hasOwnProperty.call(REVERB_PRESETS, src.reverb) ? src.reverb : 'off';
   const warmth = clampNum(src.warmth, -5, 5, 0.5);
-  const denoise = src.denoise === true || src.denoise === '1' || src.denoise === 'true';
+  const isOn = (v) => v === true || v === 1 || v === '1' || v === 'true';
+  const denoise = isOn(src.denoise);
   const level = clampNum(src.ambient_level ?? src.ambientLevel, 0, 30, 1, 10);
   const ambient = AMBIENT_KINDS.includes(src.ambient) && level > 0 ? src.ambient : 'none';
-  return { semitones, reverb, warmth, denoise, ambient, ambientLevel: level };
+  // Levelling to the usual voice note loudness, and an optional extra boost in dB.
+  const normalize = isOn(src.normalize);
+  const boost = clampNum(src.boost, 0, 12, 1, 0);
+  return { semitones, reverb, warmth, denoise, ambient, ambientLevel: level, normalize, boost };
 }
 
 /** True when any setting would change the recording. */
 function hasFx(fx) {
-  return !!(fx.semitones || fx.reverb !== 'off' || fx.warmth || fx.denoise || fx.ambient !== 'none');
+  return !!(fx.semitones || fx.reverb !== 'off' || fx.warmth || fx.denoise || fx.ambient !== 'none' || fx.normalize || fx.boost);
 }
 
 /**
@@ -94,6 +98,13 @@ function voiceChain(fx) {
   // Positive warmth is fuller (more bass, a little less treble); negative is brighter.
   if (fx.warmth) c.push(`bass=g=${(fx.warmth * 1.5).toFixed(1)}:f=180`, `treble=g=${(-fx.warmth).toFixed(1)}:f=4500`);
   if (fx.reverb !== 'off') c.push(REVERB_PRESETS[fx.reverb]);
+  // Last, so the level is right for the finished voice. A browser microphone is
+  // often 20 dB quieter than a normal WhatsApp voice note (about -16 LUFS), and
+  // none of the steps above make anything louder. The background sound is mixed
+  // in afterwards, so it stays quiet compared with the levelled voice.
+  if (fx.normalize) c.push('loudnorm=I=-16:TP=-1.5:LRA=11', 'aresample=48000');
+  if (fx.boost) c.push(`volume=${fx.boost}dB`);
+  if (fx.normalize || fx.boost) c.push('alimiter=limit=0.95');
   return c;
 }
 

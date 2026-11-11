@@ -114,12 +114,21 @@ function voiceChain(fx) {
  * given for Om) that slowly swells; "bell" is a bell strike every nine seconds
  * that rings out and fades. It is a synthetic hum, not a recorded chant.
  *
+ * Built for a phone speaker, which is how these notes are heard. A phone plays
+ * almost nothing below about 300 Hz, so a hum made of 136 and 272 Hz was
+ * measured at 27 dB under the voice once it came out of a small speaker, which
+ * is inaudible: the operator picked "Om" and the customer heard nothing. The
+ * 136 Hz base stays, for the note, but most of the energy now sits in the
+ * overtones between 270 and 950 Hz, with a slightly detuned copy of the second
+ * one so the pad shimmers instead of sounding like a test tone. The bell is
+ * stronger and rings for about five seconds instead of three.
+ *
  * @param {string} kind - om | bell | both
  * @returns {string} an aevalsrc expression
  */
 function ambientExpr(kind) {
-  const om = '(0.20*sin(2*PI*136.1*t)+0.10*sin(2*PI*272.2*t)+0.06*sin(2*PI*408.3*t)+0.03*sin(2*PI*68.05*t))*(1+0.18*sin(2*PI*0.12*t))';
-  const bell = '0.22*(sin(2*PI*523.25*mod(t,9))+0.7*sin(2*PI*525.1*mod(t,9))+0.45*sin(2*PI*1046.5*mod(t,9))+0.25*sin(2*PI*1568*mod(t,9)))*exp(-0.9*mod(t,9))';
+  const om = '(0.07*sin(2*PI*136.1*t)+0.14*sin(2*PI*272.2*t)+0.08*sin(2*PI*273.6*t)+0.12*sin(2*PI*408.3*t)+0.09*sin(2*PI*544.4*t)+0.07*sin(2*PI*680.5*t)+0.05*sin(2*PI*816.6*t)+0.035*sin(2*PI*952.7*t))*(1+0.18*sin(2*PI*0.12*t))';
+  const bell = '0.45*(sin(2*PI*523.25*mod(t,9))+0.7*sin(2*PI*525.1*mod(t,9))+0.45*sin(2*PI*1046.5*mod(t,9))+0.25*sin(2*PI*1568*mod(t,9)))*exp(-0.5*mod(t,9))';
   if (kind === 'om') return om;
   if (kind === 'bell') return bell;
   return `${om}+${bell}`;

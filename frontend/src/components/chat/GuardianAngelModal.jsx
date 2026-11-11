@@ -146,7 +146,7 @@ export default function GuardianAngelModal({ phone, clientId, orders = [], onClo
 
           {message && (
             <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">Draft (you can edit)</label>
+              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">Voice script (edit if you like, then read it aloud)</label>
               <textarea
                 className={inputCls}
                 style={{ minHeight: 260 }}

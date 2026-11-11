@@ -5,7 +5,7 @@ const clientRouter = require('../services/clientRouter');
 const { sendWhatsAppAudio } = require('../services/whatsapp');
 const { PUBLIC_URL } = require('../config/env');
 const resolveClientId = require('../middleware/resolveClientId');
-const { transcodeToOggOpus, writeBrowserCopy, pitchPreview } = require('../services/audioTranscode');
+const { transcodeToOggOpus, writeBrowserCopy, pitchPreview, parseVoiceFx } = require('../services/audioTranscode');
 const path = require('path');
 const fs = require('fs');
 
@@ -30,7 +30,7 @@ async function sendRecording(req, res) {
   try {
     // Optional pitch change, in semitones. The server does it, so what the
     // operator heard in the preview is exactly what the customer receives.
-    const stored = await transcodeToOggOpus(req.file.path, { semitones: req.body?.semitones });
+    const stored = await transcodeToOggOpus(req.file.path, parseVoiceFx(req.body));
     await writeBrowserCopy(stored);
     const audioUrl = `${PUBLIC_URL || ''}/uploads/${path.basename(stored)}`;
     const client = await clientRouter.getClientById(clientId);
@@ -56,7 +56,7 @@ async function pitchPreviewHandler(req, res) {
   if (!req.file) return res.status(400).json({ error: 'audio file required' });
   const cleanup = [req.file.path];
   try {
-    const out = await pitchPreview(req.file.path, req.body?.semitones);
+    const out = await pitchPreview(req.file.path, parseVoiceFx(req.body));
     cleanup.push(out);
     res.type('audio/mp4');
     res.sendFile(path.resolve(out), () => cleanup.forEach(p => fs.unlink(p, () => {})));

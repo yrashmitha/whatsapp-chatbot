@@ -1287,13 +1287,14 @@ async function downloadTarotPdf(req, res) {
  * operator reviews the draft in the chat composer.
  *
  * POST /api/crm/guardian-angel
- * Body: { phone, order_id?, story?, name?, gender?: 'male'|'female'|'auto' }
+ * Body: { phone, order_id?, story?, name?, gender?: 'male'|'female'|'auto',
+ *   relationship?: 'regular'|'affair_other'|'affair_self'|'gay'|'lesbian', details? }
  * With order_id, the story, name and tarot reading are read from that order
  * unless the caller overrides story/name.
  */
 async function triggerGuardianAngel(req, res) {
   const clientId = resolveClientId(req);
-  const { phone, order_id, story, name, gender } = req.body || {};
+  const { phone, order_id, story, name, gender, relationship, details } = req.body || {};
   if (!phone) return res.status(400).json({ error: 'phone required' });
 
   try {
@@ -1327,6 +1328,7 @@ async function triggerGuardianAngel(req, res) {
     const g = ['male', 'female'].includes(gender) ? gender : 'auto';
     const { message } = await generateGuardianAngel(clientId, {
       name: useName, gender: g, story: useStory, reading, customPrompt, orderId: order_id || null,
+      relationship: relationship || null, details: (details || '').toString().slice(0, 1000),
     });
     if (!message) return res.status(502).json({ error: 'The model returned an empty message. Try again.' });
     res.json({ ok: true, message });

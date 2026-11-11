@@ -31,6 +31,8 @@ export default function GuardianAngelModal({ phone, clientId, orders = [], onClo
   const [orderId, setOrderId] = useState(defaultOrder);
   const [story, setStory]     = useState('');
   const [gender, setGender]   = useState('auto');
+  const [relationship, setRelationship] = useState('auto');
+  const [details, setDetails] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -46,6 +48,8 @@ export default function GuardianAngelModal({ phone, clientId, orders = [], onClo
         ...(orderId && { order_id: orderId }),
         ...(story.trim() && { story: story.trim() }),
         gender,
+        ...(relationship !== 'auto' && { relationship }),
+        ...(details.trim() && { details: details.trim() }),
       }, clientId ? { params: { client_id: clientId } } : {});
       setMessage(res.data.message || '');
     } catch (e) {
@@ -112,6 +116,31 @@ export default function GuardianAngelModal({ phone, clientId, orders = [], onClo
               <option value="male">Male</option>
               <option value="female">Female</option>
             </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Relationship type</label>
+            <select className={inputCls} value={relationship} onChange={e => setRelationship(e.target.value)} disabled={loading}>
+              <option value="auto">Auto (from the story)</option>
+              <option value="regular">Regular relationship or marriage</option>
+              <option value="affair_other">Aniyam sambandayak: the other person is married or committed</option>
+              <option value="affair_self">Aniyam sambandayak: the customer is married or committed</option>
+              <option value="gay">Gay relationship (two men)</option>
+              <option value="lesbian">Lesbian relationship (two women)</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Extra details (optional)</label>
+            <textarea
+              className={inputCls}
+              style={{ resize: 'none', minHeight: 60 }}
+              rows={2}
+              value={details}
+              onChange={e => setDetails(e.target.value)}
+              placeholder="Anything else you know: how long, who ended it, ages, kids, family pressure, what they most want"
+              disabled={loading}
+            />
           </div>
 
           {message && (

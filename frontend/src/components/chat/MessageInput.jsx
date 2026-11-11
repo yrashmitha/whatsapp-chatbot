@@ -225,6 +225,11 @@ function ImagePickerModal({ open, onClose, phone, clientId, onSent }) {
   );
 }
 
+/** Seconds with no progress before the sending banner says so. */
+const STALL_WARN_S = 20;
+/** No progress for this long and the upload is stopped as a dead connection. */
+const STALL_STOP_MS = 2 * 60 * 1000;
+
 export default function MessageInput({ phone, clientId, strategy, crmMediaEnabled, followUpEnabled, reportLink, reportReleased, prefill, onPrefillConsumed, droppedFiles, onDropConsumed, onSent }) {
   const [text, setText] = useState('');
   // Which follow-up variant is currently drafting ('1' | '2' | null).
@@ -409,10 +414,38 @@ export default function MessageInput({ phone, clientId, strategy, crmMediaEnable
 
   // What is being sent right now, for the banner: which file, how far along,
   // and whether the server is converting a video. Sending a phone video can take
-  // a minute between the upload and the conversion, and with only a toast that
-  // vanished after four seconds the operator could not tell anything was
-  // happening and tapped again.
-  const [upload, setUpload] = useState(null); // { index, total, name, video, phase, pct }
+  // minutes on mobile data, and a bare percentage that did not move looked stuck,
+  // so the banner shows the megabytes, the speed and the time left, says when
+  // nothing has got through for a while, and has a Cancel.
+  const [upload, setUpload] = useState(null);
+  // { index, count, name, video, phase, pct, loaded, bytes, startedAt, lastAt }
+  const [now, setNow] = useState(() => Date.now());
+  const abortRef = useRef(null);      // the request in flight, so Cancel can stop it
+  const cancelledRef = useRef(false); // the operator pressed Cancel: send nothing more
+  const stalledRef = useRef(false);   // stopped because nothing got through
+
+  // A clock for the banner while something is being sent.
+  const busy = !!upload;
+  useEffect(() => {
+    if (!busy) return undefined;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [busy]);
+
+  // Two minutes with not one more byte reaching the server is a dead
+  // connection, not a slow one. Stop it and say so, rather than leave the
+  // banner up forever.
+  useEffect(() => {
+    if (upload?.phase === 'uploading' && upload.lastAt && now - upload.lastAt > STALL_STOP_MS) {
+      stalledRef.current = true;
+      abortRef.current?.abort();
+    }
+  }, [now]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const cancelUpload = () => {
+    cancelledRef.current = true;
+    abortRef.current?.abort();
+  };
 
   // One or many files from the phone or computer (picked, or dropped on the
   // chat), sent one after another in the order given. Anything WhatsApp would
@@ -429,31 +462,56 @@ export default function MessageInput({ phone, clientId, strategy, crmMediaEnable
     }
     if (skipped.length) toast.error(`Not sent: ${skipped.join('; ')}`);
     if (!ok.length) return;
+    cancelledRef.current = false;
     setSending(true);
     try {
       const { sent, failed } = await sendInOrder(ok, async (file, i) => {
+        if (cancelledRef.current) throw new Error('cancelled');
         const kind = checkFile(file).kind;
-        const step = { index: i + 1, total: ok.length, name: file.name, video: kind === 'video', pct: 0 };
-        setUpload({ ...step, phase: kind === 'image' && file.size > 5 * 1024 * 1024 ? 'preparing' : 'uploading' });
+        const step = { index: i + 1, count: ok.length, name: file.name, video: kind === 'video' };
+        setUpload({ ...step, phase: kind === 'image' && file.size > 5 * 1024 * 1024 ? 'preparing' : 'uploading', pct: 0 });
         const ready = await prepareForUpload(file);
-        setUpload({ ...step, phase: 'uploading' });
+        if (cancelledRef.current) throw new Error('cancelled');
+        const t0 = Date.now();
+        setUpload({ ...step, phase: 'uploading', pct: 0, loaded: 0, bytes: ready.size, startedAt: t0, lastAt: t0 });
         const form = new FormData();
         form.append('file', ready);
         form.append('phone', phone);
         if (clientId) form.append('client_id', clientId);
-        await api.post('/crm/send-media', form, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-          params,
-          // Once every byte is up, the wait is the server: converting a video,
-          // or handing the file to WhatsApp.
-          onUploadProgress: (ev) => {
-            const pct = ev.total ? Math.min(100, Math.round((ev.loaded / ev.total) * 100)) : null;
-            setUpload(u => (u ? { ...u, pct, phase: pct === 100 ? (step.video ? 'converting' : 'sending') : 'uploading' } : u));
-          },
-        });
+        const ctrl = new AbortController();
+        abortRef.current = ctrl;
+        stalledRef.current = false;
+        try {
+          await api.post('/crm/send-media', form, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+            params,
+            signal: ctrl.signal,
+            // Once every byte is up, the wait is the server: converting a video,
+            // or handing the file to WhatsApp.
+            onUploadProgress: (ev) => {
+              const pct = ev.total ? Math.min(100, Math.round((ev.loaded / ev.total) * 100)) : null;
+              setUpload(u => (u ? {
+                ...u, pct, loaded: ev.loaded, bytes: ev.total || u.bytes,
+                lastAt: ev.loaded > (u.loaded || 0) ? Date.now() : u.lastAt,
+                phase: pct === 100 ? (step.video ? 'converting' : 'sending') : 'uploading',
+              } : u));
+            },
+          });
+        } catch (e) {
+          if (e?.code === 'ERR_CANCELED') {
+            throw new Error(stalledRef.current
+              ? `upload stopped, nothing got through for ${STALL_STOP_MS / 60000} minutes. Check the connection and try again`
+              : 'cancelled');
+          }
+          throw e;
+        } finally {
+          abortRef.current = null;
+        }
         onSent?.();
       });
-      if (failed.length) {
+      if (cancelledRef.current) {
+        toast.info(sent ? `Cancelled. ${sent} of ${ok.length} already sent.` : 'Cancelled, nothing was sent.');
+      } else if (failed.length) {
         toast.error(ok.length === 1
           ? (failed[0].error || 'Failed to send file')
           : `Sent ${sent} of ${ok.length}. Failed: ${failed.map(f => `${f.item.name} (${f.error})`).join('; ')}`);
@@ -481,11 +539,23 @@ export default function MessageInput({ phone, clientId, strategy, crmMediaEnable
     }
   }, [droppedFiles]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // "12.4 of 43.0 MB · 1.2 MB/s · about 30 s left", from what has gone up so far.
+  const mb = (b) => (b / 1048576).toFixed(1);
+  const stalledFor = upload?.phase === 'uploading' && upload.lastAt ? Math.floor((now - upload.lastAt) / 1000) : 0;
+  const uploadLine = () => {
+    if (!upload?.bytes) return upload?.pct != null ? `Uploading ${upload.pct}%` : 'Uploading…';
+    const elapsed = Math.max(1, (now - upload.startedAt) / 1000);
+    const speed = (upload.loaded || 0) / elapsed; // bytes per second
+    const left = speed > 0 ? (upload.bytes - upload.loaded) / speed : null;
+    const eta = left == null || upload.loaded < 64 * 1024 ? ''
+      : left < 60 ? ` · about ${Math.max(1, Math.round(left))} s left` : ` · about ${Math.round(left / 60)} min left`;
+    return `Uploading ${mb(upload.loaded || 0)} of ${mb(upload.bytes)} MB${speed > 0 ? ` · ${mb(speed)} MB/s` : ''}${eta}`;
+  };
   const phaseText = !upload ? '' : {
     preparing: 'Making the photo small enough for WhatsApp…',
-    uploading: upload.pct != null ? `Uploading ${upload.pct}%` : 'Uploading…',
-    converting: 'Converting the video for WhatsApp. This can take a minute, keep this page open…',
-    sending: 'Handing it to WhatsApp…',
+    uploading: uploadLine(),
+    converting: 'Uploaded. Converting the video for WhatsApp, this can take a minute. Keep this page open…',
+    sending: 'Uploaded. Handing it to WhatsApp…',
   }[upload.phase];
 
   return (
@@ -496,20 +566,34 @@ export default function MessageInput({ phone, clientId, strategy, crmMediaEnable
         <div
           role="status"
           aria-live="polite"
-          className="absolute bottom-full left-0 right-0 z-30 px-3 py-2 flex items-center gap-3 bg-violet-700 text-white shadow-lg"
+          className={`absolute bottom-full left-0 right-0 z-30 px-3 py-2 flex items-center gap-3 text-white shadow-lg ${stalledFor >= STALL_WARN_S ? 'bg-amber-600' : 'bg-violet-700'}`}
         >
           <span className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin shrink-0" />
           <div className="flex-1 min-w-0">
             <div className="text-sm font-semibold truncate">
-              {upload.total > 1 ? `Sending ${upload.index} of ${upload.total}` : 'Sending'}{upload.video ? ' video' : ''} · {upload.name}
+              {upload.count > 1 ? `Sending ${upload.index} of ${upload.count}` : 'Sending'}{upload.video ? ' video' : ''} · {upload.name}
             </div>
-            <div className="text-xs opacity-90">{phaseText}</div>
+            <div className="text-xs opacity-90">
+              {stalledFor >= STALL_WARN_S
+                ? `Nothing has got through for ${stalledFor} s. The connection may be slow or lost. It stops by itself after ${STALL_STOP_MS / 60000} minutes.`
+                : phaseText}
+            </div>
             {upload.phase === 'uploading' && upload.pct != null && (
               <div className="mt-1 h-1 rounded-full bg-white/25 overflow-hidden">
                 <div className="h-full bg-white transition-all" style={{ width: `${upload.pct}%` }} />
               </div>
             )}
           </div>
+          {/* Only while the file is still going up. Once it is on the server the
+              send will finish, and a Cancel then would claim to stop what it cannot. */}
+          {(upload.phase === 'uploading' || upload.phase === 'preparing') && (
+            <button
+              onClick={cancelUpload}
+              className="shrink-0 px-3 h-8 rounded-lg border border-white/50 bg-transparent text-white text-xs font-medium cursor-pointer"
+            >
+              Cancel
+            </button>
+          )}
         </div>
       )}
       <input

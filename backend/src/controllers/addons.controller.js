@@ -796,12 +796,17 @@ async function sendMedia(req, res) {
     let fileName = req.file.filename;
     let mime = req.file.mimetype;
     const origName = req.file.originalname;
+    // Seen in the logs only once the whole upload has arrived. An upload that
+    // stalls on the phone never gets this far, which is how to tell the two apart.
+    console.log(`[CRM MEDIA] received ${origName} (${(req.file.size / 1048576).toFixed(1)} MB, ${mime}) for ${phone}`);
 
     if (/^video\//.test(mime)) {
       // A phone video (an iPhone .mov, HEVC, or just big) is converted to an
       // MP4 WhatsApp will deliver; one that is already fine goes as it is.
       try {
+        const t0 = Date.now();
         const v = await prepareVideo(req.file.path, mime);
+        if (v.converted) console.log(`[CRM MEDIA] converted ${origName} in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
         fileName = path.basename(v.path);
         mime = 'video/mp4';
       } catch (e) {

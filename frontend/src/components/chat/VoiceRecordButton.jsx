@@ -33,6 +33,11 @@ export default function VoiceRecordButton({ phone, clientId, onSent }) {
   const toast = useToast();
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
+  // What the microphone is actually hearing, newest last. It is the only proof
+  // on screen that the recording is real: a clock keeps counting whether or not
+  // the browser is capturing anything.
+  const [bars, setBars] = useState(() => Array(28).fill(0));
+  const [silent, setSilent] = useState(false);
   const recorderRef = useRef(null);
   // Held between recordings on purpose. Stopping the tracks releases the
   // microphone, and iOS then treats the next getUserMedia as a fresh request
@@ -83,6 +88,43 @@ export default function VoiceRecordButton({ phone, clientId, onSent }) {
     return () => { clearInterval(t); document.removeEventListener('visibilitychange', tick); };
   }, [recording]);
 
+  // Live input level. Failing to build the meter (an old browser, an audio
+  // session that refuses a second consumer) must never cost the recording, so
+  // everything here is allowed to fail quietly and the banner just has no bars.
+  useEffect(() => {
+    if (!recording || !streamRef.current) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    let ctx; let src; let timer;
+    try {
+      ctx = new AC();
+      ctx.resume?.();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      src = ctx.createMediaStreamSource(streamRef.current);
+      src.connect(analyser);
+      const data = new Uint8Array(analyser.fftSize);
+      let lastSoundAt = Date.now();
+      timer = setInterval(() => {
+        analyser.getByteTimeDomainData(data);
+        let peak = 0;
+        for (let i = 0; i < data.length; i++) peak = Math.max(peak, Math.abs(data[i] - 128) / 128);
+        if (peak > 0.02) lastSoundAt = Date.now();
+        setBars(b => [...b.slice(1), Math.min(1, peak * 2.5)]);
+        // Three seconds of nothing is a muted or unplugged microphone far more
+        // often than a pause in speech.
+        setSilent(Date.now() - lastSoundAt > 3000);
+      }, 100);
+    } catch { /* recording carries on without the meter */ }
+    return () => {
+      clearInterval(timer);
+      try { src?.disconnect(); } catch { /* already gone */ }
+      ctx?.close?.().catch(() => {});
+      setBars(Array(28).fill(0));
+      setSilent(false);
+    };
+  }, [recording]);
+
   const start = async () => {
     try {
       // Reuse the open microphone if we still have a live one.
@@ -122,21 +164,50 @@ export default function VoiceRecordButton({ phone, clientId, onSent }) {
   };
 
   if (recording) {
+    const clock = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
     return (
-      <div className="flex items-center gap-1.5">
-        <span className="text-xs text-red-600 font-medium tabular-nums flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-          {String(Math.floor(seconds / 60)).padStart(2, '0')}:{String(seconds % 60).padStart(2, '0')}
-        </span>
-        <button onClick={() => stop(true)} title="Discard"
-          className="w-9 h-9 rounded-xl border border-slate-200 bg-white text-slate-400 hover:text-red-500 cursor-pointer">
-          ✕
-        </button>
-        <button onClick={() => stop(false)} title="Send"
-          className="w-9 h-9 rounded-xl border-0 bg-violet-600 text-white hover:bg-violet-700 cursor-pointer">
-          ➤
-        </button>
-      </div>
+      <>
+        {/* In the icon row: this is the button that is live. */}
+        <div
+          className="shrink-0 w-10 h-10 @xl:w-9 @xl:h-9 rounded-xl bg-red-500 text-white flex items-center justify-center animate-pulse"
+          aria-hidden="true"
+        >
+          🎤
+        </div>
+        {/* Across the whole composer, so it cannot be missed or mistaken for a
+            button that merely opened. Red while it is hearing you, amber when it
+            is not. */}
+        <div
+          role="status"
+          aria-live="polite"
+          className={`absolute bottom-full left-0 right-0 z-30 px-3 py-2 flex items-center gap-3 text-white shadow-lg ${silent ? 'bg-amber-600' : 'bg-red-600'}`}
+        >
+          <span className="flex items-center gap-2 text-sm font-semibold shrink-0">
+            <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse" />
+            {silent ? 'No sound' : 'Recording'}
+          </span>
+          <span className="text-sm tabular-nums shrink-0">{clock}</span>
+          <div className="flex-1 min-w-0 flex items-center justify-end gap-[2px] h-8 overflow-hidden" aria-hidden="true">
+            {silent ? (
+              <span className="text-xs truncate">Cannot hear you. Check the microphone.</span>
+            ) : bars.map((v, i) => (
+              <span key={i} className="w-[3px] rounded-full bg-white/90 shrink-0" style={{ height: `${Math.max(3, Math.round(v * 28))}px` }} />
+            ))}
+          </div>
+          <button
+            onClick={() => stop(true)}
+            className="shrink-0 px-3 h-9 rounded-xl border border-white/50 bg-transparent text-white text-sm cursor-pointer"
+          >
+            Discard
+          </button>
+          <button
+            onClick={() => stop(false)}
+            className="shrink-0 px-4 h-9 rounded-xl border-0 bg-white text-red-700 text-sm font-semibold cursor-pointer"
+          >
+            Send
+          </button>
+        </div>
+      </>
     );
   }
 

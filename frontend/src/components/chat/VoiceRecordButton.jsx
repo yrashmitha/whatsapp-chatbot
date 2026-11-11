@@ -40,6 +40,7 @@ export default function VoiceRecordButton({ phone, clientId, onSent }) {
   const streamRef = useRef(null);
   const chunksRef = useRef([]);
   const abortRef = useRef(false);
+  const startedAtRef = useRef(0);
   const params = clientId ? { client_id: clientId } : {};
 
   const send = useMutation({
@@ -65,10 +66,21 @@ export default function VoiceRecordButton({ phone, clientId, onSent }) {
 
   // A running count, so nobody discovers afterwards that they recorded four
   // minutes of silence.
+  //
+  // Measured from the moment recording began, not counted in ticks. A phone
+  // delays timers when the page is busy, the battery is low or the screen
+  // dims, and a counter that adds one per tick loses every tick that is
+  // late: the clock froze at 00:00 or crawled behind the real recording.
+  // Checking four times a second keeps the display within a quarter second,
+  // and React skips the render when the number of seconds has not changed.
   useEffect(() => {
     if (!recording) { setSeconds(0); return; }
-    const t = setInterval(() => setSeconds(s => s + 1), 1000);
-    return () => clearInterval(t);
+    const tick = () => setSeconds(Math.floor((Date.now() - startedAtRef.current) / 1000));
+    tick();
+    const t = setInterval(tick, 250);
+    // Catch up the moment the screen wakes or the tab comes back.
+    document.addEventListener('visibilitychange', tick);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', tick); };
   }, [recording]);
 
   const start = async () => {
@@ -96,6 +108,7 @@ export default function VoiceRecordButton({ phone, clientId, onSent }) {
       };
       recorderRef.current = recorder;
       recorder.start();
+      startedAtRef.current = Date.now();
       setRecording(true);
     } catch {
       toast.error('No microphone, or permission was refused.');

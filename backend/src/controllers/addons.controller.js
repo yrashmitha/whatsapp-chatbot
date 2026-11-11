@@ -15,6 +15,7 @@ const { waToken, waPhoneId } = require('../services/whatsapp');
 const { PUBLIC_URL, UPLOADS_DIR } = require('../config/env');
 const resolveClientId = require('../middleware/resolveClientId');
 const { generateTarotReading, buildTarotDoc } = require('../services/tarot');
+const { generateGuardianAngel } = require('../services/guardianAngel');
 const { getBrand } = require('../services/branding');
 const { getGenAI, getFreeAstroKey, getGeminiKey } = require('../services/clientKeys');
 const { calculateVedicChart } = require('../services/vedicChart');
@@ -1280,5 +1281,61 @@ async function downloadTarotPdf(req, res) {
   }
 }
 
+/**
+ * Draft the Guardian Angel message for a customer. Part of the tarot add-on:
+ * available to any client that has tarot_reading enabled. Nothing is sent; the
+ * operator reviews the draft in the chat composer.
+ *
+ * POST /api/crm/guardian-angel
+ * Body: { phone, order_id?, story?, name?, gender?: 'male'|'female'|'auto' }
+ * With order_id, the story, name and tarot reading are read from that order
+ * unless the caller overrides story/name.
+ */
+async function triggerGuardianAngel(req, res) {
+  const clientId = resolveClientId(req);
+  const { phone, order_id, story, name, gender } = req.body || {};
+  if (!phone) return res.status(400).json({ error: 'phone required' });
+
+  try {
+    if (!(await db.hasAddon(clientId, 'tarot_reading'))) {
+      return res.status(403).json({ error: 'tarot_reading addon not enabled' });
+    }
+
+    let useStory = (story || '').trim();
+    let useName = (name || '').trim();
+    let reading = '';
+    if (order_id) {
+      const r = await db.pgQuery(
+        'SELECT phone_number, custom_fields, tarot_data FROM orders WHERE order_id=$1 AND client_id IS NOT DISTINCT FROM $2',
+        [order_id, clientId ?? null]);
+      const row = r.rows[0];
+      if (!row) return res.status(404).json({ error: 'Order not found' });
+      const cf = typeof row.custom_fields === 'string' ? JSON.parse(row.custom_fields || '{}') : (row.custom_fields || {});
+      const td = typeof row.tarot_data === 'string' ? JSON.parse(row.tarot_data || '{}') : (row.tarot_data || {});
+      if (!useStory) useStory = (td.question || cf.needs || cf.problems || cf.summary || '').toString().trim();
+      if (!useName) useName = (cf.customer_name || cf.name || '').toString().trim();
+      reading = (td.reading || '').toString();
+    }
+    if (!useStory) return res.status(400).json({ error: 'The customer story is required' });
+
+    let customPrompt = null;
+    try {
+      const config = await db.getPluginConfig(clientId, 'tarot_reading');
+      customPrompt = config?.guardian_angel_prompt || null;
+    } catch { /* no config, use the built-in prompt */ }
+
+    const g = ['male', 'female'].includes(gender) ? gender : 'auto';
+    const { message } = await generateGuardianAngel(clientId, {
+      name: useName, gender: g, story: useStory, reading, customPrompt, orderId: order_id || null,
+    });
+    if (!message) return res.status(502).json({ error: 'The model returned an empty message. Try again.' });
+    res.json({ ok: true, message });
+  } catch (e) {
+    console.error('[GUARDIAN] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+}
+
 module.exports = {
+  triggerGuardianAngel,
   addonCatalog, ADDON_CATALOG, listAddons, toggleAddon, getAddonsStatus, sendMedia, reextractMedia, triggerTarotReading, listLinkableTarot, aiFillOrderDraft, aiPrepareTarot, splitTarotPack, addTarotReading, fetchTarotChart, updateTarotSections, downloadTarotDocx, downloadTarotPdfByOrder, downloadTarotPdf };

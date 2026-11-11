@@ -8,6 +8,7 @@ import MessageInput from './MessageInput';
 import AstroChartModal from './AstroChartModal';
 import HoroscopeQaPanel from './HoroscopeQaPanel';
 import TarotModal from './TarotModal';
+import GuardianAngelModal from './GuardianAngelModal';
 import CreateOrderDrawer from './CreateOrderDrawer';
 import { LeadPanel, LeadBody } from '../leads/LeadControls';
 import Spinner from '../ui/Spinner';
@@ -40,6 +41,7 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
   const [astroModalOpen, setAstroModalOpen]   = useState(false);
   const [horoscopeQaOpen, setHoroscopeQaOpen] = useState(false);
   const [tarotModalOpen, setTarotModalOpen]   = useState(false);
+  const [guardianOpen, setGuardianOpen]       = useState(false);
   const [createOrderOpen, setCreateOrderOpen] = useState(false);
   const [messagePrefill, setMessagePrefill] = useState('');
   const toast = useToast();
@@ -281,6 +283,8 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
       && ['Astrology message', () => setAstroModalOpen(true)],
     addonsData?.addons?.includes('tarot_reading') && perms.can('ai.generate_report')
       && ['Tarot reading', () => setTarotModalOpen(true)],
+    addonsData?.addons?.includes('tarot_reading') && perms.can('ai.generate_report')
+      && ['Guardian Angel message', () => setGuardianOpen(true)],
     addonsData?.addons?.includes('horoscope_followup_qa') && perms.can('ai.generate_report')
       && ['Report Q&A', () => setHoroscopeQaOpen(true)],
   ].filter(Boolean);
@@ -616,6 +620,17 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
             setMessagePrefill(text);
             setAstroModalOpen(false);
           }}
+        />
+      )}
+
+      {/* Guardian Angel message (tarot add-on) */}
+      {guardianOpen && (
+        <GuardianAngelModal
+          phone={phone}
+          clientId={clientId}
+          orders={customerOrders}
+          onClose={() => setGuardianOpen(false)}
+          onDraft={(text) => setMessagePrefill(text)}
         />
       )}
 

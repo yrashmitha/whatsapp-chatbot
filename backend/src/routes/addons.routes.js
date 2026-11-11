@@ -19,6 +19,7 @@ const {
   sendMedia,
   reextractMedia,
   triggerTarotReading,
+  triggerGuardianAngel,
   listLinkableTarot,
   aiFillOrderDraft,
   aiPrepareTarot,
@@ -50,6 +51,8 @@ router.post('/crm/media/reextract', jwtAuth, requirePermission('chat.read'), ree
 
 // Tarot reading — POST /api/crm/tarot-reading (trigger; background when order_id present)
 router.post('/crm/tarot-reading',                        jwtAuth, requirePermission('ai.generate_report'), orderScope, triggerTarotReading);
+// Guardian Angel message draft (tarot add-on) : POST /api/crm/guardian-angel
+router.post('/crm/guardian-angel',                       jwtAuth, requirePermission('ai.generate_report'), orderScope, triggerGuardianAngel);
 // Earlier tarot orders of this customer, for chaining — GET /api/crm/tarot-reading/linkable/:orderId
 router.get('/crm/tarot-reading/linkable/:orderId',       jwtAuth, requirePermission('ai.generate_report'), orderScope, listLinkableTarot);
 // AI-suggest Create Order form values from the chat — POST /api/crm/orders/ai-fill-draft

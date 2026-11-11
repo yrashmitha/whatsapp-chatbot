@@ -373,7 +373,7 @@ async function getPluginConfig(req, res) {
       defaults = { name: 'Meta Conversions', pixel_id: '', api_key: '', ad_account_id: '', audience_id: '' };
     } else if (pluginId === 'tarot_reading') {
       defaults = {
-        name: 'Tarot Reading', prompt: '',
+        name: 'Tarot Reading', prompt: '', guardian_angel_prompt: '',
         page1_heading: '', page1_body: '',
         page2_heading: '', page2_body: '',
         page4_heading: '', page4_body: '',
@@ -404,7 +404,7 @@ async function updatePluginConfig(req, res) {
     return res.status(403).json({ error: 'Forbidden' });
   }
   const { pluginId } = req.params;
-  const { name, prompt, prompt2, api_key, system_prompt, quantum_system_prompt, aura_system_prompt, horoscope_sections, quantum_sections, section_guides, special_note, wa_message_prompt, ai_fill_prompt, greeting, tts_voice, stt_language, verification_prompt, extraction_prompt, expected_account, expected_bank, expected_names, page1_body, page2_body, page4_body, ritual_prompt, quantum_enabled, pixel_id, ad_account_id, audience_id, marriage_system_prompt, marriage_sections, marriage_special_note, marriage_wa_prompt, match_system_prompt, match_sections, match_special_note, match_ai_fill_prompt,
+  const { name, prompt, prompt2, api_key, system_prompt, quantum_system_prompt, aura_system_prompt, horoscope_sections, quantum_sections, section_guides, special_note, wa_message_prompt, ai_fill_prompt, greeting, tts_voice, stt_language, verification_prompt, extraction_prompt, expected_account, expected_bank, expected_names, page1_body, page2_body, page4_body, ritual_prompt, guardian_angel_prompt, quantum_enabled, pixel_id, ad_account_id, audience_id, marriage_system_prompt, marriage_sections, marriage_special_note, marriage_wa_prompt, match_system_prompt, match_sections, match_special_note, match_ai_fill_prompt,
     fixed_instructions, vip_section_label, remedies_section_label, special_questions_title, quantum_report_title, porondam_report_title, porondam_special_note, marriage_report_title, marriage_fixed_instructions, marriage_questions_title, marriage_question_instructions, marriage_ai_fill_prompt, match_report_title, match_questions_title, match_fixed_instructions, match_question_instructions, page1_heading, page2_heading, page4_heading } = req.body;
   try {
     const existing = await db.getPluginConfig(clientId, pluginId);
@@ -443,6 +443,7 @@ async function updatePluginConfig(req, res) {
     if (page2_body !== undefined)    update.page2_body    = page2_body;
     if (page4_body !== undefined)    update.page4_body    = page4_body;
     if (ritual_prompt !== undefined) update.ritual_prompt = ritual_prompt;
+    if (guardian_angel_prompt !== undefined) update.guardian_angel_prompt = guardian_angel_prompt;
     if (pixel_id !== undefined)      update.pixel_id      = pixel_id;
     if (ad_account_id !== undefined) update.ad_account_id = ad_account_id;
     if (audience_id !== undefined)   update.audience_id   = audience_id;

@@ -593,6 +593,13 @@ export default function MessageInput({ phone, clientId, strategy, crmMediaEnable
       : left < 60 ? ` · about ${Math.max(1, Math.round(left))} s left` : ` · about ${Math.round(left / 60)} min left`;
     return `Uploading ${mb(it.loaded || 0)} of ${mb(it.bytes)} MB${speed > 0 ? ` · ${mb(speed)} MB/s` : ''}${eta}`;
   };
+  // How long since the last byte went up: the server is converting the video
+  // and handing it to WhatsApp, and a counter shows it is still working on it.
+  const waited = (it) => {
+    if (!it.uploadedAt) return '';
+    const s = Math.max(0, Math.floor((now - it.uploadedAt) / 1000));
+    return ` ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  };
   const statusLine = (it) => {
     if (it.status === 'uploading' && stalledFor(it) >= STALL_WARN_S) {
       return `Nothing has got through for ${stalledFor(it)} s. The connection may be slow or lost. It stops by itself after ${STALL_STOP_MS / 60000} minutes.`;
@@ -601,8 +608,8 @@ export default function MessageInput({ phone, clientId, strategy, crmMediaEnable
       waiting: 'Waiting',
       preparing: 'Making the photo small enough for WhatsApp…',
       uploading: uploadLine(it),
-      converting: 'Uploaded. Converting the video for WhatsApp, this can take a minute…',
-      sending: 'Uploaded. Handing it to WhatsApp…',
+      converting: `Uploaded. Converting and sending to WhatsApp…${waited(it)}`,
+      sending: `Uploaded. Sending to WhatsApp…${waited(it)}`,
       sent: 'Sent',
       failed: it.error || 'Failed',
       skipped: `Not sent: ${it.error}`,

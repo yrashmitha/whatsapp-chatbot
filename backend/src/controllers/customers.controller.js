@@ -9,7 +9,7 @@
 const axios        = require('axios');
 const db           = require('../db');
 const clientRouter = require('../services/clientRouter');
-const { sendWhatsAppMessage, sendWhatsAppReaction, waToken, waPhoneId, markMessageRead } = require('../services/whatsapp');
+const { sendWhatsAppMessage, sendWhatsAppReaction, waToken, waPhoneId, markMessageRead, freshAgent } = require('../services/whatsapp');
 const { chatSessions } = require('../workers/sessionManager');
 const resolveClientId  = require('../middleware/resolveClientId');
 const { PUBLIC_URL }   = require('../config/env');
@@ -307,7 +307,7 @@ async function sendMessage(req, res) {
       const imgResp = await axios.post(
         `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
         { messaging_product: 'whatsapp', to: phone, type: 'image', image: { link: mediaUrl, ...(message && { caption: message }) } },
-        { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
+        { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' }, timeout: 60000, httpsAgent: freshAgent }
       );
       const wamid = imgResp.data?.messages?.[0]?.id || null;
       await ownership.pauseForManualReply(clientId, phone, req.user?.uid ?? null);
@@ -316,7 +316,7 @@ async function sendMessage(req, res) {
       const vidResp = await axios.post(
         `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
         { messaging_product: 'whatsapp', to: phone, type: 'video', video: { link: mediaUrl, ...(message && { caption: message }) } },
-        { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
+        { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' }, timeout: 60000, httpsAgent: freshAgent }
       );
       const wamid = vidResp.data?.messages?.[0]?.id || null;
       await ownership.pauseForManualReply(clientId, phone, req.user?.uid ?? null);
@@ -329,14 +329,22 @@ async function sendMessage(req, res) {
       const docResp = await axios.post(
         `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
         { messaging_product: 'whatsapp', to: phone, type: 'document', document: { link: mediaUrl, filename: docName, ...(message && { caption: message }) } },
-        { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
+        { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' }, timeout: 60000, httpsAgent: freshAgent }
       );
       const wamid = docResp.data?.messages?.[0]?.id || null;
       await ownership.pauseForManualReply(clientId, phone, req.user?.uid ?? null);
       await db.insertMessage(phone, `[Document: ${docName}]${message ? ` ${message}` : ''}`, 'bot', null, clientId, 'pdf', mediaUrl, wamid, null, { sentBy: req.user?.uid ?? null, sentManual: true });
     }
     res.json({ ok: true, window_warning: !windowOpen });
-  } catch (e) { res.status(500).json({ error: e?.response?.data?.error?.message || e.message }); }
+  } catch (e) {
+    // The media calls above give WhatsApp a minute; a hung one used to wait
+    // until the network gave up. Not retried: it may have gone through.
+    const noAnswer = e.code === 'ECONNABORTED' || e.code === 'ETIMEDOUT' || /timeout|ETIMEDOUT/i.test(e.message || '');
+    if (noAnswer) console.error(`[SEND] WhatsApp did not answer (${type}): ${e.code || ''} ${e.message}`);
+    res.status(500).json({ error: noAnswer
+      ? 'WhatsApp did not answer within a minute. It may still arrive, so check the chat before sending it again.'
+      : (e?.response?.data?.error?.message || e.message) });
+  }
 }
 
 /**

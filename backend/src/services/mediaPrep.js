@@ -26,6 +26,9 @@ const AUDIO_KBPS = 96;
 const MAX_VIDEO_KBPS = 2500;
 // Below this the picture is too poor to be worth sending; ask for a trim instead.
 const MIN_VIDEO_KBPS = 200;
+// All conversion attempts together, kept under the 6 minutes the CRM waits for
+// an answer after the upload, with room left for the hand-off to WhatsApp.
+const CONVERT_BUDGET_MS = 4 * 60 * 1000;
 
 function run(cmd, args, timeout) {
   return new Promise((resolve, reject) => {
@@ -41,7 +44,7 @@ function run(cmd, args, timeout) {
  */
 async function probe(file) {
   const out = await run('ffprobe', ['-v', 'error', '-show_entries',
-    'format=duration:stream=codec_type,codec_name,width,height', '-of', 'json', file], 30000);
+    'format=duration:stream=codec_type,codec_name,width,height,r_frame_rate', '-of', 'json', file], 30000);
   const j = JSON.parse(out);
   const streams = j.streams || [];
   return {
@@ -89,21 +92,38 @@ async function prepareVideo(inputPath, mime) {
   const dir = path.dirname(inputPath);
   const base = path.basename(inputPath, path.extname(inputPath));
   const out = path.join(dir, `${base}-wa.mp4`);
+  // Phones often film at 60 fps. Played in WhatsApp, 30 looks the same, and
+  // converting half the frames takes about 40% less time on a small server.
+  const [num, den] = String(info.video.r_frame_rate || '').split('/').map(Number);
+  const fps = den ? num / den : num;
+  const fpsFilter = fps > 31 ? 'fps=30,' : '';
+  const started = Date.now();
   // Two goes: if the first comes out over the cap (very busy footage), the
-  // second asks for less.
+  // second asks for less, if there is time left for it.
   for (const factor of [1, 0.75]) {
+    const remaining = CONVERT_BUDGET_MS - (Date.now() - started);
+    if (remaining < 20000) {
+      fs.unlink(out, () => {});
+      throw new Error('Converting this video took too long for the server. Try a shorter video, or trim it and send again.');
+    }
     const k = Math.floor(videoK * factor);
-    await run('ffmpeg', [
-      '-y', '-i', inputPath,
-      '-map', '0:v:0', '-map', '0:a:0?',
-      // Fit inside 1280x1280 keeping the shape, with even sides as H.264 needs.
-      // ffmpeg turns the picture upright from the phone's rotation flag.
-      '-vf', "scale='min(1280,iw)':'min(1280,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2",
-      '-c:v', 'libx264', '-preset', 'veryfast', '-profile:v', 'main', '-pix_fmt', 'yuv420p',
-      '-b:v', `${k}k`, '-maxrate', `${Math.floor(k * 1.5)}k`, '-bufsize', `${k * 2}k`,
-      '-c:a', 'aac', '-b:a', `${AUDIO_KBPS}k`, '-ac', '2',
-      '-movflags', '+faststart', '-map_metadata', '-1', '-f', 'mp4', out,
-    ], 300000);
+    try {
+      await run('ffmpeg', [
+        '-y', '-i', inputPath,
+        '-map', '0:v:0', '-map', '0:a:0?',
+        // Fit inside 1280x1280 keeping the shape, with even sides as H.264 needs.
+        // ffmpeg turns the picture upright from the phone's rotation flag.
+        '-vf', `${fpsFilter}scale='min(1280,iw)':'min(1280,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2`,
+        '-c:v', 'libx264', '-preset', 'superfast', '-profile:v', 'main', '-pix_fmt', 'yuv420p',
+        '-b:v', `${k}k`, '-maxrate', `${Math.floor(k * 1.5)}k`, '-bufsize', `${k * 2}k`,
+        '-c:a', 'aac', '-b:a', `${AUDIO_KBPS}k`, '-ac', '2',
+        '-movflags', '+faststart', '-map_metadata', '-1', '-f', 'mp4', out,
+      ], remaining);
+    } catch (e) {
+      fs.unlink(out, () => {});
+      if (e.killed) throw new Error('Converting this video took too long for the server. Try a shorter video, or trim it and send again.');
+      throw e;
+    }
     if (fs.statSync(out).size <= WA_VIDEO_BYTES) {
       fs.unlink(inputPath, () => {});
       return { path: out, converted: true };

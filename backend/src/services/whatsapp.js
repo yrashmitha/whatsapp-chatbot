@@ -7,6 +7,7 @@
 
 'use strict';
 
+const https = require('https');
 const axios  = require('axios');
 const fs     = require('fs');
 const path   = require('path');
@@ -141,6 +142,18 @@ async function sendWhatsAppMessage(to, text, client) {
     throw err;
   }
 }
+
+/**
+ * A fresh connection for every media send to WhatsApp.
+ *
+ * Node keeps connections open to reuse them. When one sits idle, the network
+ * between Railway and WhatsApp can drop it without telling either side, and the
+ * next send written into it waits for an answer that never comes, until the
+ * network gives up minutes later with "read ETIMEDOUT". That is why a few
+ * videos would go and then one, sent after a pause, hung. A new connection per
+ * send costs a fraction of a second and cannot be stale.
+ */
+const freshAgent = new https.Agent({ keepAlive: false });
 
 /**
  * React to a message in the customer's chat with an emoji, the way a person
@@ -542,6 +555,7 @@ module.exports = {
   sendWhatsAppImage,
   sendWhatsAppMessage,
   sendWhatsAppReaction,
+  freshAgent,
   sendWhatsAppAudio,
   sendBotReply,
   markMessageRead,

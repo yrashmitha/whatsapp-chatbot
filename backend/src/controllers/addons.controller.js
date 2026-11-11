@@ -11,7 +11,7 @@ const fs    = require('fs');
 const path  = require('path');
 const db    = require('../db');
 const clientRouter = require('../services/clientRouter');
-const { waToken, waPhoneId } = require('../services/whatsapp');
+const { waToken, waPhoneId, freshAgent } = require('../services/whatsapp');
 const { PUBLIC_URL, UPLOADS_DIR } = require('../config/env');
 const resolveClientId = require('../middleware/resolveClientId');
 const { generateTarotReading, buildTarotDoc } = require('../services/tarot');
@@ -25,6 +25,9 @@ const { analyzePaymentDocument } = require('../services/imageAnalysis');
 const { formatChatLog } = require('../utils/chatLog');
 const { prepareVideo, WA_VIDEO_BYTES } = require('../services/mediaPrep');
 const { uploadOutboundMedia } = require('../config/multer');
+
+/** How long to wait for WhatsApp to accept a media message. */
+const WA_SEND_TIMEOUT_MS = 60000;
 
 /** Free space where uploads are kept, in MB, or null when it cannot be read. */
 function uploadsFreeMb() {
@@ -828,6 +831,10 @@ async function sendMedia(req, res) {
   // No file here usually means the upload filter turned it away, most often an
   // iPhone .mov video, so say what is accepted rather than just "file required".
   if (!req.file) return res.status(400).json({ error: 'That file type cannot be sent. Use a photo, PDF, audio, or a video.' });
+  // Which step was running when something failed, for the log and the
+  // operator. Without it a hung call to WhatsApp and a hung database write look
+  // the same: "read ETIMEDOUT" and a row stuck on "Converting" for minutes.
+  let step = 'checking the client';
   try {
     // Verify addon is enabled for this client
     const addonCheckOk = await db.hasAddon(clientId, 'crm_media_send');
@@ -860,7 +867,7 @@ async function sendMedia(req, res) {
           console.warn('[CRM MEDIA] video not sendable:', e.message);
           // Converting writes a second copy, so a nearly full disk fails here first.
           const free = uploadsFreeMb();
-          const forOperator = /^This /.test(e.message || '') ? e.message
+          const forOperator = /^(This |Converting )/.test(e.message || '') ? e.message
             : free != null && free < 200 ? 'The server is almost out of storage space, so the video could not be converted. Free up space on the server and try again.'
             : 'This video could not be prepared for WhatsApp. Try saving it as MP4.';
           return res.status(400).json({ error: forOperator });
@@ -898,18 +905,31 @@ async function sendMedia(req, res) {
       msgText = `[Audio: ${origName}]`;
     }
 
+    step = 'sending to WhatsApp';
     const mediaResp = await axios.post(
       `https://graph.facebook.com/v18.0/${waPhoneId(client)}/messages`,
       { messaging_product: 'whatsapp', to: phone, ...waPayload },
-      { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' } }
+      // WhatsApp answers in a second or two. Without a limit a call that hangs
+      // waited until the network gave up (ETIMEDOUT), minutes later.
+      { headers: { Authorization: `Bearer ${waToken(client)}`, 'Content-Type': 'application/json' }, timeout: WA_SEND_TIMEOUT_MS, httpsAgent: freshAgent }
     );
     const wamid = mediaResp.data?.messages?.[0]?.id || null;
 
+    step = 'saving it to the chat';
     await db.insertMessage(phone, msgText, 'bot', null, clientId, mediaType, fileUrl, wamid, null, { sentBy: req.user?.uid ?? null, sentManual: true });
     res.json({ ok: true, url: fileUrl });
   } catch (e) {
-    console.error('[CRM MEDIA] send-media error:', e.message);
-    res.status(500).json({ error: e?.response?.data?.error?.message || e.message });
+    console.error(`[CRM MEDIA] send-media error while ${step}: ${e.code || ''} ${e.message}`);
+    const noAnswer = e.code === 'ECONNABORTED' || e.code === 'ETIMEDOUT' || e.code === 'ECONNRESET' || /timeout|ETIMEDOUT/i.test(e.message || '');
+    let msg = e?.response?.data?.error?.message || e.message;
+    if (noAnswer && step === 'sending to WhatsApp') {
+      // Not retried: WhatsApp may have taken it and only the answer was lost,
+      // and a second try would send the customer the file twice.
+      msg = 'WhatsApp did not answer within a minute. It may still arrive, so check the chat before sending it again.';
+    } else if (noAnswer && step === 'saving it to the chat') {
+      msg = 'Sent to WhatsApp, but the database did not answer, so it may not show in the chat.';
+    }
+    res.status(e.response?.status === 400 ? 400 : 500).json({ error: msg });
   }
 }
 

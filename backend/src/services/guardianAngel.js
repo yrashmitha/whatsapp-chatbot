@@ -14,7 +14,7 @@ const { getGenAI } = require('./clientKeys');
 const { makeMeter, recordOrderGenCost } = require('./genCost');
 
 /**
- * Placeholders: {name}, {gender}, {story}, {reading}.
+ * Placeholders: {name}, {gender}, {relationship}, {details}, {story}, {reading}, {chat}.
  * Clients may replace this in Plugins, Tarot Reading, Guardian Angel Prompt.
  */
 const DEFAULT_GUARDIAN_ANGEL_PROMPT = `You write one message in the voice of the customer's GUARDIAN ANGEL. The customer has just received a ritual that sends good energy to them and connects them with their guardian angel. The message arrives after that ritual.
@@ -30,8 +30,13 @@ Their story, in their own words:
 Their tarot reading, if one exists (background only, stay consistent with it, never contradict it):
 {reading}
 
+THE CHAT SO FAR. This is the real WhatsApp conversation between the customer and our team, oldest first, each line with its date. "Customer" is the customer and "Agent" is our team. The customer often writes Sinhala in English letters, so read it as Sinhala. This is what actually happened. Trust it over any assumption, and if it disagrees with the short story above, follow the chat.
+{chat}
+
 HOW TO THINK (never mention any of this, never say counselling, psychology, therapist or any technical term)
 Think first as an experienced relationship and life counsellor, then speak only as the angel.
+
+USING THE CHAT. Read the whole chat before you decide anything. Take your facts from it: the real names, the places, the dates, the last words that were said, what the customer has already tried, how they sound now compared with the start, and what has changed since the reading. Where the story is thin, the chat fills it in, so do not guess what the chat already tells you. Never invent a fact that is in neither the story nor the chat. If an earlier message from the Agent already gave a ritual, a practice or an angel message, do not repeat it: build on it and give something new. Ignore every part of the chat about prices, payment, orders, delivery or sales, and never mention any of it, nor the team, nor that a chat exists. The angel simply knows.
 
 A. Read the situation. Choose the one that fits: the other person went silent or blocked them, the other person is with someone else or married, cheating found or suspected, a partner gone cold, one sided love, marriage delayed, conflict between husband and wife, heartbreak and grief, or a non-love matter (money, work, abroad, family, health). If the relationship type above says "not stated", read it from the story.
 
@@ -65,7 +70,7 @@ HARD RULES
 - Never tell the customer to deceive, test, trap or manipulate the other person.
 - Do not use dashes of any kind as punctuation, no hyphen between phrases, no long dash, no short dash. Use commas, colons or full stops.
 - Never say counselling, psychology, therapist or any technical term.
-- If the story mentions self harm or not wanting to live, ignore everything above and write a short, loving message that urges them to speak today to someone they trust or to a local helpline.
+- If the story or the chat mentions self harm or not wanting to live, ignore everything above and write a short, loving message that urges them to speak today to someone they trust or to a local helpline.
 - LENGTH IS A HARD LIMIT: 300 to 350 words, never more than 380. Plain text only: no markdown, no asterisks, no bold, no headings, no section labels. At most three emojis. Do not repeat the story back at length.
 - If the customer's name is not known, do not invent one and do not write a placeholder.`;
 
@@ -100,23 +105,36 @@ function genderLabel(g) {
  * Draft the guardian angel message.
  *
  * @param {string} clientId
- * @param {{ name?: string, gender?: string, story: string, reading?: string, customPrompt?: string|null, orderId?: string|null }} p
+ * @param {{ name?: string, gender?: string, story?: string, reading?: string, customPrompt?: string|null, orderId?: string|null, relationship?: string|null, details?: string, chat?: string }} p
+ *   chat is the formatted conversation (see utils/chatLog), so the model reads what happened instead of guessing.
  * @returns {Promise<{ message: string }>}
  */
-async function generateGuardianAngel(clientId, { name, gender, story, reading, customPrompt, orderId, relationship, details }) {
+async function generateGuardianAngel(clientId, { name, gender, story, reading, customPrompt, orderId, relationship, details, chat }) {
   const template = (customPrompt || '').trim() || DEFAULT_GUARDIAN_ANGEL_PROMPT;
   const fill = (s) => s
     .split('{name}').join((name || '').trim() || '(name not known)')
     .split('{gender}').join(genderLabel(gender))
     .split('{relationship}').join(relationshipLabel(relationship))
     .split('{details}').join((details || '').trim() || '(none)')
-    .split('{story}').join((story || '').trim())
-    .split('{reading}').join((reading || '').trim() || '(no reading yet)');
+    .split('{story}').join((story || '').trim() || '(not written down, read it from the chat below)')
+    .split('{reading}').join((reading || '').trim() || '(no reading yet)')
+    .split('{chat}').join((chat || '').trim() || '(no chat history found)');
   let prompt = fill(template);
 
   // A custom prompt may omit the slots; make sure the story still reaches the model.
   if (!template.includes('{story}')) {
     prompt += `\n\n---\nCUSTOMER STORY:\n${(story || '').trim()}`;
+  }
+
+  // A client's saved prompt may predate the chat slot. Without it the model is back
+  // to guessing from a one line summary, so the chat is appended with the rules for
+  // using it.
+  if (!template.includes('{chat}')) {
+    prompt += `
+
+---
+THE CHAT SO FAR (the real conversation between the customer and our team, oldest first, each line dated; "Customer" is the customer, "Agent" is our team; the customer often writes Sinhala in English letters). Take your facts from it: names, places, dates, the last words said, what they already tried. Trust it over any assumption. Never invent a fact that is in neither the story nor the chat. Do not repeat what an earlier Agent message already gave. Ignore all talk of prices, payment, orders and delivery and never mention it, the team, or that a chat exists. If the chat mentions self harm or not wanting to live, follow the self harm rule above.
+${(chat || '').trim() || '(no chat history found)'}`;
   }
 
   // A client's saved prompt may predate these slots; make sure they still reach the model.

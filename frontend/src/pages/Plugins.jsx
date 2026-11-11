@@ -56,7 +56,7 @@ const TAROT_EXTRAS = [
   { key: 'ritual_prompt', label: 'Ritual Cross-sell Prompt', rows: 10,
     hint: 'Appended to the end of the Reading Prompt when "Ritual cross-sell" is ticked while generating (ticked by default). Leave blank to append nothing.' },
   { key: 'guardian_angel_prompt', label: 'Guardian Angel Prompt', rows: 14,
-    hint: 'Optional override for the Guardian Angel message. Leave blank to use the built-in prompt. Slots: {name}, {gender}, {story}, {reading}.' },
+    hint: 'Optional override for the Guardian Angel message. Leave blank to use the built-in prompt. Slots: {name}, {gender}, {relationship}, {details}, {story}, {reading}, {chat}. {chat} is the customer\'s real WhatsApp conversation with dates; if your prompt has no {chat}, it is added at the end.' },
   { key: 'page1_heading', label: 'Page 1 Heading', rows: 2, hint: 'Heading of the first constant page.' },
   { key: 'page2_heading', label: 'Page 2 Heading', rows: 2, hint: 'Heading of the second constant page.' },
   { key: 'page4_heading', label: 'Page 4 Heading', rows: 2, hint: 'Heading of the closing disclaimer page.' },

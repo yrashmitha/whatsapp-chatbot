@@ -16,9 +16,19 @@ const {
   updateMedia,
   deleteMedia,
   proxyWhatsAppMedia,
+  listMediaGroups,
+  createMediaGroup,
+  updateMediaGroup,
+  deleteMediaGroup,
 } = require('../controllers/media.controller');
 
 router.post('/upload',  jwtAuth, requirePermission('settings.media'), uploadDisk.single('image'), uploadMediaFile);
+// Saved groups of library items, sent together from the chat. Before /:id and
+// the /:mediaId proxy below, which would otherwise take "groups" as an id.
+router.get('/groups',          jwtAuth, listMediaGroups);
+router.post('/groups',         jwtAuth, requirePermission('settings.media'), createMediaGroup);
+router.patch('/groups/:id',    jwtAuth, requirePermission('settings.media'), updateMediaGroup);
+router.delete('/groups/:id',   jwtAuth, requirePermission('settings.media'), deleteMediaGroup);
 router.get('/',         jwtAuth, listMedia);
 router.post('/',        jwtAuth, requirePermission('settings.media'), createMedia);
 router.patch('/:id',    jwtAuth, requirePermission('settings.media'), updateMedia);

@@ -397,6 +397,24 @@ async function init() {
       console.error('[DB] reactions schema could not be added, carrying on without it:', e.message);
     }
 
+    // Media groups: a named, ordered set of library items the operator sends in
+    // one go ("Ritual pack": poster, video, PDF). Its own step, like reactions,
+    // so a failure here is logged and startup carries on unchanged. media_ids
+    // keeps the order; an item deleted from the library is skipped when sent.
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS client_media_groups (
+          id         SERIAL PRIMARY KEY,
+          client_id  TEXT NOT NULL,
+          name       TEXT NOT NULL,
+          media_ids  INT[] NOT NULL DEFAULT '{}',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_media_groups_client ON client_media_groups(client_id)`);
+    } catch (e) {
+      console.error('[DB] media groups table could not be added, carrying on without it:', e.message);
+    }
+
     // ── CRM auth tables ──────────────────────────────────────────────────────
     await pool.query(`
       CREATE TABLE IF NOT EXISTS crm_users (

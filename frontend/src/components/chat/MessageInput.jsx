@@ -92,6 +92,8 @@ function ImagePickerModal({ open, onClose, phone, clientId, onSent }) {
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState([]); // item ids, in the order tapped
   const [sentCount, setSentCount] = useState(0);  // for "Sending 2 of 5…"
+  const [groups, setGroups]   = useState([]);     // saved sets, sent in one go
+  const [tileStatus, setTileStatus] = useState({}); // item id -> sending | sent | failed, while sending
   const [caption, setCaption] = useState('');
   const [sending, setSending] = useState(false);
   const toast = useToast();
@@ -101,17 +103,26 @@ function ImagePickerModal({ open, onClose, phone, clientId, onSent }) {
     if (!open) return;
     setSelected([]);
     setCaption('');
+    setTileStatus({});
     setLoading(true);
     api.get('/media', { params })
       .then(r => setItems((r.data.media || []).filter(m => /\.(png|jpe?g|pdf|mp4|3gp)(\?|$)/i.test(m.image_url || ''))))
       .catch(() => setItems([]))
       .finally(() => setLoading(false));
+    // Groups are a convenience: if they cannot be loaded, the picker works as before.
+    api.get('/media/groups', { params })
+      .then(r => setGroups(r.data.groups || []))
+      .catch(() => setGroups([]));
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!open) return null;
 
   const chosen = selected.map(id => items.find(m => m.id === id)).filter(Boolean);
   const toggle = (id) => setSelected(s => (s.includes(id) ? s.filter(x => x !== id) : [...s, id]));
+  // A group's items that are still in the library, in the group's order.
+  const groupItems = (g) => (g.media_ids || []).filter(id => items.some(m => m.id === id));
+  // Tapping a group selects exactly its items, in its order, ready for Send.
+  const pickGroup = (g) => { setSelected(groupItems(g)); setCaption(''); setTileStatus({}); };
 
   const handleSend = async () => {
     if (!chosen.length) return;
@@ -119,15 +130,23 @@ function ImagePickerModal({ open, onClose, phone, clientId, onSent }) {
     try {
       // A caption only makes sense on a single item; with several it is not offered.
       const one = chosen.length === 1;
+      setTileStatus({});
       const { sent, failed } = await sendInOrder(chosen, async (m, i) => {
         setSentCount(i + 1);
+        setTileStatus(st => ({ ...st, [m.id]: 'sending' }));
         const pdf = isPdfUrl(m.image_url);
-        await api.post('/send', {
-          phone, type: pdf ? 'document' : isVideoUrl(m.image_url) ? 'video' : 'image',
-          mediaUrl: m.image_url, message: one ? caption.trim() : '',
-          ...(pdf && { filename: m.title }),
-          ...(clientId && { client_id: clientId }),
-        });
+        try {
+          await api.post('/send', {
+            phone, type: pdf ? 'document' : isVideoUrl(m.image_url) ? 'video' : 'image',
+            mediaUrl: m.image_url, message: one ? caption.trim() : '',
+            ...(pdf && { filename: m.title }),
+            ...(clientId && { client_id: clientId }),
+          });
+        } catch (e) {
+          setTileStatus(st => ({ ...st, [m.id]: 'failed' }));
+          throw e;
+        }
+        setTileStatus(st => ({ ...st, [m.id]: 'sent' }));
         onSent?.();
       });
       if (!failed.length) {
@@ -159,9 +178,34 @@ function ImagePickerModal({ open, onClose, phone, clientId, onSent }) {
         ) : items.length === 0 ? (
           <p className="py-6 text-center text-slate-400 text-sm">No images, PDFs or videos saved yet. Add some on the Media page.</p>
         ) : (
+          <>
+          {groups.length > 0 && (
+            <div className="shrink-0">
+              <p className="text-xs font-medium text-slate-500 mb-1.5">Groups</p>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {groups.map(g => {
+                  const n = groupItems(g).length;
+                  const active = n > 0 && selected.length === n && groupItems(g).every((id, i) => selected[i] === id);
+                  return (
+                    <button
+                      key={g.id}
+                      type="button"
+                      onClick={() => pickGroup(g)}
+                      disabled={sending || !n}
+                      className={`shrink-0 px-3 py-2 rounded-xl border text-left cursor-pointer disabled:opacity-40 ${active ? 'border-violet-500 bg-violet-50' : 'border-slate-200 bg-white hover:border-violet-300'}`}
+                    >
+                      <span className="block text-sm font-medium text-slate-800 whitespace-nowrap">{g.name}</span>
+                      <span className="block text-xs text-slate-500">{n} item{n === 1 ? '' : 's'}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-3 gap-2 overflow-y-auto min-h-0">
             {items.map(m => {
               const order = selected.indexOf(m.id);
+              const st = tileStatus[m.id];
               return (
               <button
                 key={m.id}
@@ -172,9 +216,18 @@ function ImagePickerModal({ open, onClose, phone, clientId, onSent }) {
                   order >= 0 ? 'border-violet-500 bg-violet-50' : 'border-transparent hover:border-violet-200'
                 }`}
               >
-                {order >= 0 && (
+                {order >= 0 && !st && (
                   <span className="absolute top-2 right-2 z-10 w-6 h-6 rounded-full bg-violet-600 text-white text-xs font-bold flex items-center justify-center shadow">
                     {order + 1}
+                  </span>
+                )}
+                {/* While sending: each item's own state. */}
+                {st && (
+                  <span
+                    title={st === 'sending' ? 'Sending…' : st === 'sent' ? 'Sent' : 'Not sent'}
+                    className={`absolute top-2 right-2 z-10 w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center shadow ${st === 'sent' ? 'bg-emerald-600' : st === 'failed' ? 'bg-red-600' : 'bg-violet-600'}`}
+                  >
+                    {st === 'sending' ? <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : st === 'sent' ? '✓' : '!'}
                   </span>
                 )}
                 {isVideoUrl(m.image_url) ? (
@@ -199,6 +252,7 @@ function ImagePickerModal({ open, onClose, phone, clientId, onSent }) {
               );
             })}
           </div>
+          </>
         )}
 
         {chosen.length > 0 && (

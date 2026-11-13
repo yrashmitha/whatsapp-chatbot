@@ -89,6 +89,85 @@ async function deleteMedia(req, res) {
 }
 
 /**
+ * The ids from a request that are this client's own library items, in the
+ * order given and without repeats, so a group can never point at another
+ * client's files.
+ *
+ * @param {string} clientId
+ * @param {*} ids
+ * @returns {Promise<number[]>}
+ */
+async function ownMediaIds(clientId, ids) {
+  const wanted = [...new Set((Array.isArray(ids) ? ids : []).map(Number).filter(Number.isInteger))];
+  if (!wanted.length) return [];
+  const { rows } = await db.pgQuery('SELECT id FROM client_media WHERE client_id=$1 AND id = ANY($2::int[])', [clientId, wanted]);
+  const mine = new Set(rows.map(r => r.id));
+  return wanted.filter(id => mine.has(id));
+}
+
+/** A group's name and items from the request body, checked; throws a message for the operator. */
+async function groupFromBody(clientId, body) {
+  const name = String(body?.name || '').trim();
+  if (!name) throw Object.assign(new Error('Give the group a name'), { status: 400 });
+  if (name.length > 60) throw Object.assign(new Error('Keep the name under 60 characters'), { status: 400 });
+  const ids = await ownMediaIds(clientId, body?.media_ids);
+  if (!ids.length) throw Object.assign(new Error('Pick at least one item for the group'), { status: 400 });
+  return { name, ids };
+}
+
+/**
+ * GET /api/media/groups — the client's saved media groups.
+ * An empty list when the table is missing, so the picker still opens.
+ */
+async function listMediaGroups(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    const { rows } = await db.pgQuery(
+      'SELECT id, name, media_ids FROM client_media_groups WHERE client_id=$1 ORDER BY lower(name)', [clientId]);
+    res.json({ groups: rows });
+  } catch (e) {
+    if (e.code === '42P01') return res.json({ groups: [] }); // table not there: no groups
+    res.status(500).json({ error: e.message });
+  }
+}
+
+/** POST /api/media/groups — save a new group. Body: { name, media_ids } in send order. */
+async function createMediaGroup(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    const { name, ids } = await groupFromBody(clientId, req.body);
+    const { rows } = await db.pgQuery(
+      'INSERT INTO client_media_groups (client_id, name, media_ids) VALUES ($1,$2,$3::int[]) RETURNING id', [clientId, name, ids]);
+    res.json({ ok: true, id: rows[0].id });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+}
+
+/** PATCH /api/media/groups/:id — rename a group or change its items and order. */
+async function updateMediaGroup(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    const { name, ids } = await groupFromBody(clientId, req.body);
+    const r = await db.pgQuery(
+      'UPDATE client_media_groups SET name=$3, media_ids=$4::int[] WHERE id=$1 AND client_id=$2', [req.params.id, clientId, name, ids]);
+    if (!r.rowCount) return res.status(404).json({ error: 'Group not found' });
+    res.json({ ok: true });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+}
+
+/** DELETE /api/media/groups/:id — delete a group (its library items stay). */
+async function deleteMediaGroup(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    await db.pgQuery('DELETE FROM client_media_groups WHERE id=$1 AND client_id=$2', [req.params.id, clientId]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+/**
  * GET /api/media/:mediaId — proxy a WhatsApp media file by fetching its temporary URL.
  *
  * @param {import('express').Request}  req
@@ -108,4 +187,5 @@ async function proxyWhatsAppMedia(req, res) {
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 
-module.exports = { uploadMediaFile, listMedia, createMedia, updateMedia, deleteMedia, proxyWhatsAppMedia };
+module.exports = { uploadMediaFile, listMedia, createMedia, updateMedia, deleteMedia, proxyWhatsAppMedia,
+  listMediaGroups, createMediaGroup, updateMediaGroup, deleteMediaGroup };

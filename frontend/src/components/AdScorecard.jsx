@@ -11,11 +11,24 @@ import Spinner from './ui/Spinner';
  * that ad, upsells included. Ads that spent money and sold nothing are shown
  * too, tinted, because those are the ones to stop.
  */
+// Quick periods. Calendar ones are worked out by the server in Sri Lanka time;
+// a week runs Monday to Sunday.
+const RANGES = [
+  { key: 'this_month', label: 'This month', params: { period: 'this_month' }, empty: 'this month' },
+  { key: 'last_week', label: 'Last week', params: { period: 'last_week' }, empty: 'last week' },
+  { key: 'last_month', label: 'Last month', params: { period: 'last_month' }, empty: 'last month' },
+  { key: '14', label: 'Last 14 days', params: { days: 14 }, empty: 'in the last 14 days' },
+  { key: '30', label: 'Last 30 days', params: { days: 30 }, empty: 'in the last 30 days' },
+];
+
 export default function AdScorecard({ clientId }) {
-  const [days, setDays] = useState(30);
+  const [range, setRange] = useState('30');
+  const option = RANGES.find(r => r.key === range) || RANGES[0];
   const { data, isLoading, error } = useQuery({
-    queryKey: ['ad-scorecard', clientId, days],
-    queryFn: () => api.get('/orders/ad-scorecard', { params: { days, ...(clientId ? { client_id: clientId } : {}) } }).then(r => r.data),
+    queryKey: ['ad-scorecard', clientId, range],
+    queryFn: () => api.get('/orders/ad-scorecard', {
+      params: { ...option.params, ...(clientId ? { client_id: clientId } : {}) },
+    }).then(r => r.data),
     staleTime: 5 * 60_000,
     retry: false,
   });
@@ -33,6 +46,38 @@ export default function AdScorecard({ clientId }) {
   const points = data?.price_points || [];
   const hasOther = (data?.totals?.other_sales || 0) > 0;
 
+  // The table as a CSV file: the same rows, columns and totals as on screen,
+  // with plain numbers so Excel or Sheets can sum and sort them. Starts with a
+  // byte-order mark so Excel reads Sinhala ad names correctly.
+  const exportCsv = () => {
+    if (!data?.ads?.length) return;
+    const q = (v) => {
+      const t = v == null ? '' : String(v);
+      return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+    };
+    const money = (v) => (v == null ? '' : Number(v).toFixed(2));
+    const per = cur === 'LKR' ? 'Return on spend (x)' : `Revenue (Rs) per ${cur || 'unit'} 1 spent`;
+    const header = ['Ad', 'Ad ID', 'Status', 'People', 'Repeat sales', `Spend (${cur || '?'})`,
+      ...points.map(p => `Rs ${p} sales`), 'Other sales', 'Total sales', 'Total revenue (Rs)', per];
+    const line = (r, name, id, status) => [name, id, status, r.people, r.repeat_sales, money(r.spend),
+      ...points.map(p => r.by_price[p] || 0), r.other_sales || 0, r.sales, Math.round(r.revenue),
+      r.revenue_per_spend == null ? '' : r.revenue_per_spend.toFixed(2)];
+    const rows = [
+      [`Revenue by ad, ${data.since} to ${data.until}`],
+      ['Each customer counts for the ad that first brought them in; all their later sales count for that ad too.'],
+      [],
+      header,
+      ...data.ads.map(a => line(a, a.ad_name || a.headline || `Ad ${a.ad_id}`, a.ad_id, a.status || '')),
+      line(data.totals, 'Total', '', ''),
+    ];
+    const csv = '\uFEFF' + rows.map(r => r.map(q).join(',')).join('\r\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = `revenue-by-ad_${data.since}_to_${data.until}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
   const th = 'px-3 py-2 text-left text-xs font-medium whitespace-nowrap';
   const td = 'px-3 py-2 text-sm whitespace-nowrap';
 
@@ -45,17 +90,28 @@ export default function AdScorecard({ clientId }) {
             Customers whose first ad click was in the period, and every sale they made after it, upsells included. Spend from Meta for the same days.
           </p>
         </div>
-        <div className="flex rounded-lg overflow-hidden shrink-0" style={{ border: '1px solid var(--border)' }}>
-          {[14, 30].map(d => (
+        <div className="flex items-center gap-2 flex-wrap max-w-full">
+        <button
+          onClick={exportCsv}
+          disabled={!data?.ads?.length}
+          title="Download this table as a CSV file for Excel or Google Sheets"
+          className="px-3 py-1.5 text-xs font-medium rounded-lg cursor-pointer disabled:opacity-40 disabled:cursor-default"
+          style={{ border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)' }}
+        >
+          ⬇ Export
+        </button>
+        <div className="flex rounded-lg overflow-x-auto max-w-full" style={{ border: '1px solid var(--border)' }}>
+          {RANGES.map(r => (
             <button
-              key={d}
-              onClick={() => setDays(d)}
-              className="px-3 py-1.5 text-xs font-medium border-0 cursor-pointer"
-              style={{ background: d === days ? 'var(--accent)' : 'transparent', color: d === days ? '#fff' : 'var(--text-2)' }}
+              key={r.key}
+              onClick={() => setRange(r.key)}
+              className="px-3 py-1.5 text-xs font-medium border-0 cursor-pointer whitespace-nowrap"
+              style={{ background: r.key === range ? 'var(--accent)' : 'transparent', color: r.key === range ? '#fff' : 'var(--text-2)' }}
             >
-              Last {d} days
+              {r.label}
             </button>
           ))}
+        </div>
         </div>
       </div>
 
@@ -71,7 +127,7 @@ export default function AdScorecard({ clientId }) {
         ) : error ? (
           <p className="px-4 py-6 text-sm" style={{ color: '#f87171' }}>{error.response?.data?.error || 'Could not load the ad figures.'}</p>
         ) : !data?.ads?.length ? (
-          <p className="px-4 py-6 text-sm" style={{ color: 'var(--text-3)' }}>No ad clicks or ad spend in the last {days} days.</p>
+          <p className="px-4 py-6 text-sm" style={{ color: 'var(--text-3)' }}>No ad clicks or ad spend {option.empty}.</p>
         ) : (
           <table className="w-full border-collapse">
             <thead>

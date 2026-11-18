@@ -402,8 +402,22 @@ async function adScorecard(req, res) {
   const days = [7, 14, 30, 60, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 30;
   // The period in Sri Lanka time, today included.
   const ymd = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
-  const until = ymd(new Date());
-  const since = ymd(new Date(new Date(`${until}T12:00:00Z`).getTime() - (days - 1) * 864e5));
+  const today = ymd(new Date());
+  const shift = (d, n) => ymd(new Date(new Date(`${d}T12:00:00Z`).getTime() + n * 864e5));
+  let since = shift(today, -(days - 1));
+  let until = today;
+  // Calendar periods: this month so far, last week (Monday to Sunday), last month.
+  const period = ['this_month', 'last_week', 'last_month'].includes(req.query.period) ? req.query.period : null;
+  if (period === 'this_month') {
+    since = `${today.slice(0, 8)}01`;
+  } else if (period === 'last_month') {
+    until = shift(`${today.slice(0, 8)}01`, -1);
+    since = `${until.slice(0, 8)}01`;
+  } else if (period === 'last_week') {
+    const dow = (new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7; // Monday = 0
+    since = shift(today, -dow - 7);
+    until = shift(since, 6);
+  }
 
   try {
     const cohort = `cu.client_id = $1 AND cu.first_ad_id IS NOT NULL
@@ -488,7 +502,7 @@ async function adScorecard(req, res) {
     const sum = (k) => list.reduce((a, r) => a + (r[k] || 0), 0);
     const totalSpend = spendError ? null : sum('spend');
     res.json({
-      days, since, until, currency, spend_error: spendError, price_points: pricePoints,
+      days, period, since, until, currency, spend_error: spendError, price_points: pricePoints,
       ads: list,
       totals: {
         spend: totalSpend, people: sum('people'), buyers: sum('buyers'), sales: sum('sales'),

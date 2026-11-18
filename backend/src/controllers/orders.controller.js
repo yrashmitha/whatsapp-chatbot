@@ -408,7 +408,7 @@ async function adScorecard(req, res) {
   try {
     const cohort = `cu.client_id = $1 AND cu.first_ad_id IS NOT NULL
       AND (cu.first_ad_at AT TIME ZONE '${TZ}')::date BETWEEN $2::date AND $3::date`;
-    const [people, sales, names] = await Promise.all([
+    const [people, sales, names, catalog] = await Promise.all([
       db.pgQuery(`SELECT cu.first_ad_id AS ad_id, COUNT(*)::int AS people, MAX(cu.first_ad_headline) AS headline
                     FROM customers cu WHERE ${cohort} GROUP BY cu.first_ad_id`, [clientId, since, until]),
       db.pgQuery(`SELECT cu.first_ad_id AS ad_id, cu.phone_number, (${VALUE_SQL}) AS value
@@ -416,6 +416,8 @@ async function adScorecard(req, res) {
                     JOIN orders o ON o.phone_number = cu.phone_number AND o.client_id = cu.client_id
                    WHERE ${cohort} AND o.status = ANY($4)`, [clientId, since, until, PAID_STATUSES]),
       db.pgQuery('SELECT ad_id, name, effective_status FROM ad_details WHERE client_id = $1', [clientId]),
+      db.pgQuery(`SELECT DISTINCT ROUND(price)::int AS price FROM client_products
+                   WHERE client_id = $1 AND active AND price > 0`, [clientId]).catch(() => ({ rows: [] })),
     ]);
 
     const nameOf = new Map(names.rows.map(r => [r.ad_id, r]));
@@ -458,9 +460,19 @@ async function adScorecard(req, res) {
       spendError = e.message;
     }
 
-    // Columns: the prices sales were actually made at, the five most common,
-    // cheapest first. Anything else is counted under "other".
-    const pricePoints = [...valueCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([v]) => v).sort((a, b) => a - b);
+    // Columns, cheapest first. Every package in the product catalog gets one,
+    // even with no sales in the period, so a package that is not selling shows
+    // as a row of zeros instead of disappearing. Then the other prices sales
+    // were actually made at (a discount, a custom deal), most common first, up
+    // to MAX_COLUMNS. Anything left over is counted under "other". A big shop
+    // catalog would make the table unreadable, so past MAX_COLUMNS prices the
+    // catalog is ignored and the columns come from sales alone.
+    const MAX_COLUMNS = 8;
+    const catalogPrices = catalog.rows.map(r => r.price).filter(p => p > 0);
+    const fixed = catalogPrices.length <= MAX_COLUMNS ? catalogPrices : [];
+    const extra = [...valueCount.entries()].filter(([v]) => !fixed.includes(v))
+      .sort((a, b) => b[1] - a[1]).slice(0, Math.max(0, MAX_COLUMNS - fixed.length)).map(([v]) => v);
+    const pricePoints = [...fixed, ...extra].sort((a, b) => a - b);
     const list = [...ads.values()].map(r => {
       const byPrice = Object.fromEntries(pricePoints.map(p => [p, r.values.get(p) || 0]));
       const inColumns = Object.values(byPrice).reduce((a, b) => a + b, 0);

@@ -63,8 +63,13 @@ export default function AdScorecard({ clientId }) {
       ...points.map(p => r.by_price[p] || 0), r.other_sales || 0, r.sales, Math.round(r.revenue),
       r.revenue_per_spend == null ? '' : r.revenue_per_spend.toFixed(2)];
     const rows = [
-      [`Revenue by ad, ${data.since} to ${data.until}`],
-      ['Each customer counts for the ad that first brought them in; all their later sales count for that ad too.'],
+      [`Revenue by ad: ${option.label} (${data.since} to ${data.until})`],
+      [`Customers: those whose FIRST ad click was between ${data.since} and ${data.until} (Sri Lanka time). Each counts for the ad that first brought them in.`],
+      ['Sales: every paid order of those customers, whenever it was paid (so it can include payments after the end date). Upsells count for the first ad. Rs 0 pack items are not counted.'],
+      [`Spend: Meta ad spend from ${data.since} to ${data.until} only.`],
+      ['Not the same as Income on the Orders page: that is every payment confirmed in the period, from all customers, ads or not.'],
+      ...(data.spend_error ? [[`Spend could not be read from Meta, so it is left out: ${data.spend_error}`]] : []),
+      [`Exported ${new Date().toLocaleString('en-GB', { timeZone: 'Asia/Colombo' })} (Sri Lanka time)`],
       [],
       header,
       ...data.ads.map(a => line(a, a.ad_name || a.headline || `Ad ${a.ad_id}`, a.ad_id, a.status || '')),

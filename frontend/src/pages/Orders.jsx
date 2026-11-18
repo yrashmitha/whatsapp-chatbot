@@ -81,6 +81,7 @@ function OrdersPhone() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [priceFilter, setPriceFilter] = useState(''); // '' any, a rupee amount, or 'none'
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [dir, setDir] = useState('desc'); // order date sort direction
@@ -142,10 +143,23 @@ function OrdersPhone() {
     enabled: isEnabled('income_summary'),
   });
 
+
+  // The prices orders were taken at, for the price filter. If the list cannot
+  // be loaded the filter is simply not shown.
+  const { data: priceData } = useQuery({
+    queryKey: ['order-price-options', clientId],
+    queryFn: () => api.get('/orders/price-options', { params: clientId ? { client_id: clientId } : {} }).then(r => r.data),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const priceOptions = (priceData?.prices || []).filter(p => p.price > 0);
+  const hasNoPrice = (priceData?.prices || []).some(p => p.price === 0);
+
   const params = {
     page, limit: 20, dir,
     ...(search && { search }),
     ...(statusFilter && { status: statusFilter }),
+    ...(priceFilter && { price: priceFilter }),
     ...(dateFrom && { date_from: dateFrom }),
     ...(dateTo && { date_to: dateTo }),
     ...(operator && { operator }),
@@ -296,7 +310,7 @@ function OrdersPhone() {
   };
 
   const handleExport = async () => {
-    const exportParams = new URLSearchParams({ ...(clientId && { client_id: clientId }), ...(statusFilter && { status: statusFilter }), ...(search && { search }), ...(dateFrom && { date_from: dateFrom }), ...(dateTo && { date_to: dateTo }), ...(operator && { operator }) });
+    const exportParams = new URLSearchParams({ ...(clientId && { client_id: clientId }), ...(statusFilter && { status: statusFilter }), ...(priceFilter && { price: priceFilter }), ...(search && { search }), ...(dateFrom && { date_from: dateFrom }), ...(dateTo && { date_to: dateTo }), ...(operator && { operator }) });
     const token = localStorage.getItem('crm_token');
     const res = await fetch(`/api/orders/export?${exportParams}`, { headers: { Authorization: `Bearer ${token}` } });
     const blob = await res.blob();
@@ -339,14 +353,14 @@ function OrdersPhone() {
 
 
   const openOrder = orders.find(x => x.id === openOrderId) || null;
-  const filtersActive = !!(operator || dateFrom || dateTo);
+  const filtersActive = !!(operator || dateFrom || dateTo || priceFilter);
   // Which preset the current dates are, if any; dates that match none are a custom range.
   const activePreset = (dateFrom && dateTo)
     ? (DATE_PRESETS.find(p => { const [a, b] = p.range(); return a === dateFrom && b === dateTo; })?.key || null)
     : null;
   const customDates = !!(dateFrom || dateTo) && !activePreset;
   // What the phone's More panel is hiding that is switched on, so a hidden filter never goes unnoticed.
-  const moreCount = (operator ? 1 : 0) + (dir !== 'desc' ? 1 : 0);
+  const moreCount = (operator ? 1 : 0) + (priceFilter ? 1 : 0) + (dir !== 'desc' ? 1 : 0);
   // The phone's date select: a preset, a custom range, or nothing.
   const dateSelect = activePreset || ((customDates || customOpen) ? 'custom' : '');
   const statusOptions = [...QUICK_STATUSES, ...MORE_STATUSES];
@@ -455,6 +469,18 @@ function OrdersPhone() {
 
             {filtersOpen && (
               <div className="flex flex-col gap-3 mb-2 p-3 rounded-xl" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+                {(priceOptions.length > 0 || priceFilter) && (
+                  <label className="flex flex-col gap-1 text-xs" style={{ color: 'var(--text-3)' }}>
+                    Price
+                    <select value={priceFilter} onChange={e => { setPriceFilter(e.target.value); setPage(1); }}
+                      className={`${fieldCls} text-base`}
+                      style={priceFilter ? { ...fieldStyle, borderColor: 'var(--accent)', color: 'var(--accent)' } : fieldStyle}>
+                      <option value="">All prices</option>
+                      {priceOptions.map(p => <option key={p.price} value={String(p.price)}>Rs {p.price.toLocaleString()} ({p.count})</option>)}
+                      {hasNoPrice && <option value="none">No price recorded</option>}
+                    </select>
+                  </label>
+                )}
                 {canPickOperator && (
                   <label className="flex flex-col gap-1 text-xs" style={{ color: 'var(--text-3)' }}>
                     Whose sales
@@ -480,7 +506,7 @@ function OrdersPhone() {
                   {(moreCount > 0 || filtersActive || statusFilter) && (
                     <button type="button" className="text-sm cursor-pointer bg-transparent border-0 ml-auto"
                       style={{ color: 'var(--accent)' }}
-                      onClick={() => { setOperator(''); setDateFrom(''); setDateTo(''); setStatusFilter(''); setCustomOpen(false); setDir('desc'); setPage(1); }}>
+                      onClick={() => { setOperator(''); setDateFrom(''); setDateTo(''); setStatusFilter(''); setPriceFilter(''); setCustomOpen(false); setDir('desc'); setPage(1); }}>
                       Clear all
                     </button>
                   )}
@@ -522,7 +548,7 @@ function OrdersPhone() {
               </div>
               {(search || statusFilter || filtersActive) && (
                 <button type="button" className="mt-3 text-sm cursor-pointer bg-transparent border-0" style={{ color: 'var(--accent)' }}
-                  onClick={() => { setSearch(''); setStatusFilter(''); setOperator(''); setDateFrom(''); setDateTo(''); setPage(1); }}>
+                  onClick={() => { setSearch(''); setStatusFilter(''); setPriceFilter(''); setOperator(''); setDateFrom(''); setDateTo(''); setPage(1); }}>
                   Clear everything
                 </button>
               )}

@@ -91,6 +91,7 @@ export default function OrdersWeb() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [priceFilter, setPriceFilter] = useState(''); // '' any, a rupee amount, or 'none'
   // Defaults to the current month; the income badges follow the same range.
   const [dateFrom, setDateFrom] = useState(() => presetRange('month').from);
   const [dateTo, setDateTo] = useState(() => presetRange('month').to);
@@ -152,10 +153,23 @@ export default function OrdersWeb() {
     enabled: isEnabled('income_summary'),
   });
 
+
+  // The prices orders were taken at, for the price filter. If the list cannot
+  // be loaded the filter is simply not shown.
+  const { data: priceData } = useQuery({
+    queryKey: ['order-price-options', clientId],
+    queryFn: () => api.get('/orders/price-options', { params: clientId ? { client_id: clientId } : {} }).then(r => r.data),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const priceOptions = (priceData?.prices || []).filter(p => p.price > 0);
+  const hasNoPrice = (priceData?.prices || []).some(p => p.price === 0);
+
   const params = {
     page, limit: 20, dir,
     ...(search && { search }),
     ...(statusFilter && { status: statusFilter }),
+    ...(priceFilter && { price: priceFilter }),
     ...(dateFrom && { date_from: dateFrom }),
     ...(dateTo && { date_to: dateTo }),
     ...(operator && { operator }),
@@ -244,7 +258,7 @@ export default function OrdersWeb() {
   };
 
   const handleExport = async () => {
-    const exportParams = new URLSearchParams({ ...(clientId && { client_id: clientId }), ...(statusFilter && { status: statusFilter }), ...(search && { search }), ...(dateFrom && { date_from: dateFrom }), ...(dateTo && { date_to: dateTo }), ...(operator && { operator }) });
+    const exportParams = new URLSearchParams({ ...(clientId && { client_id: clientId }), ...(statusFilter && { status: statusFilter }), ...(priceFilter && { price: priceFilter }), ...(search && { search }), ...(dateFrom && { date_from: dateFrom }), ...(dateTo && { date_to: dateTo }), ...(operator && { operator }) });
     const token = localStorage.getItem('crm_token');
     const res = await fetch(`/api/orders/export?${exportParams}`, { headers: { Authorization: `Bearer ${token}` } });
     const blob = await res.blob();
@@ -314,6 +328,15 @@ export default function OrdersWeb() {
             <option value="">All statuses</option>
             {STATUS_FILTER_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
+          {(priceOptions.length > 0 || priceFilter) && (
+            <select value={priceFilter} onChange={e => { setPriceFilter(e.target.value); setPage(1); }}
+              className={`text-sm border rounded-lg px-3 py-1.5 outline-none focus:border-violet-400 bg-white ${priceFilter ? 'border-violet-400 text-violet-600' : 'border-slate-200'}`}
+              title="Show only orders at this price">
+              <option value="">All prices</option>
+              {priceOptions.map(p => <option key={p.price} value={String(p.price)}>Rs {p.price.toLocaleString()} ({p.count})</option>)}
+              {hasNoPrice && <option value="none">No price recorded</option>}
+            </select>
+          )}
           {canPickOperator && (
             <select value={operator} onChange={e => { setOperator(e.target.value); setPage(1); }}
               className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-violet-400"

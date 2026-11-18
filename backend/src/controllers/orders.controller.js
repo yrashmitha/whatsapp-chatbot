@@ -16,6 +16,20 @@ const clientRouter = require('../services/clientRouter');
 const { DELIVERY_BASE_URL } = require('../config/env');
 
 /**
+ * The price filter: a whole rupee amount, or 'none' for orders with no price
+ * recorded. Matched on the same order value the income figures use (price,
+ * else the paid amount, else the items), rounded to the rupee. Anything else
+ * is ignored, so a bad value shows every order instead of failing.
+ */
+function priceCondition(raw, params) {
+  const v = String(raw || '').trim();
+  if (v === 'none') return `ROUND(${VALUE_SQL}) = 0`;
+  if (!/^\d{1,9}$/.test(v)) return null;
+  params.push(parseInt(v, 10));
+  return `ROUND(${VALUE_SQL}) = $${params.length}`;
+}
+
+/**
  * GET /api/orders — paginated order list with optional status and search filters.
  *
  * @param {import('express').Request}  req
@@ -54,6 +68,8 @@ async function listOrders(req, res) {
     if (date_to)    { params.push(date_to);          conditions.push(`(o.created_at AT TIME ZONE '${TZ}')::date <= $${params.length}::date`); }
     if (operator === 'bot') { conditions.push(`o.credited_to IS NULL`); }
     else if (operator)      { params.push(parseInt(operator, 10)); conditions.push(`o.credited_to=$${params.length}`); }
+    const priceCond = priceCondition(req.query.price, params);
+    if (priceCond) conditions.push(priceCond);
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     params.push(limit);  const limitIdx  = params.length;
     params.push(offset); const offsetIdx = params.length;
@@ -66,10 +82,12 @@ async function listOrders(req, res) {
     if (date_to)    { countParams.push(date_to);         countConditions.push(`(created_at AT TIME ZONE '${TZ}')::date <= $${countParams.length}::date`); }
     if (operator === 'bot') { countConditions.push(`credited_to IS NULL`); }
     else if (operator)      { countParams.push(parseInt(operator, 10)); countConditions.push(`credited_to=$${countParams.length}`); }
+    const countPrice = priceCondition(req.query.price, countParams);
+    if (countPrice) countConditions.push(countPrice);
     const countWhere = countConditions.length ? `WHERE ${countConditions.join(' AND ')}` : '';
     const [rows, countRes] = await Promise.all([
       db.pgQuery(`SELECT o.*, o.phone_number AS phone, cu.name AS customer_name FROM orders o LEFT JOIN customers cu ON cu.phone_number=o.phone_number ${where} ORDER BY o.created_at ${dir}, o.order_id ${dir} LIMIT $${limitIdx} OFFSET $${offsetIdx}`, params),
-      db.pgQuery(`SELECT COUNT(*) FROM orders ${countWhere}`, countParams),
+      db.pgQuery(`SELECT COUNT(*) FROM orders o ${countWhere}`, countParams),
     ]);
     const orders = rows.rows.map(o => ({
       ...o,
@@ -100,6 +118,8 @@ async function exportOrders(req, res) {
     if (search)    { params.push(`%${search}%`);  conditions.push(`(o.order_id ILIKE $${params.length} OR o.phone_number ILIKE $${params.length})`); }
     if (date_from) { params.push(date_from);       conditions.push(`(o.created_at AT TIME ZONE '${TZ}')::date >= $${params.length}::date`); }
     if (date_to)   { params.push(date_to);         conditions.push(`(o.created_at AT TIME ZONE '${TZ}')::date <= $${params.length}::date`); }
+    const priceCond = priceCondition(req.query.price, params);
+    if (priceCond) conditions.push(priceCond);
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const r = await db.pgQuery(
       `SELECT o.order_id, o.phone_number, cu.name AS customer_name, o.status,
@@ -396,6 +416,30 @@ async function ordersByAd(req, res) {
  * @param {import('express').Response} res
  * @returns {Promise<void>}
  */
+/**
+ * GET /api/orders/price-options: the prices orders were taken at, for the
+ * price filter. The most common 30, cheapest first, with how many orders each.
+ * Orders with no price recorded come back as price 0. On any error the list is
+ * empty and the page simply shows no price filter.
+ */
+async function priceOptions(req, res) {
+  const clientId = resolveClientId(req);
+  try {
+    const params = [];
+    let where = '';
+    if (clientId) { params.push(clientId); where = 'WHERE o.client_id = $1'; }
+    const r = await db.pgQuery(
+      `SELECT ROUND(${VALUE_SQL})::bigint AS price, COUNT(*)::int AS count
+         FROM orders o ${where}
+        GROUP BY 1 ORDER BY 2 DESC LIMIT 30`, params);
+    const prices = r.rows.map(x => ({ price: Number(x.price), count: x.count })).sort((a, b) => a.price - b.price);
+    res.json({ prices });
+  } catch (e) {
+    console.error('[ORDERS] price options failed:', e.message);
+    res.json({ prices: [] });
+  }
+}
+
 async function adScorecard(req, res) {
   const clientId = resolveClientId(req);
   if (!clientId) return res.status(400).json({ error: 'client_id required' });
@@ -746,5 +790,5 @@ async function deleteRemark(req, res) {
 }
 
 module.exports = {
-  adScorecard,
+  adScorecard, priceOptions,
   ordersByAd, listOrders, exportOrders, incomeSummary, updateStatus, updateFields, updateNotes, createOrder, deleteOrder, addRemark, deleteRemark };

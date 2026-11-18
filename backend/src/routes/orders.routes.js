@@ -22,9 +22,12 @@ const {
   addRemark,
   deleteRemark,
   adScorecard,
+  priceOptions,
 } = require('../controllers/orders.controller');
 
 router.get('/',               jwtAuth, requirePermission('orders.view'), listOrders);
+// The prices orders were taken at, for the price filter
+router.get('/price-options',  jwtAuth, requirePermission('orders.view'), priceOptions);
 router.post('/',              jwtAuth, requirePermission('orders.create'), createOrder);
 router.get('/export',         jwtAuth, requirePermission('orders.export'), exportOrders);
 router.get('/income-summary', jwtAuth, incomeSummary);

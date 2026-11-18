@@ -508,14 +508,77 @@ async function loadAudioBytes(audioUrl) {
 }
 
 /**
+ * What kind of audio a file really is, from its first bytes, and the type to
+ * declare to Meta. Null when it is something WhatsApp cannot play (a browser's
+ * raw WebM recording) or cannot be recognised.
+ *
+ * The type used to come from the file name, and anything unrecognised was
+ * declared audio/ogg. When a recording's conversion to a voice note failed,
+ * the raw .webm (or an iPhone's MP4 named .webm) went to Meta labelled as an
+ * Ogg voice note: accepted, shown to the customer with a duration, and then
+ * "This audio is not available because something is wrong with the audio file".
+ *
+ * @param {Buffer} b
+ * @returns {string|null}
+ */
+function sniffAudioMime(b) {
+  if (!b || b.length < 12) return null;
+  const head = b.subarray(0, 4).toString('latin1');
+  const box = b.subarray(4, 8).toString('latin1');
+  if (head === 'OggS') return 'audio/ogg';
+  if (['ftyp', 'moov', 'moof', 'mdat', 'free'].includes(box)) return 'audio/mp4';
+  if (head === '#!AM') return 'audio/amr';
+  if (head.startsWith('ID3')) return 'audio/mpeg';
+  if (b[0] === 0xFF && (b[1] & 0xF6) === 0xF0) return 'audio/aac';   // ADTS
+  if (b[0] === 0xFF && (b[1] & 0xE0) === 0xE0) return 'audio/mpeg';  // MP3 frame
+  return null; // WebM (1A 45 DF A3) and anything else
+}
+
+/**
+ * Bytes WhatsApp will play, with their real type. A recording it cannot play
+ * gets one more go at conversion to an Ogg voice note; if that fails too, this
+ * throws, and nothing is sent rather than a broken voice note.
+ *
+ * @param {{buffer: Buffer, name: string}} file
+ * @returns {Promise<{buffer: Buffer, mime: string, name: string}>}
+ */
+async function ensurePlayableAudio({ buffer, name }) {
+  const mime = sniffAudioMime(buffer);
+  // The name's extension matches what the file really is (an iPhone recording
+  // arrives as MP4 named .webm).
+  const EXT = { 'audio/ogg': '.ogg', 'audio/mp4': '.m4a', 'audio/mpeg': '.mp3', 'audio/aac': '.aac', 'audio/amr': '.amr' };
+  if (mime) return { buffer, mime, name: `${path.basename(name, path.extname(name))}${EXT[mime]}` };
+  // Required here, not at the top: audioTranscode is only needed on this path.
+  const { transcodeToOggOpus } = require('./audioTranscode');
+  const base = `retry-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const tmp = path.join(UPLOADS_DIR, `${base}${path.extname(name) || '.webm'}`);
+  fs.writeFileSync(tmp, buffer);
+  let out = tmp;
+  try {
+    out = await transcodeToOggOpus(tmp);
+    const converted = fs.readFileSync(out);
+    if (sniffAudioMime(converted) !== 'audio/ogg') throw new Error('the conversion did not produce a voice note');
+    console.log(`[WA-AUDIO] ${name} was not playable on WhatsApp; converted it now`);
+    return { buffer: converted, mime: 'audio/ogg', name: `${path.basename(name, path.extname(name))}.ogg` };
+  } catch (e) {
+    throw Object.assign(new Error(`This recording could not be made into a voice note WhatsApp can play (${e.message}), so it was not sent.`), { notSendable: true });
+  } finally {
+    fs.unlink(tmp, () => {});
+    if (out !== tmp) fs.unlink(out, () => {});
+  }
+}
+
+/**
  * Send an audio file to a WhatsApp recipient.
  *
  * @param {string}      to       - Recipient E.164 phone number
  * @param {string}      audioUrl - Audio file URL (a /uploads/ path is read from disk)
  * @param {Object|null} client   - Client config object
+ * @param {{ throwErrors?: boolean }} [opts] - throw instead of returning null,
+ *   so a person sending it can be told why it did not go
  * @returns {Promise<string|null>} WhatsApp message ID or null
  */
-async function sendWhatsAppAudio(to, audioUrl, client) {
+async function sendWhatsAppAudio(to, audioUrl, client, opts = {}) {
   console.log(`[WA-AUDIO] Sending audio to ${to}: ${audioUrl}`);
   try {
     // Upload the bytes and send by media_id. A bare `link` makes Meta re-fetch
@@ -523,11 +586,14 @@ async function sendWhatsAppAudio(to, audioUrl, client) {
     // the URL is perfectly reachable.
     let audio;
     try {
-      const { buffer, mime, name } = await loadAudioBytes(audioUrl);
+      const { buffer, mime, name } = await ensurePlayableAudio(await loadAudioBytes(audioUrl));
       const id = await uploadAudioToMeta(buffer, mime, name, client);
       audio = { id };
       console.log(`[WA-AUDIO] uploaded ${buffer.length}B (${mime}) → media_id=${id}`);
     } catch (upErr) {
+      // A file WhatsApp cannot play is not sent by link either: the customer
+      // would get the same broken voice note.
+      if (upErr.notSendable) throw upErr;
       console.warn(`[WA-AUDIO] upload failed, falling back to link:`, upErr.message);
       audio = { link: audioUrl };
     }
@@ -540,6 +606,7 @@ async function sendWhatsAppAudio(to, audioUrl, client) {
     return resp.data?.messages?.[0]?.id || null;
   } catch (err) {
     console.error(`[WA-AUDIO] Send failed to ${to}:`, err?.response?.data ?? err.message);
+    if (opts.throwErrors) throw err;
     return null;
   }
 }
@@ -557,6 +624,7 @@ module.exports = {
   sendWhatsAppReaction,
   freshAgent,
   sendWhatsAppAudio,
+  sniffAudioMime,
   sendBotReply,
   markMessageRead,
   sendTypingIndicator,

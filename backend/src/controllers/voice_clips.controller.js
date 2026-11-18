@@ -34,14 +34,17 @@ async function sendRecording(req, res) {
     await writeBrowserCopy(stored);
     const audioUrl = `${PUBLIC_URL || ''}/uploads/${path.basename(stored)}`;
     const client = await clientRouter.getClientById(clientId);
-    const wamid = await sendWhatsAppAudio(phone, audioUrl, client);
+    // Thrown errors reach the operator; a voice note WhatsApp did not take is
+    // not recorded in the chat as sent.
+    const wamid = await sendWhatsAppAudio(phone, audioUrl, client, { throwErrors: true });
+    if (!wamid) return res.status(502).json({ error: 'WhatsApp did not accept the voice note, so it was not sent. Try again.' });
     await require('../services/chatOwnership')
       .pauseForManualReply(clientId, phone, req.user?.uid ?? null);
     await db.insertMessage(phone, '[Voice note]', 'bot', null, clientId, 'audio', audioUrl,
                            wamid, null, { sentBy: req.user?.uid ?? null, sentManual: true });
     res.json({ ok: true, audio_url: audioUrl });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: e?.response?.data?.error?.message || e.message });
   }
 }
 
@@ -140,7 +143,8 @@ async function sendVoiceClip(req, res) {
     if (!clip) return res.status(404).json({ error: 'Voice clip not found' });
 
     const client = clientId ? await clientRouter.getClientById(clientId) : null;
-    const wamid = await sendWhatsAppAudio(phone, clip.audio_url, client);
+    const wamid = await sendWhatsAppAudio(phone, clip.audio_url, client, { throwErrors: true });
+    if (!wamid) return res.status(502).json({ error: 'WhatsApp did not accept the voice clip, so it was not sent. Try again.' });
     await db.insertMessage(phone, `[Voice: ${clip.name}]`, 'bot', null, clientId, 'audio', clip.audio_url, wamid, null, { sentBy: req.user?.uid ?? null, sentManual: true });
     res.json({ ok: true });
   } catch (e) {

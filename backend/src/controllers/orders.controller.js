@@ -9,6 +9,7 @@ const db = require('../db');
 const resolveClientId = require('../middleware/resolveClientId');
 const { hasPermission } = require('../services/permissions');
 const { creditIfPaid, TZ, VALUE_SQL } = require('../services/salesCredit');
+const { fetchAdSpend } = require('../services/metaConversions');
 const commission = require('../services/commission');
 const { generateOrderId } = require('../services/gemini');
 const clientRouter = require('../services/clientRouter');
@@ -376,6 +377,118 @@ async function ordersByAd(req, res) {
 }
 
 /**
+ * GET /api/orders/ad-scorecard?days=14|30 — what each ad earned for what it cost.
+ *
+ * One row per ad: Meta's spend for the period, the number of sales at each
+ * price, total revenue, and revenue per unit of spend.
+ *
+ * Customers are counted when their first ad click fell in the period, and
+ * every paid order they have made since counts for that ad, the first one and
+ * any later ones alike. A customer who came from the ritual reel, bought a
+ * Rs 990 tarot and then a Rs 5,000 ritual is one customer and two sales on the
+ * ritual reel. This is why the CRM beats Meta's own report: no 7-day window,
+ * and the upsell is counted.
+ *
+ * Spend is read live from Meta for the same days. If Meta cannot be reached
+ * the sales side is still returned, with the reason in spend_error.
+ *
+ * @param {import('express').Request}  req
+ * @param {import('express').Response} res
+ * @returns {Promise<void>}
+ */
+async function adScorecard(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  const days = [7, 14, 30, 60, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 30;
+  // The period in Sri Lanka time, today included.
+  const ymd = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+  const until = ymd(new Date());
+  const since = ymd(new Date(new Date(`${until}T12:00:00Z`).getTime() - (days - 1) * 864e5));
+
+  try {
+    const cohort = `cu.client_id = $1 AND cu.first_ad_id IS NOT NULL
+      AND (cu.first_ad_at AT TIME ZONE '${TZ}')::date BETWEEN $2::date AND $3::date`;
+    const [people, sales, names] = await Promise.all([
+      db.pgQuery(`SELECT cu.first_ad_id AS ad_id, COUNT(*)::int AS people, MAX(cu.first_ad_headline) AS headline
+                    FROM customers cu WHERE ${cohort} GROUP BY cu.first_ad_id`, [clientId, since, until]),
+      db.pgQuery(`SELECT cu.first_ad_id AS ad_id, cu.phone_number, (${VALUE_SQL}) AS value
+                    FROM customers cu
+                    JOIN orders o ON o.phone_number = cu.phone_number AND o.client_id = cu.client_id
+                   WHERE ${cohort} AND o.status = ANY($4)`, [clientId, since, until, PAID_STATUSES]),
+      db.pgQuery('SELECT ad_id, name, effective_status FROM ad_details WHERE client_id = $1', [clientId]),
+    ]);
+
+    const nameOf = new Map(names.rows.map(r => [r.ad_id, r]));
+    const ads = new Map();
+    const row = (id) => {
+      if (!ads.has(id)) {
+        ads.set(id, { ad_id: id, ad_name: nameOf.get(id)?.name || null, headline: null,
+          status: nameOf.get(id)?.effective_status || null, spend: null, people: 0,
+          buyers: new Set(), sales: 0, revenue: 0, values: new Map() });
+      }
+      return ads.get(id);
+    };
+    for (const p of people.rows) Object.assign(row(p.ad_id), { people: p.people, headline: p.headline });
+
+    // A Rs 0 order is the free part of a pack, not a sale of its own.
+    const valueCount = new Map();
+    for (const s of sales.rows) {
+      const v = Math.round(parseFloat(s.value) || 0);
+      if (v <= 0) continue;
+      const r = row(s.ad_id);
+      r.buyers.add(s.phone_number);
+      r.sales += 1;
+      r.revenue += v;
+      r.values.set(v, (r.values.get(v) || 0) + 1);
+      valueCount.set(v, (valueCount.get(v) || 0) + 1);
+    }
+
+    let currency = null;
+    let spendError = null;
+    try {
+      const meta = await fetchAdSpend(clientId, since, until);
+      currency = meta.currency;
+      for (const m of meta.spend) {
+        if (m.spend <= 0 && !ads.has(m.ad_id)) continue;
+        const r = row(m.ad_id);
+        r.spend = (r.spend || 0) + m.spend;
+        if (!r.ad_name) r.ad_name = m.ad_name;
+      }
+    } catch (e) {
+      spendError = e.message;
+    }
+
+    // Columns: the prices sales were actually made at, the five most common,
+    // cheapest first. Anything else is counted under "other".
+    const pricePoints = [...valueCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([v]) => v).sort((a, b) => a - b);
+    const list = [...ads.values()].map(r => {
+      const byPrice = Object.fromEntries(pricePoints.map(p => [p, r.values.get(p) || 0]));
+      const inColumns = Object.values(byPrice).reduce((a, b) => a + b, 0);
+      return {
+        ad_id: r.ad_id, ad_name: r.ad_name, headline: r.headline, status: r.status,
+        spend: r.spend, people: r.people, buyers: r.buyers.size, sales: r.sales,
+        repeat_sales: r.sales - r.buyers.size,
+        by_price: byPrice, other_sales: r.sales - inColumns, revenue: r.revenue,
+        revenue_per_spend: r.spend > 0 ? r.revenue / r.spend : null,
+      };
+    }).sort((a, b) => (b.revenue - a.revenue) || ((b.spend || 0) - (a.spend || 0)));
+
+    const sum = (k) => list.reduce((a, r) => a + (r[k] || 0), 0);
+    const totalSpend = spendError ? null : sum('spend');
+    res.json({
+      days, since, until, currency, spend_error: spendError, price_points: pricePoints,
+      ads: list,
+      totals: {
+        spend: totalSpend, people: sum('people'), buyers: sum('buyers'), sales: sum('sales'),
+        repeat_sales: sum('repeat_sales'), other_sales: sum('other_sales'), revenue: sum('revenue'),
+        by_price: Object.fromEntries(pricePoints.map(p => [p, list.reduce((a, r) => a + r.by_price[p], 0)])),
+        revenue_per_spend: totalSpend > 0 ? sum('revenue') / totalSpend : null,
+      },
+    });
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
+}
+
+/**
  * PATCH /api/orders/:id/status — update order status.
  *
  * @param {import('express').Request}  req
@@ -607,4 +720,5 @@ async function deleteRemark(req, res) {
 }
 
 module.exports = {
+  adScorecard,
   ordersByAd, listOrders, exportOrders, incomeSummary, updateStatus, updateFields, updateNotes, createOrder, deleteOrder, addRemark, deleteRemark };

@@ -3,6 +3,7 @@ import { useAuthStore, isSuperAdmin } from '../stores/auth';
 import Layout from '../components/Layout';
 import Spinner from '../components/ui/Spinner';
 import api from '../lib/api';
+import AdScorecard from '../components/AdScorecard';
 
 const ANIM = `
   @keyframes sv-dot1{0%,80%,100%{opacity:.15}20%,40%{opacity:1}}
@@ -298,6 +299,7 @@ export default function Summary() {
               )}
             </div>
           )}
+          {!isLoading && <AdScorecard clientId={clientId} />}
         </div>
       </div>
     </Layout>

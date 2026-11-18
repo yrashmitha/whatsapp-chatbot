@@ -615,4 +615,49 @@ async function syncAdDetails(clientId) {
   return { synced };
 }
 
-module.exports = { parseBirthDate, fireCAPIEvent, syncAudienceForClient, createAudienceForClient, getRecentEvents, syncAdDetails, hashPhone };
+/**
+ * What each ad cost over a date range, straight from Meta, and the currency
+ * the ad account is billed in.
+ *
+ * ad_details holds each ad's lifetime spend, which cannot be set against the
+ * sales of the last 14 or 30 days. This asks Meta for exactly those days, one
+ * row per ad that spent anything.
+ *
+ * @param {string} clientId
+ * @param {string} since - YYYY-MM-DD, first day included
+ * @param {string} until - YYYY-MM-DD, last day included
+ * @returns {Promise<{ currency: string|null, spend: Array<{ad_id: string, ad_name: string, spend: number}> }>}
+ */
+async function fetchAdSpend(clientId, since, until) {
+  const config = await db.getPluginConfig(clientId, 'meta_conversions');
+  const accessToken = config?.api_key;
+  let adAccountId   = config?.ad_account_id || '';
+  if (!accessToken || !adAccountId) {
+    throw Object.assign(new Error('Ad spend needs the Meta ad account and access token, set in Plugins, Meta.'), { statusCode: 400 });
+  }
+  if (!adAccountId.startsWith('act_')) adAccountId = `act_${adAccountId}`;
+  try {
+    const acct = await axios.get(`https://graph.facebook.com/v18.0/${adAccountId}`,
+      { params: { fields: 'currency', access_token: accessToken }, timeout: 20000 });
+    const spend = [];
+    let url = `https://graph.facebook.com/v18.0/${adAccountId}/insights`;
+    let params = {
+      level: 'ad', fields: 'ad_id,ad_name,spend',
+      time_range: JSON.stringify({ since, until }), limit: 500, access_token: accessToken,
+    };
+    while (url) {
+      const r = await axios.get(url, { params, timeout: 20000 });
+      for (const row of r.data.data || []) {
+        spend.push({ ad_id: row.ad_id, ad_name: row.ad_name || null, spend: parseFloat(row.spend) || 0 });
+      }
+      // Meta's next URL already carries every parameter, the token included.
+      url = r.data.paging?.next || null;
+      params = undefined;
+    }
+    return { currency: acct.data?.currency || null, spend };
+  } catch (e) {
+    throw metaError(e, `Could not read ad spend for ${adAccountId}`);
+  }
+}
+
+module.exports = { parseBirthDate, fireCAPIEvent, syncAudienceForClient, createAudienceForClient, getRecentEvents, syncAdDetails, fetchAdSpend, hashPhone };

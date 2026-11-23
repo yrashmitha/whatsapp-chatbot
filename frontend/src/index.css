@@ -50,18 +50,6 @@ html, body, #root {
   height: 100vh;
   height: 100dvh;
 }
-/* Pinned to the four edges of what is on screen, so it is exactly as tall as
-   the screen with no height to get wrong. On an iPhone home screen app 100dvh
-   counts the status bar (too tall, the message box was cut off), and a height
-   measured by script went stale after the keyboard (too short, a gap at the
-   bottom). Used only by the full screen frames (Layout, Login). */
-@supports (inset: 0) {
-  .h-app {
-    position: fixed;
-    inset: 0;
-    height: auto;
-  }
-}
 
 body {
   margin: 0;

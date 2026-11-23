@@ -23,6 +23,23 @@ const { LEAD_STATUSES, todayLocal } = require('./leads.controller');
  * The reaction columns, added at startup by an isolated step. Kept in one string
  * so the thread query can drop them as a unit if they are ever missing.
  */
+/**
+ * The customer wrote last and nobody from our side has answered since: the bot
+ * and people both save their replies as 'bot'. A reply that WhatsApp refused
+ * does not count as an answer. A message has two minutes before it counts, so
+ * a chat the bot is still answering does not flash up.
+ *
+ * Unread is a different thing: it clears as soon as anyone opens the chat,
+ * even if nobody replies.
+ */
+const AWAITING_REPLY_SQL = `(cu.last_customer_message_at IS NOT NULL
+  AND cu.last_customer_message_at < NOW() - INTERVAL '2 minutes'
+  AND cu.last_customer_message_at > COALESCE((
+        SELECT MAX(mb.created_at) FROM messages mb
+         WHERE mb.phone_number = cu.phone_number AND mb.client_id = cu.client_id
+           AND mb.sender_type = 'bot' AND COALESCE(mb.delivery_status, '') <> 'failed'
+      ), 'epoch'::timestamptz))`;
+
 const REACTION_COLS = 'reaction_emoji, reaction_at, reaction_part, our_reaction_emoji, our_reaction_at,';
 
 /**
@@ -68,6 +85,7 @@ async function listCustomers(req, res) {
                                WHERE lc.client_id=cu.client_id AND lc.phone_number=cu.phone_number
                                  AND lc.outcome <> 'note')`);
     }
+    if (req.query.awaiting === 'yes') conds.push(AWAITING_REPLY_SQL);
     const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
     const params = [...fparams, limit, offset];
     const q = `
@@ -77,6 +95,7 @@ async function listCustomers(req, res) {
              cu.last_customer_message_at AS last_message_at,
              GREATEST(cu.last_customer_message_at, MAX(m.created_at)) AS last_activity_at,
              cu.needs_attention,
+             ${AWAITING_REPLY_SQL} AS awaiting_reply,
              BOOL_OR(m.media_type = 'image') AS has_image,
              BOOL_OR(m.media_type IN ('pdf', 'document')) AS has_document,
              BOOL_OR(m.media_type IN ('audio', 'voice')) AS has_voice,
@@ -126,12 +145,20 @@ async function listCustomers(req, res) {
       LIMIT $${fparams.length + 1} OFFSET $${fparams.length + 2}`;
     const countQ = `SELECT COUNT(*) FROM customers cu ${where}`;
     const countParams = fparams;
-    const [rows, countRes] = await Promise.all([db.pgQuery(q, params), db.pgQuery(countQ, countParams)]);
+    // How many chats are waiting for us, for the filter chip. Extra, so a
+    // failure here leaves the list working and the chip without a number.
+    const awaitingQ = clientId
+      ? db.pgQuery(`SELECT COUNT(*) FROM customers cu WHERE cu.client_id=$1 AND ${AWAITING_REPLY_SQL}`, [clientId])
+          .then(r => parseInt(r.rows[0].count, 10))
+          .catch(e => { console.warn('[CUSTOMERS] awaiting count failed:', e.message); return null; })
+      : Promise.resolve(null);
+    const [rows, countRes, awaitingCount] = await Promise.all([db.pgQuery(q, params), db.pgQuery(countQ, countParams), awaitingQ]);
     // One source for the window, so the screen cannot disagree with the sweep.
     res.json({
       customers: rows.rows,
       total: parseInt(countRes.rows[0].count),
       page, limit,
+      awaiting_count: awaitingCount,
       resume_hours: IDLE_RELEASE_HOURS,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }

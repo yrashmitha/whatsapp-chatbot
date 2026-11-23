@@ -100,6 +100,7 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
   const perms = usePermissions();
   const canLeads = perms.can('followups.view');
   const chipFilter = !chip ? {}
+    : chip === 'awaiting' ? { awaiting: 'yes' }
     : (chip === 'today' || chip === 'overdue') ? { callback: chip }
     : chip === 'not_called' ? { called: 'no' } : { lead_status: chip };
 
@@ -111,7 +112,7 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
     refetchIntervalInBackground: false,
   });
   const [statusOpen, setStatusOpen] = useState(false);
-  const isStatusChip = chip && chip !== 'today' && chip !== 'overdue' && chip !== 'not_called';
+  const isStatusChip = chip && chip !== 'today' && chip !== 'overdue' && chip !== 'not_called' && chip !== 'awaiting';
   const statusMeta = isStatusChip ? LEAD_STATUSES.find(x => x.key === chip) : null;
   const pick = (key) => { setChip(key); setPage(1); setStatusOpen(false); };
 
@@ -150,8 +151,27 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
         {/* Lead filters. Two queues an operator works all day sit as one-tap
             chips; every status lives behind one dropdown, so nothing scrolls
             sideways and a new status needs no new room. */}
+        <div className="relative flex flex-wrap gap-1.5 mt-2">
+          {/* Chats where the customer wrote last and nobody answered. Not the
+              same as unread: opening a chat clears unread, only a reply clears this. */}
+          {(() => {
+            const active = chip === 'awaiting';
+            const n = data?.awaiting_count;
+            const hot = n > 0 && !active;
+            return (
+              <button onClick={() => pick(active ? '' : 'awaiting')}
+                title="The customer wrote last and nobody has replied yet"
+                className="text-[11px] px-2.5 py-1 rounded-full whitespace-nowrap cursor-pointer"
+                style={{
+                  background: active ? 'var(--accent)' : hot ? 'rgba(245,158,11,0.16)' : 'var(--bg-base)',
+                  color: active ? '#fff' : hot ? '#b45309' : 'var(--text-2)',
+                  border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                }}
+              >Not replied{n != null ? ` ${n}` : ''}</button>
+            );
+          })()}
         {canLeads && clientId && (
-          <div className="relative flex flex-wrap gap-1.5 mt-2">
+          <>
             {[
               { key: 'overdue', label: 'Overdue', count: summary?.overdue, red: true },
               { key: 'today', label: 'Call today', count: summary?.today },
@@ -207,8 +227,9 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
                 </div>
               </>
             )}
-          </div>
+          </>
         )}
+        </div>
       </div>
 
       {/* List */}
@@ -368,6 +389,11 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
                     <div className="shrink-0 text-right flex flex-col items-end gap-0.5">
                       {c.last_message_at && (
                         <div className="text-xs whitespace-nowrap" style={{ color: 'var(--text-3)' }}>{timeAgoShort(c.last_message_at)}</div>
+                      )}
+                      {c.awaiting_reply && (
+                        <span className="text-[10px] font-semibold rounded px-1.5 py-0.5 whitespace-nowrap"
+                          title="The customer wrote last and nobody has replied yet"
+                          style={{ background: 'rgba(245,158,11,0.16)', color: '#b45309' }}>Not replied</span>
                       )}
                       {c.unread_count > 0 && (
                         <span className="min-w-5 h-5 flex items-center justify-center rounded-full bg-green-500 text-white text-xs font-bold px-1">

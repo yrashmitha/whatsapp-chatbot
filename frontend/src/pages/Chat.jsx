@@ -28,7 +28,9 @@ export default function Chat() {
     api.post(`/customers/${selectedCustomer.phone}/mark-read`, {}, { params })
       .then(() => qc.invalidateQueries({ queryKey: ['customers'] }))
       .catch(() => {});
-  }, [selectedCustomer?.phone]);
+    // The customer object is new on every tap, so reopening the same chat (on a
+    // phone: back, then the same row again) marks it read again too.
+  }, [selectedCustomer]);
 
   const handleSelect = (customer) => {
     setSelectedCustomer(customer);

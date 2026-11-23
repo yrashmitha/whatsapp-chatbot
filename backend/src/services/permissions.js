@@ -19,7 +19,7 @@
  * @property {string}  group     - heading the UI groups it under
  * @property {string}  label     - what it is called to a human
  * @property {string}  [note]    - why it might be withheld
- * @property {boolean} [ownerOnly] - never grantable to an operator
+ * @property {boolean} [ownerOnly] - sensitive: not in the operator default, but the owner may grant it
  */
 
 /** @type {Permission[]} */

@@ -173,17 +173,15 @@ function PermissionPicker({ catalogue, value, onChange }) {
           <div className="space-y-1.5">
             {perms.map(p => (
               <label key={p.id}
-                className={`flex items-start gap-2 text-sm ${p.ownerOnly ? 'opacity-50' : 'cursor-pointer'}`}>
+                className="flex items-start gap-2 text-sm cursor-pointer">
                 <input
                   type="checkbox"
                   className="mt-0.5"
-                  disabled={p.ownerOnly}
                   checked={value.includes(p.id)}
                   onChange={() => toggle(p.id)}
                 />
                 <span>
                   <span className="text-slate-700">{p.label}</span>
-                  {p.ownerOnly && <span className="text-xs text-slate-400"> · yours only</span>}
                   {p.note && <span className="block text-xs text-slate-400">{p.note}</span>}
                 </span>
               </label>

@@ -83,10 +83,11 @@ export default function OrdersWeb() {
   const { user, selectedClientId } = useAuthStore();
   const superAdmin = isSuperAdmin(user);
   const { can, isOwner } = usePermissions();
-  // Report generation (horoscope/match/tarot) is owner-only: an operator's
-  // login never sees these buttons at all, regardless of what permissions
-  // they hold, so there is nothing to click that only 403s on the server.
-  const showHoroscope = isOwner;
+  // Report generation (horoscope/match/tarot): the buttons follow the same
+  // permissions the server checks, so there is nothing to click that only 403s.
+  // Shown to the owner, and to an operator the owner has given the report
+  // permissions (Operators page). The server checks the same permissions.
+  const showHoroscope = isOwner || can('ai.generate_report') || can('reports.edit');
 
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -126,7 +127,7 @@ export default function OrdersWeb() {
   // happens on click, not whether the control exists — a feature nobody can see
   // is a feature nobody asks for. The backend still enforces entitlement.
   const { isEnabled, guard, showLocked, lockModal } = useFeatureGate(clientId, superAdmin);
-  const showTarot = isOwner;
+  const showTarot = isOwner || can('ai.generate_report') || can('reports.edit');
 
   // Only the owner picks whose sales to look at. An operator has one
   // answer available to them and the server enforces it either way.

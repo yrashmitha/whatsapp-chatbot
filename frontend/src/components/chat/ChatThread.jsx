@@ -47,6 +47,14 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
   const [messagePrefill, setMessagePrefill] = useState('');
   const toast = useToast();
   const perms = usePermissions();
+  // The open history, fetched only when asked for.
+  const [opensShown, setOpensShown] = useState(false);
+  const { data: openLogData } = useQuery({
+    queryKey: ['open-log', customer?.phone, clientId],
+    queryFn: () => api.get(`/customers/${customer.phone}/open-log`, { params: clientId ? { client_id: clientId } : {} }).then(r => r.data),
+    enabled: opensShown && !!customer?.phone,
+    retry: false,
+  });
   const qc = useQueryClient();
   const topRef = useRef();
   const bottomRef = useRef();
@@ -375,8 +383,23 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
           {name && <div className="text-xs text-slate-500 truncate tabular-nums">{phone}</div>}
           {lastSeen?.at && (
             // Wraps instead of cutting off, so the whole time is readable on a phone.
-            <div className="text-[11px] leading-snug text-slate-400 whitespace-normal break-words" title="The time this chat was opened before this one, and by whom">
+            // Tap it for the full open history.
+            <button type="button" onClick={() => setOpensShown(v => !v)}
+              className="block text-left text-[11px] leading-snug text-slate-400 whitespace-normal break-words bg-transparent border-0 p-0 cursor-pointer underline decoration-dotted"
+              title="Tap to see every time this chat was opened">
               Opened earlier: {lastSeen.by || 'unknown'} · {new Date(lastSeen.at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            </button>
+          )}
+          {opensShown && (
+            <div className="mt-1 text-[11px] leading-snug text-slate-500 max-h-48 overflow-y-auto rounded-md border border-slate-200 p-1.5">
+              {!openLogData ? 'Loading…' : !openLogData.opens?.length ? 'No opens recorded yet.' : openLogData.opens.map((o, i) => (
+                <div key={i} className="py-0.5">
+                  {new Date(o.opened_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  {' · '}{o.opened_by || '?'} · {o.browser || o.device || '?'}
+                  {' · '}{o.source === 'tap' ? 'tapped in the list' : o.source === 'link' ? 'opened from a link' : o.source === 'tab_shown' ? 'tab came back into view' : 'how unknown'}
+                  {o.tab_id ? ` · tab ${o.tab_id}` : ''}{o.ip ? ` · ${o.ip}` : ''}
+                </div>
+              ))}
             </div>
           )}
         </div>

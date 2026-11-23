@@ -524,6 +524,20 @@ async function markRead(req, res) {
         [phone, clientId]);
     }
 
+    // The open history. Extra: a failure here never stops the chat opening.
+    try {
+      const ua = req.get('user-agent') || '';
+      const browser = `${/Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : 'Browser'}`
+        + ` on ${/iPhone|iPad/.test(ua) ? 'iPhone' : /Android/.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows' : /Mac OS X/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : 'unknown'}`;
+      const ip = String(req.get('x-forwarded-for') || req.ip || '').split(',')[0].trim().slice(0, 64) || null;
+      const tab = String(req.body?.tab || '').replace(/[^\w-]/g, '').slice(0, 16) || null;
+      const source = ['tap', 'link', 'tab_shown'].includes(req.body?.source) ? req.body.source : 'unknown';
+      await db.pgQuery(
+        `INSERT INTO chat_open_log (client_id, phone_number, opened_by, device, browser, tab_id, ip, source)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [clientId, phone, who, device, browser, tab, ip, source]);
+    } catch (e) { console.warn('[OPEN-LOG] not recorded:', e.message); }
+
     if (unread.rows.length) {
       const client = await clientRouter.getClientById(clientId);
       // Never let a failed receipt fail the request: the operator has read the
@@ -532,6 +546,25 @@ async function markRead(req, res) {
     }
     res.json({ ok: true, previous });
   } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+/**
+ * GET /api/customers/:phone/open-log: the last 15 times this chat was opened.
+ */
+async function openLog(req, res) {
+  const clientId = resolveClientId(req);
+  const { phone } = req.params;
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    const r = await db.pgQuery(
+      `SELECT opened_at, opened_by, device, browser, tab_id, ip, source
+         FROM chat_open_log WHERE client_id=$1 AND phone_number=$2
+        ORDER BY opened_at DESC LIMIT 15`, [clientId, phone]);
+    res.json({ opens: r.rows });
+  } catch (e) {
+    if (e.code === '42P01') return res.json({ opens: [] }); // table not created yet
+    res.status(500).json({ error: e.message });
+  }
 }
 
 /**
@@ -712,6 +745,7 @@ module.exports = {
   deleteCustomer,
   markRead,
   markUnread,
+  openLog,
   getAiMode,
   getMessageTrace,
   setAiMode,

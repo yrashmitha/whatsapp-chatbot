@@ -635,6 +635,26 @@ async function init() {
     try {
       await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS last_read_by TEXT`);
     } catch (e) { console.warn('[SCHEMA] last_read_by not added:', e.message); }
+    // Every time a chat is opened in the CRM: who, on what, from which tab and
+    // network, and how (a tap, a link, a background tab coming back). Answers
+    // "who opened this?" when a chat went read and nobody remembers opening it.
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS chat_open_log (
+          id           BIGSERIAL PRIMARY KEY,
+          client_id    TEXT NOT NULL,
+          phone_number TEXT NOT NULL,
+          opened_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          opened_by    TEXT,
+          device       TEXT,
+          browser      TEXT,
+          tab_id       TEXT,
+          ip           TEXT,
+          source       TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_chat_open_log_chat ON chat_open_log (client_id, phone_number, opened_at DESC);
+      `);
+    } catch (e) { console.warn('[SCHEMA] chat_open_log not created:', e.message); }
     // ── 24h window tracking (customer messages only) ──────────────────────────
     await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS last_customer_message_at TIMESTAMPTZ`);
     // ── Addon system ──────────────────────────────────────────────────────────

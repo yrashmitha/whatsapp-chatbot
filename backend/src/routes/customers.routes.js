@@ -19,6 +19,7 @@ const {
   deleteCustomer,
   markRead,
   markUnread,
+  openLog,
   getAiMode,
   getMessageTrace,
   setAiMode,
@@ -53,6 +54,8 @@ router.delete('/customers/:phone',                   jwtAuth, requirePermission(
 // Mark customer messages as read — POST /api/customers/:phone/mark-read
 router.post('/customers/:phone/mark-read',           jwtAuth, requirePermission('chat.read'), markRead);
 // Like WhatsApp's "Mark as unread"
+// Every time this chat was opened, newest first
+router.get('/customers/:phone/open-log',             jwtAuth, requirePermission('chat.read'), openLog);
 router.post('/customers/:phone/mark-unread',         jwtAuth, requirePermission('chat.read'), markUnread);
 
 // AI mode per customer

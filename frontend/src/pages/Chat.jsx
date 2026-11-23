@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore, isSuperAdmin } from '../stores/auth';
@@ -22,6 +22,17 @@ export default function Chat() {
 
   const clientId = superAdmin ? (selectedClientId || null) : user?.clientId;
 
+  // How the current chat was opened, for the open history.
+  const openSource = useRef(deepLinked ? 'link' : 'tap');
+  // One id per browser tab, so two tabs on one computer can be told apart.
+  const tabId = useRef((() => {
+    try {
+      let t = sessionStorage.getItem('crm_tab');
+      if (!t) { t = Math.random().toString(36).slice(2, 8); sessionStorage.setItem('crm_tab', t); }
+      return t;
+    } catch { return Math.random().toString(36).slice(2, 8); }
+  })());
+
   // Who opened this chat before you, from the server, shown in the header.
   const [lastSeen, setLastSeen] = useState(null);
 
@@ -38,16 +49,16 @@ export default function Chat() {
     setLastSeen(null);
     const params = clientId ? { client_id: clientId } : {};
     const phone = selectedCustomer.phone;
-    const mark = () => api.post(`/customers/${phone}/mark-read`, {}, { params })
+    const mark = (source) => api.post(`/customers/${phone}/mark-read`, { source, tab: tabId.current }, { params })
       .then((r) => { setLastSeen(r.data?.previous || null); qc.invalidateQueries({ queryKey: ['customers'] }); })
       .catch(() => {});
     // Read only when someone can actually see it. A tab in the background, or a
     // phone that is locked with the CRM open, waits until it is shown.
-    if (document.visibilityState === 'visible') { mark(); return; }
+    if (document.visibilityState === 'visible') { mark(openSource.current); return; }
     const onShow = () => {
       if (document.visibilityState !== 'visible') return;
       document.removeEventListener('visibilitychange', onShow);
-      mark();
+      mark('tab_shown');
     };
     document.addEventListener('visibilitychange', onShow);
     return () => document.removeEventListener('visibilitychange', onShow);
@@ -56,6 +67,7 @@ export default function Chat() {
   }, [selectedCustomer]);
 
   const handleSelect = (customer) => {
+    openSource.current = 'tap';
     setSelectedCustomer(customer);
     setShowThread(true);
   };

@@ -33,7 +33,7 @@ function dayLabel(iso) {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', ...(d.getFullYear() !== now.getFullYear() && { year: 'numeric' }) });
 }
 
-export default function ChatThread({ customer, clientId, onBack, onCustomerDeleted, lastSeen = null }) {
+export default function ChatThread({ customer, clientId, onBack, onCustomerDeleted, lastSeen = null, onMarkedUnread }) {
   const { phone, name } = customer;
   const [ordersOpen, setOrdersOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
@@ -434,6 +434,17 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
                       {tools.map(([label, fn]) => (
                         <button key={label} role="menuitem" onClick={run(fn)} className={`${item} ${showRail ? '@4xl:hidden' : ''}`}>{label}</button>
                       ))}
+                      {onMarkedUnread && (
+                        <button role="menuitem" className={item}
+                          title="Show this chat as unread again, like WhatsApp"
+                          onClick={run(() => {
+                            api.post(`/customers/${phone}/mark-unread`, {}, { params: clientId ? { client_id: clientId } : {} })
+                              .then(() => onMarkedUnread())
+                              .catch(() => alert('Could not mark this chat as unread. Try again.'));
+                          })}>
+                          Mark as unread
+                        </button>
+                      )}
                       <button role="menuitem" disabled={reextractMutation.isPending}
                         onClick={run(() => reextractMutation.mutate())} className={item}
                         title="Re-read voice notes and PDFs on this chat">

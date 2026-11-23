@@ -90,6 +90,12 @@ export default function Chat() {
               customer={selectedCustomer}
               clientId={clientId}
               lastSeen={lastSeen}
+              onMarkedUnread={() => {
+                // Leave the chat, as WhatsApp does, or it would count as read again.
+                setSelectedCustomer(null);
+                setShowThread(false);
+                qc.invalidateQueries({ queryKey: ['customers'] });
+              }}
               onBack={handleBack}
               onCustomerDeleted={() => { setSelectedCustomer(null); setShowThread(false); }}
             />

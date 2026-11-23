@@ -18,6 +18,7 @@ const {
   reactToMessage,
   deleteCustomer,
   markRead,
+  markUnread,
   getAiMode,
   getMessageTrace,
   setAiMode,
@@ -51,6 +52,8 @@ router.delete('/customers/:phone',                   jwtAuth, requirePermission(
 
 // Mark customer messages as read — POST /api/customers/:phone/mark-read
 router.post('/customers/:phone/mark-read',           jwtAuth, requirePermission('chat.read'), markRead);
+// Like WhatsApp's "Mark as unread"
+router.post('/customers/:phone/mark-unread',         jwtAuth, requirePermission('chat.read'), markUnread);
 
 // AI mode per customer
 router.get('/message-trace/:id',                      jwtAuth, requirePermission('chat.read'), getMessageTrace);

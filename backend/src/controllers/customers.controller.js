@@ -535,6 +535,27 @@ async function markRead(req, res) {
 }
 
 /**
+ * POST /api/customers/:phone/mark-unread: like WhatsApp's "Mark as unread".
+ * Moves the read point to just before the customer's last message, so the
+ * chat shows as unread again (at least 1) until it is next opened.
+ */
+async function markUnread(req, res) {
+  const clientId = resolveClientId(req);
+  const { phone } = req.params;
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    const r = await db.pgQuery(
+      `UPDATE customers cu
+          SET last_read_at = m.last_in - INTERVAL '1 millisecond'
+         FROM (SELECT MAX(created_at) AS last_in FROM messages
+                WHERE phone_number = $1 AND client_id = $2 AND sender_type = 'user') m
+        WHERE cu.phone_number = $1 AND cu.client_id = $2 AND m.last_in IS NOT NULL`,
+      [phone, clientId]);
+    res.json({ ok: true, changed: r.rowCount > 0 });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+/**
  * GET /api/customers/:phone/ai-mode — get AI enabled flag for a customer.
  *
  * @param {import('express').Request}  req
@@ -690,6 +711,7 @@ module.exports = {
   deleteMessage,
   deleteCustomer,
   markRead,
+  markUnread,
   getAiMode,
   getMessageTrace,
   setAiMode,

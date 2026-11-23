@@ -390,11 +390,6 @@ export default function CustomerList({ clientId, selectedPhone, onSelect }) {
                       {c.last_message_at && (
                         <div className="text-xs whitespace-nowrap" style={{ color: 'var(--text-3)' }}>{timeAgoShort(c.last_message_at)}</div>
                       )}
-                      {c.awaiting_reply && (
-                        <span className="text-[10px] font-semibold rounded px-1.5 py-0.5 whitespace-nowrap"
-                          title="The customer wrote last and nobody has replied yet"
-                          style={{ background: 'rgba(245,158,11,0.16)', color: '#b45309' }}>Not replied</span>
-                      )}
                       {c.unread_count > 0 && (
                         <span className="min-w-5 h-5 flex items-center justify-center rounded-full bg-green-500 text-white text-xs font-bold px-1">
                           {c.unread_count > 99 ? '99+' : c.unread_count}

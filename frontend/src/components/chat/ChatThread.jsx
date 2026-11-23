@@ -102,7 +102,11 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
     const el = threadRef.current;
     const nearBottom = !el || el.scrollHeight - el.scrollTop - el.clientHeight < 120;
     if (first || nearBottom) {
-      bottomRef.current?.scrollIntoView({ behavior: first ? 'auto' : 'smooth' });
+      // Scroll the message list only. scrollIntoView also scrolls every box
+      // around it, the page included, which on an iPhone home screen app
+      // pushed the whole screen up under the status bar.
+      if (el) el.scrollTo({ top: el.scrollHeight, behavior: first ? 'auto' : 'smooth' });
+      else bottomRef.current?.scrollIntoView({ block: 'nearest', behavior: 'auto' });
     }
   }, [allMessages.length, data?.pages.length]);
 

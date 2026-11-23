@@ -501,10 +501,28 @@ async function markRead(req, res) {
         ORDER BY m.created_at DESC LIMIT 1`,
       [phone, clientId]);
 
-    await db.pgQuery(
-      `UPDATE customers SET last_read_at = NOW() WHERE phone_number = $1 AND client_id = $2`,
-      [phone, clientId]
-    );
+    // Who opened it before this, so the screen can say "last opened by".
+    // Read before the update; the column may not exist on an old database.
+    let previous = null;
+    try {
+      const prev = await db.pgQuery(
+        'SELECT last_read_at, last_read_by FROM customers WHERE phone_number=$1 AND client_id=$2', [phone, clientId]);
+      if (prev.rows[0]?.last_read_at) previous = { at: prev.rows[0].last_read_at, by: prev.rows[0].last_read_by || null };
+    } catch (_) { /* no last_read_by column yet: just no "last opened by" */ }
+
+    const u = req.user || {};
+    const who = u.displayName || u.name || (u.role === 'superadmin' ? 'Super admin' : u.uid ? u.sub : 'Owner') || 'Someone';
+    const device = /Mobi|Android|iPhone|iPad/i.test(req.get('user-agent') || '') ? 'phone' : 'computer';
+    try {
+      await db.pgQuery(
+        `UPDATE customers SET last_read_at = NOW(), last_read_by = $3 WHERE phone_number = $1 AND client_id = $2`,
+        [phone, clientId, `${who}, ${device}`]);
+    } catch (e) {
+      if (e.code !== '42703') throw e; // only a missing column falls back
+      await db.pgQuery(
+        `UPDATE customers SET last_read_at = NOW() WHERE phone_number = $1 AND client_id = $2`,
+        [phone, clientId]);
+    }
 
     if (unread.rows.length) {
       const client = await clientRouter.getClientById(clientId);
@@ -512,7 +530,7 @@ async function markRead(req, res) {
       // chat either way, and the tick is a courtesy to the customer.
       markMessageRead(unread.rows[0].wamid, client).catch(() => {});
     }
-    res.json({ ok: true });
+    res.json({ ok: true, previous });
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 

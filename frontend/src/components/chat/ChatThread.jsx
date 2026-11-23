@@ -33,7 +33,7 @@ function dayLabel(iso) {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', ...(d.getFullYear() !== now.getFullYear() && { year: 'numeric' }) });
 }
 
-export default function ChatThread({ customer, clientId, onBack, onCustomerDeleted }) {
+export default function ChatThread({ customer, clientId, onBack, onCustomerDeleted, lastSeen = null }) {
   const { phone, name } = customer;
   const [ordersOpen, setOrdersOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
@@ -339,6 +339,11 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
             )}
           </div>
           {name && <div className="text-xs text-slate-500 truncate tabular-nums">{phone}</div>}
+          {lastSeen?.at && (
+            <div className="text-[11px] text-slate-400 truncate" title="The last time this chat was opened before you, and by whom">
+              Opened before you: {lastSeen.by || 'unknown'}, {new Date(lastSeen.at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            </div>
+          )}
         </div>
 
         {/* Primary controls: second line on a phone, inline on a desk. */}

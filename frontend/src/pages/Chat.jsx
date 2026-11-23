@@ -22,12 +22,35 @@ export default function Chat() {
 
   const clientId = superAdmin ? (selectedClientId || null) : user?.clientId;
 
+  // Who opened this chat before you, from the server, shown in the header.
+  const [lastSeen, setLastSeen] = useState(null);
+
+  // A link from Follow-ups opens one chat. Take the phone out of the address
+  // once it is open, or every reload of the tab would open, and mark read,
+  // that chat again with nobody looking at it.
+  useEffect(() => {
+    if (deepLinked) setSearchParams({}, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     if (!selectedCustomer?.phone) return;
+    setLastSeen(null);
     const params = clientId ? { client_id: clientId } : {};
-    api.post(`/customers/${selectedCustomer.phone}/mark-read`, {}, { params })
-      .then(() => qc.invalidateQueries({ queryKey: ['customers'] }))
+    const phone = selectedCustomer.phone;
+    const mark = () => api.post(`/customers/${phone}/mark-read`, {}, { params })
+      .then((r) => { setLastSeen(r.data?.previous || null); qc.invalidateQueries({ queryKey: ['customers'] }); })
       .catch(() => {});
+    // Read only when someone can actually see it. A tab in the background, or a
+    // phone that is locked with the CRM open, waits until it is shown.
+    if (document.visibilityState === 'visible') { mark(); return; }
+    const onShow = () => {
+      if (document.visibilityState !== 'visible') return;
+      document.removeEventListener('visibilitychange', onShow);
+      mark();
+    };
+    document.addEventListener('visibilitychange', onShow);
+    return () => document.removeEventListener('visibilitychange', onShow);
     // The customer object is new on every tap, so reopening the same chat (on a
     // phone: back, then the same row again) marks it read again too.
   }, [selectedCustomer]);
@@ -66,6 +89,7 @@ export default function Chat() {
             <ChatThread
               customer={selectedCustomer}
               clientId={clientId}
+              lastSeen={lastSeen}
               onBack={handleBack}
               onCustomerDeleted={() => { setSelectedCustomer(null); setShowThread(false); }}
             />

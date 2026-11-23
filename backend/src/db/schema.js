@@ -630,6 +630,11 @@ async function init() {
     await pool.query(`ALTER TABLE client_configs ADD COLUMN IF NOT EXISTS plugin_enabled BOOLEAN NOT NULL DEFAULT FALSE`);
     // ── Unread message tracking ───────────────────────────────────────────────
     await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS last_read_at TIMESTAMPTZ`);
+    // Who opened the chat last, and on what ("Nimal, phone"), so a chat that
+    // went read without anyone answering can be traced to a person or device.
+    try {
+      await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS last_read_by TEXT`);
+    } catch (e) { console.warn('[SCHEMA] last_read_by not added:', e.message); }
     // ── 24h window tracking (customer messages only) ──────────────────────────
     await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS last_customer_message_at TIMESTAMPTZ`);
     // ── Addon system ──────────────────────────────────────────────────────────

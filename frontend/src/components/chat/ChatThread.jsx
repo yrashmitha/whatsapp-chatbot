@@ -344,8 +344,9 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
           </div>
           {name && <div className="text-xs text-slate-500 truncate tabular-nums">{phone}</div>}
           {lastSeen?.at && (
-            <div className="text-[11px] text-slate-400 truncate" title="The last time this chat was opened before you, and by whom">
-              Opened before you: {lastSeen.by || 'unknown'}, {new Date(lastSeen.at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            // Wraps instead of cutting off, so the whole time is readable on a phone.
+            <div className="text-[11px] leading-snug text-slate-400 whitespace-normal break-words" title="The last time this chat was opened before you, and by whom">
+              Last opened: {lastSeen.by || 'unknown'} · {new Date(lastSeen.at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
             </div>
           )}
         </div>

@@ -87,6 +87,8 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
 
   // Scroll to bottom on initial load and new messages, but not when loading older pages
   const prevPageCount = useRef(0);
+  // Whether the reader is at the bottom; scrolling up turns it off.
+  const stickToBottom = useRef(true);
   const prevMsgCount = useRef(0);
   useEffect(() => {
     const curPageCount = data?.pages.length ?? 0;
@@ -107,8 +109,36 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
       // pushed the whole screen up under the status bar.
       if (el) el.scrollTo({ top: el.scrollHeight, behavior: first ? 'auto' : 'smooth' });
       else bottomRef.current?.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+      // Just opened: pictures already on the phone appear at once, before the
+      // load listener below can see them, so settle at the bottom a few times.
+      if (first && el) {
+        for (const ms of [100, 400, 1000]) {
+          setTimeout(() => { if (stickToBottom.current) el.scrollTop = el.scrollHeight; }, ms);
+        }
+      }
     }
   }, [allMessages.length, data?.pages.length]);
+
+  // Pictures and videos arrive after the text, slowly on 4G, and each one makes
+  // the chat taller after it has already scrolled down. While the reader is at
+  // the bottom, keep them there as things load. Scrolling up stops this.
+  useEffect(() => {
+    const el = threadRef.current;
+    if (!el) return;
+    const onScroll = () => { stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120; };
+    // Again a moment later: a picture's caption and link appear just after it loads.
+    const pin = () => { if (stickToBottom.current) el.scrollTop = el.scrollHeight; };
+    const onLoaded = () => { pin(); requestAnimationFrame(pin); setTimeout(pin, 200); };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    // load does not bubble, so listen in the capture phase for every img/video inside.
+    el.addEventListener('load', onLoaded, true);
+    el.addEventListener('loadedmetadata', onLoaded, true);
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      el.removeEventListener('load', onLoaded, true);
+      el.removeEventListener('loadedmetadata', onLoaded, true);
+    };
+  }, []);
 
   // Preserve scroll position when older messages prepended
   useEffect(() => {

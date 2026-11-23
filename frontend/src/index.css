@@ -49,6 +49,10 @@ html, body, #root {
 .h-app {
   height: 100vh;
   height: 100dvh;
+  /* Measured in main.jsx. An iPhone home screen app counts the status bar in
+     100dvh, so the app came out taller than the screen, the page scrolled and
+     the message box was cut off at the bottom. */
+  height: var(--app-h, 100dvh);
 }
 
 body {

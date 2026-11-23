@@ -87,6 +87,9 @@ export default function Chat() {
         `}>
           {selectedCustomer ? (
             <ChatThread
+              // A fresh thread per chat: the scroll memory of the last chat
+              // must not decide whether this one opens at the newest message.
+              key={selectedCustomer.phone}
               customer={selectedCustomer}
               clientId={clientId}
               lastSeen={lastSeen}

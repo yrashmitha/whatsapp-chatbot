@@ -21,14 +21,6 @@ try {
   window.visualViewport?.addEventListener('resize', () => setTimeout(resetPage, 60));
   window.addEventListener('pageshow', resetPage);
 
-  // The app is exactly as tall as what is on screen (see .h-app in index.css).
-  const setAppHeight = () => {
-    if (window.innerHeight > 0) document.documentElement.style.setProperty('--app-h', `${window.innerHeight}px`);
-  };
-  setAppHeight();
-  window.addEventListener('resize', setAppHeight);
-  window.addEventListener('orientationchange', () => setTimeout(setAppHeight, 200));
-  window.addEventListener('pageshow', setAppHeight);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') resetPage(); });
 } catch (_) { /* never let this stop the app */ }
 

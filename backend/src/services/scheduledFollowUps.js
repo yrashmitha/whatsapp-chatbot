@@ -192,6 +192,77 @@ async function schedule({ clientId, orderId, message, sendAtLocal, angle, temp, 
 }
 
 /**
+ * Schedule a message from a chat: any customer, no order needed.
+ *
+ * WhatsApp only carries a free-form message within 24 hours of the customer's
+ * last message, so the time must fall inside that window. With cancelIfReply,
+ * it stands down if the customer writes before it goes.
+ *
+ * @param {Object} args
+ * @param {string} args.clientId
+ * @param {string} args.phone
+ * @param {string} args.message
+ * @param {string} args.sendAtLocal - "YYYY-MM-DD HH:mm" in the client's timezone
+ * @param {boolean} [args.cancelIfReply=true]
+ * @param {string} [args.approvedBy]
+ * @param {number} [args.approvedByUid]
+ * @returns {Promise<Object>} the stored row, with send_at_local
+ */
+async function scheduleChat({ clientId, phone, message, sendAtLocal, cancelIfReply = true, approvedBy, approvedByUid }) {
+  const text = String(message || '').trim();
+  if (!text) throw Object.assign(new Error('Write the message first'), { statusCode: 400 });
+  if (text.length > 4000) throw Object.assign(new Error('That message is too long for WhatsApp'), { statusCode: 400 });
+  const { rows } = await db.pgQuery(
+    'SELECT last_customer_message_at FROM customers WHERE phone_number=$1 AND client_id=$2', [phone, clientId]);
+  if (!rows.length) throw Object.assign(new Error('Customer not found'), { statusCode: 404 });
+  const tz = await timezoneFor(clientId);
+  const when = localToUtc(sendAtLocal, tz);
+  if (!when) throw Object.assign(new Error('Could not read that date and time'), { statusCode: 400 });
+  if (when.getTime() < Date.now() + 60_000) {
+    throw Object.assign(new Error('Pick a time at least a minute from now'), { statusCode: 400 });
+  }
+  const closes = windowClosesAt(rows[0].last_customer_message_at);
+  if (!closes || when.getTime() > closes.getTime() - WINDOW_MARGIN_MIN * 60_000) {
+    throw Object.assign(new Error(closes
+      ? `WhatsApp only delivers until ${formatLocal(new Date(closes.getTime() - WINDOW_MARGIN_MIN * 60_000), tz)} (24 hours after their last message). Pick an earlier time.`
+      : 'This customer has not written to us, so WhatsApp will not deliver a normal message.'), { statusCode: 409 });
+  }
+  const ins = await db.pgQuery(
+    `INSERT INTO scheduled_follow_ups
+       (client_id, order_id, phone_number, message, send_at, approved_by, approved_by_uid, kind, cancel_if_reply)
+     VALUES ($1,'',$2,$3,$4,$5,$6,'chat',$7) RETURNING *`,
+    [clientId, phone, text, when.toISOString(), approvedBy || null, approvedByUid ?? null, cancelIfReply !== false]);
+  console.log(`[SCHEDULED] ${clientId}/${phone} chat message queued for ${formatLocal(when, tz)} (${tz})`);
+  return { ...ins.rows[0], send_at_local: formatLocal(when, tz), timezone: tz };
+}
+
+/**
+ * Messages waiting to go to one customer, and when their window closes.
+ *
+ * @param {string} clientId
+ * @param {string} phone
+ * @returns {Promise<{ scheduled: Object[], window_closes_local: string|null, timezone: string }>}
+ */
+async function listForChat(clientId, phone) {
+  const tz = await timezoneFor(clientId);
+  const [{ rows }, cu] = await Promise.all([
+    db.pgQuery(
+      `SELECT id, message, send_at, kind, cancel_if_reply, approved_by, created_at
+         FROM scheduled_follow_ups
+        WHERE client_id=$1 AND phone_number=$2 AND status='pending'
+        ORDER BY send_at ASC`, [clientId, phone]),
+    db.pgQuery('SELECT last_customer_message_at FROM customers WHERE phone_number=$1 AND client_id=$2', [phone, clientId]),
+  ]);
+  const closes = windowClosesAt(cu.rows[0]?.last_customer_message_at);
+  const lastSendable = closes ? new Date(closes.getTime() - WINDOW_MARGIN_MIN * 60_000) : null;
+  return {
+    scheduled: rows.map(r => ({ ...r, send_at_local: formatLocal(new Date(r.send_at), tz) })),
+    window_closes_local: lastSendable && lastSendable > new Date() ? formatLocal(lastSendable, tz) : null,
+    timezone: tz,
+  };
+}
+
+/**
  * Drop a pending schedule.
  *
  * @param {string} clientId
@@ -268,6 +339,29 @@ async function runDue() {
         continue;
       }
 
+      // A message scheduled from a chat: no order to check. It still respects
+      // the window, and stands down on a reply when asked to.
+      if (job.kind === 'chat') {
+        const cu = await db.pgQuery(
+          'SELECT last_customer_message_at FROM customers WHERE phone_number=$1 AND client_id=$2',
+          [job.phone_number, job.client_id]);
+        const lastInChat = cu.rows[0]?.last_customer_message_at;
+        if (job.cancel_if_reply && lastInChat && new Date(lastInChat) > new Date(job.created_at)) {
+          await stop('customer replied first'); continue;
+        }
+        const closesChat = windowClosesAt(lastInChat);
+        if (!closesChat || Date.now() > closesChat.getTime()) { await stop('window closed before it could go'); continue; }
+        const clientChat = await clientRouter.getClientById(job.client_id);
+        const wamidChat = await sendWhatsAppMessage(job.phone_number, job.message, clientChat);
+        if (!wamidChat) throw new Error('WhatsApp did not accept the message');
+        await db.insertMessage(job.phone_number, job.message, 'bot', null, job.client_id, null, null, wamidChat,
+                               null, { sentBy: job.approved_by_uid ?? null, sentManual: true });
+        await db.pgQuery(`UPDATE scheduled_follow_ups SET status='sent', resolved_at=NOW() WHERE id=$1`, [job.id]);
+        sent++;
+        console.log(`[SCHEDULED] Sent chat message to ${job.phone_number}`);
+        continue;
+      }
+
       const { rows } = await db.pgQuery(
         `SELECT o.status, c.last_customer_message_at
            FROM orders o LEFT JOIN customers c
@@ -322,7 +416,7 @@ async function runDue() {
 }
 
 module.exports = {
-  schedule, cancel, listPending, runDue,
+  schedule, scheduleChat, listForChat, cancel, listPending, runDue,
   localToUtc, formatLocal, timezoneFor, windowClosesAt,
   DEFAULT_TZ, WINDOW_HOURS, WINDOW_MARGIN_MIN,
 };

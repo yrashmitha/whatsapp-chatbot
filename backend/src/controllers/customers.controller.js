@@ -549,6 +549,45 @@ async function markRead(req, res) {
 }
 
 /**
+ * POST /api/customers/:phone/schedule: send a message to this customer later.
+ * GET  /api/customers/:phone/scheduled: what is waiting, and when the window closes.
+ * DELETE /api/customers/:phone/scheduled/:id: cancel one.
+ */
+async function scheduleMessage(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    const row = await require('../services/scheduledFollowUps').scheduleChat({
+      clientId, phone: req.params.phone, message: req.body?.message, sendAtLocal: req.body?.send_at,
+      cancelIfReply: req.body?.cancel_if_reply !== false,
+      approvedBy: req.user?.displayName || req.user?.sub || null, approvedByUid: req.user?.uid ?? null,
+    });
+    res.json({ ok: true, scheduled: row });
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
+}
+async function listScheduledMessages(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    res.json(await require('../services/scheduledFollowUps').listForChat(clientId, req.params.phone));
+  } catch (e) {
+    if (e.code === '42703') return res.json({ scheduled: [], window_closes_local: null }); // columns not added yet
+    res.status(500).json({ error: e.message });
+  }
+}
+async function cancelScheduledMessage(req, res) {
+  const clientId = resolveClientId(req);
+  if (!clientId) return res.status(400).json({ error: 'client_id required' });
+  try {
+    const r = await db.pgQuery(
+      `UPDATE scheduled_follow_ups SET status='cancelled', outcome='cancelled by operator', resolved_at=NOW()
+        WHERE id=$1 AND client_id=$2 AND phone_number=$3 AND status='pending'`,
+      [parseInt(req.params.id, 10), clientId, req.params.phone]);
+    res.json({ ok: r.rowCount > 0 });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
+/**
  * GET /api/customers/:phone/open-log: the last 15 times this chat was opened.
  */
 async function openLog(req, res) {
@@ -746,6 +785,9 @@ module.exports = {
   markRead,
   markUnread,
   openLog,
+  scheduleMessage,
+  listScheduledMessages,
+  cancelScheduledMessage,
   getAiMode,
   getMessageTrace,
   setAiMode,

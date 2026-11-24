@@ -20,6 +20,9 @@ const {
   markRead,
   markUnread,
   openLog,
+  scheduleMessage,
+  listScheduledMessages,
+  cancelScheduledMessage,
   getAiMode,
   getMessageTrace,
   setAiMode,
@@ -54,6 +57,10 @@ router.delete('/customers/:phone',                   jwtAuth, requirePermission(
 // Mark customer messages as read — POST /api/customers/:phone/mark-read
 router.post('/customers/:phone/mark-read',           jwtAuth, requirePermission('chat.read'), markRead);
 // Like WhatsApp's "Mark as unread"
+// Messages scheduled from a chat (sending later is replying, so chat.reply)
+router.post('/customers/:phone/schedule',            jwtAuth, requirePermission('chat.reply'), scheduleMessage);
+router.get('/customers/:phone/scheduled',            jwtAuth, requirePermission('chat.read'), listScheduledMessages);
+router.delete('/customers/:phone/scheduled/:id',     jwtAuth, requirePermission('chat.reply'), cancelScheduledMessage);
 // Every time this chat was opened, newest first
 router.get('/customers/:phone/open-log',             jwtAuth, requirePermission('chat.read'), openLog);
 router.post('/customers/:phone/mark-unread',         jwtAuth, requirePermission('chat.read'), markUnread);

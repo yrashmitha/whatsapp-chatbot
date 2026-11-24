@@ -312,6 +312,13 @@ async function init() {
         resolved_at  TIMESTAMPTZ
       )`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_sched_due ON scheduled_follow_ups (status, send_at)`);
+    // A message scheduled from a chat, with no order behind it ('chat'), and
+    // whether it stands down if the customer writes first. Order reminders
+    // keep kind 'order' and their own rules.
+    try {
+      await pool.query(`ALTER TABLE scheduled_follow_ups ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'order'`);
+      await pool.query(`ALTER TABLE scheduled_follow_ups ADD COLUMN IF NOT EXISTS cancel_if_reply BOOLEAN NOT NULL DEFAULT TRUE`);
+    } catch (e) { console.warn('[SCHEMA] chat scheduling columns not added:', e.message); }
 
     // An operator flags a chat with a day the customer named ("Monday",
     // "heta"). Unlike scheduled_follow_ups this never sends on its own and is

@@ -13,6 +13,7 @@ import CreateOrderDrawer from './CreateOrderDrawer';
 import { LeadPanel, LeadBody } from '../leads/LeadControls';
 import Spinner from '../ui/Spinner';
 import { useToast } from '../ui/Toast';
+import { ScheduledBar, ScheduleDialog } from './ScheduleMessage';
 import { usePermissions } from '../../lib/permissions';
 import { STATUS_OPTIONS, STATUS_COLORS } from '../../lib/utils';
 import useSwipeBack from '../../lib/useSwipeBack';
@@ -47,6 +48,7 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
   const [messagePrefill, setMessagePrefill] = useState('');
   const toast = useToast();
   const perms = usePermissions();
+  const [scheduleOpen, setScheduleOpen] = useState(false);
   // The open history, fetched only when asked for.
   const [opensShown, setOpensShown] = useState(false);
   const { data: openLogData } = useQuery({
@@ -492,6 +494,11 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
                       {tools.map(([label, fn]) => (
                         <button key={label} role="menuitem" onClick={run(fn)} className={`${item} ${showRail ? '@4xl:hidden' : ''}`}>{label}</button>
                       ))}
+                      {perms.can('chat.reply') && (
+                        <button role="menuitem" className={item} onClick={run(() => setScheduleOpen(true))}>
+                          ⏰ Schedule a message
+                        </button>
+                      )}
                       {onMarkedUnread && (
                         <button role="menuitem" className={item}
                           title="Show this chat as unread again, like WhatsApp"
@@ -620,6 +627,10 @@ export default function ChatThread({ customer, clientId, onBack, onCustomerDelet
         )}
         <div ref={bottomRef} />
       </div>
+
+      {/* Messages waiting to be sent later, with Cancel */}
+      <ScheduledBar phone={phone} clientId={clientId} />
+      {scheduleOpen && <ScheduleDialog phone={phone} clientId={clientId} onClose={() => setScheduleOpen(false)} />}
 
       {/* Input */}
       <MessageInput

@@ -319,6 +319,42 @@ async function init() {
       await pool.query(`ALTER TABLE scheduled_follow_ups ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'order'`);
       await pool.query(`ALTER TABLE scheduled_follow_ups ADD COLUMN IF NOT EXISTS cancel_if_reply BOOLEAN NOT NULL DEFAULT TRUE`);
     } catch (e) { console.warn('[SCHEMA] chat scheduling columns not added:', e.message); }
+    // Automatic messages: rules the owner builds, and every send they make.
+    // The unique key on sends is what makes "once per silence" hold even if two
+    // runs overlap.
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS auto_rules (
+          id          SERIAL PRIMARY KEY,
+          client_id   TEXT NOT NULL,
+          name        TEXT NOT NULL,
+          enabled     BOOLEAN NOT NULL DEFAULT FALSE,
+          min_hours   NUMERIC NOT NULL,
+          max_hours   NUMERIC NOT NULL,
+          gap_hours   NUMERIC NOT NULL DEFAULT 24,
+          quiet_start INT NOT NULL DEFAULT 22,
+          quiet_end   INT NOT NULL DEFAULT 8,
+          conditions  JSONB NOT NULL DEFAULT '[]',
+          message     TEXT NOT NULL,
+          created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE TABLE IF NOT EXISTS auto_rule_sends (
+          id           BIGSERIAL PRIMARY KEY,
+          rule_id      INT NOT NULL,
+          client_id    TEXT NOT NULL,
+          phone_number TEXT NOT NULL,
+          trigger_at   TIMESTAMPTZ NOT NULL,
+          status       TEXT NOT NULL,
+          reason       TEXT,
+          wamid        TEXT,
+          created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          sent_at      TIMESTAMPTZ,
+          UNIQUE (rule_id, phone_number, trigger_at)
+        );
+        CREATE INDEX IF NOT EXISTS idx_auto_sends_phone ON auto_rule_sends (client_id, phone_number, sent_at DESC);
+      `);
+    } catch (e) { console.warn('[SCHEMA] automation tables not created:', e.message); }
 
     // An operator flags a chat with a day the customer named ("Monday",
     // "heta"). Unlike scheduled_follow_ups this never sends on its own and is

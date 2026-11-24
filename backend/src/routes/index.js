@@ -25,6 +25,7 @@ const pluginRoutes     = require('./plugins.routes');
 const settingsRoutes   = require('./settings.routes');
 const menusRoutes      = require('./menus.routes');
 const followUpsRoutes  = require('./followUps.routes');
+const automationsRoutes = require('./automations.routes');
 const leadsRoutes      = require('./leads.routes');       // mounted at /api — owns /api/leads, /api/customers/:phone/calls|lead-status
 const crmUsersRoutes   = require('./crmUsers.routes');
 const horoscopeQaRoutes = require('./horoscopeQa.routes');
@@ -121,6 +122,7 @@ function mountRoutes(app) {
   app.use('/api/settings',     settingsRoutes);
   app.use('/api/menus',        menusRoutes);
   app.use('/api/follow-ups',   followUpsRoutes);
+  app.use('/api/automations',  automationsRoutes);
   app.use('/api/crm-users',   crmUsersRoutes);
   app.use('/api/horoscope-qa', horoscopeQaRoutes);
   app.use('/api/test-chat',    testChatRoutes);

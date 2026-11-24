@@ -89,6 +89,8 @@ const PERMISSIONS = [
   { id: 'settings.media',         group: 'Configuration', label: 'Manage the media library' },
   { id: 'settings.voice_clips',   group: 'Configuration', label: 'Manage voice clips' },
   { id: 'users.manage',           group: 'Configuration', label: 'Add and remove operators',    ownerOnly: true },
+  { id: 'automations.manage',     group: 'Configuration', label: 'Create and switch on automatic messages',
+    note: 'A rule can message many customers at once.', ownerOnly: true },
 ];
 
 /** @type {Set<string>} */

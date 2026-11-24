@@ -26,6 +26,10 @@ function startScheduledFollowUpWorker() {
     // query, and a stranded chat is a customer getting no reply at all.
     require('../services/chatOwnership').resumeIdle().catch(e =>
       console.error('[OWNERSHIP] resumeIdle failed:', e.message));
+    // Automatic message rules: runs them every 15 minutes, never two at once.
+    // Not awaited, so a long run does not hold up the follow-ups below.
+    require('../services/automations').tick().catch(e =>
+      console.error('[AUTO] tick failed:', e.message));
     try {
       const { sent, cancelled } = await runDue();
       if (sent || cancelled) {

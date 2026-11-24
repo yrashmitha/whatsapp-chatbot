@@ -303,7 +303,15 @@ export default function FollowUps() {
               {!clientId && <span className="text-amber-600 font-medium"> Select a client from the sidebar first.</span>}
             </p>
           </div>
-          {isFetching && !isLoading && <Spinner size="sm" className="mt-1.5" />}
+          <div className="flex items-center gap-2 shrink-0">
+            {isFetching && !isLoading && <Spinner size="sm" />}
+            {perms.can('automations.manage') && (
+              <button type="button" onClick={() => navigate('/automations')}
+                className="px-3 py-1.5 text-sm font-medium rounded-lg border border-violet-200 bg-violet-50 text-violet-700 cursor-pointer">
+                ⚡ Automations
+              </button>
+            )}
+          </div>
         </div>
 
         <LeadStats clientId={clientId} />

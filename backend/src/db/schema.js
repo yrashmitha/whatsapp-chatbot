@@ -355,6 +355,11 @@ async function init() {
         CREATE INDEX IF NOT EXISTS idx_auto_sends_phone ON auto_rule_sends (client_id, phone_number, sent_at DESC);
       `);
     } catch (e) { console.warn('[SCHEMA] automation tables not created:', e.message); }
+    // A rule that should reach each customer once ever (a channel invite),
+    // not once after every silence.
+    try {
+      await pool.query(`ALTER TABLE auto_rules ADD COLUMN IF NOT EXISTS once_per_customer BOOLEAN NOT NULL DEFAULT FALSE`);
+    } catch (e) { console.warn('[SCHEMA] once_per_customer not added:', e.message); }
 
     // An operator flags a chat with a day the customer named ("Monday",
     // "heta"). Unlike scheduled_follow_ups this never sends on its own and is

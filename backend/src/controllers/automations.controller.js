@@ -40,9 +40,9 @@ async function createRule(req, res) {
   try {
     const r = auto.validateRule(req.body);
     const { rows } = await db.pgQuery(
-      `INSERT INTO auto_rules (client_id, name, enabled, min_hours, max_hours, gap_hours, quiet_start, quiet_end, conditions, message)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10) RETURNING *`,
-      [clientId, r.name, r.enabled, r.min_hours, r.max_hours, r.gap_hours, r.quiet_start, r.quiet_end, JSON.stringify(r.conditions), r.message]);
+      `INSERT INTO auto_rules (client_id, name, enabled, min_hours, max_hours, gap_hours, quiet_start, quiet_end, conditions, message, once_per_customer)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11) RETURNING *`,
+      [clientId, r.name, r.enabled, r.min_hours, r.max_hours, r.gap_hours, r.quiet_start, r.quiet_end, JSON.stringify(r.conditions), r.message, r.once_per_customer]);
     res.json({ rule: rows[0] });
   } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 }
@@ -63,9 +63,9 @@ async function updateRule(req, res) {
     const r = auto.validateRule(req.body);
     const { rows } = await db.pgQuery(
       `UPDATE auto_rules SET name=$3, enabled=$4, min_hours=$5, max_hours=$6, gap_hours=$7, quiet_start=$8, quiet_end=$9,
-              conditions=$10::jsonb, message=$11, updated_at=NOW()
+              conditions=$10::jsonb, message=$11, once_per_customer=$12, updated_at=NOW()
         WHERE id=$1 AND client_id=$2 RETURNING *`,
-      [id, clientId, r.name, r.enabled, r.min_hours, r.max_hours, r.gap_hours, r.quiet_start, r.quiet_end, JSON.stringify(r.conditions), r.message]);
+      [id, clientId, r.name, r.enabled, r.min_hours, r.max_hours, r.gap_hours, r.quiet_start, r.quiet_end, JSON.stringify(r.conditions), r.message, r.once_per_customer]);
     if (!rows.length) return res.status(404).json({ error: 'Rule not found' });
     res.json({ rule: rows[0] });
   } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }

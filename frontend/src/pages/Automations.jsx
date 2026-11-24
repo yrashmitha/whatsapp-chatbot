@@ -42,12 +42,13 @@ const blankCondition = (field = 'orders') => {
 
 const BLANK = {
   name: '', enabled: false, min_hours: 12, max_hours: 22, gap_hours: 24, quiet_start: 22, quiet_end: 8,
-  conditions: [{ field: 'last_from', op: 'is', value: 'us' }], message: '',
+  conditions: [{ field: 'last_from', op: 'is', value: 'us' }], message: '', once_per_customer: false,
 };
 
 /** "12 to 22 hours after their last message · No orders · ..." */
 function summary(rule) {
   const parts = [`${rule.min_hours} to ${rule.max_hours} hours after their last message`];
+  if (rule.once_per_customer) parts.push('once per customer');
   for (const c of rule.conditions || []) {
     const f = FIELDS[c.field]; if (!f) continue;
     let v = c.value;
@@ -165,6 +166,18 @@ function RuleEditor({ initial, clientId, cap, onClose, onSaved }) {
         <textarea className={`${input} w-full text-base`} rows={5} value={r.message} onChange={e => set('message', e.target.value)}
           placeholder="Hi {name}, ..." />
         <div className="text-xs text-slate-400 mb-3">{'{name}'} is replaced with the customer's name, or left out if we don't have one.</div>
+
+        <div className="text-xs font-medium text-slate-500 mb-1">How often per customer</div>
+        <div className="mb-3 space-y-1">
+          <label className="flex items-start gap-2 text-sm text-slate-700 cursor-pointer">
+            <input type="radio" className="mt-1" checked={!r.once_per_customer} onChange={() => set('once_per_customer', false)} />
+            <span>Every time they go quiet <span className="block text-xs text-slate-400">For reminders and offers: again after each new conversation.</span></span>
+          </label>
+          <label className="flex items-start gap-2 text-sm text-slate-700 cursor-pointer">
+            <input type="radio" className="mt-1" checked={!!r.once_per_customer} onChange={() => set('once_per_customer', true)} />
+            <span>Only once per customer, ever <span className="block text-xs text-slate-400">For invites and welcomes: nobody gets it twice.</span></span>
+          </label>
+        </div>
 
         <details className="mb-3">
           <summary className="text-xs font-medium text-slate-500 cursor-pointer">Limits</summary>

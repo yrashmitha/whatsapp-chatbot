@@ -164,7 +164,8 @@ function validateRule(r) {
   const conditions = Array.isArray(r?.conditions) ? r.conditions : [];
   // Try building the SQL once so a bad condition is refused now, not at 3 AM.
   buildWhere(conditions, []);
-  return { name, message, min_hours: minH, max_hours: maxH, gap_hours: gap, quiet_start: qs, quiet_end: qe, conditions, enabled: !!r?.enabled };
+  return { name, message, min_hours: minH, max_hours: maxH, gap_hours: gap, quiet_start: qs, quiet_end: qe, conditions,
+           enabled: !!r?.enabled, once_per_customer: !!r?.once_per_customer };
 }
 
 /**
@@ -221,6 +222,10 @@ async function candidates(clientId, rule, limit = PER_RUN_LIMIT) {
        AND NOT EXISTS (SELECT 1 FROM auto_rule_sends s
                         WHERE s.rule_id = $${ridIdx} AND s.phone_number = cu.phone_number
                           AND s.client_id = cu.client_id AND s.trigger_at = cu.last_customer_message_at)
+       -- once ever, when the rule asks for it (an invite, a welcome)
+       ${rule.once_per_customer ? `AND NOT EXISTS (SELECT 1 FROM auto_rule_sends s
+                        WHERE s.rule_id = $${ridIdx} AND s.phone_number = cu.phone_number
+                          AND s.client_id = cu.client_id AND s.status = 'sent')` : ''}
        -- the gap: no automatic message to them recently, from any rule
        AND NOT EXISTS (SELECT 1 FROM auto_rule_sends s
                         WHERE s.client_id = cu.client_id AND s.phone_number = cu.phone_number
